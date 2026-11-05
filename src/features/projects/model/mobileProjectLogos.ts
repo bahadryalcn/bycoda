@@ -1,9 +1,9 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { DesktopProjectDirectory } from "../../connections/model/protocol";
+import type { DesktopProjectDirectory } from "../../connections";
 import {
   MAX_DIRECTORY_LOGO_LENGTH,
   MAX_PROJECT_LOGO_LENGTH,
-} from "../../connections/model/projectAppearance";
+} from "../../connections/public/projectAppearance";
 import { projectKey } from "../../../shared/lib/paths";
 import {
   loadTabGroupLogos,

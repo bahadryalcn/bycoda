@@ -1,4 +1,4 @@
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import type { RemoteShellState } from "../../workspace/model/remoteEmptyChats";
 import { remotePendingWorktree, remoteSessionFor, remoteTabBindingsReadable } from "./connections";
 import { remoteCreateIntent } from "./remoteCreateIntent";

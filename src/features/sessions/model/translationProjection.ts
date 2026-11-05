@@ -22,10 +22,16 @@ export function projectTranslatedBlocks(
     const text = entry.translatedVisible ? entry.translated : entry.original;
     return text === block.text ? block : { ...block, text };
   };
-  const index = previous?.translations === translations
-    ? streamingTextUpdate(previous.source, source)
-    : undefined;
-  if (index !== undefined && previous && previous.blocks.length === source.length && source[index]) {
+  const index =
+    previous?.translations === translations
+      ? streamingTextUpdate(previous.source, source)
+      : undefined;
+  if (
+    index !== undefined &&
+    previous &&
+    previous.blocks.length === source.length &&
+    source[index]
+  ) {
     const blocks = [...previous.blocks];
     blocks[index] = project(source[index]);
     registerStreamingTextUpdate(previous.blocks, blocks, index);

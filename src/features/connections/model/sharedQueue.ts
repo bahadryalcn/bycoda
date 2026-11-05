@@ -1,4 +1,4 @@
-import type { QueuedMessage } from "../../sessions/model/session";
+import type { QueuedMessage } from "../../sessions";
 import type { RemoteQueue } from "./remoteQueue";
 import { canonicalJson } from "../../sync/model/canonicalJson";
 import { RUN_LEASE_TTL_MS } from "../../sync/model/runLease";

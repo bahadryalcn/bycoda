@@ -1,14 +1,13 @@
 import { useT } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { bulkTaskKey } from "../model/taskBulkActions";
 import type { BoardTask } from "../model/taskClient";
 import { taskStatusLine } from "../model/taskStatusLine";
-import { useId, useState } from "react";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { AssistantTaskBadge } from "./AssistantTaskBadge";
-
-const TASK_PAGE_SIZE = 50;
 
 export function TaskList({
   tasks,
@@ -19,7 +18,9 @@ export function TaskList({
   onOpen,
   disabled,
   planningLabel,
+  stateKey = "task-list",
 }: {
+  stateKey?: string;
   tasks: readonly BoardTask[];
   selection: boolean;
   selected: ReadonlySet<string>;
@@ -31,22 +32,21 @@ export function TaskList({
   planningLabel?: (task: BoardTask) => string;
 }) {
   const t = useT();
-  const listId = useId();
-  const [page, setPage] = useState(0);
-  const lastPage = Math.max(0, Math.ceil(tasks.length / TASK_PAGE_SIZE) - 1);
-  const currentPage = Math.min(page, lastPage);
-  const start = currentPage * TASK_PAGE_SIZE;
-  const pageTasks = tasks.slice(start, start + TASK_PAGE_SIZE);
+  const activeTask = tasks.find((task) => `${task.machineId}:${task.id}` === activeKey);
   return (
-    <>
-      <ul id={listId} className="task-management-list" aria-label={t("Tasks")}>
-        {pageTasks.map((task, index) => {
+    <div className="task-management-list">
+      <ContinuousList
+        items={tasks}
+        itemKey={bulkTaskKey}
+        stateKey={stateKey}
+        requiredKey={activeTask ? bulkTaskKey(activeTask) : null}
+        label={t("Tasks")}
+        estimateSize={80}
+        renderItem={(task) => {
           const status = taskStatusLine(task);
           return (
-            <li
+            <div
               key={bulkTaskKey(task)}
-              aria-setsize={tasks.length}
-              aria-posinset={start + index + 1}
               className="task-management-row"
               data-selected={selected.has(bulkTaskKey(task)) || undefined}
               data-active={activeKey === `${task.machineId}:${task.id}` || undefined}
@@ -90,41 +90,22 @@ export function TaskList({
                   </p>
                 ) : null}
               </div>
-              <Badge tone={status.tone} data-task-status={status.kind} className="task-list-status">
+              <Badge
+                tone={status.tone}
+                icon={
+                  status.tone === "accent" ? (
+                    <StatusDot tone="accent" label={status.label} />
+                  ) : undefined
+                }
+                data-task-status={status.kind}
+                className="task-list-status"
+              >
                 {status.label}
               </Badge>
-            </li>
+            </div>
           );
-        })}
-      </ul>
-      {tasks.length > TASK_PAGE_SIZE ? (
-        <nav aria-label={t("Tasks")} className="flex flex-wrap items-center justify-end gap-2 py-2">
-          <Button
-            variant="ghost"
-            motion="none"
-            disabled={currentPage === 0}
-            aria-controls={listId}
-            onClick={() => setPage(currentPage - 1)}
-          >
-            {t("Previous")}
-          </Button>
-          <span
-            role="status"
-            className="min-w-24 text-center text-ui-caption tabular-nums text-(--ui-text-secondary)"
-          >
-            {start + 1}–{Math.min(start + TASK_PAGE_SIZE, tasks.length)} / {tasks.length}
-          </span>
-          <Button
-            variant="ghost"
-            motion="none"
-            disabled={currentPage === lastPage}
-            aria-controls={listId}
-            onClick={() => setPage(currentPage + 1)}
-          >
-            {t("Next")}
-          </Button>
-        </nav>
-      ) : null}
-    </>
+        }}
+      />
+    </div>
   );
 }

@@ -252,10 +252,10 @@ export class SocialPeers {
     // A durable row alone never upgrades restart state into verified authority.
     await this.verify(id);
     const peer = await this.get(id.slice(0, id.indexOf("/")));
-    if (!peer || await this.get("authority")) return undefined;
-    const row = await this.service.store.db.prepare(
-      "SELECT value FROM social_peer_identities WHERE id=?",
-    ).get(id);
+    if (!peer || (await this.get("authority"))) return undefined;
+    const row = await this.service.store.db
+      .prepare("SELECT value FROM social_peer_identities WHERE id=?")
+      .get(id);
     if (!row) return undefined;
     const identity = JSON.parse(String(row.value)) as HostSession;
     if (!Object.values(peer.mapping).includes(identity.projectId)) return undefined;
@@ -287,13 +287,19 @@ export class SocialPeers {
       // not overwrite a removed/replaced peer's identity.
       const current = await this.get(peerId);
       const currentCredential = await this.vault.get(`social-peer:${peerId}`);
-      if (!current || JSON.stringify(current) !== JSON.stringify(peer) ||
-          await this.get("authority") || currentCredential?.accessToken !== credential.accessToken ||
-          await this.authenticated(credential.accessToken) !== peerId)
+      if (
+        !current ||
+        JSON.stringify(current) !== JSON.stringify(peer) ||
+        (await this.get("authority")) ||
+        currentCredential?.accessToken !== credential.accessToken ||
+        (await this.authenticated(credential.accessToken)) !== peerId
+      )
         throw new Error("Peer identity changed while verifying.");
-      await this.service.store.db.prepare(
-        "INSERT INTO social_peer_identities VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value WHERE value<>excluded.value",
-      ).run(id, JSON.stringify({ projectId, session: { id, harness: identity.provider } }));
+      await this.service.store.db
+        .prepare(
+          "INSERT INTO social_peer_identities VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET value=excluded.value WHERE value<>excluded.value",
+        )
+        .run(id, JSON.stringify({ projectId, session: { id, harness: identity.provider } }));
     } catch {
       throw new Error(
         "Trusted source session is unavailable or unmapped. Social access is denied.",

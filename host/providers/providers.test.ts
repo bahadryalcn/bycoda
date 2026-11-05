@@ -11,13 +11,28 @@ import { HARNESSES } from "../../src/features/sessions/model/session";
 it("rechecks machine policy after async discovery and at exact prepared dispatch", async () => {
   const transport = { send: vi.fn(async () => {}) } as unknown as HostProvider;
   let release!: () => void;
-  const discovery = new Promise<void>((resolve) => { release = resolve; });
+  const discovery = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   let disabledNames: string[] = [];
-  const installed = vi.fn(async () => { await discovery; return []; });
-  const provider = withMachineSkillPolicy("codex", transport, () => ({ disabledNames, disabledPaths: [] }), installed);
+  const installed = vi.fn(async () => {
+    await discovery;
+    return [];
+  });
+  const provider = withMachineSkillPolicy(
+    "codex",
+    transport,
+    () => ({ disabledNames, disabledPaths: [] }),
+    installed,
+  );
   const input: SendTurnInput = {
-    sessionId: "session", cwd: "/isolated", model: "codex:test", modelSettings: {},
-    runtimeMode: "supervised", onEvent: () => {}, text: "/audit-example",
+    sessionId: "session",
+    cwd: "/isolated",
+    model: "codex:test",
+    modelSettings: {},
+    runtimeMode: "supervised",
+    onEvent: () => {},
+    text: "/audit-example",
   };
   const pending = provider.prepareOperationPolicy!(input);
   disabledNames = ["audit-example"];
@@ -34,10 +49,20 @@ it("rechecks machine policy after async discovery and at exact prepared dispatch
 it("dispatches exact prepared input without another await and rediscovers clones", async () => {
   const transport = { send: vi.fn(async () => {}) } as unknown as HostProvider;
   const installed = vi.fn(async () => []);
-  const provider = withMachineSkillPolicy("codex", transport, () => ({ disabledNames: [], disabledPaths: [] }), installed);
+  const provider = withMachineSkillPolicy(
+    "codex",
+    transport,
+    () => ({ disabledNames: [], disabledPaths: [] }),
+    installed,
+  );
   const input: SendTurnInput = {
-    sessionId: "session", cwd: "/isolated", model: "codex:test", modelSettings: {},
-    runtimeMode: "supervised", onEvent: () => {}, text: "Continue",
+    sessionId: "session",
+    cwd: "/isolated",
+    model: "codex:test",
+    modelSettings: {},
+    runtimeMode: "supervised",
+    onEvent: () => {},
+    text: "Continue",
   };
   const prepared = await provider.prepareOperationPolicy!(input);
   const dispatched = provider.send(prepared);

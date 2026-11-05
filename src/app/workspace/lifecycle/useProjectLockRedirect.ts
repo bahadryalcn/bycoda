@@ -52,7 +52,9 @@ export function useProjectLockRedirect({
         redirected.current = null;
       } else if (!isProjectLockedIn(lockSnapshot, memory.from)) {
         redirected.current = null;
-        void Promise.resolve(openProjects([memory.from])).catch((error: unknown) => console.error("Could not remember project", error));
+        void Promise.resolve(openProjects([memory.from])).catch((error: unknown) =>
+          console.error("Could not remember project", error),
+        );
         return;
       }
     }
@@ -74,7 +76,9 @@ export function useProjectLockRedirect({
     if (next) {
       redirected.current = { from: sidebarCwd, to: next.path };
       notice(next.path);
-      void Promise.resolve(openProjects([next.path])).catch((error: unknown) => console.error("Could not remember project", error));
+      void Promise.resolve(openProjects([next.path])).catch((error: unknown) =>
+        console.error("Could not remember project", error),
+      );
       return;
     }
     redirected.current = { from: sidebarCwd, to: "~" };

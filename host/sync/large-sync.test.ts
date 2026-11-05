@@ -1,14 +1,19 @@
+// @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
+import { request as nodeRequest } from "node:http";
 import { HostEngine } from "../engine";
 import { HostStore } from "../store";
 import { createHostServer } from "../server";
 import type { SendTurnInput } from "../../src/integrations/harness/core/types";
 import type { HostSession } from "../../src/features/connections/model/protocol";
-import { loadRemoteBlock, loadRemoteSession } from "../../src/features/connections/model/connections";
+import {
+  loadRemoteBlock,
+  loadRemoteSession,
+} from "../../src/features/connections/model/connections";
 
 // The desktop's native client (src-tauri/src/remote.rs) rejects responses over
 // 16 MiB. This routes the real renderer sync code through the real host server
@@ -23,22 +28,39 @@ const desktop = vi.hoisted(() => ({
   largest: 0,
 }));
 vi.mock("@tauri-apps/api/core", () => ({
+  isTauri: () => false,
   invoke: async (_command: string, input: { method: string; params: unknown }) => {
     // Only host requests travel to the server; provider helpers such as the
     // social bridge have no host-side answer in this desktop-only fixture.
     if (_command !== "remote_request") return null;
     desktop.methods.push(input.method);
-    const response = await fetch(desktop.url, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${desktop.token}` },
-      body: JSON.stringify({
-        version: 1,
-        environmentId: desktop.environmentId,
-        method: input.method,
-        params: input.params,
-      }),
+    // This simulates the native IPC HTTP client, so browser CORS is not its
+    // authority boundary. Keep the real Host socket and exact response bytes.
+    const bytes = await new Promise<Buffer>((resolve, reject) => {
+      const request = nodeRequest(
+        desktop.url,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${desktop.token}` },
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+          response.once("end", () => resolve(Buffer.concat(chunks)));
+          response.once("error", reject);
+        },
+      );
+      request.once("error", reject);
+      request.setTimeout(30_000, () => request.destroy(new Error("Native fixture HTTP deadline")));
+      request.end(
+        JSON.stringify({
+          version: 1,
+          environmentId: desktop.environmentId,
+          method: input.method,
+          params: input.params,
+        }),
+      );
     });
-    const bytes = Buffer.from(await response.arrayBuffer());
     desktop.largest = Math.max(desktop.largest, bytes.length);
     if (bytes.length > DESKTOP_LIMIT) throw "Host response is too large";
     const text = bytes.toString("utf8");
@@ -237,7 +259,10 @@ it(
     );
     desktop.methods = [];
     const next = await loadRemoteSession("machine", s.sessionId, base);
-    expect(next).toEqual(visible(await s.store.session(s.sessionId)));
+    expect(next).toEqual({
+      ...visible(await s.store.session(s.sessionId)),
+      sourceEpoch: base.sourceEpoch,
+    });
     expect(desktop.methods[0]).toBe("sessions.sync");
     expect(desktop.methods).toContain("sessions.syncChunk");
     expect(desktop.largest).toBeLessThanOrEqual(DESKTOP_LIMIT);

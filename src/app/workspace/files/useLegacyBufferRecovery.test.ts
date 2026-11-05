@@ -132,15 +132,22 @@ it("keeps the previous page/cursor after a failed next and retries the same curs
   expect(f.value.error).toBe(true);
   expect(f.value.records).toEqual([record]);
   expect(f.value.hasPrevious).toBe(false);
+  const newer: LegacyBufferReport = {
+    ...record,
+    source: { ...record.source!, reportVersion: 2, snapshotDigest: "c".repeat(64) },
+    reportVersion: 2,
+  };
   f.api.list.mockResolvedValueOnce({
-    records: [{ ...record, reportVersion: 2 }],
+    records: [newer],
     next: null,
     qualified: false,
   });
   await act(() => f.value.next());
   expect(f.api.list.mock.calls.slice(-2).map(([request]) => request.after)).toEqual([1, 1]);
   expect(f.value.hasPrevious).toBe(true);
+  expect(f.value.records.map((item) => item.reportVersion)).toEqual([1, 2]);
   await act(() => f.value.previous());
+  expect(f.value.records.map((item) => item.reportVersion)).toEqual([1, 2]);
   expect(f.api.list).toHaveBeenLastCalledWith({ after: null, limit: 25 });
 });
 it("joins duplicate UI inspection attempts and keeps failure local to its report", async () => {

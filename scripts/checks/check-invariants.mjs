@@ -162,11 +162,22 @@ export function checkInvariants({ root = defaultRoot, files } = {}) {
   const privacyCalls = checkPrivacyWriterCalls({ root, files: scope });
   for (const item of privacyCalls) {
     const rule = "privacy-writer-outside-fence";
-    regressions.push({ file: item.file, rule, count: 1, baseline: 0, items: [{
-      file: item.file, line: item.line, rule,
-      message: "Privacy writers must run inside withRoomPrivacyMutation or a reviewed delegate.",
-      text: item.text,
-    }] });
+    regressions.push({
+      file: item.file,
+      rule,
+      count: 1,
+      baseline: 0,
+      items: [
+        {
+          file: item.file,
+          line: item.line,
+          rule,
+          message:
+            "Privacy writers must run inside withRoomPrivacyMutation or a reviewed delegate.",
+          text: item.text,
+        },
+      ],
+    });
   }
   return { success: regressions.length === 0, ...result, regressions, findings, current };
 }

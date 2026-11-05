@@ -2,6 +2,7 @@ import { useState } from "react";
 import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { SortableDataTable } from "../../../shared/ui/SortableDataTable";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 
 import type { UsageMetric, UsageResolution } from "../model/usageAnalytics";
 
@@ -66,21 +67,26 @@ export function formatBucket(at: number, resolution: UsageResolution): string {
       : { month: "short", day: "numeric", year: "numeric" },
   );
 }
-export function PagedUsageTable({
+export function ContinuousUsageTable({
   rows,
   caption,
   metric,
   onSelect,
+  stateKey,
 }: {
   rows: (Record<string, unknown> & { key: string; label: string })[];
   caption: string;
   metric: UsageMetric;
   onSelect?: (key: string) => void;
+  stateKey?: string;
 }) {
   useLocale();
-  const [page, setPage] = useState(0);
+  const tableKey = stateKey ?? `usage:${caption}`;
   const [allMetrics, setAllMetrics] = useState(false);
-  const [sort, setSort] = useState({ key: metric as string, direction: "desc" as "asc" | "desc" });
+  const [sort, setSort] = useRetainedState(`${tableKey}:sort`, {
+    key: metric as string,
+    direction: "desc" as "asc" | "desc",
+  });
   const available = (row: Record<string, unknown>, key: UsageMetric) =>
     row[key] != null &&
     Number.isFinite(Number(row[key])) &&
@@ -99,8 +105,6 @@ export function PagedUsageTable({
       (sort.direction === "asc" ? 1 : -1)
     );
   });
-  const lastPage = Math.max(0, Math.ceil(rows.length / 20) - 1);
-  const current = Math.min(page, lastPage);
   return (
     <>
       <div className="usage-section-heading">
@@ -119,15 +123,14 @@ export function PagedUsageTable({
         </Button>
       </div>
       <SortableDataTable
-        key={`${current}:${sort.key}:${sort.direction}`}
+        key={tableKey}
+        scrollKey={tableKey}
         caption={caption}
         rowKey="key"
-        rows={ordered.slice(current * 20, current * 20 + 20)}
+        rows={ordered}
         defaultSort={sort}
-        onSortChange={(next) => {
-          setSort(next);
-          setPage(0);
-        }}
+        sortState={sort}
+        onSortChange={setSort}
         columns={[
           {
             key: "label",
@@ -181,23 +184,6 @@ export function PagedUsageTable({
           },
         ]}
       />
-      {lastPage > 0 ? (
-        <div className="usage-pagination">
-          <span>
-            {rows.length.toLocaleString(getLocale())} {t("records")} · {current + 1}/{lastPage + 1}
-          </span>
-          <Button variant="ghost" disabled={current === 0} onClick={() => setPage(current - 1)}>
-            {t("Previous")}
-          </Button>
-          <Button
-            variant="ghost"
-            disabled={current === lastPage}
-            onClick={() => setPage(current + 1)}
-          >
-            {t("Next")}
-          </Button>
-        </div>
-      ) : null}
     </>
   );
 }

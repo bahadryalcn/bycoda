@@ -1,3 +1,4 @@
+import { InboxReviewBadge } from "./InboxReviewBadge";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
@@ -19,7 +20,7 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { CheckCircle, CircleX, MessageSquare, X } from "../../../shared/ui/icons";
+import { X } from "../../../shared/ui/icons";
 import {
   formatRelativeTime,
   githubReviewStateLabel,
@@ -462,19 +463,12 @@ function InboxComment({
                 {part}
               </Button>
             ) : (
-              <span
-                className={
-                  comment.state === "APPROVED"
-                    ? "text-(--ui-tone-success-fg)"
-                    : comment.state === "CHANGES_REQUESTED"
-                      ? "text-(--ui-tone-danger-fg)"
-                      : comment.resolved && part === "Resolved"
-                        ? "text-(--ui-tone-success-fg)"
-                        : "min-w-0 truncate"
-                }
+              <InboxReviewBadge
+                state={comment.state}
+                resolved={comment.resolved && part === "Resolved"}
               >
                 {part}
-              </span>
+              </InboxReviewBadge>
             )}
           </span>
         ))}
@@ -637,10 +631,7 @@ function TimelineStop({
   );
 }
 
-/**
- * Rail column shared by every stop. The lead segment sets where the node sits,
- * so avatars, review icons and commit dots all land on their row's centre.
- */
+/** Shared lead segment centers avatars, review icons and commit dots on their row. */
 function TimelineRail({
   first,
   last,
@@ -655,9 +646,9 @@ function TimelineRail({
   useLocale();
   return (
     <div aria-hidden className="flex w-5 shrink-0 flex-col items-center">
-      <span className={`w-px shrink-0 ${lead} ${first ? "" : "bg-(--ui-surface-raised)"}`} />
+      <span className={`w-px shrink-0 ${lead} ${first ? "" : "bg-(--ui-tone-neutral-border)"}`} />
       <div className="flex icon-lg shrink-0 items-center justify-center">{children}</div>
-      {last ? null : <span className="w-px flex-1 bg-(--ui-surface-raised)" />}
+      {last ? null : <span className="w-px flex-1 bg-(--ui-tone-neutral-border)" />}
     </div>
   );
 }
@@ -692,25 +683,8 @@ function InboxTimelineComment({
           : state === "DISMISSED"
             ? "had a review dismissed"
             : "reviewed";
-    const Icon =
-      state === "APPROVED" ? CheckCircle : state === "CHANGES_REQUESTED" ? CircleX : MessageSquare;
     return (
-      <TimelineStop
-        first={first}
-        last={last}
-        node={
-          <Icon
-            className={`icon-md ${
-              state === "APPROVED"
-                ? "text-(--ui-tone-success-fg)"
-                : state === "CHANGES_REQUESTED"
-                  ? "text-(--ui-tone-danger-fg)"
-                  : "text-(--ui-text-secondary)"
-            }`}
-            strokeWidth={1.75}
-          />
-        }
-      >
+      <TimelineStop first={first} last={last} node={<InboxReviewBadge state={state} />}>
         <TimelineEventLine name={author} action={verb} time={time} />
       </TimelineStop>
     );
@@ -803,9 +777,9 @@ function InboxCommitStop({ commit, last }: { commit: InboxCommit; last: boolean 
     <li className="flex gap-3">
       {/* The rail runs through commit dots, so a push reads as one stretch. */}
       <div aria-hidden className="flex w-5 shrink-0 flex-col items-center">
-        <span className="h-1.5 w-px shrink-0 bg-(--ui-surface-raised)" />
+        <span className="h-1.5 w-px shrink-0 bg-(--ui-tone-neutral-border)" />
         <span className="size-2 shrink-0 rounded-full border-[1.5px] border-(--ui-tone-neutral-border)" />
-        {last ? null : <span className="w-px flex-1 bg-(--ui-surface-raised)" />}
+        {last ? null : <span className="w-px flex-1 bg-(--ui-tone-neutral-border)" />}
       </div>
       <div className={`min-w-0 flex-1 ${last ? "" : TIMELINE_GAP}`}>
         <Button

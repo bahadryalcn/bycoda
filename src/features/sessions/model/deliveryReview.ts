@@ -48,8 +48,7 @@ export function useQueueHoldReason(sessionId: string): string | undefined {
  * could duplicate it, so the review warns and does not offer "Send again".
  */
 const lateSettlements = new Map<string, Set<symbol>>();
-const openSettlements = (sessionId: string): number =>
-  lateSettlements.get(sessionId)?.size ?? 0;
+const openSettlements = (sessionId: string): number => lateSettlements.get(sessionId)?.size ?? 0;
 
 /** Follows an unconfirmed send until its provider call finally answers. */
 export function trackLateSettlement(

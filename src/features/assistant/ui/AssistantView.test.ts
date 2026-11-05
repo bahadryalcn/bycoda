@@ -136,11 +136,18 @@ beforeEach(() => {
   Object.defineProperty(navigator, "locks", {
     configurable: true,
     value: {
-      request: async (_name: string, _options: unknown, callback: (lock: object | null) => Promise<unknown>) => {
+      request: async (
+        _name: string,
+        _options: unknown,
+        callback: (lock: object | null) => Promise<unknown>,
+      ) => {
         if (sendLocked) return callback(null);
         sendLocked = true;
-        try { return await callback({ name: _name }); }
-        finally { sendLocked = false; }
+        try {
+          return await callback({ name: _name });
+        } finally {
+          sendLocked = false;
+        }
       },
     },
   });
@@ -196,12 +203,23 @@ async function render(props: Parameters<typeof AssistantView>[0] = {}) {
 }
 it("opens Room at its global conversation even when a coding project is selected", async () => {
   mock.snapshot!.threads = [
-    { id: "project-thread", projectId: "project-one", version: 1, createdAt: 1, updatedAt: 5, summary: "" },
+    {
+      id: "project-thread",
+      projectId: "project-one",
+      version: 1,
+      createdAt: 1,
+      updatedAt: 5,
+      summary: "",
+    },
     { id: "global-thread", version: 1, createdAt: 1, updatedAt: 1, summary: "" },
   ];
-  localStorage.setItem("bycoda.assistant.thread-drafts", JSON.stringify({
-    "global-thread": "Manage all projects", "project-thread": "Coding draft",
-  }));
+  localStorage.setItem(
+    "bycoda.assistant.thread-drafts",
+    JSON.stringify({
+      "global-thread": "Manage all projects",
+      "project-thread": "Coding draft",
+    }),
+  );
   await render({ initialTab: "conversations" });
   expect(container.querySelector("textarea")?.value).toBe("Manage all projects");
   await click("Open conversation");
@@ -502,8 +520,8 @@ it("shows recorded actions with their transcript and hides the whole row when a 
     projectPath: "/one",
     visibleProjectPaths: ["/one", "/secret"],
   });
-  const sourceThread = [...container.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.textContent?.startsWith("One"),
+  const sourceThread = [...container.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+    button.textContent?.startsWith("One"),
   )!;
   await act(async () => sourceThread.click());
   expect(container.textContent).toContain("Accepted owner request with recorded activity");
@@ -1881,8 +1899,10 @@ it.each(["original-Host", undefined])(
       "Original unsent text",
     );
     expect(JSON.parse(localStorage.getItem("bycoda.assistant.send-intents")!)[thread.id]).toEqual({
-      text: "Original unsent text", key: "retained-key",
-      ...(origin ? { environmentId: origin } : {}), sessionId: "original-session",
+      text: "Original unsent text",
+      key: "retained-key",
+      ...(origin ? { environmentId: origin } : {}),
+      sessionId: "original-session",
     });
   },
 );

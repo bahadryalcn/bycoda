@@ -48,7 +48,7 @@
   padding: 16px;
   border: 1px solid var(--ui-pane-border);
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface);
+  background: transparent;
 }
 
 .heading {

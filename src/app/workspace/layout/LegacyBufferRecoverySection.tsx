@@ -20,6 +20,7 @@ export function LegacyBufferRecoverySection({
     <BufferReportRecoveryView
       recovery={recovery}
       reportKey={legacyBufferReportKey}
+      scopeKey="legacy"
       onShowCopies={onShowCopies}
       sourceControl={sourceControl}
     />

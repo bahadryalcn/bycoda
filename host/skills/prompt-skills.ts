@@ -40,13 +40,16 @@ export async function prepareHostSkillPrompt(
   const names = new Set(skillInvocationTokens(text).map((token) => token.name));
   if (!names.size) return project(text);
   const inventory = await listHostSkillCandidatesAsync(cwd, home);
-  if (inventory.truncated) throw new Error("Skill discovery is incomplete; prompt preparation refused.");
+  if (inventory.truncated)
+    throw new Error("Skill discovery is incomplete; prompt preparation refused.");
   policy = readSkillPolicy(home);
   native = reportedSkillRestrictions(getReportedCommands(sessionId));
   assertSkillInvocationsEnabled(text, policy);
   assertSkillInvocationsEnabled(text, native);
   const installed = inventory.skills;
-  const named = installed.filter((skill) => skillMatchesProvider(skill, provider) && names.has(skill.name));
+  const named = installed.filter(
+    (skill) => skillMatchesProvider(skill, provider) && names.has(skill.name),
+  );
   if (provider) {
     for (const name of names)
       if (
@@ -109,7 +112,9 @@ export async function prepareHostSkillPrompt(
   const finalNative = reportedSkillRestrictions(getReportedCommands(sessionId));
   assertSkillInvocationsEnabled(text, finalPolicy);
   assertSkillInvocationsEnabled(text, finalNative);
-  if (picked.some((skill) => skillDisabled(finalPolicy, skill) || skillDisabled(finalNative, skill)))
+  if (
+    picked.some((skill) => skillDisabled(finalPolicy, skill) || skillDisabled(finalNative, skill))
+  )
     throw new Error("Skill policy changed while preparing the prompt.");
   return project(
     [SKILL_INVOCATION_GUIDANCE, "", blocks.join("\n\n"), "", "---", "", text].join("\n"),

@@ -4,7 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { listenWindowAsync } from "../../../platform/tauri/listenWindow";
 import { handleAgentApp, type AppSessionListing } from "../../../features/agent-app/model/agentApp";
 import { getGroupLockView } from "../../../features/group-lock/model/groupLock";
-import { activateRoomPrivacyProjection, deactivateRoomPrivacyProjection, failRoomPrivacyProjection, getRoomPrivacyStatus, requireRoomPrivacyAdmission } from "../../../features/group-lock/model/roomPrivacyProjection";
+import {
+  activateRoomPrivacyProjection,
+  deactivateRoomPrivacyProjection,
+  failRoomPrivacyProjection,
+  getRoomPrivacyStatus,
+  requireRoomPrivacyAdmission,
+} from "../../../features/group-lock/model/roomPrivacyProjection";
 import { localReferenceForSession } from "../../../features/sessions/model/localSessionNavigation";
 import { isProjectLockedIn } from "../../../features/group-lock/model/lockState";
 import { NOTES_CHANGED_EVENT, upsertNote } from "../../../features/notes";
@@ -24,7 +30,11 @@ import type { useSubmitSession } from "../sessions/submit/useSubmitSession";
 import type { createVoiceWorkspaceActions } from "../bridges/useVoiceWorkspaceActions";
 import { handleRoomWorkspaceAction, isRoomWorkspaceAction } from "./roomWorkspaceControl";
 import { submitRoomSession } from "./roomSessionSubmit";
-import { retireVoiceGeneration, voiceGenerationStatus, voiceGenerationSource } from "../../../features/voice/model/voiceGenerationRetirement";
+import {
+  retireVoiceGeneration,
+  voiceGenerationStatus,
+  voiceGenerationSource,
+} from "../../../features/voice/model/voiceGenerationRetirement";
 
 export interface AppControlRequestDeps {
   workspaceActions: ReturnType<typeof createVoiceWorkspaceActions>;
@@ -67,14 +77,18 @@ export function useAppControlRequests({
       const handle = async () => {
         if (payload.namespace === "privacy-scope") {
           const purpose = payload.input?.purpose;
-          if (payload.action !== "privacy.scope.snapshot" || Object.keys(payload.input ?? {}).length !== 1 ||
-              (purpose !== "transition" && purpose !== "admission"))
+          if (
+            payload.action !== "privacy.scope.snapshot" ||
+            Object.keys(payload.input ?? {}).length !== 1 ||
+            (purpose !== "transition" && purpose !== "admission")
+          )
             throw new Error("Invalid privacy scope request.");
           const requireSettled = () => {
             if (purpose === "admission") requireRoomPrivacyAdmission();
           };
           requireSettled();
-          const { readRoomPrivacyScope } = await import("../../../features/group-lock/model/roomPrivacyScope");
+          const { readRoomPrivacyScope } =
+            await import("../../../features/group-lock/model/roomPrivacyScope");
           requireSettled();
           const scope = readRoomPrivacyScope();
           requireSettled();
@@ -82,103 +96,266 @@ export function useAppControlRequests({
         }
         if (payload.namespace === "assistant-ui") {
           if (payload.action === "voice.generation.source") {
-            if (!payload.threadId || !payload.environmentId || disposed || !(await invoke<boolean>("control_desktop_authorize_effect", { id: payload.id, action: payload.action }))) throw new Error("Voice generation source authority unavailable.");
-            const result = voiceGenerationSource(payload.input, { threadId: payload.threadId, environmentId: payload.environmentId });
-            if (disposed || !(await invoke<boolean>("control_desktop_authorize_effect", { id: payload.id, action: payload.action }))) throw new Error("Voice generation source authority changed.");
+            if (
+              !payload.threadId ||
+              !payload.environmentId ||
+              disposed ||
+              !(await invoke<boolean>("control_desktop_authorize_effect", {
+                id: payload.id,
+                action: payload.action,
+              }))
+            )
+              throw new Error("Voice generation source authority unavailable.");
+            const result = voiceGenerationSource(payload.input, {
+              threadId: payload.threadId,
+              environmentId: payload.environmentId,
+            });
+            if (
+              disposed ||
+              !(await invoke<boolean>("control_desktop_authorize_effect", {
+                id: payload.id,
+                action: payload.action,
+              }))
+            )
+              throw new Error("Voice generation source authority changed.");
             return result;
           }
           if (payload.action === "voice.generation.status") {
-            if (!payload.threadId || !payload.environmentId || disposed || !(await invoke<boolean>("control_desktop_authorize_effect", { id: payload.id, action: payload.action }))) throw new Error("Voice generation status authority unavailable.");
-            const result = voiceGenerationStatus(payload.input, { threadId: payload.threadId, environmentId: payload.environmentId });
-            if (disposed || !(await invoke<boolean>("control_desktop_authorize_effect", { id: payload.id, action: payload.action }))) throw new Error("Voice generation status authority changed.");
+            if (
+              !payload.threadId ||
+              !payload.environmentId ||
+              disposed ||
+              !(await invoke<boolean>("control_desktop_authorize_effect", {
+                id: payload.id,
+                action: payload.action,
+              }))
+            )
+              throw new Error("Voice generation status authority unavailable.");
+            const result = voiceGenerationStatus(payload.input, {
+              threadId: payload.threadId,
+              environmentId: payload.environmentId,
+            });
+            if (
+              disposed ||
+              !(await invoke<boolean>("control_desktop_authorize_effect", {
+                id: payload.id,
+                action: payload.action,
+              }))
+            )
+              throw new Error("Voice generation status authority changed.");
             return result;
           }
           if (payload.action === "voice.generation.retire") {
-            if (!payload.threadId || !payload.environmentId || disposed || !(await invoke<boolean>("control_desktop_authorize_effect", { id: payload.id, action: payload.action })))
+            if (
+              !payload.threadId ||
+              !payload.environmentId ||
+              disposed ||
+              !(await invoke<boolean>("control_desktop_authorize_effect", {
+                id: payload.id,
+                action: payload.action,
+              }))
+            )
               throw new Error("Voice generation retirement authority unavailable.");
-            const result = await retireVoiceGeneration(payload.input, { threadId: payload.threadId, environmentId: payload.environmentId });
-            if (disposed || !(await invoke<boolean>("control_desktop_authorize_effect", { id: payload.id, action: payload.action })))
+            const result = await retireVoiceGeneration(payload.input, {
+              threadId: payload.threadId,
+              environmentId: payload.environmentId,
+            });
+            if (
+              disposed ||
+              !(await invoke<boolean>("control_desktop_authorize_effect", {
+                id: payload.id,
+                action: payload.action,
+              }))
+            )
               throw new Error("Voice generation retirement authority changed.");
             return result;
           }
           const privacy = getRoomPrivacyStatus();
-          if (privacy.pending || privacy.error) throw new Error(privacy.error ? `Room privacy protection failed: ${privacy.error}` : "Room privacy protection is pending.");
+          if (privacy.pending || privacy.error)
+            throw new Error(
+              privacy.error
+                ? `Room privacy protection failed: ${privacy.error}`
+                : "Room privacy protection is pending.",
+            );
           if (!payload.threadId || !payload.environmentId)
             throw new Error("Assistant Room identity is unavailable.");
           const context = {
             environmentId: payload.environmentId,
             sourceThreadId: payload.threadId,
             valid: () => !disposed,
-            authorize: () => invoke<boolean>("control_desktop_authorize_effect", {
-              id: payload.id, action: payload.action,
-            }),
+            authorize: () =>
+              invoke<boolean>("control_desktop_authorize_effect", {
+                id: payload.id,
+                action: payload.action,
+              }),
           };
-          if (payload.action.startsWith("organization.") && payload.projectId && payload.targetProjectCwd) {
+          if (
+            payload.action.startsWith("organization.") &&
+            payload.projectId &&
+            payload.targetProjectCwd
+          ) {
             const { buildMobileProjectDirectory } =
               await import("../../../features/projects/model/mobileProjectDirectory");
             const target = payload.targetProjectCwd;
-            const visible = () => !disposed && !isProjectLockedIn(getGroupLockView().lock, target) &&
-              buildMobileProjectDirectory().projects.some((project) => sameProjectPath(project.cwd, target));
+            const visible = () =>
+              !disposed &&
+              !isProjectLockedIn(getGroupLockView().lock, target) &&
+              buildMobileProjectDirectory().projects.some((project) =>
+                sameProjectPath(project.cwd, target),
+              );
             if (!visible()) throw new Error("Target project is unavailable or private.");
             const { handleProjectOrganization } =
               await import("../../../features/projects/model/projectOrganizationControl");
-            const input = payload.action === "organization.patch"
-              ? (() => {
-                  const { requestId, ...rest } = payload.input;
-                  if (typeof requestId !== "string" || !requestId || "operationId" in rest)
-                    throw new Error("Invalid organization request identity.");
-                  return { ...rest, operationId: requestId };
-                })()
-              : payload.input;
-            return handleProjectOrganization({ ...context, projectId: payload.projectId,
-              projectCwd: target, workingCwd: target, valid: visible,
-              ...(payload.action === "organization.patch" ? { privacyRequestId: payload.id } : {}) }, payload.action, input);
+            const input =
+              payload.action === "organization.patch"
+                ? (() => {
+                    const { requestId, ...rest } = payload.input;
+                    if (typeof requestId !== "string" || !requestId || "operationId" in rest)
+                      throw new Error("Invalid organization request identity.");
+                    return { ...rest, operationId: requestId };
+                  })()
+                : payload.input;
+            return handleProjectOrganization(
+              {
+                ...context,
+                projectId: payload.projectId,
+                projectCwd: target,
+                workingCwd: target,
+                valid: visible,
+                ...(payload.action === "organization.patch"
+                  ? { privacyRequestId: payload.id }
+                  : {}),
+              },
+              payload.action,
+              input,
+            );
           }
-          let targetContext: { projectId: string; projectCwd: string; workingCwd: string; valid: () => boolean } | undefined;
+          let targetContext:
+            | { projectId: string; projectCwd: string; workingCwd: string; valid: () => boolean }
+            | undefined;
           if (payload.projectId && payload.targetProjectCwd) {
             const { buildMobileProjectDirectory } =
               await import("../../../features/projects/model/mobileProjectDirectory");
             const target = payload.targetProjectCwd;
-            const valid = () => !disposed && !getRoomPrivacyStatus().pending && !getRoomPrivacyStatus().error && !isProjectLockedIn(getGroupLockView().lock, target) &&
-              buildMobileProjectDirectory().projects.some((project) => sameProjectPath(project.cwd, target));
+            const valid = () =>
+              !disposed &&
+              !getRoomPrivacyStatus().pending &&
+              !getRoomPrivacyStatus().error &&
+              !isProjectLockedIn(getGroupLockView().lock, target) &&
+              buildMobileProjectDirectory().projects.some((project) =>
+                sameProjectPath(project.cwd, target),
+              );
             if (!valid()) throw new Error("Target project is unavailable or private.");
-            targetContext = { projectId: payload.projectId, projectCwd: target, workingCwd: target, valid };
+            targetContext = {
+              projectId: payload.projectId,
+              projectCwd: target,
+              workingCwd: target,
+              valid,
+            };
           }
           if (payload.action === "inbox.room.scope") {
-            if (!targetContext || Object.keys(payload.input).some(key => key !== "revisionOnly") || (payload.input.revisionOnly !== undefined && payload.input.revisionOnly !== true) || !targetContext.valid() || !(await context.authorize())) throw new Error("Room Inbox scope authority unavailable.");
+            if (
+              !targetContext ||
+              Object.keys(payload.input).some((key) => key !== "revisionOnly") ||
+              (payload.input.revisionOnly !== undefined && payload.input.revisionOnly !== true) ||
+              !targetContext.valid() ||
+              !(await context.authorize())
+            )
+              throw new Error("Room Inbox scope authority unavailable.");
             const { readRoomInboxScope, readRoomInboxRevision } = await import("./roomInboxScope");
-            const scope = payload.input.revisionOnly === true ? { revision: readRoomInboxRevision() } : await readRoomInboxScope();
-            if (!targetContext.valid() || !(await context.authorize())) throw new Error("Room Inbox scope authority changed.");
+            const scope =
+              payload.input.revisionOnly === true
+                ? { revision: readRoomInboxRevision() }
+                : await readRoomInboxScope();
+            if (!targetContext.valid() || !(await context.authorize()))
+              throw new Error("Room Inbox scope authority changed.");
             return scope;
           }
           if (payload.action === "ui.tools.open" || payload.action === "ui.tools.status") {
             if (!targetContext || !targetContext.valid() || !(await context.authorize()))
               throw new Error("Room browser authority unavailable.");
             const { requestToolsUi } = await import("../../../features/host-tools/toolsUiControl");
-            const result = await requestToolsUi({ kind: "room", cwd: targetContext.projectCwd, threadId: payload.threadId,
-              projectId: targetContext.projectId, environmentId: payload.environmentId, title: "Room", valid: targetContext.valid }, payload.action, payload.input);
-            if (!targetContext.valid() || !(await context.authorize())) throw new Error("Room browser authority changed.");
+            const result = await requestToolsUi(
+              {
+                kind: "room",
+                cwd: targetContext.projectCwd,
+                threadId: payload.threadId,
+                projectId: targetContext.projectId,
+                environmentId: payload.environmentId,
+                title: "Room",
+                valid: targetContext.valid,
+              },
+              payload.action,
+              payload.input,
+            );
+            if (!targetContext.valid() || !(await context.authorize()))
+              throw new Error("Room browser authority changed.");
             return result;
           }
           if (payload.action === "workspace.sessions.submit")
-            return submitRoomSession(payload.input, targetContext, context.authorize, { ensureOpenSessionRef, submitSessionRef });
+            return submitRoomSession(payload.input, targetContext, context.authorize, {
+              ensureOpenSessionRef,
+              submitSessionRef,
+            });
           if (payload.action === "workspace.sessions.submit.status") {
             const { sessionId, submissionId } = payload.input;
-            if (!targetContext || !targetContext.valid() || typeof sessionId !== "string" || !sessionId || typeof submissionId !== "string" || !/^[A-Za-z0-9_-]{1,300}$/.test(submissionId) || Object.keys(payload.input).some(key => !["sessionId", "submissionId"].includes(key)) || !(await context.authorize()))
+            if (
+              !targetContext ||
+              !targetContext.valid() ||
+              typeof sessionId !== "string" ||
+              !sessionId ||
+              typeof submissionId !== "string" ||
+              !/^[A-Za-z0-9_-]{1,300}$/.test(submissionId) ||
+              Object.keys(payload.input).some(
+                (key) => !["sessionId", "submissionId"].includes(key),
+              ) ||
+              !(await context.authorize())
+            )
               throw new Error("Invalid Room submission lookup or unavailable authority.");
-            const session = sessionsRef.current.find(item => item.id === sessionId) ?? await getSession(sessionId);
-            if (!targetContext.valid() || !(await context.authorize())) throw new Error("Assistant Room target or authority is unavailable.");
-            if (!targetContext.valid()) throw new Error("Assistant Room target or authority is unavailable.");
-            if (!session || !sameProjectPath(session.cwd, targetContext.projectCwd) || session.orchestrationLeadId || session.inboxAsk || orchestrator.run(sessionId) || hostSessionBinding(session) || remoteProjectFor(session.cwd)) throw new Error("Session is unavailable in this project.");
-            const block = session.blocks.find(item => item.appRequestId === submissionId && item.role === "user" && !item.draft);
-            return { sessionId, submissionId, state: block ? "recorded" : "unknown", ...(block ? { blockId: block.id } : {}) };
+            const session =
+              sessionsRef.current.find((item) => item.id === sessionId) ??
+              (await getSession(sessionId));
+            if (!targetContext.valid() || !(await context.authorize()))
+              throw new Error("Assistant Room target or authority is unavailable.");
+            if (!targetContext.valid())
+              throw new Error("Assistant Room target or authority is unavailable.");
+            if (
+              !session ||
+              !sameProjectPath(session.cwd, targetContext.projectCwd) ||
+              session.orchestrationLeadId ||
+              session.inboxAsk ||
+              orchestrator.run(sessionId) ||
+              hostSessionBinding(session) ||
+              remoteProjectFor(session.cwd)
+            )
+              throw new Error("Session is unavailable in this project.");
+            const block = session.blocks.find(
+              (item) => item.appRequestId === submissionId && item.role === "user" && !item.draft,
+            );
+            return {
+              sessionId,
+              submissionId,
+              state: block ? "recorded" : "unknown",
+              ...(block ? { blockId: block.id } : {}),
+            };
           }
           if (isRoomWorkspaceAction(payload.action))
-            return handleRoomWorkspaceAction(payload.action, payload.input, targetContext, context.authorize, workspaceActions, payload.id);
+            return handleRoomWorkspaceAction(
+              payload.action,
+              payload.input,
+              targetContext,
+              context.authorize,
+              workspaceActions,
+              payload.id,
+            );
           if (payload.action.startsWith("preferences.")) {
             const { handleDesktopPreferences } =
               await import("../../../features/sessions/model/desktopPreferencesControl");
-            return handleDesktopPreferences({ ...context, ...targetContext }, payload.action, payload.input);
+            return handleDesktopPreferences(
+              { ...context, ...targetContext },
+              payload.action,
+              payload.input,
+            );
           }
           if (payload.action.startsWith("providerManagement.")) {
             if (payload.action === "providerManagement.read") {
@@ -188,28 +365,44 @@ export function useAppControlRequests({
             }
             const { handleProviderAccountControl } =
               await import("../../../features/providers/model/providerAccountControl");
-            return handleProviderAccountControl({ ...context, ...targetContext }, payload.action, payload.input);
+            return handleProviderAccountControl(
+              { ...context, ...targetContext },
+              payload.action,
+              payload.input,
+            );
           }
           if (payload.action === "organization.read") {
             const { buildMobileProjectDirectory } =
               await import("../../../features/projects/model/mobileProjectDirectory");
             const { offset = 0, limit = 30 } = payload.input;
-            if (Object.keys(payload.input).some((key) => !["offset", "limit"].includes(key)) ||
-              !Number.isSafeInteger(offset) || Number(offset) < 0 ||
-              !Number.isSafeInteger(limit) || Number(limit) < 1 || Number(limit) > 100)
+            if (
+              Object.keys(payload.input).some((key) => !["offset", "limit"].includes(key)) ||
+              !Number.isSafeInteger(offset) ||
+              Number(offset) < 0 ||
+              !Number.isSafeInteger(limit) ||
+              Number(limit) < 1 ||
+              Number(limit) > 100
+            )
               throw new Error("Invalid project directory pagination.");
             const directory = buildMobileProjectDirectory();
             const lock = getGroupLockView().lock;
-            const projects = directory.projects.filter((project) => !isProjectLockedIn(lock, project.cwd));
-            const start = Number(offset), count = Number(limit);
+            const projects = directory.projects.filter(
+              (project) => !isProjectLockedIn(lock, project.cwd),
+            );
+            const start = Number(offset),
+              count = Number(limit);
             return {
-              environmentId: context.environmentId, sourceThreadId: context.sourceThreadId,
+              environmentId: context.environmentId,
+              sourceThreadId: context.sourceThreadId,
               items: projects.slice(start, start + count).map(({ cwd, name }) => ({ cwd, name })),
-              total: projects.length, nextOffset: start + count < projects.length ? start + count : null,
+              total: projects.length,
+              nextOffset: start + count < projects.length ? start + count : null,
               coverage: "visible-desktop-projects",
             };
           }
-          throw new Error("This Assistant Room operation is not available without an explicit supported source.");
+          throw new Error(
+            "This Assistant Room operation is not available without an explicit supported source.",
+          );
         }
         if (payload.namespace === "control") {
           return orchestrator.handle(
@@ -732,15 +925,24 @@ export function useAppControlRequests({
             }),
         )
         .catch(console.error);
-    }).then((release) => {
-      if (disposed) release();
-      else { unlisten = release; activateRoomPrivacyProjection(); }
-    }, (error: unknown) => {
-      if (!disposed) {
-        console.warn("[bycoda] window listener for bycoda-control-request was not registered", error);
-        failRoomPrivacyProjection(error);
-      }
-    });
+    }).then(
+      (release) => {
+        if (disposed) release();
+        else {
+          unlisten = release;
+          activateRoomPrivacyProjection();
+        }
+      },
+      (error: unknown) => {
+        if (!disposed) {
+          console.warn(
+            "[bycoda] window listener for bycoda-control-request was not registered",
+            error,
+          );
+          failRoomPrivacyProjection(error);
+        }
+      },
+    );
     return () => {
       disposed = true;
       deactivateRoomPrivacyProjection();

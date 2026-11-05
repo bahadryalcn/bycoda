@@ -7,12 +7,12 @@ import {
   deliveryIsPending,
   useDeliveryProgress,
 } from "./DeliveryProgressNotice";
-import { queueState } from "../../connections/model/queueState";
+import { queueState } from "../../connections/public/queueState";
 import { useQueueHoldReason } from "../model/deliveryReview";
 import {
   takeOverSharedLocalQueue,
   useSharedQueueLeaseHeld,
-} from "../../connections/model/useSharedLocalQueues";
+} from "../../connections/public/useSharedLocalQueues";
 import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { useClearComposerDraft } from "../hooks/useClearComposerDraft";
 import { useMountedComposerClosure } from "../hooks/useMountedComposerClosure";
@@ -46,14 +46,14 @@ import { TranslationResultDialog } from "./TranslationResultDialog";
 import { releaseAttachments } from "../model/releaseAttachments";
 import { useLocale, useT } from "../../../shared/i18n";
 import type { QueueAction } from "../model/queueAction";
-import { useComposerSpelling } from "../../settings/model/composerSpelling";
+import { useComposerSpelling } from "../../settings/public/composerSpelling";
 import { ComposerTips } from "./ComposerTips";
 import { useWorkspaceCreation } from "../../workspaces/model/workspaceCreation";
 import {
   bundledHostWaitsForSessions,
   useBundledHostStatus,
-} from "../../connections/model/bundledHostStatus";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
+} from "../../connections/public/bundledHostStatus";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { WorkspaceCreationStatus } from "../../workspaces/ui/WorkspaceCreationStatus";
 import { SessionWorkspaceActions } from "../../workspaces/ui/SessionWorkspaceActions";
 import { WorkspaceRewindPreviewHost } from "../../workspaces/ui/WorkspaceRewindPreview";
@@ -122,7 +122,7 @@ import {
 import type { ContextUsage } from "../model/contextUsage";
 import type { Block } from "../model/session";
 import type { SessionUsage } from "../model/sessionUsage";
-import { peekProjectFiles } from "../../files/model/fileIndex";
+import { peekProjectFiles } from "../../files/public/fileIndex";
 import {
   fileMentionParts,
   mentionLabel,
@@ -130,11 +130,15 @@ import {
   replaceMentionToken,
   type MentionIndex,
   type MentionToken,
-} from "../../files/model/fileMentions";
+} from "../../files/public/fileMentions";
 import type { ProjectFile } from "../../../platform/tauri/fs";
 import { composeInboxMessage, type InboxComposerCard } from "../../inbox/model/githubTasks";
 import type { HandoffComposerCard } from "../model/handoff";
-import { isLocalProject, looksLikeProject, type RecentProject } from "../../projects/model/recents";
+import {
+  isLocalProject,
+  looksLikeProject,
+  type RecentProject,
+} from "../../projects/public/recents";
 import type {
   Attachment,
   HarnessId,
@@ -187,37 +191,37 @@ import { AccessPicker } from "./AccessPicker";
 import { ContextMeter } from "./ContextMeter";
 import { AttachmentChip } from "./AttachmentChip";
 import { QueuedMessageEditDialog } from "./QueuedMessageEditDialog";
-import { BranchPicker } from "../../source-control/ui/BranchPicker";
-import { WorktreePicker } from "../../source-control/ui/WorktreePicker";
+import { BranchPicker } from "../../source-control/public/BranchPicker";
+import { WorktreePicker } from "../../source-control/public/WorktreePicker";
 import {
   isWorkspaceModeShortcut,
   WorkspaceIdentity,
   WorkspacePicker,
 } from "../../workspace/ui/WorkspacePicker";
-import type { Worktree } from "../../source-control/model/worktrees";
-import { CwdPicker } from "../../projects/ui/CwdPicker";
+import type { Worktree } from "../../source-control";
+import { CwdPicker } from "../../projects/public/CwdPicker";
 import { FileMentionPicker } from "./FileMentionPicker";
 import { McpServerPicker } from "./McpServerPicker";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { InboxMiniCard } from "../../inbox/ui/InboxMiniCard";
 import { NoteMiniCard } from "../../notes/ui/NoteMiniCard";
 import { HandoffMiniCard } from "./HandoffMiniCard";
 import { ModelPicker } from "./ModelPicker";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
-import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
+import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import { QuestionForm } from "./QuestionForm";
 import { ComposerSuggestions } from "./ComposerSuggestions";
 import { SkillPicker } from "../../skills/ui/SkillPicker";
 import { pathKey, projectKey } from "../../../shared/lib/paths";
 import { consumeQuoteRequest, type QuoteRequest } from "../model/quoteDraft";
-import { useTabGroupLogos } from "../../projects/hooks/useTabGroupLogos";
-import { useProjectBranchesState } from "../../source-control/hooks/useProjectBranches";
+import { useTabGroupLogos } from "../../projects/public/useTabGroupLogos";
+import { useProjectBranchesState } from "../../source-control/public/useProjectBranches";
 import {
   keybindingPressed,
   loadNotesEnabled,
   subscribeNotesEnabled,
-} from "../../settings/model/settings";
+} from "../../settings/public/settings";
 import { isNoteMentionPath, type NoteComposerCard } from "../../notes";
 import { resolveTabGroupLogo } from "../../workspace/model/tabGroups";
 import { UsageLimitNotice } from "./UsageLimitNotice";
@@ -256,7 +260,13 @@ import {
   type SessionFolder,
 } from "../model/sessionFolders";
 import { organizationFoldersForProject } from "../model/sessionOrganizationOperations";
-import { cachedSessionOrganization, hydrateSessionOrganization, NATIVE_SESSION_ORGANIZATION_ACTIVE, subscribeSessionOrganization, unresolvedSessionOrganizationGestures } from "../model/sessionOrganizationStore";
+import {
+  cachedSessionOrganization,
+  hydrateSessionOrganization,
+  NATIVE_SESSION_ORGANIZATION_ACTIVE,
+  subscribeSessionOrganization,
+  unresolvedSessionOrganizationGestures,
+} from "../model/sessionOrganizationStore";
 import type { SessionOrganizationResult } from "../model/sessionOrganizationStore";
 import { listPinSagas } from "../model/sessionPinSaga";
 import { SessionFolderPicker } from "./SessionFolderPicker";
@@ -312,7 +322,6 @@ import {
 } from "./useComposerAttachments";
 import { useComposerFileDrop } from "./useComposerFileDrop";
 import { useComposerRegistrations } from "./useComposerRegistrations";
-
 type Props = {
   enabled?: boolean;
   focused: boolean;
@@ -432,7 +441,9 @@ type Props = {
   onStop?: () => void;
   onCompactContext?: (parentAdmission?: ParentAdmission) => boolean;
   onNewSession?: (options?: NewSessionOptions, parentAdmission?: ParentAdmission) => void;
-  onPlaceInFolder?: (target: SessionFolderTarget) => void | false | Promise<void | SessionOrganizationResult>;
+  onPlaceInFolder?: (
+    target: SessionFolderTarget,
+  ) => void | false | Promise<void | SessionOrganizationResult>;
   /** Open the picker of conversations Claude Code stored for this project. */
   onResumeProviderSession?: (parentAdmission?: ParentAdmission) => void;
   onDeleteQueuedMessage?: (messageId: string) => void;
@@ -463,7 +474,6 @@ type Props = {
   onEditingLastTurnChange?: (editing: boolean) => void;
   children?: ReactNode;
 };
-
 function MessageQueue({
   sessionId,
   parentSessionId,
@@ -713,7 +723,6 @@ function MessageQueue({
     !(delivery?.messageId === message.id && delivery.stage === "unknown") &&
     !hasMissingAttachment(message) &&
     (!busy || (steerSupported && message.intent !== "plan" && message.intent !== "orchestrate"));
-
   const startEdit = (message: QueuedMessage) => {
     if (!queueOwner.canMutate()) return;
     setEditingId(message.id);
@@ -724,7 +733,6 @@ function MessageQueue({
     setEditingId(undefined);
     onEditingChange?.();
   };
-
   return (
     <div className="px-2 text-(--ui-text-secondary)" data-message-queue data-usage-guide="queue">
       {queueClosed ? (
@@ -1048,7 +1056,6 @@ function MessageQueue({
     </div>
   );
 }
-
 export const Composer = memo(function Composer({
   enabled = true,
   focused,
@@ -1532,13 +1539,11 @@ export const Composer = memo(function Composer({
   );
   const groupLogos = useTabGroupLogos();
   const projectLogoPath = resolveTabGroupLogo(projectKey(cwd), groupLogos);
-
   useLayoutEffect(() => {
     slashRef.current = slash;
     mentionRef.current = mention;
     attachmentsRef.current = attachments;
   }, [slash, mention, attachments]);
-
   const mentionOpen =
     mention !== null && (looksLikeProject(executionCwd) || (!remote && notesEnabled));
   const tokens = useMemo(() => attachmentTokens(attachments), [attachments]);
@@ -1621,7 +1626,6 @@ export const Composer = memo(function Composer({
     mentionSelection.query === (mention?.query ?? "") && mentionSelection.cwd === cwd
       ? Math.max(0, Math.min(mentionSelection.index, rankedFiles.length - 1))
       : 0;
-
   /** Only the textarea's own text is state; files and cards are read at render. */
   const syncHasText = useCallback((text: string) => setHasText(text.trim().length > 0), []);
   const hasValue =
@@ -1631,7 +1635,6 @@ export const Composer = memo(function Composer({
     !!inboxCard ||
     !!noteCard ||
     !!handoffCard;
-
   // A leading mode command in the text shows the same pill as picking the mode.
   const operatorActive = operatorSelected || leadingMode?.name === OPERATOR_COMMAND.name;
   const orchestrationActive =
@@ -1641,7 +1644,6 @@ export const Composer = memo(function Composer({
   const workspaceActionBlocked =
     remoteWorkspaceCreationBlocked || (!draftActive && workspaceSendBlocked);
   const planActive = planSelected || leadingMode?.name === PLAN_COMMAND.name;
-
   /** Turning a mode off also drops its leading command from the text. */
   const clearLeadingMode = (name: string) => {
     if (!canMutateDraft()) return;
@@ -2021,13 +2023,19 @@ export const Composer = memo(function Composer({
       sessionFolderLoading.current = true;
       setSessionFolderPending(true);
       setSessionFolderError(null);
-      void hydrateSessionOrganization().then((state) => {
-        if (sessionFolderCwd.current !== cwd) return;
-        setSessionFolders(organizationFoldersForProject(state, cwd));
-        setSessionFolderOpen(true);
-      }).catch((error: unknown) => {
-        if (sessionFolderCwd.current === cwd) setSessionFolderError(String(error));
-      }).finally(() => { sessionFolderLoading.current = false; setSessionFolderPending(false); });
+      void hydrateSessionOrganization()
+        .then((state) => {
+          if (sessionFolderCwd.current !== cwd) return;
+          setSessionFolders(organizationFoldersForProject(state, cwd));
+          setSessionFolderOpen(true);
+        })
+        .catch((error: unknown) => {
+          if (sessionFolderCwd.current === cwd) setSessionFolderError(String(error));
+        })
+        .finally(() => {
+          sessionFolderLoading.current = false;
+          setSessionFolderPending(false);
+        });
       return;
     }
     setSessionFolders(loadSessionFolders(cwd));
@@ -2036,12 +2044,18 @@ export const Composer = memo(function Composer({
 
   useEffect(() => {
     if (!NATIVE_SESSION_ORGANIZATION_ACTIVE || !sessionFolderOpen) return;
-    return subscribeSessionOrganization(() => {
-      const snapshot = cachedSessionOrganization();
-      if (!snapshot) return;
-      try { setSessionFolders(organizationFoldersForProject(snapshot, cwd)); }
-      catch (error) { setSessionFolderError(String(error)); }
-    }, (error) => setSessionFolderError(String(error)));
+    return subscribeSessionOrganization(
+      () => {
+        const snapshot = cachedSessionOrganization();
+        if (!snapshot) return;
+        try {
+          setSessionFolders(organizationFoldersForProject(snapshot, cwd));
+        } catch (error) {
+          setSessionFolderError(String(error));
+        }
+      },
+      (error) => setSessionFolderError(String(error)),
+    );
   }, [cwd, sessionFolderOpen]);
 
   useEffect(() => {
@@ -3645,7 +3659,12 @@ export const Composer = memo(function Composer({
             <SessionFolderPicker
               folders={sessionFolders}
               onPick={(target) => {
-                if (!canMutateDraft() || sessionFolderLoading.current || sessionFolderMutationBlocked.current) return;
+                if (
+                  !canMutateDraft() ||
+                  sessionFolderLoading.current ||
+                  sessionFolderMutationBlocked.current
+                )
+                  return;
                 sessionFolderLoading.current = true;
                 setSessionFolderPending(true);
                 setSessionFolderSaving(true);
@@ -3655,7 +3674,9 @@ export const Composer = memo(function Composer({
                   if (result === false) return;
                   if (result && result.state === "unknown") {
                     sessionFolderMutationBlocked.current = true;
-                    setSessionFolderError(`Folder change outcome is unknown: ${result.operationId}`);
+                    setSessionFolderError(
+                      `Folder change outcome is unknown: ${result.operationId}`,
+                    );
                     return;
                   }
                   if (result && result.state === "conflict") {
@@ -3664,7 +3685,9 @@ export const Composer = memo(function Composer({
                   }
                   if (result && result.state === "applied-unavailable") {
                     sessionFolderMutationBlocked.current = true;
-                    setSessionFolderError(`Folder change was applied, but refresh failed: ${result.operationId}`);
+                    setSessionFolderError(
+                      `Folder change was applied, but refresh failed: ${result.operationId}`,
+                    );
                   }
                   setSessionFolderOpen(false);
                   setSessionFolderSelected(true);
@@ -3681,11 +3704,13 @@ export const Composer = memo(function Composer({
                     el.setSelectionRange(cursor, cursor);
                   }
                   requestAnimationFrame(() => el.focus());
-                })().catch((error: unknown) => setSessionFolderError(String(error))).finally(() => {
-                  sessionFolderLoading.current = false;
-                  setSessionFolderPending(false);
-                  setSessionFolderSaving(false);
-                });
+                })()
+                  .catch((error: unknown) => setSessionFolderError(String(error)))
+                  .finally(() => {
+                    sessionFolderLoading.current = false;
+                    setSessionFolderPending(false);
+                    setSessionFolderSaving(false);
+                  });
               }}
               onDismiss={() => {
                 setSessionFolderOpen(false);
@@ -3827,21 +3852,58 @@ export const Composer = memo(function Composer({
           ) : null}
 
           {pasteError ? (
-            <Alert tone="danger" role="alert" action={<MicrophoneRecoveryAction message={pasteError} />}>
+            <Alert
+              tone="danger"
+              role="alert"
+              action={<MicrophoneRecoveryAction message={pasteError} />}
+            >
               {pasteError}
             </Alert>
           ) : null}
-          {sessionFolderError ? <Alert tone="danger" action={sessionFolderMutationBlocked.current ? <Button variant="ghost" size="sm" onClick={() => {
-            void unresolvedSessionOrganizationGestures().then(async (pending) => {
-              if (pending.length) { setSessionFolderError(`Folder change outcome is unknown: ${pending[0].operationId}`); return; }
-              const remaining = (await listPinSagas()).filter((entry) => entry.state !== "applied" && entry.state !== "accepted");
-              if (remaining.length) { setSessionFolderError(`Pin change needs review in the sidebar: ${remaining[0].id}`); return; }
-              await hydrateSessionOrganization();
-              sessionFolderMutationBlocked.current = false;
-              setSessionFolderError("Folder state refreshed. Review your change.");
-            }).catch((error: unknown) => setSessionFolderError(String(error)));
-          }}>{t("Check again")}</Button> : undefined}>{sessionFolderError}</Alert> : null}
-          {sessionFolderPending ? <Alert>{sessionFolderSaving ? t("Saving…") : t("Loading folders…")}</Alert> : null}
+          {sessionFolderError ? (
+            <Alert
+              tone="danger"
+              action={
+                sessionFolderMutationBlocked.current ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      void unresolvedSessionOrganizationGestures()
+                        .then(async (pending) => {
+                          if (pending.length) {
+                            setSessionFolderError(
+                              `Folder change outcome is unknown: ${pending[0].operationId}`,
+                            );
+                            return;
+                          }
+                          const remaining = (await listPinSagas()).filter(
+                            (entry) => entry.state !== "applied" && entry.state !== "accepted",
+                          );
+                          if (remaining.length) {
+                            setSessionFolderError(
+                              `Pin change needs review in the sidebar: ${remaining[0].id}`,
+                            );
+                            return;
+                          }
+                          await hydrateSessionOrganization();
+                          sessionFolderMutationBlocked.current = false;
+                          setSessionFolderError("Folder state refreshed. Review your change.");
+                        })
+                        .catch((error: unknown) => setSessionFolderError(String(error)));
+                    }}
+                  >
+                    {t("Check again")}
+                  </Button>
+                ) : undefined
+              }
+            >
+              {sessionFolderError}
+            </Alert>
+          ) : null}
+          {sessionFolderPending ? (
+            <Alert>{sessionFolderSaving ? t("Saving…") : t("Loading folders…")}</Alert>
+          ) : null}
 
           {inboxCard ? (
             <InboxMiniCard

@@ -137,7 +137,10 @@ type Shared = {
   onCompactContext: (sessionId: string) => boolean;
   onRewindMessage?: SessionPaneProps["onRewindMessage"];
   onNewSession?: SessionPaneProps["onNewSession"];
-  onPlaceSessionInFolder: (sessionId: string, target: SessionFolderTarget) => void | Promise<void | SessionOrganizationResult>;
+  onPlaceSessionInFolder: (
+    sessionId: string,
+    target: SessionFolderTarget,
+  ) => void | Promise<void | SessionOrganizationResult>;
   onResumeProviderSession?: (sessionId: string) => void;
   onDeleteQueuedMessage: (sessionId: string, messageId: string) => void;
   onEditQueuedMessage: (

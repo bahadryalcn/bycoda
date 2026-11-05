@@ -129,11 +129,14 @@ export class HostAssistantManualSessions {
         return "This conversation retains a canonical unattended-run author.";
       return undefined;
     }
-    const crewV2 = await this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='crew_runs_v2'").get();
+    const crewV2 = await this.store.db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='crew_runs_v2'")
+      .get();
     const crew = await this.store.db
       .prepare(
-        crewV2 ? "SELECT 1 FROM crew_runs_v2 WHERE coordinator_session_id=? LIMIT 1" :
-          "SELECT 1 FROM metadata,json_tree(metadata.value,'$.runs') node WHERE metadata.key='crews.v1' AND node.key='coordinatorSessionId' AND node.value=? LIMIT 1",
+        crewV2
+          ? "SELECT 1 FROM crew_runs_v2 WHERE coordinator_session_id=? LIMIT 1"
+          : "SELECT 1 FROM metadata,json_tree(metadata.value,'$.runs') node WHERE metadata.key='crews.v1' AND node.key='coordinatorSessionId' AND node.value=? LIMIT 1",
       )
       .get(record.session.id);
     if (crew) return "This conversation is a canonical Crew coordinator.";
@@ -199,11 +202,14 @@ export class HostAssistantManualSessions {
     if (!ids.length) return [];
     const placeholders = ids.map(() => "?").join(",");
     const owners = new Map<string, string>();
-    const crewV2 = await this.store.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='crew_runs_v2'").get();
+    const crewV2 = await this.store.db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='crew_runs_v2'")
+      .get();
     const crew = await this.store.db
       .prepare(
-        crewV2 ? `SELECT DISTINCT coordinator_session_id AS id FROM crew_runs_v2 WHERE coordinator_session_id IN (${placeholders})` :
-          `SELECT DISTINCT node.value AS id FROM metadata,json_tree(metadata.value,'$.runs') node WHERE metadata.key='crews.v1' AND node.key='coordinatorSessionId' AND node.value IN (${placeholders})`,
+        crewV2
+          ? `SELECT DISTINCT coordinator_session_id AS id FROM crew_runs_v2 WHERE coordinator_session_id IN (${placeholders})`
+          : `SELECT DISTINCT node.value AS id FROM metadata,json_tree(metadata.value,'$.runs') node WHERE metadata.key='crews.v1' AND node.key='coordinatorSessionId' AND node.value IN (${placeholders})`,
       )
       .all(...ids);
     for (const row of crew)

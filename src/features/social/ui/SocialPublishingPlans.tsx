@@ -10,12 +10,15 @@ import { SocialBusyContext as SocialLockContext } from "./socialContext";
 import { TextField } from "../../../shared/ui/TextField";
 import { NativeSearchableSelect } from "../../../shared/ui/NativeSearchableSelect";
 import { Button } from "../../../shared/ui/Button";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
+import { SocialPublishingPlanRow } from "./SocialPublishingPlanRow";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { Stepper } from "../../../shared/ui/Stepper";
 import { Sparkles } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { socialRows } from "../model/socialWorkspace";
+import { socialQueryScope } from "../model/socialQuery";
 import type { SocialPublishingPlan } from "../model/social";
 import {
   PLAN_STEP_IDS,
@@ -52,7 +55,6 @@ import {
 } from "./socialShared";
 import "./social-programs.css";
 import "./social-plans.css";
-
 const defaultSchedule = (): PublishingScheduleFields => ({
   timeZone: localPublishingTimeZone(),
   startTime: "09:00",
@@ -60,7 +62,6 @@ const defaultSchedule = (): PublishingScheduleFields => ({
   minHours: "2",
   maxHours: "5",
 });
-
 export function PublishingPlans({
   client,
   snapshot,
@@ -774,36 +775,26 @@ export function PublishingPlans({
       ) : (
         <div className="social-columns">
           <section aria-label={t("Publishing plans")}>
-            {plans.map((plan) => (
-              <Button
-                disabled={socialLocked}
-                type="button"
-                variant="item"
-                layout="stacked"
-                key={plan.id}
-                className="social-row"
-                aria-pressed={plan.id === selected?.id}
-                onClick={() => {
-                  setSelectedId(plan.id);
-                  setReviewed(undefined);
-                }}
-              >
-                <strong>{plan.name}</strong>
-                <StatusBadge status={state(plan)} />
-                <span>
-                  {snapshot.accounts.find((item) => item.id === plan.accountId)?.name ??
-                    t("Account removed")}
-                </span>
-                <small>
-                  {t("{p0} items left", {
-                    p0: Math.max(0, plan.campaigns.length - plan.nextIndex),
-                  })}
-                  {plan.nextRunAt
-                    ? ` · ${publishingPlanTime(plan.nextRunAt, plan.schedule.timeZone)}`
-                    : ""}
-                </small>
-              </Button>
-            ))}
+            <ContinuousList
+              items={plans}
+              itemKey={(plan) => plan.id}
+              stateKey={`social-plans:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}`}
+              requiredKey={selected?.id}
+              estimateSize={96}
+              renderItem={(plan) => (
+                <SocialPublishingPlanRow
+                  plan={plan}
+                  accountName={snapshot.accounts.find((item) => item.id === plan.accountId)?.name}
+                  status={state(plan)}
+                  selected={plan.id === selected?.id}
+                  disabled={socialLocked}
+                  onSelect={() => {
+                    setSelectedId(plan.id);
+                    setReviewed(undefined);
+                  }}
+                />
+              )}
+            />
           </section>
           <section>
             {selected && nextAction ? (

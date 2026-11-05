@@ -156,12 +156,63 @@
   }
 }
 
-.tools-hub { flex-direction: column; background: var(--ui-workspace-canvas-surface); }
-.tools-hub-header { display: flex; align-items: center; gap: 6px; padding: 4px 8px; min-inline-size: 0; border-block-end: 1px solid var(--color-stroke); }
-.tools-hub-title { font-size: var(--ui-font-caption); color: var(--ui-text-secondary); white-space: nowrap; }
-.tools-hub-identity { inline-size: min(460px, 60%); min-inline-size: 0; max-inline-size: min(460px, 60%); margin-inline-start: auto; }
-.tools-hub-body, .tools-hub-pane { display: flex; flex: 1; min-inline-size: 0; min-block-size: 0; overflow: hidden; }
-.tools-hub-pane[hidden] { display: none; }
-.tools-hub-empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px; color: var(--ui-text-secondary); font-size: var(--ui-font-caption); }
-.tools-hub-empty strong { color: var(--color-content); max-inline-size: 100%; overflow-wrap: anywhere; font-weight: 500; }
-@media (width < 540px) { .tools-hub-title { display: none; } .tools-hub-identity { max-inline-size: none; flex: 1; } }
+.tools-hub {
+  flex-direction: column;
+  background: var(--ui-workspace-canvas-surface);
+}
+.tools-hub-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  min-inline-size: 0;
+  border-block-end: 1px solid var(--color-stroke);
+}
+.tools-hub-title {
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+  white-space: nowrap;
+}
+.tools-hub-identity {
+  inline-size: min(460px, 60%);
+  min-inline-size: 0;
+  max-inline-size: min(460px, 60%);
+  margin-inline-start: auto;
+}
+.tools-hub-body,
+.tools-hub-pane {
+  display: flex;
+  flex: 1;
+  min-inline-size: 0;
+  min-block-size: 0;
+  overflow: hidden;
+}
+.tools-hub-pane[hidden] {
+  display: none;
+}
+.tools-hub-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.tools-hub-empty strong {
+  color: var(--color-content);
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+}
+@media (width < 540px) {
+  .tools-hub-title {
+    display: none;
+  }
+  .tools-hub-identity {
+    max-inline-size: none;
+    flex: 1;
+  }
+}

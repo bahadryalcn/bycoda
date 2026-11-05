@@ -4,8 +4,14 @@ vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => environment.native }));
 import { createSyncWindowOwner } from "./syncWindowOwner";
 import { isTauri } from "@tauri-apps/api/core";
 
-beforeEach(() => { vi.stubGlobal("navigator", {}); });
-afterEach(() => { environment.native = false; vi.useRealTimers(); vi.unstubAllGlobals(); });
+beforeEach(() => {
+  vi.stubGlobal("navigator", {});
+});
+afterEach(() => {
+  environment.native = false;
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 it("runs one background owner and transfers ownership after its window closes", async () => {
   vi.useFakeTimers();
@@ -70,7 +76,9 @@ it("does not grant native sync ownership when the lock service is unavailable", 
   const unavailable = createSyncWindowOwner(acquired, undefined);
   expect(unavailable.isOwner()).toBe(false);
   const denied = createSyncWindowOwner(acquired, {
-    request: async () => { throw new Error("Denied"); },
+    request: async () => {
+      throw new Error("Denied");
+    },
   } as unknown as LockManager);
   await Promise.resolve();
   await Promise.resolve();

@@ -110,7 +110,8 @@ let device: DeviceSummary = {
   physical: false,
 };
 if (new URLSearchParams(location.search).get("deviceName") === "long") {
-  device.name = "Development emulator with a very long accessible device name 日本語 العربية Türkçe 0123456789";
+  device.name =
+    "Development emulator with a very long accessible device name 日本語 العربية Türkçe 0123456789";
 }
 let deviceLease: { deviceId: string; leaseId: string; expiresAt: number } | undefined;
 const toolMachines: RemoteMachine[] = [
@@ -389,7 +390,12 @@ export async function hostFeatureRequest<T>(
       result = deviceStatus;
       break;
     case "devices.list":
-      result = { devices: new URLSearchParams(location.search).has("devicesReady") ? [device, { ...device, id: "second-emulator", name: "Second Android emulator" }] : [device], errors: [] };
+      result = {
+        devices: new URLSearchParams(location.search).has("devicesReady")
+          ? [device, { ...device, id: "second-emulator", name: "Second Android emulator" }]
+          : [device],
+        errors: [],
+      };
       break;
     case "devices.boot":
       device = { ...device, booted: true };
@@ -403,13 +409,20 @@ export async function hostFeatureRequest<T>(
       result = { deviceId: params.deviceId, busy: fixtureControl.deviceControlBusy };
       break;
     case "devices.control.claim":
-      if (fixtureControl.deviceControlBusy) throw new Error("Device control held by another controller");
-      deviceLease = { deviceId: String(params.deviceId), leaseId: `fixture-device-lease-${calls.length}`, expiresAt: Date.now() + fixtureControl.deviceLeaseMs };
+      if (fixtureControl.deviceControlBusy)
+        throw new Error("Device control held by another controller");
+      deviceLease = {
+        deviceId: String(params.deviceId),
+        leaseId: `fixture-device-lease-${calls.length}`,
+        expiresAt: Date.now() + fixtureControl.deviceLeaseMs,
+      };
       result = deviceLease;
       break;
     case "devices.control.renew":
-      if (fixtureControl.deviceRenewDelayMs) await new Promise((resolve) => setTimeout(resolve, fixtureControl.deviceRenewDelayMs));
-      if (!deviceLease || deviceLease.expiresAt <= Date.now()) throw new Error("Device control lease expired");
+      if (fixtureControl.deviceRenewDelayMs)
+        await new Promise((resolve) => setTimeout(resolve, fixtureControl.deviceRenewDelayMs));
+      if (!deviceLease || deviceLease.expiresAt <= Date.now())
+        throw new Error("Device control lease expired");
       deviceLease = { ...deviceLease, expiresAt: Date.now() + fixtureControl.deviceLeaseMs };
       result = deviceLease;
       break;
@@ -418,14 +431,49 @@ export async function hostFeatureRequest<T>(
       result = { released: true };
       break;
     case "devices.inspect":
-      result = { deviceId: params.deviceId, inspectionId: "fixture-inspection", inspectedAt: new Date().toISOString(), raw: "Fixture native accessibility snapshot", frame: frame(), coordinateSpace: "pixels", viewport: { width: 360, height: 640 }, nodes: [
-        { id: "fixture-title", label: "Device preview", role: "TextView", bounds: { x: 24, y: 85, width: 312, height: 75 }, enabled: true, clickable: false },
-        { id: "fixture-open", label: "Open workspace", role: "LinearLayout", bounds: { x: 24, y: 190, width: 312, height: 76 }, enabled: true, clickable: true },
-        { id: "fixture-open-label", label: "Open workspace", role: "TextView", bounds: { x: 30, y: 205, width: 300, height: 30 }, enabled: true, clickable: false },
-      ] };
+      result = {
+        deviceId: params.deviceId,
+        inspectionId: "fixture-inspection",
+        inspectedAt: new Date().toISOString(),
+        raw: "Fixture native accessibility snapshot",
+        frame: frame(),
+        coordinateSpace: "pixels",
+        viewport: { width: 360, height: 640 },
+        nodes: [
+          {
+            id: "fixture-title",
+            label: "Device preview",
+            role: "TextView",
+            bounds: { x: 24, y: 85, width: 312, height: 75 },
+            enabled: true,
+            clickable: false,
+          },
+          {
+            id: "fixture-open",
+            label: "Open workspace",
+            role: "LinearLayout",
+            bounds: { x: 24, y: 190, width: 312, height: 76 },
+            enabled: true,
+            clickable: true,
+          },
+          {
+            id: "fixture-open-label",
+            label: "Open workspace",
+            role: "TextView",
+            bounds: { x: 30, y: 205, width: 300, height: 30 },
+            enabled: true,
+            clickable: false,
+          },
+        ],
+      };
       break;
     case "devices.action":
-      if (!deviceLease || deviceLease.leaseId !== params.leaseId || deviceLease.expiresAt <= Date.now()) throw new Error("Device control lease expired");
+      if (
+        !deviceLease ||
+        deviceLease.leaseId !== params.leaseId ||
+        deviceLease.expiresAt <= Date.now()
+      )
+        throw new Error("Device control lease expired");
       result = "Device action completed";
       break;
     case "browser.claim":

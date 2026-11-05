@@ -7,7 +7,7 @@ import {
   isSearchTool,
   isWeakToolTitle,
 } from "../../../integrations/harness/core/preview";
-import { leafName } from "../../files/model/fileName";
+import { leafName } from "../../files/public/fileName";
 import { displayPath, pathKey, resolveWorkspacePath } from "../../../shared/lib/paths";
 import { isTurnInterruptMessage } from "./inFlight";
 import { isSessionErrorBlock } from "./sessionIssue";

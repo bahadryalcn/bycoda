@@ -5,9 +5,9 @@ import {
   type GitChangeScope,
   type GitDiffIndex,
 } from "../../../platform/tauri/fs";
-import { invalidateWatchedFiles } from "../../files/model/fileWatch";
-import { isRemoteProjectPath } from "../../projects/model/recents";
-import { remotePollDue, reportRemoteLoad } from "../../connections/model/remoteHealth";
+import { invalidateWatchedFiles } from "../../files/public/fileWatch";
+import { isRemoteProjectPath } from "../../projects/public/recents";
+import { remotePollDue, reportRemoteLoad } from "../../connections/public/remoteHealth";
 import { sameConflicts } from "../model/conflictSection";
 import { gitPanelRuntime } from "../model/gitPanelState";
 import {

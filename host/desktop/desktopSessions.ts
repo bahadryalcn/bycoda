@@ -1013,13 +1013,20 @@ export class DesktopSessions {
     const generation = this.metadataGeneration;
     if (signal) {
       const rows = await this.sessionReadProcesses.read<DesktopStampRow[]>(
-        { kind: "desktop", paths: this.paths(), platform: this.platform, method: "stamp", sessionId: id }, signal,
+        {
+          kind: "desktop",
+          paths: this.paths(),
+          platform: this.platform,
+          method: "stamp",
+          sessionId: id,
+        },
+        signal,
       );
       this.assertReadGeneration(generation);
       signal.throwIfAborted();
       return this.stampFromRows(id, rows);
     }
-    
+
     const now = Date.now();
     const cached = this.stamps.get(id);
     if (cached && now - cached.at < maxAgeMs) return this.stampFromRows(id, cached.rows);
@@ -1127,7 +1134,14 @@ export class DesktopSessions {
     if (signal) {
       const generation = this.metadataGeneration;
       const record = await this.sessionReadProcesses.read<DesktopMetadataRecord | undefined>(
-        { kind: "desktop", paths: this.paths(), platform: this.platform, method: "metadata", sessionId: id }, signal,
+        {
+          kind: "desktop",
+          paths: this.paths(),
+          platform: this.platform,
+          method: "metadata",
+          sessionId: id,
+        },
+        signal,
       );
       this.assertReadGeneration(generation);
       signal.throwIfAborted();
@@ -1302,24 +1316,49 @@ export class DesktopSessions {
     const generation = this.metadataGeneration;
     if (signal) {
       const record = await this.sessionReadProcesses.read<DesktopSnapshotRecord | undefined>(
-        { kind: "desktop", paths: this.paths(), platform: this.platform, method: "snapshot", sessionId: id, projectId, expectedProjectCwd }, signal,
+        {
+          kind: "desktop",
+          paths: this.paths(),
+          platform: this.platform,
+          method: "snapshot",
+          sessionId: id,
+          projectId,
+          expectedProjectCwd,
+        },
+        signal,
       );
       this.assertReadGeneration(generation);
       signal.throwIfAborted();
       if (!record) return undefined;
       const rows = await this.sessionReadProcesses.read<DesktopStampRow[]>(
-        { kind: "desktop", paths: this.paths(), platform: this.platform, method: "stamp", sessionId: id }, signal,
+        {
+          kind: "desktop",
+          paths: this.paths(),
+          platform: this.platform,
+          method: "stamp",
+          sessionId: id,
+        },
+        signal,
       );
-      const owner = rows.reduce<DesktopStampRow | undefined>((old, row) =>
-        !old || ownsBefore(row.createdAt, old.createdAt) ? row : old, undefined);
+      const owner = rows.reduce<DesktopStampRow | undefined>(
+        (old, row) => (!old || ownsBefore(row.createdAt, old.createdAt) ? row : old),
+        undefined,
+      );
       this.assertReadGeneration(generation);
       signal.throwIfAborted();
-      if (!owner || owner.updatedAt !== record.value.revision ||
-          (owner.createdAt || owner.updatedAt) !== record.value.createdAt)
+      if (
+        !owner ||
+        owner.updatedAt !== record.value.revision ||
+        (owner.createdAt || owner.updatedAt) !== record.value.createdAt
+      )
         throw new Error("Desktop session source changed while reading.");
       const running = this.isRunning(id, record.stored);
       const { busy: _busy, ...session } = record.value.session;
-      return { ...record.value, status: running ? "running" : "idle", session: { ...session, ...(running ? { busy: true } : {}) } };
+      return {
+        ...record.value,
+        status: running ? "running" : "idle",
+        session: { ...session, ...(running ? { busy: true } : {}) },
+      };
     }
     const key = JSON.stringify([id, projectId, expectedProjectCwd]);
     let flight = this.snapshotFlights.get(key);

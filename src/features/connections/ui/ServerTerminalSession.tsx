@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   APPEARANCE_PREFERENCES_EVENT,
   loadAppearancePreferences,
-} from "../../settings/model/appearancePreferences";
+} from "../../settings/public/appearancePreferences";
 import { StatusBadge } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";

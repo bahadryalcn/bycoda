@@ -397,7 +397,9 @@ export async function commitQuit(id: number): Promise<void> {
  * A quit that stopped part-way because another window could not save. This
  * window is staying open, so it must go back to persisting on unload.
  */
-let transferredWindowState: { live: LiveWorkspace | null; boot: ResumedWorkspace | null } | undefined;
+let transferredWindowState:
+  | { live: LiveWorkspace | null; boot: ResumedWorkspace | null }
+  | undefined;
 
 export function abortQuit(): void {
   quitting = false;

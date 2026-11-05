@@ -149,11 +149,14 @@ it("loads only the selected summary's full body and ignores a late previous sele
     throw new Error(command);
   });
   await render();
+  await vi.waitFor(() =>
+    expect(container.querySelectorAll("button[data-note-id]").length).toBeGreaterThan(0),
+  );
   expect(container.querySelector('[aria-label="Note title"]')).toBeNull();
   expect(invoke.mock.calls.filter(([command]) => command === "notes_upsert")).toHaveLength(0);
-  const otherCard = [
-    ...container.querySelectorAll<HTMLButtonElement>("li button[data-note-id]"),
-  ].find((node) => node.textContent?.includes("Other note"))!;
+  const otherCard = [...container.querySelectorAll<HTMLButtonElement>("button[data-note-id]")].find(
+    (node) => node.textContent?.includes("Other note"),
+  )!;
   await act(async () => otherCard.click());
   expect(container.querySelector<HTMLInputElement>('[aria-label="Note title"]')?.value).toBe(
     "Other note",
@@ -204,7 +207,7 @@ it("keeps detail retry focused with local pending feedback and ignores duplicate
 
 // Renders and re-filters a 1,000-row library under jsdom; it passes alone but full-suite worker
 // contention can exceed the 5s default, so the budget is explicit rather than weakening assertions.
-it("bounds a thousand-note library, preserves paging focus and reveals a selected last note after filtering", async () => {
+it("bounds a thousand-note library and preserves focus and selected identity without pagination", async () => {
   const all = Array.from({ length: 1_000 }, (_, index) => ({
     ...stored,
     id: `library-${index}`,
@@ -223,9 +226,20 @@ it("bounds a thousand-note library, preserves paging focus and reveals a selecte
     if (command === "notes_search") return [];
     throw new Error(command);
   });
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.hasAttribute("data-index") ? 64 : 480;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(640);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
   await render();
-  expect(container.querySelectorAll("li button[data-note-id]")).toHaveLength(32);
-  const boundary = [...container.querySelectorAll<HTMLButtonElement>("li button[data-note-id]")].at(
+  await vi.waitFor(() =>
+    expect(container.querySelectorAll("button[data-note-id]").length).toBeGreaterThan(0),
+  );
+  expect(container.querySelectorAll("[data-note-id]").length).toBeLessThan(64);
+  const boundary = [...container.querySelectorAll<HTMLButtonElement>("button[data-note-id]")].at(
     -1,
   )!;
   await act(async () =>
@@ -237,16 +251,13 @@ it("bounds a thousand-note library, preserves paging focus and reveals a selecte
       }),
     ),
   );
-  expect(container.querySelectorAll("li button[data-note-id]")).toHaveLength(32);
-  expect(container.querySelector('[aria-current="true"]')?.textContent).toContain("Item 0032");
+  expect(container.querySelectorAll("[data-note-id]").length).toBeLessThan(64);
+  const nextIndex = Number(boundary.dataset.noteId?.replace("library-", "")) + 1;
+  expect(container.querySelector('[aria-current="true"]')?.textContent).toContain(
+    `Item ${String(nextIndex).padStart(4, "0")}`,
+  );
   expect(document.activeElement).toBe(container.querySelector('[aria-current="true"]'));
-  const next = [
-    ...container.querySelectorAll<HTMLButtonElement>(".note-library-pages button"),
-  ].find((node) => node.textContent === "Next page")!;
-  next.focus();
-  await act(async () => next.click());
-  expect(document.activeElement).toBe(next);
-  expect(container.querySelectorAll("li button[data-note-id]")).toHaveLength(32);
+  expect(container.querySelector(".note-library-pages")).toBeNull();
   const filter = container.querySelector<HTMLInputElement>('[aria-label="Filter notes"]')!;
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!.call(
@@ -255,9 +266,9 @@ it("bounds a thousand-note library, preserves paging focus and reveals a selecte
     );
     filter.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  expect(container.querySelectorAll("li button[data-note-id]")).toHaveLength(1);
+  expect(container.querySelectorAll("[data-note-id]")).toHaveLength(1);
   await act(async () =>
-    container.querySelector<HTMLButtonElement>("li button[data-note-id]")!.click(),
+    container.querySelector<HTMLButtonElement>("button[data-note-id]")!.click(),
   );
   expect(container.querySelector<HTMLInputElement>('[aria-label="Note title"]')?.value).toBe(
     "Final library item",
@@ -266,7 +277,7 @@ it("bounds a thousand-note library, preserves paging focus and reveals a selecte
     (node) => node.textContent === "Clear filters",
   )!;
   await act(async () => clear.click());
-  expect(container.querySelectorAll("li button[data-note-id]").length).toBeLessThanOrEqual(32);
+  expect(container.querySelectorAll("[data-note-id]").length).toBeLessThan(64);
   expect(container.querySelector('[aria-current="true"]')?.textContent).toContain(
     "Final library item",
   );
@@ -294,7 +305,7 @@ it("finds text beyond summaries with native search and retains the full selected
   });
   await act(async () => vi.advanceTimersByTimeAsync(150));
   expect(invoke).toHaveBeenCalledWith("notes_search", { query: "Needle beyond preview" });
-  expect(container.querySelectorAll("li button[data-note-id]")).toHaveLength(1);
+  expect(container.querySelectorAll("button[data-note-id]")).toHaveLength(1);
   expect(container.textContent).toContain("Needle beyond preview");
   expect(invoke.mock.calls.some(([command]) => command === "notes_list")).toBe(false);
 });
@@ -769,12 +780,7 @@ it("moves the existing note and keeps its content when reopened", async () => {
   });
   expect(projectButton()?.textContent).toContain("portognjeeen");
   // The library names the project once, on the group heading above the active note.
-  expect(
-    container
-      .querySelector('li [aria-current="true"]')
-      ?.closest("section")
-      ?.querySelector(".note-group-heading")?.textContent,
-  ).toContain("portognjeeen");
+  expect(container.querySelector(".note-group-heading")?.textContent).toContain("portognjeeen");
   expect(onClose).not.toHaveBeenCalled();
   await act(async () => root.unmount());
   root = createRoot(container);
@@ -860,9 +866,9 @@ it("keeps newer edits after reopening a note during a project move", async () =>
     return result;
   });
   const selectNote = async (title: string) => {
-    const button = [
-      ...container.querySelectorAll<HTMLButtonElement>("li button[data-note-id]"),
-    ].find((item) => item.textContent?.includes(title));
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button[data-note-id]")].find(
+      (item) => item.textContent?.includes(title),
+    );
     expect(button).toBeDefined();
     await act(async () => button!.click());
   };
@@ -912,7 +918,7 @@ it.each(["title", "body", "tags"] as const)(
     });
     const selectNote = async (title: string) => {
       const button = [
-        ...container.querySelectorAll<HTMLButtonElement>("li button[data-note-id]"),
+        ...container.querySelectorAll<HTMLButtonElement>("button[data-note-id]"),
       ].find((item) => item.textContent?.includes(title));
       expect(button).toBeDefined();
       await act(async () => button!.click());
@@ -1033,9 +1039,9 @@ it("keeps a completed move after returning to the note while it saves", async ()
     return save(command, args);
   });
   const selectNote = async (title: string) => {
-    const button = [
-      ...container.querySelectorAll<HTMLButtonElement>("li button[data-note-id]"),
-    ].find((item) => item.textContent?.includes(title));
+    const button = [...container.querySelectorAll<HTMLButtonElement>("button[data-note-id]")].find(
+      (item) => item.textContent?.includes(title),
+    );
     expect(button).toBeDefined();
     await act(async () => button!.click());
   };
@@ -1311,7 +1317,7 @@ it("restores failed edits when switching away and returning to the note", async 
     return save(command, args);
   });
   const select = async (title: string) => {
-    const item = [...container.querySelectorAll<HTMLButtonElement>("li button[data-note-id]")].find(
+    const item = [...container.querySelectorAll<HTMLButtonElement>("button[data-note-id]")].find(
       (entry) => entry.textContent?.includes(title),
     )!;
     await act(async () => item.click());

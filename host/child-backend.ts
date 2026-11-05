@@ -1281,10 +1281,11 @@ export class HostChildBackend implements ChildBackend {
         check();
         // Helpers without an authoritative session must not inherit any access.
         if (error instanceof ProviderStartupCancelled) throw error;
-        if (this.reportGrantWarning(sessionId, group)) console.warn(
-          `Session ${group} tool access was not granted to the provider for ${sessionId}:`,
-          error,
-        );
+        if (this.reportGrantWarning(sessionId, group))
+          console.warn(
+            `Session ${group} tool access was not granted to the provider for ${sessionId}:`,
+            error,
+          );
         return undefined;
       }
     })();

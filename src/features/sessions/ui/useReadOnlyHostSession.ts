@@ -4,10 +4,10 @@ import {
   loadRemoteHistoryPage,
   loadRemoteSession,
   sessionAccessForMachine,
-} from "../../connections/model/connections";
-import type { HostSession } from "../../connections/model/protocol";
-import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
-import { sessionExecutionClient } from "../../connections/model/sessionExecutionClient";
+} from "../../connections/public/connections";
+import type { HostSession } from "../../connections";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
+import { sessionExecutionClient } from "../../connections/public/sessionExecutionClient";
 import { getGroupLockView, subscribeGroupLock } from "../../group-lock/model/groupLock";
 import {
   assertReferenceProjectVisible,
@@ -55,11 +55,13 @@ export function useReadOnlyHostSession(shell: Session, visible: boolean) {
       if (!current()) return;
       setState((previous) => {
         if (
-          previous.key === key && previous.privacy === privacy &&
+          previous.key === key &&
+          previous.privacy === privacy &&
           (Object.keys(patch) as (keyof ReadState)[]).every((field) =>
             Object.is(previous[field], patch[field]),
           )
-        ) return previous;
+        )
+          return previous;
         return { ...previous, key, privacy, ...patch };
       });
     };

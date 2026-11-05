@@ -52,7 +52,9 @@ export const QUICK_COMPOSER_CATALOG_REQUEST_EVENT = "quick_composer_catalog_requ
 export const QUICK_COMPOSER_CATALOG_EVENT = "quick_composer_catalog";
 
 let catalogGeneration = 0;
-let catalogRequest: { requestId: string; generation: number; started: number; correlated: boolean } | undefined;
+let catalogRequest:
+  | { requestId: string; generation: number; started: number; correlated: boolean }
+  | undefined;
 let catalogTimers: ReturnType<typeof setTimeout>[] = [];
 
 export function requestQuickCatalog(harness: HarnessId): void {
@@ -60,7 +62,9 @@ export function requestQuickCatalog(harness: HarnessId): void {
   catalogTimers = [];
   const request = { requestId: crypto.randomUUID(), generation: ++catalogGeneration, harness };
   catalogRequest = { ...request, started: performance.now(), correlated: false };
-  const send = () => { void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, request).catch(() => undefined); };
+  const send = () => {
+    void emit(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, request).catch(() => undefined);
+  };
   send();
   const retry = () => {
     send();
@@ -76,9 +80,16 @@ export function acceptQuickCatalog(payload: unknown): unknown | undefined {
   // Older workspaces answer without identity. Accept only as delayed fallback,
   // and never let one overwrite a correlated answer for this request.
   if (!("requestId" in value))
-    return catalogRequest && !catalogRequest.correlated && performance.now() - catalogRequest.started >= 700
-      ? payload : undefined;
-  if (!catalogRequest || value.requestId !== catalogRequest.requestId || value.generation !== catalogRequest.generation)
+    return catalogRequest &&
+      !catalogRequest.correlated &&
+      performance.now() - catalogRequest.started >= 700
+      ? payload
+      : undefined;
+  if (
+    !catalogRequest ||
+    value.requestId !== catalogRequest.requestId ||
+    value.generation !== catalogRequest.generation
+  )
     return undefined;
   catalogRequest.correlated = true;
   return value.catalog;

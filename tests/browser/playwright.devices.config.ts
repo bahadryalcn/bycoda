@@ -4,7 +4,15 @@ export default defineConfig({
   testMatch: "devices.e2e.ts",
   outputDir: "../../temp/test-results/devices-upgrade",
   workers: 1,
-  reporter: [["list"], ["json", { outputFile: "../../temp/verification/2026-11-04-devices-upgrade/fixture/test-results.json" }]],
+  reporter: [
+    ["list"],
+    [
+      "json",
+      {
+        outputFile: "../../temp/verification/2026-11-04-devices-upgrade/fixture/test-results.json",
+      },
+    ],
+  ],
   timeout: 30000,
   use: { baseURL: "http://127.0.0.1:15741", trace: "retain-on-failure" },
   projects: [{ name: "chromium", use: { browserName: "chromium" } }],

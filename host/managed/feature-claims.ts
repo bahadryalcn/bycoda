@@ -70,9 +70,7 @@ export function createWorkspaceFeatureClaims(
         "WORKSPACE_REVISION_CONFLICT",
         "Workspace changed; refresh before retrying.",
       );
-    if (
-      await store.workspaceHasPendingOperations(value.id, undefined, false)
-    )
+    if (await store.workspaceHasPendingOperations(value.id, undefined, false))
       throw workspacePolicyError(
         "WORKSPACE_RECOVERY_REQUIRED",
         "Finish workspace recovery before changing feature claims.",

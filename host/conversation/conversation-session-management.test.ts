@@ -221,6 +221,14 @@ it.each(["unknown", "unsent", "missing"])("refuses %s attachment IDs", async (ki
 
 it("rejects oversized voice drafts before native review or dispatch", async () => {
   const { ports, principal, authorized } = setup();
-  await expect(dispatchSessionManagement("sessions.draft", { requestId: "large", sessionId: "target", expectedRevision: 4, text: "x".repeat(12_001) }, principal, authorized, ports)).rejects.toThrow();
+  await expect(
+    dispatchSessionManagement(
+      "sessions.draft",
+      { requestId: "large", sessionId: "target", expectedRevision: 4, text: "x".repeat(12_001) },
+      principal,
+      authorized,
+      ports,
+    ),
+  ).rejects.toThrow();
   expect(ports.dispatch).not.toHaveBeenCalled();
 });

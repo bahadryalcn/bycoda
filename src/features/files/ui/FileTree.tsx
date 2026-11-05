@@ -50,7 +50,7 @@ import {
   saveShowExcludedFiles,
   SHOW_EXCLUDED_FILES_DEFAULT,
   subscribeShowExcludedFiles,
-} from "../../settings/model/appearance";
+} from "../../settings/public/appearance";
 import {
   createParentOf,
   listCachedDir,
@@ -68,15 +68,18 @@ import {
   windowEntries,
   displayDirEntries,
 } from "../model/fileTree";
-import { GIT_ACTIONS, useRemoteSupports } from "../../connections/model/remoteCapabilities";
-import { useRemoteLoadFailure } from "../../connections/model/remoteHealth";
-import { RemoteLoadError } from "../../connections/ui/RemoteLoadError";
-import type { RemoteDataState } from "../../connections/model/remoteDataState";
+import { GIT_ACTIONS, useRemoteSupports } from "../../connections/public/remoteCapabilities";
+import { useRemoteLoadFailure } from "../../connections/public/remoteHealth";
+import { RemoteLoadError } from "../../connections/public/RemoteLoadError";
+import type { RemoteDataState } from "../../connections";
 import { basename, clipboardFilePaths, type FsEntry } from "../../../platform/tauri/fs";
 import { parentPath } from "../../../shared/lib/paths";
 import { MOD } from "../../../platform/tauri/platform";
 import type { OpenFileFn } from "../../search/model/search";
-import { gitStatusForPath, type GitStatusMap } from "../../source-control/hooks/useGitFileStatuses";
+import {
+  gitStatusForPath,
+  type GitStatusMap,
+} from "../../source-control/public/useGitFileStatuses";
 import {
   announceDrag,
   clearDropFeedback,
@@ -106,13 +109,11 @@ import { useFileTreeExternalDrop } from "./useFileTreeExternalDrop";
 import { rowPath, useFileTreeKeyboard } from "./useFileTreeKeyboard";
 import { transferVerdict, useFileTreeOperations } from "./useFileTreeOperations";
 import { useFileTreePolling } from "./useFileTreePolling";
-
 import {
   selectTreePaths,
   topLevelTreePaths,
   type TreeSelectionModifiers,
 } from "../model/treeSelection";
-
 // Status is never colour-only: each state also carries a letter marker.
 const GIT_STATUS_MARK: Record<string, { mark: string; label: string }> = {
   modified: { mark: "M", label: "Modified" },
@@ -120,7 +121,6 @@ const GIT_STATUS_MARK: Record<string, { mark: string; label: string }> = {
   untracked: { mark: "U", label: "Untracked" },
   deleted: { mark: "D", label: "Deleted" },
 };
-
 const GIT_STATUS_COLOR: Record<string, string> = {
   modified: "text-(--ui-tone-warning-fg)",
   added: "text-diff-add-fg",
@@ -217,7 +217,10 @@ function createDirectorySnapshot(store: TreeStore, parent: string, entries: FsEn
           next.cutPaths.has(path) !== previous.cutPaths.has(path) ||
           (next.dragOverPath === path) !== (previous.dragOverPath === path) ||
           gitStatusForPath(isDir ? next.gitStatuses?.dirs : next.gitStatuses?.files, path) !==
-            gitStatusForPath(isDir ? previous.gitStatuses?.dirs : previous.gitStatuses?.files, path),
+            gitStatusForPath(
+              isDir ? previous.gitStatuses?.dirs : previous.gitStatuses?.files,
+              path,
+            ),
       );
     if (changed) previous = next;
     return previous;
@@ -1390,9 +1393,10 @@ function TreeChildren({
         editing={ctx.renaming === child.path}
         cut={ctx.cutPaths.has(child.path)}
         dragOver={ctx.dragOverPath === child.path}
-        gitStatus={
-          gitStatusForPath(child.isDir ? ctx.gitStatuses?.dirs : ctx.gitStatuses?.files, child.path)
-        }
+        gitStatus={gitStatusForPath(
+          child.isDir ? ctx.gitStatuses?.dirs : ctx.gitStatuses?.files,
+          child.path,
+        )}
       />
     );
   };

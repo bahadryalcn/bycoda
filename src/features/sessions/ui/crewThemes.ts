@@ -1,4 +1,4 @@
-import type { CrewTheme } from "../../settings/model/settings";
+import type { CrewTheme } from "../../settings";
 import type { CodeArtPainter } from "./crewCodeArt";
 import type { CrewRole } from "./crewMotion";
 import { createLotrPainter, loadLotrCrew } from "./lotr/lotrPainter";

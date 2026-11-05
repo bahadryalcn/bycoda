@@ -21,8 +21,15 @@ import type {
 import { DevServerDiscovery } from "./dev-server-discovery";
 import { DevPortLeases, portLeaseEnvironment } from "./dev-port-leases";
 import type { WorkspacePortKind, WorkspacePortLease } from "../workspaces/workspace-contracts";
-import { resolveShellProfile, shellInvocation, type ShellProfile } from "../execution/shellProfiles";
-import type { RuntimeLogLevel, RuntimeLogSource } from "../../src/features/host-tools/runtimeLogTypes";
+import {
+  resolveShellProfile,
+  shellInvocation,
+  type ShellProfile,
+} from "../execution/shellProfiles";
+import type {
+  RuntimeLogLevel,
+  RuntimeLogSource,
+} from "../../src/features/host-tools/runtimeLogTypes";
 import {
   RuntimeLogLineRedactor,
   scrubRuntimeLogText,

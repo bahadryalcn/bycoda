@@ -16,9 +16,15 @@ const at = (s: string) => Date.parse(s);
 describe("program schedule V2", () => {
   it("keeps each program's jitter deterministic without synchronizing different program identities", () => {
     const schedule = parseProgramSchedule({
-      ...defaultProgram().schedule, mode: "interval", timeZone: "UTC",
-      days: [0, 1, 2, 3, 4, 5, 6], startTime: "00:00", endTime: "23:59",
-      startsAt: at("2026-10-12T00:00:00Z"), minIntervalMinutes: 20, maxIntervalMinutes: 80,
+      ...defaultProgram().schedule,
+      mode: "interval",
+      timeZone: "UTC",
+      days: [1, 2, 3, 4, 5, 6, 7],
+      startTime: "00:00",
+      endTime: "23:59",
+      startsAt: at("2026-10-12T00:00:00Z"),
+      minIntervalMinutes: 20,
+      maxIntervalMinutes: 80,
     });
     const first = previewProgramSchedule(schedule, 8, "program-one");
     expect(previewProgramSchedule(schedule, 8, "program-one")).toEqual(first);
@@ -26,7 +32,9 @@ describe("program schedule V2", () => {
     for (let index = 1; index < first.length; index++) {
       expect(first[index] - first[index - 1]).toBeGreaterThanOrEqual(20 * 60_000);
       expect(first[index] - first[index - 1]).toBeLessThanOrEqual(80 * 60_000);
-      expect(first[index]).toBe(followingProgramSlot(schedule, first[index - 1], "program-one", index));
+      expect(first[index]).toBe(
+        followingProgramSlot(schedule, first[index - 1], "program-one", index),
+      );
     }
   });
   it("keeps the remaining slots of the previous weekday's overnight window", () => {

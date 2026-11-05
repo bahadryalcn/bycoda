@@ -31,8 +31,17 @@ type Callbacks = {
 export class LocalVoice {
   isOutputReady(): boolean {
     if (this.closed || !this.info || this.outputMuted) return false;
-    if (this.config?.natural) return this.audio?.state === "running" && (!this.output || this.output.state === "running");
-    return !!globalThis.speechSynthesis && !speechSynthesis.paused && speechSynthesis.getVoices().some((voice) => voice.localService && voice.lang.toLowerCase().split("-")[0] === this.language);
+    if (this.config?.natural)
+      return this.audio?.state === "running" && (!this.output || this.output.state === "running");
+    return (
+      !!globalThis.speechSynthesis &&
+      !speechSynthesis.paused &&
+      speechSynthesis
+        .getVoices()
+        .some(
+          (voice) => voice.localService && voice.lang.toLowerCase().split("-")[0] === this.language,
+        )
+    );
   }
   private stream?: MediaStream;
   private audio?: AudioContext;

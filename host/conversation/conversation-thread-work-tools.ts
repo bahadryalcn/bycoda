@@ -72,16 +72,30 @@ export class ConversationThreadWorkTools {
   ) {}
 
   /** Called only after exact native review and a retained delegated receipt/permit. */
-  async callDelegated(action: "tasks.create" | "tasks.update", input: Input, principal: DelegatedRoomPrincipal, authorized: () => Promise<boolean>) {
-    if (principal.kind !== "delegated-assistant-thread" || !(await authorized())) throw new Error("Delegated Room authority unavailable.");
+  async callDelegated(
+    action: "tasks.create" | "tasks.update",
+    input: Input,
+    principal: DelegatedRoomPrincipal,
+    authorized: () => Promise<boolean>,
+  ) {
+    if (principal.kind !== "delegated-assistant-thread" || !(await authorized()))
+      throw new Error("Delegated Room authority unavailable.");
     await this.store.project(principal.projectId);
     const id = typeof input.taskId === "string" ? input.taskId : "";
     if (!id) throw new Error("Task identity required.");
     const rows = await this.tasks.list(principal.projectId);
-    const current = rows.find(item => item.id === id && item.projectId === principal.projectId);
-    if (action === "tasks.create" && current) throw new Error("Work ID already exists. Read it again.");
-    if (action === "tasks.update" && (!current || !Number.isSafeInteger(input.expectedUpdatedAt) || current.updatedAt !== input.expectedUpdatedAt)) throw new Error("Work changed. Read it again.");
-    const execution = action === "tasks.create" ? executionSchema.parse(input.execution) : undefined;
+    const current = rows.find((item) => item.id === id && item.projectId === principal.projectId);
+    if (action === "tasks.create" && current)
+      throw new Error("Work ID already exists. Read it again.");
+    if (
+      action === "tasks.update" &&
+      (!current ||
+        !Number.isSafeInteger(input.expectedUpdatedAt) ||
+        current.updatedAt !== input.expectedUpdatedAt)
+    )
+      throw new Error("Work changed. Read it again.");
+    const execution =
+      action === "tasks.create" ? executionSchema.parse(input.execution) : undefined;
     if (!(await authorized())) throw new Error("Delegated Room authority revoked.");
     const result = await this.execute(action, input, principal.projectId, id, current, execution);
     if (!(await authorized())) throw new Error("Delegated Room authority revoked.");
@@ -94,7 +108,7 @@ export class ConversationThreadWorkTools {
     principal: RuntimeLogSubjectPrincipal,
     authorized: () => Promise<boolean>,
     requestId?: string,
-    qualify: <T>(effect: () => Promise<T>) => Promise<T> = effect => effect(),
+    qualify: <T>(effect: () => Promise<T>) => Promise<T> = (effect) => effect(),
   ): Promise<unknown> {
     if (principal.kind !== "assistant-thread" || !THREAD_WORK_ACTIONS.has(action))
       throw new Error("Unsupported thread work action.");
@@ -146,7 +160,8 @@ export class ConversationThreadWorkTools {
     }
     if (action === "automations.runs") {
       const result = await qualify(async () => {
-        if (!(await read()).some(item => item.id === id)) throw new Error("Work is not wholly in this project.");
+        if (!(await read()).some((item) => item.id === id))
+          throw new Error("Work is not wholly in this project.");
         return page(await this.automations.runs(id));
       });
       await check();
@@ -209,7 +224,7 @@ export class ConversationThreadWorkTools {
     // Persist intent before effects. Any thrown/uncertain result retains the same
     // receipt across restart, never starting another provider run automatically.
     const result = await qualify(async () => {
-      if (hash((await read()).find(item => item.id === id) ?? null) !== currentHash)
+      if (hash((await read()).find((item) => item.id === id) ?? null) !== currentHash)
         throw new Error("Work changed during qualification. Read it again.");
       return this.execute(action, input, principal.projectId, id, current, execution);
     });

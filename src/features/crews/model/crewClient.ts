@@ -59,7 +59,13 @@ export function useProjectCrews(cwd: string, enabled = true) {
   const [historyError, setHistoryError] = useState<string>();
   const historyGeneration = useRef(0);
   const firstCursor = useRef<string | undefined>(undefined);
-  useEffect(() => { historyGeneration.current++; firstCursor.current = undefined; setOlder([]); setNextCursor(undefined); setHistoryError(undefined); }, [cwd]);
+  useEffect(() => {
+    historyGeneration.current++;
+    firstCursor.current = undefined;
+    setOlder([]);
+    setNextCursor(undefined);
+    setHistoryError(undefined);
+  }, [cwd]);
   const client = useQueryClient();
   const key = [HOST_CREWS, cwd];
   const query = useQuery({
@@ -143,7 +149,9 @@ export function useProjectCrews(cwd: string, enabled = true) {
     setHistoryError(undefined);
     try {
       const page = await remoteRequest<Pick<ProjectCrews, "runs" | "historyNextCursor">>(
-        data.machine.id, "crews.list", { projectId: data.project.id, historyLimit: 40, historyCursor: cursor },
+        data.machine.id,
+        "crews.list",
+        { projectId: data.project.id, historyLimit: 40, historyCursor: cursor },
       );
       if (generation !== historyGeneration.current) return;
       setOlder((previous) => {
@@ -158,7 +166,20 @@ export function useProjectCrews(cwd: string, enabled = true) {
       if (generation === historyGeneration.current) setHistoryLoading(false);
     }
   };
-  const data = query.data && { ...query.data, runs: [...query.data.runs, ...older.filter((run) => !query.data!.runs.some((fresh) => fresh.id === run.id))] };
-  return { ...query, data, call, loadMoreHistory, historyLoading, historyError,
-    hasMoreHistory: !!(nextCursor === undefined ? query.data?.historyNextCursor : nextCursor) };
+  const data = query.data && {
+    ...query.data,
+    runs: [
+      ...query.data.runs,
+      ...older.filter((run) => !query.data!.runs.some((fresh) => fresh.id === run.id)),
+    ],
+  };
+  return {
+    ...query,
+    data,
+    call,
+    loadMoreHistory,
+    historyLoading,
+    historyError,
+    hasMoreHistory: !!(nextCursor === undefined ? query.data?.historyNextCursor : nextCursor),
+  };
 }

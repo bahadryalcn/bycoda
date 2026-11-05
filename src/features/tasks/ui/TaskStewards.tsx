@@ -2,7 +2,7 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Spinner } from "../../../shared/ui/Spinner";
-import { Badge } from "../../../shared/ui/Badge";
+import { StewardRunBadge } from "./StewardRunBadge";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -12,7 +12,7 @@ import { projectDisplayName } from "../../projects/model/projectNames";
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
 import { taskMatchesProject, type TaskProjectScope } from "../model/taskBoardScope";
-import { HostModelSource } from "../../connections/ui/HostModelSource";
+import { HostModelSource } from "../../connections/public/HostModelSource";
 import { formatTaskSpan, TASK_MACHINE_ERROR } from "../model/taskClient";
 import { t, useLocale } from "../../../shared/i18n";
 import { type FormEvent, useMemo, useState } from "react";
@@ -27,7 +27,7 @@ import { ModelPicker } from "../../sessions/ui/ModelPicker";
 import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { backgroundMachineFor } from "../../automations/model/hostAutomationClient";
-import type { RemoteMachine } from "../../connections/model/protocol";
+import type { RemoteMachine } from "../../connections";
 import { isProjectLockedIn, type LockSnapshot } from "../../group-lock/model/lockState";
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
 import {
@@ -45,7 +45,6 @@ import {
   runStewardNow,
   saveSteward,
   setStewardEnabled,
-  STEWARD_STATUS_LABELS,
   type StewardDraft,
   stewardProjectName,
 } from "../model/stewardClient";
@@ -236,19 +235,7 @@ function StewardsPanel({
                   {steward.lastRunStatus ? (
                     <>
                       {t("Last run: ")}
-                      <Badge
-                        tone={
-                          steward.lastRunStatus === "failed"
-                            ? "danger"
-                            : steward.lastRunStatus === "succeeded"
-                              ? "success"
-                              : steward.lastRunStatus === "running"
-                                ? "info"
-                                : "neutral"
-                        }
-                      >
-                        {t(STEWARD_STATUS_LABELS[steward.lastRunStatus])}
-                      </Badge>
+                      <StewardRunBadge status={steward.lastRunStatus} />
                       {steward.lastRunAt
                         ? t(" {p0} ago", { p0: formatTaskSpan(now - steward.lastRunAt) })
                         : ""}

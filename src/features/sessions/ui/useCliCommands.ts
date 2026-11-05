@@ -55,10 +55,7 @@ export function useCliCommands(input: {
     (listener: () => void) => subscribeReportedCommands(sessionId, listener),
     [sessionId],
   );
-  const reported = useSyncExternalStore(
-    subscribe,
-    () => getReportedCommands(sessionId),
-  );
+  const reported = useSyncExternalStore(subscribe, () => getReportedCommands(sessionId));
   // The module cache is the source of truth; a finished load only asks this hook to re-read it.
   const [, setLoadedRevision] = useState(0);
   const diskCommands =

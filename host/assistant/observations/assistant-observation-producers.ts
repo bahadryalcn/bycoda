@@ -2,37 +2,106 @@ import type { HostStore } from "../../store";
 import type { AssistantObservationJournal } from "./assistant-observation-journal";
 
 /** Installs additive metadata triggers after canonical Host services have initialized their tables. */
-export async function installAssistantObservationProducers(store: HostStore, journal: AssistantObservationJournal) {
+export async function installAssistantObservationProducers(
+  store: HostStore,
+  journal: AssistantObservationJournal,
+) {
   await journal.ready;
-  if (!/^[A-Za-z0-9-]{1,200}$/.test(store.environmentId)) throw new Error("Invalid observation Host identity.");
+  if (!/^[A-Za-z0-9-]{1,200}$/.test(store.environmentId))
+    throw new Error("Invalid observation Host identity.");
   const host = store.environmentId;
-  type Producer = { table: string; source: string; id: (row: string) => string; projects: (row: string) => string; account?: (row: string) => string; filter?: (row: string) => string };
-  const oneProject = (_row: string, column: string) => `CASE WHEN ${column} IS NOT NULL AND ${column} <> '' THEN json_array(${column}) ELSE '[]' END`;
+  type Producer = {
+    table: string;
+    source: string;
+    id: (row: string) => string;
+    projects: (row: string) => string;
+    account?: (row: string) => string;
+    filter?: (row: string) => string;
+  };
+  const oneProject = (_row: string, column: string) =>
+    `CASE WHEN ${column} IS NOT NULL AND ${column} <> '' THEN json_array(${column}) ELSE '[]' END`;
   const producers: Producer[] = [
-    { table: "sessions", source: "session", id: (r) => `${r}.id`, projects: (r) => oneProject(r, `${r}.project_id`) },
-    { table: "tasks", source: "task", id: (r) => `${r}.id`, projects: (r) => oneProject(r, `json_extract(${r}.value,'$.projectId')`) },
-    { table: "goals", source: "goal", id: (r) => `${r}.id`, projects: (r) => `CASE WHEN json_type(${r}.value,'$.projectIds')='array' THEN json_extract(${r}.value,'$.projectIds') ELSE '[]' END` },
-    { table: "social_records", source: "social", id: (r) => `${r}.kind || ':' || ${r}.id`, projects: (r) => oneProject(r, `json_extract(${r}.value,'$.projectId')`), account: (r) => `json_extract(${r}.value,'$.accountId')`, filter: (r) => `${r}.kind IN ('thread','draft')` },
-    { table: "social_jobs", source: "social", id: (r) => `'job:' || ${r}.id`, projects: (r) => `CASE WHEN json_type(${r}.value,'$.projectIds')='array' THEN json_extract(${r}.value,'$.projectIds') ELSE '[]' END`, account: (r) => `${r}.account_id` },
-    { table: "metadata", source: "crew", id: () => "'crews.v1'", projects: (r) => `(SELECT COALESCE(json_group_array(project_id),'[]') FROM (SELECT DISTINCT json_extract(value,'$.projectId') AS project_id FROM json_each(${r}.value,'$.definitions')) WHERE project_id IS NOT NULL)`, filter: (r) => `${r}.key='crews.v2.state' AND json_valid(${r}.value)` },
-    { table: "crew_runs_v2", source: "crew", id: () => "'crews.v1'", projects: (r) => oneProject(r, `json_extract(${r}.payload,'$.projectId')`) },
+    {
+      table: "sessions",
+      source: "session",
+      id: (r) => `${r}.id`,
+      projects: (r) => oneProject(r, `${r}.project_id`),
+    },
+    {
+      table: "tasks",
+      source: "task",
+      id: (r) => `${r}.id`,
+      projects: (r) => oneProject(r, `json_extract(${r}.value,'$.projectId')`),
+    },
+    {
+      table: "goals",
+      source: "goal",
+      id: (r) => `${r}.id`,
+      projects: (r) =>
+        `CASE WHEN json_type(${r}.value,'$.projectIds')='array' THEN json_extract(${r}.value,'$.projectIds') ELSE '[]' END`,
+    },
+    {
+      table: "social_records",
+      source: "social",
+      id: (r) => `${r}.kind || ':' || ${r}.id`,
+      projects: (r) => oneProject(r, `json_extract(${r}.value,'$.projectId')`),
+      account: (r) => `json_extract(${r}.value,'$.accountId')`,
+      filter: (r) => `${r}.kind IN ('thread','draft')`,
+    },
+    {
+      table: "social_jobs",
+      source: "social",
+      id: (r) => `'job:' || ${r}.id`,
+      projects: (r) =>
+        `CASE WHEN json_type(${r}.value,'$.projectIds')='array' THEN json_extract(${r}.value,'$.projectIds') ELSE '[]' END`,
+      account: (r) => `${r}.account_id`,
+    },
+    {
+      table: "metadata",
+      source: "crew",
+      id: () => "'crews.v1'",
+      projects: (r) =>
+        `(SELECT COALESCE(json_group_array(project_id),'[]') FROM (SELECT DISTINCT json_extract(value,'$.projectId') AS project_id FROM json_each(${r}.value,'$.definitions')) WHERE project_id IS NOT NULL)`,
+      filter: (r) => `${r}.key='crews.v2.state' AND json_valid(${r}.value)`,
+    },
+    {
+      table: "crew_runs_v2",
+      source: "crew",
+      id: () => "'crews.v1'",
+      projects: (r) => oneProject(r, `json_extract(${r}.payload,'$.projectId')`),
+    },
   ];
   return store.transaction(async () => {
     await store.db.exec(`CREATE TABLE IF NOT EXISTS assistant_observation_source_revisions (
       source TEXT NOT NULL, source_id TEXT NOT NULL, version INTEGER NOT NULL, PRIMARY KEY(source,source_id)
     )`);
-    const installed: string[] = [], unavailable: string[] = ["note", "server", "native-session"];
+    const installed: string[] = [],
+      unavailable: string[] = ["note", "server", "native-session"];
     for (const producer of producers) {
-      const exists = await store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(producer.table);
-      if (!exists) { unavailable.push(producer.table); continue; }
-      for (const [event, row, kind] of [["INSERT", "NEW", "created"], ["UPDATE", "NEW", "updated"], ["DELETE", "OLD", "deleted"]] as const) {
-        const id = producer.id(row), project = producer.projects(row), account = producer.account?.(row) ?? "NULL";
+      const exists = await store.db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?")
+        .get(producer.table);
+      if (!exists) {
+        unavailable.push(producer.table);
+        continue;
+      }
+      for (const [event, row, kind] of [
+        ["INSERT", "NEW", "created"],
+        ["UPDATE", "NEW", "updated"],
+        ["DELETE", "OLD", "deleted"],
+      ] as const) {
+        const id = producer.id(row),
+          project = producer.projects(row),
+          account = producer.account?.(row) ?? "NULL";
         const filter = producer.filter?.(row) ?? "1";
         const scope = `(json_array_length(${project}) > 0 OR ${account} IS NOT NULL)`;
         // A source ordinal is generated by this database in the same transaction as each mutation.
         if (producer.table === "metadata")
-          await store.db.exec(`DROP TRIGGER IF EXISTS assistant_observe_metadata_${event.toLowerCase()}`);
-        await store.db.exec(`CREATE TRIGGER IF NOT EXISTS assistant_observe_${producer.table}_${event.toLowerCase()}
+          await store.db.exec(
+            `DROP TRIGGER IF EXISTS assistant_observe_metadata_${event.toLowerCase()}`,
+          );
+        await store.db
+          .exec(`CREATE TRIGGER IF NOT EXISTS assistant_observe_${producer.table}_${event.toLowerCase()}
           AFTER ${event} ON ${producer.table} WHEN (${filter}) AND ${scope} BEGIN
           INSERT INTO assistant_observation_source_revisions(source,source_id,version) VALUES('${producer.source}',${id},1)
           ON CONFLICT(source,source_id) DO UPDATE SET version=version+1;
@@ -42,14 +111,21 @@ export async function installAssistantObservationProducers(store: HostStore, jou
           FROM assistant_observation_source_revisions WHERE source='${producer.source}' AND source_id=${id};
         END`);
       }
-      const oldId = producer.id("OLD"), oldProject = producer.projects("OLD"), newProject = producer.projects("NEW");
-      const oldAccount = producer.account?.("OLD") ?? "NULL", newAccount = producer.account?.("NEW") ?? "NULL";
-      const oldFilter = producer.filter?.("OLD") ?? "1", newFilter = producer.filter?.("NEW") ?? "1";
+      const oldId = producer.id("OLD"),
+        oldProject = producer.projects("OLD"),
+        newProject = producer.projects("NEW");
+      const oldAccount = producer.account?.("OLD") ?? "NULL",
+        newAccount = producer.account?.("NEW") ?? "NULL";
+      const oldFilter = producer.filter?.("OLD") ?? "1",
+        newFilter = producer.filter?.("NEW") ?? "1";
       const newId = producer.id("NEW");
       // Replace older definitions as well: a source may leave the observed set
       // or change identity without changing its project/account fields.
-      await store.db.exec(`DROP TRIGGER IF EXISTS assistant_observe_${producer.table}_scope_removed`);
-      await store.db.exec(`CREATE TRIGGER IF NOT EXISTS assistant_observe_${producer.table}_scope_removed
+      await store.db.exec(
+        `DROP TRIGGER IF EXISTS assistant_observe_${producer.table}_scope_removed`,
+      );
+      await store.db
+        .exec(`CREATE TRIGGER IF NOT EXISTS assistant_observe_${producer.table}_scope_removed
         AFTER UPDATE ON ${producer.table} WHEN (${oldFilter}) AND (json_array_length(${oldProject}) > 0 OR ${oldAccount} IS NOT NULL)
           AND CASE WHEN NOT (${newFilter}) THEN 1 ELSE
             (${oldId} IS NOT ${newId} OR ${oldProject} IS NOT ${newProject} OR ${oldAccount} IS NOT ${newAccount}) END BEGIN
@@ -64,19 +140,30 @@ export async function installAssistantObservationProducers(store: HostStore, jou
     }
     // Global Crew definitions/agents belong to this Host, not to a synthetic
     // project or Native installation. Only coarse invalidation is journaled.
-    const global = (row: string) => `CASE WHEN ${row}.key='crews.v2.state' AND json_valid(${row}.value) THEN
+    const global = (
+      row: string,
+    ) => `CASE WHEN ${row}.key='crews.v2.state' AND json_valid(${row}.value) THEN
       (EXISTS (SELECT 1 FROM json_each(${row}.value,'$.definitions') WHERE json_extract(value,'$.projectId') IS NULL OR json_extract(value,'$.projectId')='')
        OR EXISTS (SELECT 1 FROM json_each(${row}.value,'$.agents') WHERE json_extract(value,'$.projectId') IS NULL OR json_extract(value,'$.projectId')='')) ELSE 0 END`;
-    const globalState = (row: string) => `CASE WHEN ${row}.key='crews.v2.state' AND json_valid(${row}.value) THEN json_array(
+    const globalState = (
+      row: string,
+    ) => `CASE WHEN ${row}.key='crews.v2.state' AND json_valid(${row}.value) THEN json_array(
       (SELECT json_group_array(value) FROM json_each(${row}.value,'$.definitions') WHERE json_extract(value,'$.projectId') IS NULL OR json_extract(value,'$.projectId')=''),
       (SELECT json_group_array(value) FROM json_each(${row}.value,'$.agents') WHERE json_extract(value,'$.projectId') IS NULL OR json_extract(value,'$.projectId')='')) ELSE NULL END`;
     for (const [event, condition, change] of [
       ["INSERT", global("NEW"), "created"],
-      ["UPDATE", `((${global("OLD")}) OR (${global("NEW")})) AND (${globalState("OLD")} IS NOT ${globalState("NEW")})`, "updated"],
+      [
+        "UPDATE",
+        `((${global("OLD")}) OR (${global("NEW")})) AND (${globalState("OLD")} IS NOT ${globalState("NEW")})`,
+        "updated",
+      ],
       ["DELETE", global("OLD"), "deleted"],
     ] as const) {
-      await store.db.exec(`DROP TRIGGER IF EXISTS assistant_observe_global_crew_${event.toLowerCase()}`);
-      await store.db.exec(`CREATE TRIGGER assistant_observe_global_crew_${event.toLowerCase()} AFTER ${event} ON metadata WHEN ${condition} BEGIN
+      await store.db.exec(
+        `DROP TRIGGER IF EXISTS assistant_observe_global_crew_${event.toLowerCase()}`,
+      );
+      await store.db
+        .exec(`CREATE TRIGGER assistant_observe_global_crew_${event.toLowerCase()} AFTER ${event} ON metadata WHEN ${condition} BEGIN
         INSERT INTO assistant_observation_source_revisions VALUES('crew','crews.global.v1',1)
           ON CONFLICT(source,source_id) DO UPDATE SET version=version+1;
         INSERT INTO assistant_observation_events(event_id,dedupe,environment_id,source,source_id,source_revision,change_kind,project_ids,account_id,occurred_at,expires_at,host_library)
@@ -85,6 +172,11 @@ export async function installAssistantObservationProducers(store: HostStore, jou
         FROM assistant_observation_source_revisions WHERE source='crew' AND source_id='crews.global.v1';
       END`);
     }
-    return { installed, unavailable, durableReplayFrom: "trigger-installation", nativeCoverage: "unavailable" as const };
+    return {
+      installed,
+      unavailable,
+      durableReplayFrom: "trigger-installation",
+      nativeCoverage: "unavailable" as const,
+    };
   });
 }

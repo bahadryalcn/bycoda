@@ -1,4 +1,7 @@
-import type { HostModelCatalog, RemoteProvider } from "../../src/features/connections/model/protocol";
+import type {
+  HostModelCatalog,
+  RemoteProvider,
+} from "../../src/features/connections/model/protocol";
 import type { AgentModel } from "../../src/features/sessions/model/models";
 
 type Entry = {

@@ -37,6 +37,7 @@ import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { RevealedSetting } from "../../settings/ui/settingsControls";
 import { railGroupLookup } from "../model/railGroups";
+import { recordedSessionRows } from "../model/recordedSessionRows";
 import { subscribeProjectPathsChanged } from "../../projects/model/recents";
 import {
   durationSamples,
@@ -57,7 +58,7 @@ import {
   type UsageTurnReport,
   type UsageWindow,
 } from "../model/usageAnalytics";
-import { formatMetric, formatUsagePercent, metricNames, PagedUsageTable } from "./UsageCharts";
+import { formatMetric, formatUsagePercent, metricNames, ContinuousUsageTable } from "./UsageCharts";
 import { Contribution, TimeDistribution, UsageShare, UsageTrend } from "./UsageVisualizations";
 import { usageColorMap } from "../model/usageColors";
 import { QuotaHistory } from "./UsageQuotaHistory";
@@ -904,8 +905,8 @@ export function UsageOverview({
                   {t("Export CSV")}
                 </Button>
               </div>
-              <PagedUsageTable
-                key={dimension}
+              <ContinuousUsageTable
+                stateKey={JSON.stringify(["usage-breakdown", dimension, filters, search, preset])}
                 caption={t("Usage breakdown")}
                 rows={matchedRows}
                 metric={metric}
@@ -926,21 +927,11 @@ export function UsageOverview({
                       "Session tokens come from recorded turn metrics. Only whole turns inside the interval are included; these values are not added to provider-log totals.",
                     )}
                   </p>
-                  <PagedUsageTable
-                    key={`sessions:${selectedSession ?? "all"}`}
+                  <ContinuousUsageTable
+                    stateKey={JSON.stringify(["usage-sessions", selectedSession, filters, preset])}
                     caption={t("Recorded sessions")}
                     metric="duration"
-                    rows={sessionRows.map((row) => ({
-                      ...row,
-                      label: row.title || row.key,
-                      duration: row.timedTurns ? row.duration : null,
-                      cost: row.meteredTurns > row.unpricedTurns ? row.cost : null,
-                      tokens: row.meteredTurns ? row.tokens : null,
-                      input: row.meteredTurns ? row.input : null,
-                      output: row.meteredTurns ? row.output : null,
-                      cacheRead: row.meteredTurns ? row.cacheRead : null,
-                      cacheWrite: row.meteredTurns ? row.cacheWrite : null,
-                    }))}
+                    rows={recordedSessionRows(sessionRows)}
                     onSelect={setSelectedSession}
                   />
                   {selectedSession &&
@@ -952,7 +943,7 @@ export function UsageOverview({
                       </p>
                     ))}
                   {selectedSession && (
-                    <PagedUsageTable
+                    <ContinuousUsageTable
                       caption={t("Recorded turns")}
                       rows={turnRows}
                       metric="duration"

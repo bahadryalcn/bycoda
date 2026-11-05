@@ -6,19 +6,21 @@ import {
   defaultProviderAccountId,
   supportsProviderAccounts,
 } from "../../providers/model/providerAccounts";
-import { HARNESSES } from "../../sessions/model/session";
-import { defaultModelSettings, resolveModel } from "../../sessions/model/models";
-import { defaultTextActionChoice } from "../../sessions/model/translationPreferences";
+import { HARNESSES } from "../../sessions";
+import { defaultModelSettings, resolveModel } from "../../sessions/public/models";
+import { defaultTextActionChoice } from "../../sessions/public/translationPreferences";
 import {
   defaultTitleChoice,
   saveDefaultTitleChoice,
   useDefaultTitleChoice,
   type TitleGenerationChoice,
-} from "../../sessions/model/titlePreferences";
+} from "../../sessions/public/titlePreferences";
 import { Group, Row, Segmented, SettingsFeedback } from "./settingsControls";
 
 const ModelPicker = lazy(() =>
-  import("../../sessions/ui/ModelPicker").then((module) => ({ default: module.ModelPicker })),
+  import("../../sessions")
+    .then((entry) => entry.loadModelPicker())
+    .then((module) => ({ default: module.ModelPicker })),
 );
 
 export function TitleGenerationSettings() {

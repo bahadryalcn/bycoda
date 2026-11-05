@@ -152,73 +152,74 @@ export function useSessionStop(deps: SessionStopDeps) {
       const noTurnYet = isSendStarting(sessionId);
       const operation = (async () => {
         try {
-        // Keep the current event generation live until cancellation is delivered.
-        // A failed Stop must leave provider events and another Stop actionable.
-        const cancellations = await Promise.allSettled(
-          session
-            ? sessionChildHarnesses(session).map((id) => cancelHarnessTurn(id, sessionId))
-            : [],
-        );
-        if ((turnGen.current.get(sessionId) ?? 0) !== generation) {
-          if (awaitOutcome) throw new Error("Stop outcome is unknown because the session generation changed.");
-          return;
-        }
-        const failure = cancellations.find((result) => result.status === "rejected");
-        if (failure?.status === "rejected") {
-          const detail =
-            failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
+          // Keep the current event generation live until cancellation is delivered.
+          // A failed Stop must leave provider events and another Stop actionable.
+          const cancellations = await Promise.allSettled(
+            session
+              ? sessionChildHarnesses(session).map((id) => cancelHarnessTurn(id, sessionId))
+              : [],
+          );
+          if ((turnGen.current.get(sessionId) ?? 0) !== generation) {
+            if (awaitOutcome)
+              throw new Error("Stop outcome is unknown because the session generation changed.");
+            return;
+          }
+          const failure = cancellations.find((result) => result.status === "rejected");
+          if (failure?.status === "rejected") {
+            const detail =
+              failure.reason instanceof Error ? failure.reason.message : String(failure.reason);
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === sessionId
+                  ? {
+                      ...s,
+                      blocks: [
+                        ...s.blocks.filter((block) => block.id !== failureBlockId),
+                        {
+                          id: failureBlockId,
+                          role: "system" as const,
+                          notice: "error" as const,
+                          text: `Stop failed: ${detail}. Try Stop again.`,
+                        },
+                      ],
+                      ...(s.queuedMessages?.length
+                        ? { queueStatus: nextQueueStatus(s.queueStatus, "pause") }
+                        : {}),
+                    }
+                  : s,
+              ),
+            );
+            throw new Error(`Stop failed: ${detail}. Try Stop again.`);
+          }
+          turnGen.current.set(sessionId, generation + 1);
           setSessions((prev) =>
-            prev.map((s) =>
-              s.id === sessionId
-                ? {
-                    ...s,
-                    blocks: [
-                      ...s.blocks.filter((block) => block.id !== failureBlockId),
-                      {
-                        id: failureBlockId,
-                        role: "system" as const,
-                        notice: "error" as const,
-                        text: `Stop failed: ${detail}. Try Stop again.`,
-                      },
-                    ],
-                    ...(s.queuedMessages?.length
-                      ? { queueStatus: nextQueueStatus(s.queueStatus, "pause") }
-                      : {}),
-                  }
-                : s,
-            ),
+            prev.map((s) => {
+              if (s.id !== sessionId) return s;
+              const stopped =
+                s.busy && !noTurnYet
+                  ? markConversationTurnStopped(stopStreaming(s))
+                  : stopStreaming(s);
+              const completed = isPreparingHandoff(stopped) ? cancelHandoff(stopped) : stopped;
+              const ready = {
+                ...completed,
+                worktreePreparing: undefined,
+                blocks: completed.blocks.filter((block) => block.id !== failureBlockId),
+              };
+              return ready.queuedMessages?.length
+                ? { ...ready, queueStatus: nextQueueStatus(ready.queueStatus, "pause") }
+                : ready;
+            }),
           );
-          throw new Error(`Stop failed: ${detail}. Try Stop again.`);
-        }
-        turnGen.current.set(sessionId, generation + 1);
-        setSessions((prev) =>
-          prev.map((s) => {
-            if (s.id !== sessionId) return s;
-            const stopped =
-              s.busy && !noTurnYet
-                ? markConversationTurnStopped(stopStreaming(s))
-                : stopStreaming(s);
-            const completed = isPreparingHandoff(stopped) ? cancelHandoff(stopped) : stopped;
-            const ready = {
-              ...completed,
-              worktreePreparing: undefined,
-              blocks: completed.blocks.filter((block) => block.id !== failureBlockId),
-            };
-            return ready.queuedMessages?.length
-              ? { ...ready, queueStatus: nextQueueStatus(ready.queueStatus, "pause") }
-              : ready;
-          }),
-        );
-        if (session) {
-          notifyFinishedWorkspace(
-            sessionId,
-            sessionWorkCwd(session),
-            deferWorkspaceWork,
-            "workspace-first",
-          );
-        } else {
-          notifyReviewChanged(sessionId);
-        }
+          if (session) {
+            notifyFinishedWorkspace(
+              sessionId,
+              sessionWorkCwd(session),
+              deferWorkspaceWork,
+              "workspace-first",
+            );
+          } else {
+            notifyReviewChanged(sessionId);
+          }
         } finally {
           if (retiringTurns.current.get(sessionId) === stoppingMarker) {
             if (hasActiveSubmit(sessionId)) retiringTurns.current.set(sessionId, generation);
@@ -274,10 +275,20 @@ export function useSessionStop(deps: SessionStopDeps) {
     return () => window.removeEventListener("keydown", onEscape);
   }, [onStop]);
 
-  const onStopForRoom = useCallback(async (sessionId: string) => {
-    const session = sessionsRef.current.find((entry) => entry.id === sessionId);
-    if (!session || session.continuingElsewhere || hostSessionBinding(session) || remoteProjectFor(session.cwd) || orchestrator.forSession(sessionId)) throw new Error("Session stop owner is unavailable in this window.");
-    await onStop(sessionId, false, undefined, true);
-  }, [onStop]);
+  const onStopForRoom = useCallback(
+    async (sessionId: string) => {
+      const session = sessionsRef.current.find((entry) => entry.id === sessionId);
+      if (
+        !session ||
+        session.continuingElsewhere ||
+        hostSessionBinding(session) ||
+        remoteProjectFor(session.cwd) ||
+        orchestrator.forSession(sessionId)
+      )
+        throw new Error("Session stop owner is unavailable in this window.");
+      await onStop(sessionId, false, undefined, true);
+    },
+    [onStop],
+  );
   return { onStop, onStopForRoom };
 }

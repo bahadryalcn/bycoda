@@ -12,5 +12,9 @@ export function LiveText({
 }) {
   const [announced, setAnnounced] = useState("");
   useEffect(() => setAnnounced(text), [text]);
-  return <span className={className} role={mode === "assertive" ? "alert" : "status"}>{announced}</span>;
+  return (
+    <span className={className} role={mode === "assertive" ? "alert" : "status"}>
+      {announced}
+    </span>
+  );
 }

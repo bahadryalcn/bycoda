@@ -13,17 +13,29 @@ it("refuses a compact receipt whose reread has matching version but different by
   native.invoke.mockImplementation(async (command: string) => {
     if (command === "canonical_store_page_token") return "page";
     if (command === "canonical_store_transaction")
-      return { applied: true, compacted: true, entries: [{ key: "entries:request", version: 2, value: null }] };
+      return {
+        applied: true,
+        compacted: true,
+        entries: [{ key: "entries:request", version: 2, value: null }],
+      };
     if (command === "canonical_store_read") {
       reads++;
-      if (reads === 1) return { entries: [{ key: "migration:complete", version: 1, value: true }], revision: 1 };
+      if (reads === 1)
+        return { entries: [{ key: "migration:complete", version: 1, value: true }], revision: 1 };
       if (reads === 2) return { entries: [], revision: 1 };
-      return { entries: [{ key: "entries:request", version: 2, value: { key: "request", raw: "different" } }], revision: 2 };
+      return {
+        entries: [
+          { key: "entries:request", version: 2, value: { key: "request", raw: "different" } },
+        ],
+        revision: 2,
+      };
     }
     throw new Error(`Unexpected command: ${command}`);
   });
   const { changeOutboxDatabase } = await import("./remoteOutboxDatabase");
-  await expect(changeOutboxDatabase("request", null, "original")).rejects.toThrow("The pending request changed.");
+  await expect(changeOutboxDatabase("request", null, "original")).rejects.toThrow(
+    "The pending request changed.",
+  );
 });
 
 it("accepts a compact receipt after exact canonical value reread", async () => {
@@ -31,12 +43,22 @@ it("accepts a compact receipt after exact canonical value reread", async () => {
   native.invoke.mockImplementation(async (command: string) => {
     if (command === "canonical_store_page_token") return "page";
     if (command === "canonical_store_transaction")
-      return { applied: true, compacted: true, entries: [{ key: "entries:request", version: 2, value: null }] };
+      return {
+        applied: true,
+        compacted: true,
+        entries: [{ key: "entries:request", version: 2, value: null }],
+      };
     if (command === "canonical_store_read") {
       reads++;
-      if (reads === 1) return { entries: [{ key: "migration:complete", version: 1, value: true }], revision: 1 };
+      if (reads === 1)
+        return { entries: [{ key: "migration:complete", version: 1, value: true }], revision: 1 };
       if (reads === 2) return { entries: [], revision: 1 };
-      return { entries: [{ key: "entries:request", version: 2, value: { raw: "original", key: "request" } }], revision: 2 };
+      return {
+        entries: [
+          { key: "entries:request", version: 2, value: { raw: "original", key: "request" } },
+        ],
+        revision: 2,
+      };
     }
     throw new Error(`Unexpected command: ${command}`);
   });

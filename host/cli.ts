@@ -130,13 +130,30 @@ Connect another computer using an SSH forward to the loopback port.`);
     return;
   }
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid port");
-  if (["native-admission-preview-enroll", "native-admission-enroll", "native-admission-preview-revoke", "native-admission-revoke"].includes(command)) {
+  if (
+    [
+      "native-admission-preview-enroll",
+      "native-admission-enroll",
+      "native-admission-preview-revoke",
+      "native-admission-revoke",
+    ].includes(command)
+  ) {
     const { previewNativeAdmission, applyNativeAdmission } = await import("./native-admission-cli");
-    const action = command.endsWith("enroll") ? "enroll" as const : "revoke" as const;
+    const action = command.endsWith("enroll") ? ("enroll" as const) : ("revoke" as const);
     const hostId = option("host-id", "");
     const installationId = option("installation-id", "");
-    const change = action === "enroll" ? { action, hostId, installationId, publicKeyPath: option("public-key", "") } : { action, hostId, installationId };
-    const result = command.includes("preview") ? await previewNativeAdmission(directory, change) : await applyNativeAdmission(directory, change, option("reviewed-hash", ""), option("revision", ""));
+    const change =
+      action === "enroll"
+        ? { action, hostId, installationId, publicKeyPath: option("public-key", "") }
+        : { action, hostId, installationId };
+    const result = command.includes("preview")
+      ? await previewNativeAdmission(directory, change)
+      : await applyNativeAdmission(
+          directory,
+          change,
+          option("reviewed-hash", ""),
+          option("revision", ""),
+        );
     console.log(JSON.stringify(result));
     return;
   }

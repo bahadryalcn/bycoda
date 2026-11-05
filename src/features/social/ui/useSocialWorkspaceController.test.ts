@@ -148,6 +148,137 @@ async function showHost(id: string) {
 }
 
 describe("useSocialWorkspaceController Host switching", () => {
+  it("accumulates offset pages only inside same section scope", async () => {
+    mocks.workspaceSnapshot.mockImplementation(
+      async (id: string, input: { offsets?: { jobs?: number } }) => {
+        const offset = input.offsets?.jobs ?? 0;
+        const snapshot = snapshotFor(id);
+        snapshot.jobs = [
+          {
+            id: `job-${offset}`,
+            createdAt: offset,
+            scheduledAt: offset,
+          } as SocialSnapshot["jobs"][number],
+        ];
+        snapshot.pages = { jobs: { offset, limit: 50, total: 100 } };
+        snapshot.related = {
+          campaigns: [{ id: `campaign-${offset}` } as SocialSnapshot["campaigns"][number]],
+        };
+        return { cursor: `cursor-${offset}`, unchanged: false, snapshot };
+      },
+    );
+    await act(async () => latest.actions.refreshNow());
+    await flush();
+    await act(async () => latest.actions.setPage("jobs", 50));
+    await flush();
+    expect(latest.snapshot?.jobs.map((job) => job.id)).toEqual(["job-0", "job-50"]);
+    expect(latest.snapshot?.pages?.jobs).toEqual({ offset: 50, limit: 50, total: 100 });
+    expect(latest.snapshot?.related?.campaigns?.map((campaign) => campaign.id)).toEqual([
+      "campaign-0",
+      "campaign-50",
+    ]);
+    const lastInput = reads("A").at(-1)?.[1] as { offsets?: { jobs?: number } };
+    expect(lastInput.offsets?.jobs).toBe(50);
+  });
+
+  it("keeps loaded rows when continuation read fails", async () => {
+    mocks.workspaceSnapshot.mockImplementation(
+      async (id: string, input: { offsets?: { jobs?: number } }) => {
+        const offset = input.offsets?.jobs ?? 0;
+        if (offset === 50) throw new Error("continuation unavailable");
+        const snapshot = snapshotFor(id);
+        snapshot.jobs = [
+          { id: "retained-job", createdAt: 1, scheduledAt: 1 } as SocialSnapshot["jobs"][number],
+        ];
+        snapshot.pages = { jobs: { offset: 0, limit: 50, total: 100 } };
+        return { cursor: "cursor-base", unchanged: false, snapshot };
+      },
+    );
+    await act(async () => latest.actions.refreshNow());
+    await flush();
+    await act(async () => latest.actions.setPage("jobs", 50));
+    await flush();
+    expect(latest.snapshot?.jobs.map((job) => job.id)).toEqual(["retained-job"]);
+    expect(latest.snapshot?.pages?.jobs?.offset).toBe(0);
+    expect(latest.status.stale).toBe(true);
+  });
+
+  it("rejects a page whose returned offset does not match its requested scope", async () => {
+    mocks.workspaceSnapshot.mockImplementation(
+      async (id: string, input: { offsets?: { jobs?: number } }) => {
+        const snapshot = snapshotFor(id);
+        if (input.offsets?.jobs) {
+          snapshot.jobs = [
+            { id: "wrong-page", createdAt: 51, scheduledAt: 51 } as SocialSnapshot["jobs"][number],
+          ];
+          snapshot.pages = { jobs: { offset: 0, limit: 50, total: 100 } };
+        } else {
+          snapshot.jobs = [
+            { id: "retained-job", createdAt: 1, scheduledAt: 1 } as SocialSnapshot["jobs"][number],
+          ];
+          snapshot.pages = { jobs: { offset: 0, limit: 50, total: 100 } };
+        }
+        return { cursor: "cursor", unchanged: false, snapshot };
+      },
+    );
+    await act(async () => latest.actions.refreshNow());
+    await flush();
+    await act(async () => latest.actions.setPage("jobs", 50));
+    await flush();
+    expect(latest.snapshot?.jobs.map((job) => job.id)).toEqual(["retained-job"]);
+    expect((reads("A").at(-1)?.[1] as { offsets?: { jobs?: number } }).offsets?.jobs).toBe(50);
+    expect(latest.status.loadError).toContain("requested offset");
+  });
+
+  it("does not publish a late continuation after offset scope changes", async () => {
+    let releaseOld!: (value: {
+      cursor: string;
+      unchanged: false;
+      snapshot: SocialSnapshot;
+    }) => void;
+    mocks.workspaceSnapshot.mockImplementation(
+      async (id: string, input: { offsets?: { jobs?: number } }) => {
+        const offset = input.offsets?.jobs ?? 0;
+        const snapshot = snapshotFor(id);
+        snapshot.jobs = [
+          {
+            id: `job-${offset}`,
+            createdAt: offset,
+            scheduledAt: offset,
+          } as SocialSnapshot["jobs"][number],
+        ];
+        snapshot.pages = { jobs: { offset, limit: 50, total: 150 } };
+        if (offset === 50)
+          return await new Promise((resolve) => {
+            releaseOld = resolve;
+          });
+        return { cursor: `cursor-${offset}`, unchanged: false, snapshot };
+      },
+    );
+    await act(async () => latest.actions.refreshNow());
+    await flush();
+    await act(async () => latest.actions.setPage("jobs", 50));
+    await flush();
+    await act(async () => latest.actions.setPage("jobs", 100));
+    await flush();
+    await act(async () =>
+      releaseOld({
+        cursor: "cursor-50",
+        unchanged: false,
+        snapshot: {
+          ...snapshotFor("A"),
+          jobs: [
+            { id: "job-50", createdAt: 50, scheduledAt: 50 } as SocialSnapshot["jobs"][number],
+          ],
+          pages: { jobs: { offset: 50, limit: 50, total: 150 } },
+        },
+      }),
+    );
+    await flush();
+    expect(latest.snapshot?.jobs.map((job) => job.id)).toEqual(["job-0", "job-100"]);
+    expect(latest.snapshot?.pages?.jobs?.offset).toBe(100);
+  });
+
   it("opens the authority Host and reads it once with its project list", async () => {
     expect(latest.machineId).toBe("A");
     expect(latest.snapshot?.executorId).toBe("A");

@@ -3,7 +3,7 @@ import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Switch } from "../../../shared/ui/Switch";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { t } from "../../../shared/i18n";
-import { loadWorkspaceSnapshot } from "../../sessions/data/sessionStore";
+import { loadWorkspaceSnapshot } from "../../sessions/public/sessionStore";
 import { useServerInventory, type ServerRecord } from "../model/serverInventory";
 import {
   serverTerminalRestoreState,

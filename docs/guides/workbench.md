@@ -1,5 +1,21 @@
 # Workbench navigation
 
+Collections scroll continuously instead of using numbered pages. Search, filters
+and selection remain in place while more records load. Large loaded collections
+keep only a bounded window of rows mounted. Where a provider requires a cursor or
+offset request, use **Load more** at the end of the list. Loading, failed reads and
+partial coverage appear there without replacing previously loaded records.
+
+Ordinary panels, lists, detail panes and empty states share the canvas in both
+Pure and Tinted appearance. Spacing and fine borders separate content. Floating
+menus and dialogs, writing controls and code or log viewers keep their raised
+surfaces; selection, hover, drag and status indicators retain their own roles.
+
+Counters use compact, borderless accent labels. Counts above 99 show `99+` while
+retaining the exact accessible count. Pending questions and approvals use warning
+indicators. Running work uses an accent dot or activity icon beside its title;
+cards and rows do not add colored edge stripes for activity.
+
 Rename a conversation from its menu or with F2. The title edits inside the same
 row; project and activity stay visible. Enter saves, Escape cancels, and a failed
 save retains the draft for retry.

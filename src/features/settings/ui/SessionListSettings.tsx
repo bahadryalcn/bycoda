@@ -3,10 +3,11 @@ import {
   DEFAULT_SESSION_LIST_DISPLAY,
   GROUP_DELAY_MAX_MS,
   GROUP_DELAY_MIN_MS,
-  type SessionListDensity,
   updateSessionListDisplay,
   useSessionListDisplay,
-} from "../../sessions/model/sessionListDisplay";
+  type SessionListDensity,
+} from "../../sessions/public/sessionListDisplay";
+
 import { Group, Row, Segmented, Slider, Toggle } from "./settingsControls";
 
 /** The sidebar's default session row layout; the list's view menu edits the same values. */

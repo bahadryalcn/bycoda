@@ -9,10 +9,10 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { MediaVisibilityContext } from "../../files/model/mediaVisibility";
+import { MediaVisibilityContext } from "../../files/public/mediaVisibility";
 import { prepareLocalFile, readBinaryFile } from "../../../platform/tauri/fs";
-import { isImagePath, sniffImageMime } from "../../files/model/filePreview";
-import { mediaKind } from "../../files/model/mediaPreview";
+import { isImagePath, sniffImageMime } from "../../files/public/filePreviewMetadata";
+import { mediaKind } from "../../files/public/mediaPreview";
 import { useNearViewport } from "./useNearViewport";
 
 export function isLocalMediaPath(path: string): boolean {

@@ -1,5 +1,10 @@
 import { expect, it, vi } from "vitest";
-import { forgetSessionCommands, getReportedCommands, reportSessionCommands, subscribeReportedCommands } from "./reportedCommands";
+import {
+  forgetSessionCommands,
+  getReportedCommands,
+  reportSessionCommands,
+  subscribeReportedCommands,
+} from "./reportedCommands";
 
 it("forgets only the requested session and notifies its subscribers", () => {
   const changed = vi.fn();

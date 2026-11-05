@@ -27,7 +27,11 @@ import {
   type PendingWindowMoves,
   type WindowMovePosition,
 } from "../../model/windowTransferPopout";
-import { abortQuit, beginTransferredWindowClose, relinquishTransferredWindow } from "../../model/appLifecycle";
+import {
+  abortQuit,
+  beginTransferredWindowClose,
+  relinquishTransferredWindow,
+} from "../../model/appLifecycle";
 import { flushAssistantDrafts } from "../../../features/assistant/model/assistantDraftFlush";
 import type { TabActivation } from "../tabs/useTabActivation";
 import { beginWindowMoveTiming } from "../../model/windowMoveTiming";

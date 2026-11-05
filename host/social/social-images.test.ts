@@ -236,23 +236,32 @@ describe("image provider routing", () => {
   });
 });
 
-
 it("aborts a stalled accepted image response and never falls through to another provider", async () => {
   vi.useFakeTimers();
   const cancel = vi.fn();
   let signal: AbortSignal | undefined;
-  vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
-    if (!url.includes(":generateContent")) return Response.json({ name: "gemini-image", supportedGenerationMethods: ["generateContent"] });
-    signal = init?.signal ?? undefined;
-    return new Response(new ReadableStream({ cancel }));
-  }));
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (!url.includes(":generateContent"))
+        return Response.json({
+          name: "gemini-image",
+          supportedGenerationMethods: ["generateContent"],
+        });
+      signal = init?.signal ?? undefined;
+      return new Response(new ReadableStream({ cancel }));
+    }),
+  );
   const gemini = createSocialImageAdapters("/unused", {
-    GEMINI_API_KEY: "private-key", BYCODA_SOCIAL_GEMINI_IMAGE_MODEL: "gemini-image",
+    GEMINI_API_KEY: "private-key",
+    BYCODA_SOCIAL_GEMINI_IMAGE_MODEL: "gemini-image",
   }).gemini!;
   const fallback = adapter("comfyui");
   const pending = generateSocialImage(
     { codex: adapter("codex", false), gemini, comfyui: fallback },
-    { ...defaultProgram().image, provider: "automatic" }, request(), vi.fn(),
+    { ...defaultProgram().image, provider: "automatic" },
+    request(),
+    vi.fn(),
   ).catch((error: unknown) => error);
   try {
     await vi.advanceTimersByTimeAsync(30_001);
@@ -262,31 +271,43 @@ it("aborts a stalled accepted image response and never falls through to another 
     expect(signal?.aborted).toBe(true);
     expect(cancel).toHaveBeenCalledOnce();
     expect(fallback.generate).not.toHaveBeenCalled();
-  } finally { vi.useRealTimers(); }
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
-it.each(["oversized download", "transient poll failure"])("keeps an accepted ComfyUI job fenced after %s", async (failure) => {
-  const folder = mkdtempSync(join(tmpdir(), "bycoda-comfy-stream-"));
-  const path = join(folder, "workflow.json");
-  writeFileSync(path, JSON.stringify({ "1": { class_type: "FluxLoader", inputs: {} } }));
-  const cancel = vi.fn();
-  const fetcher = vi.fn(async (url: string) => {
-    if (url.endsWith("/object_info")) return Response.json({ FluxLoader: {} });
-    if (url.includes("/history/")) {
-      if (failure === "transient poll failure") return new Response("busy", { status: 503 });
-      return Response.json({ "accepted-job": { outputs: { "1": { images: [{ filename: "output.png" }] } } } });
+it.each(["oversized download", "transient poll failure"])(
+  "keeps an accepted ComfyUI job fenced after %s",
+  async (failure) => {
+    const folder = mkdtempSync(join(tmpdir(), "bycoda-comfy-stream-"));
+    const path = join(folder, "workflow.json");
+    writeFileSync(path, JSON.stringify({ "1": { class_type: "FluxLoader", inputs: {} } }));
+    const cancel = vi.fn();
+    const fetcher = vi.fn(async (url: string) => {
+      if (url.endsWith("/object_info")) return Response.json({ FluxLoader: {} });
+      if (url.includes("/history/")) {
+        if (failure === "transient poll failure") return new Response("busy", { status: 503 });
+        return Response.json({
+          "accepted-job": { outputs: { "1": { images: [{ filename: "output.png" }] } } },
+        });
+      }
+      return new Response(new ReadableStream({ cancel }), {
+        headers: { "content-length": String(5 * 1024 * 1024 + 1) },
+      });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    try {
+      const image = createSocialImageAdapters(folder, {
+        BYCODA_SOCIAL_COMFYUI_ENDPOINT: "http://127.0.0.1:8188",
+        BYCODA_SOCIAL_COMFYUI_WORKFLOW: path,
+      }).comfyui!;
+      const input = { ...request(), providerJobId: "accepted-job" };
+      await expect(image.generate(input)).rejects.toMatchObject({ kind: "uncertain" });
+      expect(input.checkpoint).not.toHaveBeenCalled();
+      expect(fetcher.mock.calls.some(([url]) => url.endsWith("/prompt"))).toBe(false);
+      if (failure === "oversized download") expect(cancel).toHaveBeenCalledOnce();
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
     }
-    return new Response(new ReadableStream({ cancel }), { headers: { "content-length": String(5 * 1024 * 1024 + 1) } });
-  });
-  vi.stubGlobal("fetch", fetcher);
-  try {
-    const image = createSocialImageAdapters(folder, {
-      BYCODA_SOCIAL_COMFYUI_ENDPOINT: "http://127.0.0.1:8188", BYCODA_SOCIAL_COMFYUI_WORKFLOW: path,
-    }).comfyui!;
-    const input = { ...request(), providerJobId: "accepted-job" };
-    await expect(image.generate(input)).rejects.toMatchObject({ kind: "uncertain" });
-    expect(input.checkpoint).not.toHaveBeenCalled();
-    expect(fetcher.mock.calls.some(([url]) => url.endsWith("/prompt"))).toBe(false);
-    if (failure === "oversized download") expect(cancel).toHaveBeenCalledOnce();
-  } finally { rmSync(folder, { recursive: true, force: true }); }
-});
+  },
+);

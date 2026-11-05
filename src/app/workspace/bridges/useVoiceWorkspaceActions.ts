@@ -211,7 +211,9 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
         return { ...base, status: accepted ? "accepted" : "rejected", accepted };
       }
       case "workspace.sessions.stop":
-        await (workspaceRequestId ? deps.onStopForRoom ?? unsupported : deps.onStop ?? unsupported)(id);
+        await (
+          workspaceRequestId ? (deps.onStopForRoom ?? unsupported) : (deps.onStop ?? unsupported)
+        )(id);
         return {
           ...base,
           status: "accepted",

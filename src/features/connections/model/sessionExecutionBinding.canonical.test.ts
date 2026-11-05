@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import { beforeEach, expect, it, vi } from "vitest";
 
-const state = vi.hoisted(() => ({ rows: [] as Array<{ shellId: string; raw: string; legacyRaw: string | null; version: number }> }));
+const state = vi.hoisted(() => ({
+  rows: [] as Array<{ shellId: string; raw: string; legacyRaw: string | null; version: number }>,
+}));
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => true,
   invoke: vi.fn(async (command: string) => {
@@ -20,10 +22,20 @@ vi.mock("./hostSessionBindingDatabase", () => ({
 
 function evidence(sessionId: string, version: number) {
   return {
-    shellId: "shell", version, legacyRaw: "original",
+    shellId: "shell",
+    version,
+    legacyRaw: "original",
     raw: JSON.stringify({
       shell: { id: "shell", blocks: [] },
-      binding: { kind: "local-host", machineId: "machine", environmentId: "env", projectId: "project", sessionId, authorityGeneration: null, created: true },
+      binding: {
+        kind: "local-host",
+        machineId: "machine",
+        environmentId: "env",
+        projectId: "project",
+        sessionId,
+        authorityGeneration: null,
+        created: true,
+      },
     }),
   };
 }

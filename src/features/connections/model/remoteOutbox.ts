@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listenWindow } from "../../../platform/tauri/listenWindow";
 import { isRemoteProvider, type HostCommand } from "./protocol";
-import { RUNTIME_MODES } from "../../sessions/model/session";
+import { RUNTIME_MODES } from "../../sessions/public/session";
 import { t } from "../../../shared/i18n/core";
 import { canonicalJson } from "../../sync/model/canonicalJson";
 import {
@@ -267,10 +267,17 @@ function scopeForKey(
 function oversizedSource(record: { key: string }) {
   return record.key.replace(/^(entries|legacy):/, "");
 }
-function oversizedOutsideScope(record: { key: string }, project?: string, environment?: string): boolean {
+function oversizedOutsideScope(
+  record: { key: string },
+  project?: string,
+  environment?: string,
+): boolean {
   const scope = scopeForKey(oversizedSource(record));
-  return !!scope && ((project !== undefined && scope.project !== project) ||
-    (environment !== undefined && scope.environment !== environment));
+  return (
+    !!scope &&
+    ((project !== undefined && scope.project !== project) ||
+      (environment !== undefined && scope.environment !== environment))
+  );
 }
 
 /** Invalid entries remain in place and never become dispatchable requests. */
@@ -367,7 +374,8 @@ export async function durableRemoteOutboxIssues(
       throw new Error("Pending requests changed; try again.");
     revision = page.revision;
     if (page.oversized) {
-      if (!oversizedOutsideScope(page.oversized, project, environment)) throw new OversizedOutboxRecordError(page.oversized);
+      if (!oversizedOutsideScope(page.oversized, project, environment))
+        throw new OversizedOutboxRecordError(page.oversized);
       after = oversizedSource(page.oversized);
       continue;
     }
@@ -377,9 +385,11 @@ export async function durableRemoteOutboxIssues(
   let legacyAfter: string | undefined;
   do {
     const legacyPage = await readOutboxLegacyPage(legacyAfter, revision);
-    if (legacyPage.revision !== undefined && legacyPage.revision !== revision) throw new Error("Pending requests changed; try again.");
+    if (legacyPage.revision !== undefined && legacyPage.revision !== revision)
+      throw new Error("Pending requests changed; try again.");
     if (legacyPage.oversized) {
-      if (!oversizedOutsideScope(legacyPage.oversized, project, environment)) throw new OversizedOutboxRecordError(legacyPage.oversized);
+      if (!oversizedOutsideScope(legacyPage.oversized, project, environment))
+        throw new OversizedOutboxRecordError(legacyPage.oversized);
       legacyAfter = oversizedSource(legacyPage.oversized);
       continue;
     }
@@ -389,9 +399,10 @@ export async function durableRemoteOutboxIssues(
         scope &&
         ((project !== undefined && scope.project !== project) ||
           (environment !== undefined && scope.environment !== environment))
-      ) continue;
+      )
+        continue;
       const record = await readOutboxDatabaseRecord(key);
-      if (record.revision !== revision || await readOutboxLegacyValue(key) !== raw)
+      if (record.revision !== revision || (await readOutboxLegacyValue(key)) !== raw)
         throw new Error("Pending requests changed; try again.");
       if (record.settlement === raw) continue;
       consider(key, raw, record.entry !== undefined && record.entry !== raw);
@@ -421,12 +432,26 @@ export function useDurableRemoteOutboxIssues(
         })
         .catch((cause: unknown) => {
           if (active && current === generation) {
-            const oversized = cause instanceof OversizedOutboxRecordError ? cause.record : undefined;
+            const oversized =
+              cause instanceof OversizedOutboxRecordError ? cause.record : undefined;
             const source = oversized?.key.replace(/^(entries|legacy):/, "");
             const owner = source ? scopeForKey(source) : undefined;
-            const canExport = !!oversized && !!project && !!environment && owner?.project === project && owner.environment === environment;
-            setIssues([{ key: "", project: "", environment: "", unavailable: true,
-              oversized: !!oversized, ...(canExport ? { oversizedRecord: oversized } : {}) }]);
+            const canExport =
+              !!oversized &&
+              !!project &&
+              !!environment &&
+              owner?.project === project &&
+              owner.environment === environment;
+            setIssues([
+              {
+                key: "",
+                project: "",
+                environment: "",
+                unavailable: true,
+                oversized: !!oversized,
+                ...(canExport ? { oversizedRecord: oversized } : {}),
+              },
+            ]);
           }
         });
     };
@@ -447,7 +472,8 @@ export async function archiveDurableRemoteOutboxIssue(key: string) {
   const legacy = await readOutboxLegacyValue(key);
   if (record.entry === undefined && legacy === null)
     throw new Error("This request no longer needs recovery.");
-  if (await readOutboxLegacyValue(key) !== legacy) throw new Error("The request changed during recovery.");
+  if ((await readOutboxLegacyValue(key)) !== legacy)
+    throw new Error("The request changed during recovery.");
   await quarantineOutboxDatabase(key, record.entry ?? null, legacy, record.revision);
   changed();
 }
@@ -459,7 +485,10 @@ export function subscribeOutbox(listener: () => void) {
     ? listenWindow<{ scope?: string }>("canonical-store-changed", (event) => {
         if (event.payload?.scope !== "remote-outbox.v2") return;
         if (nativeTimer !== undefined) window.clearTimeout(nativeTimer);
-        nativeTimer = window.setTimeout(() => { nativeTimer = undefined; listener(); }, 100);
+        nativeTimer = window.setTimeout(() => {
+          nativeTimer = undefined;
+          listener();
+        }, 100);
       })
     : () => {};
   const storage = (event: StorageEvent) => {
@@ -745,7 +774,8 @@ export async function readDurableRemoteCommand(
       throw new Error("Pending requests changed; try again.");
     revision = page.revision;
     if (page.oversized) {
-      if (!oversizedOutsideScope(page.oversized, project, environment)) throw new OversizedOutboxRecordError(page.oversized);
+      if (!oversizedOutsideScope(page.oversized, project, environment))
+        throw new OversizedOutboxRecordError(page.oversized);
       after = oversizedSource(page.oversized);
       continue;
     }
@@ -755,9 +785,11 @@ export async function readDurableRemoteCommand(
   let legacyAfter: string | undefined;
   do {
     const legacyPage = await readOutboxLegacyPage(legacyAfter, revision);
-    if (legacyPage.revision !== undefined && legacyPage.revision !== revision) throw new Error("Pending requests changed; try again.");
+    if (legacyPage.revision !== undefined && legacyPage.revision !== revision)
+      throw new Error("Pending requests changed; try again.");
     if (legacyPage.oversized) {
-      if (!oversizedOutsideScope(legacyPage.oversized, project, environment)) throw new OversizedOutboxRecordError(legacyPage.oversized);
+      if (!oversizedOutsideScope(legacyPage.oversized, project, environment))
+        throw new OversizedOutboxRecordError(legacyPage.oversized);
       legacyAfter = oversizedSource(legacyPage.oversized);
       continue;
     }
@@ -765,7 +797,7 @@ export async function readDurableRemoteCommand(
       const scope = scopeForKey(key);
       if (scope && (scope.project !== project || scope.environment !== environment)) continue;
       const record = await readOutboxDatabaseRecord(key);
-      if (record.revision !== revision || await readOutboxLegacyValue(key) !== raw)
+      if (record.revision !== revision || (await readOutboxLegacyValue(key)) !== raw)
         throw new Error("Pending requests changed; try again.");
       if (record.settlement === raw) continue;
       if (record.entry !== undefined && record.entry !== raw)
@@ -823,7 +855,8 @@ export async function admitDurableRemoteCommand(
   const raw = JSON.stringify(entry);
   if (raw.length * 2 > 2 * 1024 * 1024 || !readPendingEntry(raw, command.commandId))
     throw new Error("Cannot save an invalid or oversized remote request.");
-  if (await readOutboxLegacyValue(key) !== legacy) throw new Error("Pending requests changed; try again.");
+  if ((await readOutboxLegacyValue(key)) !== legacy)
+    throw new Error("Pending requests changed; try again.");
   await changeOutboxDatabase(
     key,
     record.entry ?? null,
@@ -854,7 +887,7 @@ export async function settleDurableRemoteCommand(
     await changeOutboxDatabase(key, null, original!, legacy ?? undefined, record.revision);
     record = await readOutboxDatabaseRecord(key);
   }
-  if (!record.entry || record.entry !== original || await readOutboxLegacyValue(key) !== legacy)
+  if (!record.entry || record.entry !== original || (await readOutboxLegacyValue(key)) !== legacy)
     throw new Error("The pending request changed; check the host before continuing.");
   let next: { key: string; raw: string } | undefined;
   if (followup) {
@@ -863,7 +896,7 @@ export async function settleDurableRemoteCommand(
     if (raw.length * 2 > 2 * 1024 * 1024 || !readPendingEntry(raw, followup.commandId))
       throw new Error("Cannot save the follow-up request safely.");
     next = { key: `${pendingPrefix(project, environment)}${followup.commandId}`, raw };
-    if (await readOutboxLegacyValue(next.key) !== null)
+    if ((await readOutboxLegacyValue(next.key)) !== null)
       throw new Error("The follow-up request has an existing saved identity.");
   }
   await settleOutboxDatabase(key, record.entry, legacy ?? undefined, next, record.revision);
@@ -888,7 +921,8 @@ export async function readDurableRemoteEntry(
   const raw = record.entry ?? (record.settlement === legacy ? undefined : (legacy ?? undefined));
   const entry = raw ? readPendingEntry(raw, commandId) : undefined;
   if (raw && !entry) throw new Error("An unreadable pending request requires recovery.");
-  if (await readOutboxLegacyValue(key) !== legacy) throw new Error("Pending requests changed; try again.");
+  if ((await readOutboxLegacyValue(key)) !== legacy)
+    throw new Error("Pending requests changed; try again.");
   return { key, record, legacy, entry };
 }
 
@@ -941,7 +975,8 @@ export async function durableRemoteAttachmentIds(
       throw new Error("Pending requests changed; try again.");
     revision = page.revision;
     if (page.oversized) {
-      if (!oversizedOutsideScope(page.oversized, project, environment)) throw new OversizedOutboxRecordError(page.oversized);
+      if (!oversizedOutsideScope(page.oversized, project, environment))
+        throw new OversizedOutboxRecordError(page.oversized);
       after = oversizedSource(page.oversized);
       continue;
     }
@@ -951,9 +986,11 @@ export async function durableRemoteAttachmentIds(
   let legacyAfter: string | undefined;
   do {
     const legacyPage = await readOutboxLegacyPage(legacyAfter, revision);
-    if (legacyPage.revision !== undefined && legacyPage.revision !== revision) throw new Error("Pending requests changed; try again.");
+    if (legacyPage.revision !== undefined && legacyPage.revision !== revision)
+      throw new Error("Pending requests changed; try again.");
     if (legacyPage.oversized) {
-      if (!oversizedOutsideScope(legacyPage.oversized, project, environment)) throw new OversizedOutboxRecordError(legacyPage.oversized);
+      if (!oversizedOutsideScope(legacyPage.oversized, project, environment))
+        throw new OversizedOutboxRecordError(legacyPage.oversized);
       legacyAfter = oversizedSource(legacyPage.oversized);
       continue;
     }
@@ -962,9 +999,10 @@ export async function durableRemoteAttachmentIds(
       if (
         scope &&
         (scope.environment !== environment || (project !== undefined && scope.project !== project))
-      ) continue;
+      )
+        continue;
       const record = await readOutboxDatabaseRecord(key);
-      if (record.revision !== revision || await readOutboxLegacyValue(key) !== raw)
+      if (record.revision !== revision || (await readOutboxLegacyValue(key)) !== raw)
         throw new Error("Pending requests changed; try again.");
       if (record.settlement === raw) continue;
       if (record.entry !== undefined && record.entry !== raw)

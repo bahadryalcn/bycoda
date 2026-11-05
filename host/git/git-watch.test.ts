@@ -131,7 +131,9 @@ describe("GitWatches with injected watchers", () => {
 
   it("coalesces native metadata checks and skips unrelated Git paths before filesystem work", async () => {
     let release!: (directory: boolean) => void;
-    const pending = new Promise<boolean>((done) => { release = done; });
+    const pending = new Promise<boolean>((done) => {
+      release = done;
+    });
     const check = vi.fn(() => pending);
     directory = check;
     await watches.read("/r");
@@ -160,7 +162,8 @@ describe("GitWatches with injected watchers", () => {
     const check = vi.fn(() => new Promise<boolean>(() => {}));
     directory = check;
     await watches.read("/r");
-    for (let index = 0; index < 100; index++) at("/r/.git/refs").emit("change", `heads/ref-${index}`);
+    for (let index = 0; index < 100; index++)
+      at("/r/.git/refs").emit("change", `heads/ref-${index}`);
     await vi.advanceTimersByTimeAsync(1001);
     expect(check).toHaveBeenCalledTimes(32);
     expect(watches.etag("/r")).toBe("0.1");
@@ -172,7 +175,10 @@ describe("GitWatches with injected watchers", () => {
 
   it("rejects metadata and watcher callbacks from the original failed generation after restart", async () => {
     let release!: (directory: boolean) => void;
-    directory = () => new Promise<boolean>((done) => { release = done; });
+    directory = () =>
+      new Promise<boolean>((done) => {
+        release = done;
+      });
     await watches.read("/r");
     const original = at("/r/.git");
     original.emit("change", "index");

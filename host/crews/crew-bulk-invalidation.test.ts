@@ -8,6 +8,7 @@ import { WebSocket } from "ws";
 import { HostStore } from "../store";
 import { HostEngine } from "../engine";
 import { HostCrews } from "./crews";
+import { initializeCrewSchedulerProjection, writeCrewState } from "./crew-scheduler-projection";
 import { DesktopSessions } from "../desktop/desktopSessions";
 import { ModelCatalogCache } from "../providers/model-catalog-cache";
 import * as images from "../social/social-images";
@@ -184,22 +185,18 @@ async function setup() {
     agents?: ReturnType<typeof profile>[];
     runs?: ReturnType<typeof run>[];
   }) => {
-    await store.db
-      .prepare(
-        "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-      )
-      .run(
-        "crews.v1",
-        JSON.stringify({
-          definitions: [],
-          agents: [],
-          runs: [],
-          defaultsInitialized: true,
-          defaultsRevision: DEFAULT_CREW_REVISION,
-          defaultInstructionHashes: {},
-          ...state,
-        }),
-      );
+    await initializeCrewSchedulerProjection(store);
+    await store.transaction(() =>
+      writeCrewState(store, {
+        definitions: [],
+        agents: [],
+        runs: [],
+        defaultsInitialized: true,
+        defaultsRevision: DEFAULT_CREW_REVISION,
+        defaultInstructionHashes: {},
+        ...state,
+      }),
+    );
   };
   await seed({});
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));

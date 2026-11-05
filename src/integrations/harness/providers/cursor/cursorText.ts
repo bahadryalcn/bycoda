@@ -208,7 +208,11 @@ async function startLive(
 ): Promise<LiveText> {
   const previous = captureDrop();
   let stopping = Promise.resolve();
-  const textProcess = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn, operationContext?.nativeControlTurn ? undefined : "utility");
+  const textProcess = createChildProcessHandle(
+    TEXT_CHILD_ID,
+    operationContext?.nativeControlTurn,
+    operationContext?.nativeControlTurn ? undefined : "utility",
+  );
   prepareTextProcess(textProcess, operationContext, true);
   const acpRef: { session: LiveText | null } = { session: null };
   let admitted = false;
@@ -475,7 +479,10 @@ function messageFromUpdate(params: unknown): { text: string; delta: boolean } | 
   if (!update) return;
   const kind = String(update.sessionUpdate ?? update.session_update ?? update.type ?? "");
   if (kind !== "agent_message_chunk" && kind !== "agent_message") return;
-  return { text: textFromContent(update.content ?? update.text), delta: kind === "agent_message_chunk" };
+  return {
+    text: textFromContent(update.content ?? update.text),
+    delta: kind === "agent_message_chunk",
+  };
 }
 
 function textFromContent(content: unknown): string {

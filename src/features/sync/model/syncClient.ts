@@ -103,14 +103,20 @@ function requireCurrent(current: () => boolean): void {
   if (!current()) throw new Error("SYNC_STOPPED");
 }
 
-async function applyIncoming(machineId: string, records: readonly SyncRecord[], current: () => boolean): Promise<void> {
-  await withRoomPrivacyMutation(() => duringSyncWrite(() => {
-    requireCurrent(current);
-    applyRemoteProjectRecords(machineId, records);
-    applyRemoteGroupRecords(machineId, records);
-    applyRemoteAppearanceRecords(machineId, records);
-    applyRemoteLockRecords(machineId, records);
-  }));
+async function applyIncoming(
+  machineId: string,
+  records: readonly SyncRecord[],
+  current: () => boolean,
+): Promise<void> {
+  await withRoomPrivacyMutation(() =>
+    duringSyncWrite(() => {
+      requireCurrent(current);
+      applyRemoteProjectRecords(machineId, records);
+      applyRemoteGroupRecords(machineId, records);
+      applyRemoteAppearanceRecords(machineId, records);
+      applyRemoteLockRecords(machineId, records);
+    }),
+  );
 }
 
 function asObject(result: unknown, method: string): Record<string, unknown> {
@@ -197,7 +203,11 @@ export async function runSyncCycle(
   });
 }
 
-async function pullAndApply(machineId: string, request: SyncRequest, current: () => boolean): Promise<void> {
+async function pullAndApply(
+  machineId: string,
+  request: SyncRequest,
+  current: () => boolean,
+): Promise<void> {
   let untilRev: number | undefined;
   let initial = !hasPulled(machineId);
   let restarted = false;
@@ -242,7 +252,8 @@ async function pullAndApply(machineId: string, request: SyncRequest, current: ()
     if (records.length > 0) {
       await applyIncoming(
         machineId,
-        records.filter((record) => !pending.has(`${record.table}:${record.id}`)), current,
+        records.filter((record) => !pending.has(`${record.table}:${record.id}`)),
+        current,
       );
     }
     requireCurrent(current);
@@ -290,19 +301,25 @@ async function pullAndApply(machineId: string, request: SyncRequest, current: ()
     throw new Error("Library sync completion could not be saved. Free storage and retry.");
 }
 
-async function runSyncCycleInner(machineId: string, request: SyncRequest, current: () => boolean): Promise<void> {
+async function runSyncCycleInner(
+  machineId: string,
+  request: SyncRequest,
+  current: () => boolean,
+): Promise<void> {
   if (!hasPulled(machineId)) await pullAndApply(machineId, request, current);
 
-  await withRoomPrivacyMutation(() => duringSyncWrite(() =>
-    batchLocalChanges(machineId, () => {
-      requireCurrent(current);
-      captureLocalProjectChanges(machineId);
-      const projectIds = localProjectIdsByPath();
-      captureLocalGroupChanges(machineId, projectIds);
-      captureLocalAppearanceChanges(machineId, projectIds);
-      captureLocalLockChanges(machineId);
-    }),
-  ));
+  await withRoomPrivacyMutation(() =>
+    duringSyncWrite(() =>
+      batchLocalChanges(machineId, () => {
+        requireCurrent(current);
+        captureLocalProjectChanges(machineId);
+        const projectIds = localProjectIdsByPath();
+        captureLocalGroupChanges(machineId, projectIds);
+        captureLocalAppearanceChanges(machineId, projectIds);
+        captureLocalLockChanges(machineId);
+      }),
+    ),
+  );
 
   const outbox = takeOutbox(machineId);
   const { batches, invalid } = syncPushBatches(outbox);
@@ -443,20 +460,39 @@ export function startSyncLoop(
     let failed = false;
     try {
       cycleId = beginCycle ? crypto.randomUUID() : undefined;
-      if (cycleId) { await beginCycle!(slot.id, cycleId); began = true; }
-      if (!stopped) await runSyncCycle(slot.id, requestFor(slot.id, cycleId), environmentFor?.(slot.id), () => !stopped && shouldRunAutomatically());
+      if (cycleId) {
+        await beginCycle!(slot.id, cycleId);
+        began = true;
+      }
+      if (!stopped)
+        await runSyncCycle(
+          slot.id,
+          requestFor(slot.id, cycleId),
+          environmentFor?.(slot.id),
+          () => !stopped && shouldRunAutomatically(),
+        );
     } catch (error) {
       failed = true;
       // Cancellation guards run only after awaited work settled. A stopped local
       // continuation is not an unknown transport outcome and may release Web Lock.
-      if (!cycleId && !(error instanceof Error && error.message === "SYNC_STOPPED")) uncertain = true;
-      if (!began) recordSyncStatus(slot.id, { state: "error", lastError: `Sync ownership is unavailable: ${String(error)}` });
+      if (!cycleId && !(error instanceof Error && error.message === "SYNC_STOPPED"))
+        uncertain = true;
+      if (!began)
+        recordSyncStatus(slot.id, {
+          state: "error",
+          lastError: `Sync ownership is unavailable: ${String(error)}`,
+        });
     }
     if (began && cycleId) {
-      try { await completeCycle!(slot.id, cycleId); }
-      catch (error) {
-        uncertain = true; failed = true;
-        recordSyncStatus(slot.id, { state: "error", lastError: `Sync completion is unconfirmed: ${String(error)}` });
+      try {
+        await completeCycle!(slot.id, cycleId);
+      } catch (error) {
+        uncertain = true;
+        failed = true;
+        recordSyncStatus(slot.id, {
+          state: "error",
+          lastError: `Sync completion is unconfirmed: ${String(error)}`,
+        });
       }
     }
     if (failed) {
@@ -552,9 +588,11 @@ export function startSyncLoop(
   const runNow = async (only?: string): Promise<void> => {
     if (stopped) return;
     if (!shouldRunAutomatically()) {
-      for (const id of only ? [only] : listMachineIds()) recordSyncStatus(id, {
-        state: "error", lastError: "Sync ownership is unavailable in this window.",
-      });
+      for (const id of only ? [only] : listMachineIds())
+        recordSyncStatus(id, {
+          state: "error",
+          lastError: "Sync ownership is unavailable in this window.",
+        });
       return;
     }
     await beforeExplicitSync?.();

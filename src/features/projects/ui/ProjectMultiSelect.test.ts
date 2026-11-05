@@ -184,7 +184,9 @@ it("creates one group for the selection and rejects a hidden destination with th
     });
   setName("Team");
   await act(async () => {
-    document.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    document
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await Promise.resolve();
   });
   const group = loadProjectGroups()[0];
@@ -199,7 +201,9 @@ it("creates one group for the selection and rejects a hidden destination with th
   click("New group…");
   setName("Secret");
   await act(async () => {
-    document.querySelector("form")!.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    document
+      .querySelector("form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
     await Promise.resolve();
   });
   expect(loadProjectGroupAssignments()["/a"]).toBe(group.id);

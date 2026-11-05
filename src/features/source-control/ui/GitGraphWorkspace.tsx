@@ -31,11 +31,11 @@ import {
   GIT_ACTIONS,
   GIT_CONFLICTS,
   useRemoteSupports,
-} from "../../connections/model/remoteCapabilities";
+} from "../../connections/public/remoteCapabilities";
 import { useGitResource } from "../hooks/useGitResource";
 import { setGitFeedback, useGitPanelState, withGitOperation } from "../model/gitPanelState";
 import { invalidateGitIndex } from "../model/gitIndexStore";
-import { invalidateWatchedFiles } from "../../files/model/fileWatch";
+import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { confirmNative } from "../model/gitConfirmation";
 import { GitGraphBranches } from "./GitGraphBranches";
 import { GitGraphCommitInspector } from "./GitGraphCommitInspector";

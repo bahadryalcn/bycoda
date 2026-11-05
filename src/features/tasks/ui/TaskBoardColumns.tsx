@@ -1,4 +1,5 @@
-import { Badge } from "../../../shared/ui/Badge";
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import type { BoardTask } from "../model/taskClient";
 import { canMoveTask, TASK_COLUMNS, taskColumn, type TaskColumn } from "../model/hostTasks";
@@ -24,6 +25,12 @@ const COLUMN_EMPTY: Record<TaskColumn, string> = {
   review: "Nothing to review",
   done: "Nothing done yet",
   blocked: "Nothing blocked",
+};
+const COLUMN_TONES: Partial<Record<TaskColumn, BadgeTone>> = {
+  running: "accent",
+  review: "warning",
+  done: "success",
+  blocked: "danger",
 };
 
 /** The board's columns: cards grouped by status, with drag and drop between and
@@ -162,6 +169,13 @@ export function TaskBoardColumns({
                 className="bycoda-task-column flex min-h-0 min-w-0 flex-col rounded-md border border-(--ui-pane-border)"
               >
                 <h2 className="flex h-9 shrink-0 items-center gap-2 px-3 text-ui-caption font-medium text-(--ui-text-secondary)">
+                  {column.length > 0 && COLUMN_TONES[status] ? (
+                    <StatusDot
+                      tone={COLUMN_TONES[status]}
+                      label={t(COLUMN_LABELS[status])}
+                      aria-hidden
+                    />
+                  ) : null}
                   <span className="min-w-0 flex-1 truncate">{t(COLUMN_LABELS[status])}</span>
                   <Badge variant="count" className="shrink-0 tabular-nums">
                     {column.length}

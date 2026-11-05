@@ -9,7 +9,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type FormEvent } fro
 
 import { loginHarness } from "../../../integrations/harness/core/auth";
 
-import { HARNESS_TITLE } from "../../sessions/model/session";
+import { HARNESS_TITLE, type HarnessId } from "../../sessions";
 
 import {
   newProviderAccount,
@@ -65,7 +65,6 @@ import {
   probeHarnessAvailability,
 } from "../../../integrations/harness/core/availability";
 import { refreshHarnessCatalogs } from "../../../integrations/harness/core/registry";
-import type { HarnessId } from "../../sessions/model/session";
 
 const SETTINGS_HARNESSES: readonly HarnessId[] = [
   ...PROVIDER_ACCOUNT_PROVIDERS,

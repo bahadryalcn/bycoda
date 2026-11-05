@@ -1,3 +1,4 @@
+import { BtwStatusDot } from "./BtwStatusDot";
 import { Alert } from "../../../shared/ui/Alert";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Button } from "../../../shared/ui/Button";
@@ -450,12 +451,6 @@ function compactQuestion(text: string | undefined): string {
   return compact.length > 48 ? `${compact.slice(0, 45)}…` : compact;
 }
 
-function statusClass(status: BtwThread["status"]): string {
-  if (status === "running") return "bg-(--ui-tone-warning-subtle)";
-  if (status === "error") return "bg-(--ui-tone-danger-subtle)";
-  return "bg-(--ui-tone-success-subtle)";
-}
-
 /** Side conversation with immediate presentation and retained thread/draft ownership. */
 export function BtwSheet({
   btw,
@@ -549,12 +544,7 @@ export function BtwSheet({
                     className="flex max-w-[15rem] shrink-0 items-center rounded-md"
                   >
                     <Tab value={tab.id} tooltip={tab.question} className="min-w-0">
-                      {tab.status ? (
-                        <span
-                          aria-hidden
-                          className={`size-1.5 shrink-0 rounded-full ${statusClass(tab.status)}`}
-                        />
-                      ) : null}
+                      {tab.status ? <BtwStatusDot status={tab.status} /> : null}
                       <span className="truncate">{label}</span>
                     </Tab>
                     <InlineAction

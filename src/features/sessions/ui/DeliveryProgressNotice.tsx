@@ -3,7 +3,7 @@ import { DeliveryReviewChoice, type DeliveryReviewOutcome } from "./DeliveryRevi
 import { useT } from "../../../shared/i18n";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
-import { nextQueueStatus } from "../../connections/model/queueState";
+import { nextQueueStatus } from "../../connections/public/queueState";
 import {
   deliveryResolverFor,
   useDeliveryReviewRequest,
@@ -19,7 +19,7 @@ import {
   updateDeliveryProgress,
   type DeliveryStage,
 } from "../model/deliveryProgress";
-import { useLocalSharedQueueClient } from "../../connections/model/useSharedLocalQueues";
+import { useLocalSharedQueueClient } from "../../connections/public/useSharedLocalQueues";
 
 const noSubscribe = () => () => {};
 const noClientState = { queue: { claim: undefined as { id: string } | undefined } };
@@ -170,10 +170,12 @@ export function DeliveryProgressNotice({
       className={`${embedded ? "px-1" : "px-4"} py-1 text-ui-caption text-(--ui-text-secondary)`}
       data-delivery-progress={stage}
     >
-      <div
-        className="flex flex-wrap items-center gap-x-2 gap-y-1"
-      >
-        <LiveText className="min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere]" text={t(summary)} mode={stage === "rejected" ? "assertive" : "polite"} />
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <LiveText
+          className="min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere]"
+          text={t(summary)}
+          mode={stage === "rejected" ? "assertive" : "polite"}
+        />
         {pending ? (
           <span className="shrink-0 tabular-nums text-(--ui-text-muted)">
             {t("{p0}s elapsed", { p0: elapsed })}

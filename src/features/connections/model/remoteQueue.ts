@@ -1,14 +1,14 @@
-import { canDispatchQueuedHead, reorderQueuedMessages } from "../../sessions/model/messageQueue";
-import { applyQueuedEdit } from "../../sessions/model/queuedMessageEdit";
+import { canDispatchQueuedHead, reorderQueuedMessages } from "../../sessions/public/messageQueue";
+import { applyQueuedEdit } from "../../sessions/public/queuedMessageEdit";
 import { nextQueueStatus } from "./queueState";
-import type { DeliveryReviewOutcome } from "../../sessions/model/deliveryReview";
 import type {
+  DeliveryReviewOutcome,
   Attachment,
   MessageQueueStatus,
   QueuedMessage,
   Session,
   TurnIntent,
-} from "../../sessions/model/session";
+} from "../../sessions";
 
 /**
  * Follow-ups queued behind a turn running on another machine.

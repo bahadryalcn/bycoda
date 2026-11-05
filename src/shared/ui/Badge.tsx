@@ -30,15 +30,20 @@ export function Badge({
   size = "md",
   max,
   variant,
+  tone,
   ...props
 }: BadgeProps) {
+  const badgeTone =
+    variant === "count" && tone !== "warning" && tone !== "danger" ? "accent" : (tone ?? "neutral");
   return (
     <ArcBadge
       {...props}
       variant={variant}
+      tone={badgeTone}
       size={size === "xs" ? "sm" : size}
       max={max ?? (variant === "count" ? BADGE_COUNT_MAX : undefined)}
       data-size={size}
+      data-tone={badgeTone}
       data-variant={variant ?? "label"}
       style={{ ...style, minInlineSize: minWidth ?? style?.minInlineSize }}
       className={["bycoda-arc", size === "xs" && styles.xs, className].filter(Boolean).join(" ")}
@@ -51,7 +56,7 @@ export type BadgeStatus = "failed" | "running" | "retrying" | "done" | "queued" 
 
 const STATUS_TONE: Record<BadgeStatus, BadgeTone> = {
   failed: "danger",
-  running: "info",
+  running: "accent",
   retrying: "warning",
   done: "success",
   queued: "neutral",

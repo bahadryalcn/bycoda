@@ -5,6 +5,7 @@ import { TextField } from "../../shared/ui/TextField";
 import { SearchableSelect } from "../../shared/ui/SearchableSelect";
 import { AdvancedSettings, Group, Row, Toggle } from "../settings/ui/settingsControls";
 import { Badge } from "../../shared/ui/Badge";
+import { CapabilityStatus } from "../../shared/ui/CapabilityStatus";
 import type {
   DesktopControlConfiguration,
   DesktopControlResponse,
@@ -98,6 +99,7 @@ export function DesktopControlSettings({
     setPending(true);
     setError("");
     setSaveConfirmed(false);
+    if (op === "status") setStatus(undefined);
     try {
       const result =
         op === "configure" && draft
@@ -174,26 +176,20 @@ export function DesktopControlSettings({
           </Button>
         </Row>
         <Row label={t("Computer control permission")}>
-          <Badge role="status" tone={status?.stopped ? "warning" : "neutral"}>
-            {t(
-              !status
-                ? "Unavailable"
-                : status.stopped
-                  ? "Stopped"
-                  : status.enabled
-                    ? "Enabled"
-                    : "Disabled",
-            )}
-          </Badge>
-          {status && (
-            <span role="status">
-              {t(
-                status.active
-                  ? "Desktop operation in progress"
-                  : "No desktop operation is running.",
-              )}
-            </span>
-          )}
+          <CapabilityStatus
+            permission={status ? (status.enabled ? "enabled" : "disabled") : "unknown"}
+            readiness={
+              pending
+                ? "checking"
+                : status
+                  ? status.verified
+                    ? "ready"
+                    : "unavailable"
+                  : "unknown"
+            }
+            activity={status ? (status.active ? "running" : "idle") : "unknown"}
+          />
+          {status?.stopped && <Badge tone="warning">{t("Stopped")}</Badge>}
         </Row>
         {error && !draft && <InlineError>{error}</InlineError>}
         {draft && (

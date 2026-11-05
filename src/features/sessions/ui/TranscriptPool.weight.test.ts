@@ -55,10 +55,14 @@ describe("generated image weight", () => {
 
 describe("retained tool payload weight", () => {
   it("evicts a parked tool-heavy transcript while preserving its active pane", () => {
-    const blocks = [{
-      id: "tool", role: "tool", text: "",
-      tool: { detail: "x".repeat(20 * 1024 * 1024) },
-    }] as Block[];
+    const blocks = [
+      {
+        id: "tool",
+        role: "tool",
+        text: "",
+        tool: { detail: "x".repeat(20 * 1024 * 1024) },
+      },
+    ] as Block[];
     const pool = new TranscriptPool();
     const host = document.createElement("div");
     pool.show("tools", host, createElement(Transcript, { blocks }));
@@ -70,20 +74,26 @@ describe("retained tool payload weight", () => {
   it("counts nested preview lines and subagent output without JSON serialization", () => {
     const plain = [{ id: "tool", role: "tool", text: "" }] as Block[];
     const payload = "x".repeat(500_000);
-    const blocks = [{
-      ...plain[0],
-      tool: {
-        detail: payload,
-        output: payload,
-        preview: { kind: "read", output: payload, lines: [{ kind: "context", text: payload }] },
+    const blocks = [
+      {
+        ...plain[0],
+        tool: {
+          detail: payload,
+          output: payload,
+          preview: { kind: "read", output: payload, lines: [{ kind: "context", text: payload }] },
+        },
       },
-    }] as Block[];
-    expect(transcriptPoolWeight(blocks) - transcriptPoolWeight(plain)).toBeGreaterThanOrEqual(4_000_000);
+    ] as Block[];
+    expect(transcriptPoolWeight(blocks) - transcriptPoolWeight(plain)).toBeGreaterThanOrEqual(
+      4_000_000,
+    );
   });
 
   it("updates a replaced tool payload even when text is unchanged", () => {
     const before = [{ id: "tool", role: "tool", text: "", tool: { detail: "small" } }] as Block[];
     const after = [{ ...before[0], tool: { detail: "x".repeat(1_000_000) } }] as Block[];
-    expect(transcriptPoolWeight(after, before) - transcriptPoolWeight(before)).toBeGreaterThan(1_900_000);
+    expect(transcriptPoolWeight(after, before) - transcriptPoolWeight(before)).toBeGreaterThan(
+      1_900_000,
+    );
   });
 });

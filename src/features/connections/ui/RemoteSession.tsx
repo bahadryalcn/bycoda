@@ -19,13 +19,25 @@ import {
 } from "../model/sessionExecutionBinding";
 import { applySessionSync } from "../model/protocol";
 import { mergePreviewBlocks } from "../model/mergePreviewBlocks";
-import { resolveQuestionDraft } from "../../sessions/model/questionDrafts";
+import { resolveQuestionDraft } from "../../sessions/public/questionDrafts";
 import {
   submitApprovalIntent,
   observeRemoteApprovalResolutions,
   observeRemoteApprovalSourceExpansion,
-} from "../../sessions/model/approvalIntents";
-import type { UserQuestionDelivery, UserQuestionPrompt } from "../../sessions/model/userQuestion";
+} from "../../sessions/public/approvalIntents";
+import type {
+  UserQuestionDelivery,
+  UserQuestionPrompt,
+  SessionPaneProps,
+  Attachment,
+  Block,
+  ComposerTurnOptions,
+  HarnessId,
+  RuntimeMode,
+  Session,
+  WorkspaceMode,
+  PlanBuildTarget,
+} from "../../sessions";
 import { t, useLocale } from "../../../shared/i18n";
 import { canonicalJson } from "../../sync/model/canonicalJson";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -43,17 +55,6 @@ import {
   settleDurableRemoteCommand,
   subscribeOutbox,
 } from "../model/remoteOutbox";
-import type { SessionPaneProps } from "../../sessions/ui/SessionPane";
-import type {
-  Attachment,
-  Block,
-  ComposerTurnOptions,
-  HarnessId,
-  RuntimeMode,
-  Session,
-  WorkspaceMode,
-  PlanBuildTarget,
-} from "../../sessions/model/session";
 import { uploadRemoteAttachments } from "../model/remoteAttachments";
 import { uploadQuestionAttachments } from "../model/remoteQuestionAttachments";
 import {
@@ -66,7 +67,7 @@ import {
   attachmentOwnershipScope,
   retryAttachmentOwnershipReleases,
 } from "../model/attachmentOwnership";
-import { getComposerAttachments, subscribeComposerDrafts } from "../../sessions/model/draftCache";
+import { getComposerAttachments, subscribeComposerDrafts } from "../../sessions/public/draftCache";
 import { snapshotWeight } from "../model/snapshotWeight";
 import {
   deleteRemotePageCache,
@@ -92,8 +93,7 @@ import {
   registerWorkspaceRewindUndoHandler,
   type WorkspaceRewindUndoIdentity,
 } from "../../workspaces/ui/WorkspaceRewindPreview";
-import type { AgentModel } from "../../sessions/model/models";
-import { isModelEnabled } from "../../sessions/model/models";
+import { isModelEnabled, type AgentModel } from "../../sessions/public/models";
 import { RemoteBindingGeneration } from "../model/remoteBindingGeneration";
 import {
   resetRemoteModelCatalogCacheForTests,
@@ -101,18 +101,18 @@ import {
 } from "../model/useRemoteModelCatalog";
 import { remoteSessionPollDelay } from "../model/remotePollingPolicy";
 import { subscribeRemoteMachineChannel } from "../model/remoteMachineChannel";
-import { ModelSourceContext, type ModelSource } from "../../sessions/ui/modelSource";
+import { ModelSourceContext, type ModelSource } from "../../sessions/public/modelSource";
 import { notifyGitChanged } from "../../../platform/tauri/fs";
-import type { Worktree } from "../../source-control/model/worktrees";
-import { useProjectBranchesState } from "../../source-control/hooks/useProjectBranches";
+import type { Worktree } from "../../source-control";
+import { useProjectBranchesState } from "../../source-control/public/useProjectBranches";
 import {
   registerRemoteSessionActions,
   publishRemoteSessionActionSource,
 } from "../model/remoteSessionActions";
 import { HOST_UPDATE_NOTICE, SESSION_REWIND, SESSION_SHELL } from "../model/remoteCapabilities";
-import { canRewindConversation } from "../../sessions/model/conversationRewind";
-import { parseShellCommand, SHELL_FOLLOW_UP_PROMPT } from "../../sessions/model/shellRun";
-import { loadResumeAtReset } from "../../settings/model/settings";
+import { canRewindConversation } from "../../sessions/public/conversationRewind";
+import { parseShellCommand, SHELL_FOLLOW_UP_PROMPT } from "../../sessions/public/shellRun";
+import { loadResumeAtReset } from "../../settings/public/settings";
 import {
   cachedRemoteSessionIds,
   loadRemoteBlock,
@@ -133,9 +133,9 @@ import {
 } from "../model/connections";
 import { beginRemoteCreate, endRemoteCreate } from "../model/remoteCreateIntent";
 import { blocksSending, needsSignIn, sendAfterReconnect } from "../model/remoteConnection";
-import { CONTINUE_PROMPT } from "../../sessions/model/inFlight";
-import { consumeOperatorCommand } from "../../sessions/model/operatorCommand";
-import { sameQueuedModelTarget } from "../../sessions/model/messageQueue";
+import { CONTINUE_PROMPT } from "../../sessions/public/inFlight";
+import { consumeOperatorCommand } from "../../sessions/public/operatorCommand";
+import { sameQueuedModelTarget } from "../../sessions/public/messageQueue";
 import {
   canEnqueueRemoteMessage,
   nextRemoteQueuedMessage,
@@ -155,7 +155,7 @@ import { useSharedRemoteQueue } from "../model/useSharedRemoteQueue";
 import {
   registerDeliveryResolver,
   requestDeliveryReview,
-} from "../../sessions/model/deliveryReview";
+} from "../../sessions/public/deliveryReview";
 import { useRemoteRecovery } from "../model/useRemoteRecovery";
 import { reportRemoteConnection, subscribeRemoteRecovered } from "../model/remoteHealth";
 import { useRemoteConnection } from "../model/useRemoteConnection";
@@ -900,7 +900,13 @@ function ConnectedRemoteSession({
               machine.id,
               () => ({
                 active: { projectId: project.projectId, sessionId, lastActiveAt },
-                sessions: [{ sessionId, revision: snapshotRef.current?.revision ?? 0, sourceEpoch: snapshotRef.current?.sourceEpoch }],
+                sessions: [
+                  {
+                    sessionId,
+                    revision: snapshotRef.current?.revision ?? 0,
+                    sourceEpoch: snapshotRef.current?.sourceEpoch,
+                  },
+                ],
                 inlineSync:
                   visibleRef.current &&
                   !document.hidden &&
@@ -916,7 +922,9 @@ function ConnectedRemoteSession({
                   controlChannelFailed = false;
                 }
                 const hint = changes.sessions.find((entry) => entry.sessionId === sessionId);
-                const sourceChanged = !!hint?.sourceEpoch && !!snapshotRef.current &&
+                const sourceChanged =
+                  !!hint?.sourceEpoch &&
+                  !!snapshotRef.current &&
                   hint.sourceEpoch !== snapshotRef.current.sourceEpoch;
                 if (hint?.deleted) {
                   deletedOnHost = true;
@@ -949,7 +957,8 @@ function ConnectedRemoteSession({
                 }
                 const current = snapshotRef.current;
                 if (
-                  !changes.reset && !sourceChanged &&
+                  !changes.reset &&
+                  !sourceChanged &&
                   !recoveredControlChannel &&
                   failed === 0 &&
                   visibleRef.current &&

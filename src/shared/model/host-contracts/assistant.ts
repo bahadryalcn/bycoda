@@ -132,7 +132,9 @@ export const AssistantProfilePatchSchema = z.strictObject({
   planningExecution: AssistantExecutionSchema.nullable().optional(),
 });
 export type AssistantProfilePatch = z.infer<typeof AssistantProfilePatchSchema>;
-export type AssistantProfile = Required<Omit<AssistantProfilePatch, keyof AssistantPolicy | "voiceNarration">> &
+export type AssistantProfile = Required<
+  Omit<AssistantProfilePatch, keyof AssistantPolicy | "voiceNarration">
+> &
   AssistantPolicy & { voiceNarration?: boolean; version: number; updatedAt: number };
 export type AssistantMemory = {
   id: string;
@@ -438,7 +440,13 @@ export const AssistantRequestValidationSchema = z.union([
     z.strictObject({ op: z.literal("snapshot"), limit }),
     z.strictObject({ op: z.literal("narration.pending"), threadId: id, generation: id }),
     z.strictObject({ op: z.literal("narration.claim"), threadId: id, eventId: id, generation: id }),
-    z.strictObject({ op: z.literal("narration.settle"), threadId: id, eventId: id, generation: id, state: z.enum(["delivered", "unknown"]) }),
+    z.strictObject({
+      op: z.literal("narration.settle"),
+      threadId: id,
+      eventId: id,
+      generation: id,
+      state: z.enum(["delivered", "unknown"]),
+    }),
     z.strictObject({
       op: z.literal("profile.update"),
       expectedVersion: version,
@@ -609,7 +617,11 @@ export const AssistantRequestValidationSchema = z.union([
     }),
     z.strictObject({ op: z.literal("manual.list") }),
     z.strictObject({ op: z.literal("observation.delivery.list"), projectId: id }),
-    z.strictObject({ op: z.literal("observation.delivery.refresh"), projectId: id, notificationId: id }),
+    z.strictObject({
+      op: z.literal("observation.delivery.refresh"),
+      projectId: id,
+      notificationId: id,
+    }),
     z.strictObject({
       op: z.literal("manual.policy"),
       expectedVersion: version,
@@ -669,10 +681,19 @@ export const AssistantRequestValidationSchema = z.union([
 export type AssistantRequest = z.infer<typeof AssistantRequestValidationSchema>;
 export type AssistantResponse = {
   sendIdentity?: { instanceId: string };
-  narrationEvents?: { eventId: string; kind: "progress" | "completed" | "question"; text: string; createdAt: number }[];
+  narrationEvents?: {
+    eventId: string;
+    kind: "progress" | "completed" | "question";
+    text: string;
+    createdAt: number;
+  }[];
   narrationClaimed?: boolean;
   sendReceipt?: { status: "settled" | "unknown" | "refused" | "notSent" };
-  observationDeliveries?: { notificationId: string; projectId: string; state: "pending" | "unknown" | "accepted" | "suppressed" }[];
+  observationDeliveries?: {
+    notificationId: string;
+    projectId: string;
+    state: "pending" | "unknown" | "accepted" | "suppressed";
+  }[];
   voiceContext?: AssistantVoiceContext;
   ownerQuestion?: AssistantOwnerQuestion | null;
   ownerQuestionReceipt?: AssistantOwnerQuestionReceipt;
@@ -998,10 +1019,31 @@ export const AssistantSnapshotSchema = z.strictObject({
 });
 export const AssistantResponseValidationSchema = z.strictObject({
   sendIdentity: z.strictObject({ instanceId: id }).optional(),
-  narrationEvents: z.array(z.strictObject({ eventId: id, kind: z.enum(["progress", "completed", "question"]), text: z.string().max(8000), createdAt: z.number() })).max(20).optional(),
+  narrationEvents: z
+    .array(
+      z.strictObject({
+        eventId: id,
+        kind: z.enum(["progress", "completed", "question"]),
+        text: z.string().max(8000),
+        createdAt: z.number(),
+      }),
+    )
+    .max(20)
+    .optional(),
   narrationClaimed: z.boolean().optional(),
-  sendReceipt: z.strictObject({ status: z.enum(["settled", "unknown", "refused", "notSent"]) }).optional(),
-  observationDeliveries: z.array(z.strictObject({ notificationId: id, projectId: id, state: z.enum(["pending", "unknown", "accepted", "suppressed"]) })).max(100).optional(),
+  sendReceipt: z
+    .strictObject({ status: z.enum(["settled", "unknown", "refused", "notSent"]) })
+    .optional(),
+  observationDeliveries: z
+    .array(
+      z.strictObject({
+        notificationId: id,
+        projectId: id,
+        state: z.enum(["pending", "unknown", "accepted", "suppressed"]),
+      }),
+    )
+    .max(100)
+    .optional(),
   voiceContext: AssistantVoiceContextSchema.optional(),
   ownerQuestion: AssistantOwnerQuestionSchema.nullable().optional(),
   ownerQuestionReceipt: AssistantOwnerQuestionReceiptSchema.optional(),

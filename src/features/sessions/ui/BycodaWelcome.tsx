@@ -2,7 +2,7 @@ import { useT } from "../../../shared/i18n";
 import { useEffect } from "react";
 import type { HarnessId } from "../model/session";
 import { HarnessIcon } from "./HarnessIcon";
-import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
+import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 
 /** Acknowledge a model change with the selected provider's mark. */
 export function BycodaWelcome({ harness, onDone }: { harness: HarnessId; onDone: () => void }) {

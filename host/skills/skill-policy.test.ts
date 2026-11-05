@@ -77,7 +77,7 @@ it("preserves an alternative explicitly enabled by the provider without reading 
     { kind: "skill", name: "good-css", path: projectPath, enabled: false },
     { kind: "skill", name: "good-css", path: userPath, enabled: true },
   ]);
-  const found = (await searchHarnessSkills(cwd, {}, home, "skill-policy-test"));
+  const found = await searchHarnessSkills(cwd, {}, home, "skill-policy-test");
   expect(found.skills).toHaveLength(1);
   expect(found.skills[0].scope).toBe("user");
   expect((await readHarnessSkill(cwd, { name: "good-css" }, home, "skill-policy-test")).scope).toBe(

@@ -24,15 +24,13 @@ import {
   lineNumbers,
 } from "@codemirror/view";
 import { ChevronDown, ChevronUp } from "../../../shared/ui/icons";
-
 import { formatInteger } from "../../../shared/lib/numbers";
 import { minimalSetup } from "codemirror";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { isLightScheme } from "../../settings/model/appearance";
-import { loadAutosave, loadFormatOnSave, subscribeAutosave } from "../../settings/model/settings";
+import { isLightScheme } from "../../settings/public/appearance";
+import { loadAutosave, loadFormatOnSave, subscribeAutosave } from "../../settings/public/settings";
 import { formatProjectText, hasBundledFormatter } from "../../../shared/lib/format";
 import {
   gitBlame,
@@ -41,21 +39,20 @@ import {
   notifyGitChanged,
   subscribeGitChanged,
 } from "../../../platform/tauri/fs";
-
 import { displayPath } from "../../../shared/lib/paths";
 import type { EditorNavigation, OpenFileFn } from "../../search/model/search";
-
 import {
   DiffCommentComposer,
   type DiffCommentComposerTarget,
-} from "../../source-control/ui/DiffCommentComposer";
+} from "../../source-control/public/DiffCommentComposer";
+
 import {
   DiffLayoutToggle,
   useResponsiveDiffLayout,
-} from "../../source-control/ui/DiffLayoutToggle";
-import { hasConflictMarkers } from "../../source-control/model/conflictMarkers";
-import { nextConflictedFile } from "../../source-control/model/conflictSection";
-import { requestOpenCommit } from "../../source-control/ui/GitFileInspector";
+} from "../../source-control/public/DiffLayoutToggle";
+import { hasConflictMarkers } from "../../source-control/public/conflictMarkers";
+import { nextConflictedFile } from "../../source-control/public/conflictSection";
+import { requestOpenCommit } from "../../source-control/public/GitFileInspector";
 import { editorAutocomplete } from "../editor/editorAutocomplete";
 import { editorBlame, refreshBlame } from "../editor/editorBlame";
 import { conflictBlocks, editorConflicts, stepConflict } from "../editor/editorConflicts";
@@ -73,7 +70,7 @@ import { editorTyping, tryExpandEmmet } from "../editor/editorEditing";
 import { EditorSelectionMenu, type EditorSelectionTarget } from "./EditorSelectionMenu";
 import { EditorContextMenu, type EditorContextTarget } from "./EditorContextMenu";
 import { editorCodeSelection, formatEditorSelectionReference } from "../model/editorSelection";
-import { requestAddToChat } from "../../sessions/model/quoteDraft";
+import { requestAddToChat } from "../../sessions/public/quoteDraft";
 import {
   diffActiveChunkIndex,
   diffLineStatsForView,
@@ -98,8 +95,11 @@ import { editorScrollbar } from "../editor/editorScrollbar";
 import { editorZoom } from "../editor/editorZoom";
 import { attachSplitOverview, editorOverview } from "../editor/editorOverview";
 import { EditorConflictBar } from "./EditorConflictBar";
-import { ConflictLayout, conflictSourcesFromMarkers } from "../../source-control/ui/ConflictLayout";
-import { MergeConflictEditor } from "../../source-control/ui/MergeConflictEditor";
+import {
+  ConflictLayout,
+  conflictSourcesFromMarkers,
+} from "../../source-control/public/ConflictLayout";
+import { MergeConflictEditor } from "../../source-control/public/MergeConflictEditor";
 
 import { useInlineBlame, useInlineBlameUnavailableReason } from "./InlineBlameToggle";
 

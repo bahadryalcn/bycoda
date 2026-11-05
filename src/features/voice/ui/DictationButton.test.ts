@@ -62,9 +62,7 @@ it("cancels active dictation only when its own setting is disabled", async () =>
   await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), enabled: false }));
   expect(button()).not.toBeNull();
   expect(mock.cancel).not.toHaveBeenCalled();
-  await act(async () =>
-    saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: false }),
-  );
+  await act(async () => saveVoiceSettings({ ...loadVoiceSettings(), dictationEnabled: false }));
   expect(button()).toBeNull();
   expect(mock.cancel).toHaveBeenCalledOnce();
 });

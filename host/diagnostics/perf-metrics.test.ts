@@ -1,6 +1,8 @@
 import { expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { rpcDispatchLiterals } from "../../scripts/checks/host-rpc-source-fixture.mjs";
+import {
+  hostServerDispatchSource,
+  rpcDispatchLiterals,
+} from "../../scripts/checks/host-rpc-source-fixture.mjs";
 import { getHostRpcMethod } from "../../src/shared/model/host-contracts";
 import {
   PerfMetrics,
@@ -142,10 +144,11 @@ it("monitors real event-loop delay in milliseconds and releases the monitor", as
 });
 
 it("keeps the RPC allowlist aligned with the dispatch literals, including J2 token RPCs", () => {
-  const source = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
+  const source = hostServerDispatchSource();
   // Agent tool action names and legacy HTTP spellings are data, not canonical
   // RPC registrations; they must not become metric labels by string matching.
   const methods = rpcDispatchLiterals(source).filter((name) => getHostRpcMethod(name));
+  expect(methods.length).toBeGreaterThan(0);
   for (const name of new Set([
     ...methods,
     "mcp.tokens.create",

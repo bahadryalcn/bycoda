@@ -3,8 +3,8 @@ import {
   claimAutoContinue,
   isAutoContinueDue,
   markAutoContinueDue,
-} from "../../sessions/model/autoContinue";
-import { loadAutoContinueInterrupted } from "../../settings/model/settings";
+} from "../../sessions/public/autoContinue";
+import { loadAutoContinueInterrupted } from "../../settings/public/settings";
 import type { HostSession } from "./protocol";
 import { shouldAutoContinueRemote } from "./remoteRecovery";
 import { unwatchRun, watchKey, watchRun, watchedRun } from "./remoteTurnWatch";

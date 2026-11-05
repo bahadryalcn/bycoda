@@ -34,7 +34,7 @@ import {
   recordRemoteConnection,
   resetRemoteConnection,
 } from "./remoteHealth";
-import { loadRemoteAutoReconnect } from "../../settings/model/settings";
+import { loadRemoteAutoReconnect } from "../../settings/public/settings";
 import {
   bindRemoteAttachmentReaders,
   withRemoteAttachmentPreviews,
@@ -602,7 +602,8 @@ async function assembleSessionSync(
   });
   try {
     const decoded = await decodeSessionSync(pieces, response.length);
-    const decodedEpoch = decoded.kind === "unchanged" ? decoded.sourceEpoch : decoded.value.sourceEpoch;
+    const decodedEpoch =
+      decoded.kind === "unchanged" ? decoded.sourceEpoch : decoded.value.sourceEpoch;
     if (response.sourceEpoch !== undefined && decodedEpoch !== response.sourceEpoch)
       throw new Error("Session transfer source changed");
     decodeDone({ units: response.length });

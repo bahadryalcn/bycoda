@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { ChangeSignal } from "../changeSignal";
 import { forEachConcurrent } from "../../src/shared/lib/concurrent";
-import type { HostSessionSummary, SessionSync } from "../../src/features/connections/model/protocol";
+import type {
+  HostSessionSummary,
+  SessionSync,
+} from "../../src/features/connections/model/protocol";
 
 export type SessionRef = {
   sessionId: string;
@@ -133,7 +136,8 @@ export class RemoteChanges {
         !entry.sessionId ||
         !Number.isSafeInteger(entry.revision) ||
         entry.revision < 0 ||
-        (entry.sourceEpoch !== undefined && (typeof entry.sourceEpoch !== "string" || entry.sourceEpoch.length > 1024))
+        (entry.sourceEpoch !== undefined &&
+          (typeof entry.sourceEpoch !== "string" || entry.sourceEpoch.length > 1024))
       )
         throw new Error("Invalid session subscription");
       return entry;
@@ -199,8 +203,16 @@ export class RemoteChanges {
             }
             const currentRevision = typeof current === "number" ? current : current.revision;
             const currentEpoch = typeof current === "number" ? undefined : current.sourceEpoch;
-            return reset || currentRevision !== revision || (sourceEpoch !== undefined && currentEpoch !== sourceEpoch)
-              ? [{ sessionId, revision: currentRevision, ...(currentEpoch ? { sourceEpoch: currentEpoch } : {}) }]
+            return reset ||
+              currentRevision !== revision ||
+              (sourceEpoch !== undefined && currentEpoch !== sourceEpoch)
+              ? [
+                  {
+                    sessionId,
+                    revision: currentRevision,
+                    ...(currentEpoch ? { sourceEpoch: currentEpoch } : {}),
+                  },
+                ]
               : [];
           }),
         )

@@ -4,10 +4,11 @@ import { Modal } from "../../../shared/ui/Modal";
 import { Button } from "../../../shared/ui/Button";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { t } from "../../../shared/i18n";
-import { remoteRequest } from "../../connections/model/connections";
-import type { HostSession } from "../../connections/model/protocol";
+import { remoteRequest } from "../../connections/public/connections";
+import type { HostSession } from "../../connections";
 import type { BackgroundSessionTarget } from "../model/backgroundSession";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 
@@ -76,7 +77,14 @@ export function TaskSessionSheet({
       <div className="task-session-preview">
         <div className="task-session-toolbar">
           <span role="status">
-            <Badge tone={session?.status === "running" ? "info" : "neutral"}>
+            <Badge
+              tone={session?.status === "running" ? "accent" : "neutral"}
+              icon={
+                session?.status === "running" ? (
+                  <StatusDot tone="accent" label={t("Running")} />
+                ) : undefined
+              }
+            >
               {session
                 ? t(
                     session.status === "running"

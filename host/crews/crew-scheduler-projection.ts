@@ -37,64 +37,123 @@ export async function initializeCrewSchedulerProjection(store: HostStore): Promi
     if (new Set(parsed.runs.map((run) => run.id)).size !== parsed.runs.length)
       throw new Error("Crew run identities are duplicated; legacy source was retained");
     const { runs, ...state } = parsed;
-    await store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?)").run(stateKey, JSON.stringify(state));
-    for (let ordinal = 0; ordinal < runs.length; ordinal++) await saveRun(store, ordinal, runs[ordinal]);
+    await store.db
+      .prepare("INSERT INTO metadata(key,value) VALUES(?,?)")
+      .run(stateKey, JSON.stringify(state));
+    for (let ordinal = 0; ordinal < runs.length; ordinal++)
+      await saveRun(store, ordinal, runs[ordinal]);
     // The original crews.v1 value is intentionally retained, never rewritten.
     await store.db.prepare("INSERT INTO metadata(key,value) VALUES(?,?)").run(markerKey, "1");
   });
 }
 
 async function saveRun(store: HostStore, ordinal: number, run: CrewRun): Promise<void> {
-  if (!run || typeof run.id !== "string" || typeof run.projectId !== "string" || typeof run.status !== "string" || !Number.isSafeInteger(run.createdAt) ||
-      (run.coordinatorSessionId != null && typeof run.coordinatorSessionId !== "string"))
+  if (
+    !run ||
+    typeof run.id !== "string" ||
+    typeof run.projectId !== "string" ||
+    typeof run.status !== "string" ||
+    !Number.isSafeInteger(run.createdAt) ||
+    (run.coordinatorSessionId != null && typeof run.coordinatorSessionId !== "string")
+  )
     throw new Error("Crew run is invalid");
-  const prior = run.status === "finished"
-    ? await store.db.prepare("SELECT finished_at FROM crew_runs_v2 WHERE run_id=? AND status='finished' ORDER BY ordinal LIMIT 1").get(run.id)
-    : undefined;
+  const prior =
+    run.status === "finished"
+      ? await store.db
+          .prepare(
+            "SELECT finished_at FROM crew_runs_v2 WHERE run_id=? AND status='finished' ORDER BY ordinal LIMIT 1",
+          )
+          .get(run.id)
+      : undefined;
   let finishedAt: number | null = null;
   if (run.status === "finished") {
     if (prior?.finished_at != null) finishedAt = Number(prior.finished_at);
     else {
-      await store.db.prepare("UPDATE crew_finish_sequence SET value=value+1 WHERE singleton=1 AND value<?").run(Number.MAX_SAFE_INTEGER);
-      const sequence = await store.db.prepare("SELECT value FROM crew_finish_sequence WHERE singleton=1").get();
+      await store.db
+        .prepare("UPDATE crew_finish_sequence SET value=value+1 WHERE singleton=1 AND value<?")
+        .run(Number.MAX_SAFE_INTEGER);
+      const sequence = await store.db
+        .prepare("SELECT value FROM crew_finish_sequence WHERE singleton=1")
+        .get();
       finishedAt = Number(sequence?.value);
       if (!Number.isSafeInteger(finishedAt) || finishedAt >= Number.MAX_SAFE_INTEGER)
         throw new Error("Crew finish sequence is exhausted");
     }
   }
-  if (finishedAt !== null && !Number.isSafeInteger(finishedAt)) throw new Error("Crew finish time is invalid");
-  await store.db.prepare(`INSERT INTO crew_runs_v2(ordinal,run_id,project_id,created_at,finished_at,status,coordinator_session_id,payload)
+  if (finishedAt !== null && !Number.isSafeInteger(finishedAt))
+    throw new Error("Crew finish time is invalid");
+  await store.db
+    .prepare(`INSERT INTO crew_runs_v2(ordinal,run_id,project_id,created_at,finished_at,status,coordinator_session_id,payload)
     VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(ordinal) DO UPDATE SET run_id=excluded.run_id, project_id=excluded.project_id, created_at=excluded.created_at, finished_at=excluded.finished_at,
     status=excluded.status, coordinator_session_id=excluded.coordinator_session_id, payload=excluded.payload
-    WHERE crew_runs_v2.payload <> excluded.payload`).run(
-      ordinal, run.id, run.projectId, run.createdAt, finishedAt, run.status, run.coordinatorSessionId ?? null, JSON.stringify(run),
+    WHERE crew_runs_v2.payload <> excluded.payload`)
+    .run(
+      ordinal,
+      run.id,
+      run.projectId,
+      run.createdAt,
+      finishedAt,
+      run.status,
+      run.coordinatorSessionId ?? null,
+      JSON.stringify(run),
     );
 }
 
-export async function readCrewProjectState(store: HostStore, projectId: string, history?: { cursor?: string; limit: number }): Promise<CrewState & { historyNextCursor?: string }> {
+export async function readCrewProjectState(
+  store: HostStore,
+  projectId: string,
+  history?: { cursor?: string; limit: number },
+): Promise<CrewState & { historyNextCursor?: string }> {
   return store.db.scope(async () => {
     const row = await store.db.prepare("SELECT value FROM metadata WHERE key=?").get(stateKey);
     if (!row) throw new Error("Crew storage is unavailable");
     const state = JSON.parse(String(row.value));
     if (!history) {
-      const runs = await store.db.prepare("SELECT payload FROM crew_runs_v2 WHERE project_id=? ORDER BY ordinal").all(projectId);
+      const runs = await store.db
+        .prepare("SELECT payload FROM crew_runs_v2 WHERE project_id=? ORDER BY ordinal")
+        .all(projectId);
       return { ...state, runs: runs.map((entry) => JSON.parse(String(entry.payload)) as CrewRun) };
     }
-    const ongoing = await store.db.prepare("SELECT payload FROM crew_runs_v2 WHERE project_id=? AND status<>'finished' ORDER BY ordinal").all(projectId);
+    const ongoing = await store.db
+      .prepare(
+        "SELECT payload FROM crew_runs_v2 WHERE project_id=? AND status<>'finished' ORDER BY ordinal",
+      )
+      .all(projectId);
     let before: [number, string] | undefined;
     if (history.cursor !== undefined) {
       const value = JSON.parse(history.cursor) as unknown;
-      if (!Array.isArray(value) || value.length !== 2 || !Number.isSafeInteger(value[0]) || typeof value[1] !== "string" || value[1].length > 512)
+      if (
+        !Array.isArray(value) ||
+        value.length !== 2 ||
+        !Number.isSafeInteger(value[0]) ||
+        typeof value[1] !== "string" ||
+        value[1].length > 512
+      )
         throw new Error("Invalid Crew history cursor");
       before = value as [number, string];
     }
-    const finished = await store.db.prepare(`SELECT payload,finished_at,run_id FROM crew_runs_v2
+    const finished = await store.db
+      .prepare(`SELECT payload,finished_at,run_id FROM crew_runs_v2
       WHERE project_id=? AND status='finished' AND (? IS NULL OR finished_at<? OR (finished_at=? AND run_id<?))
       ORDER BY finished_at DESC,run_id DESC LIMIT ?`)
-      .all(projectId, before?.[0] ?? null, before?.[0] ?? null, before?.[0] ?? null, before?.[1] ?? null, history.limit + 1);
+      .all(
+        projectId,
+        before?.[0] ?? null,
+        before?.[0] ?? null,
+        before?.[0] ?? null,
+        before?.[1] ?? null,
+        history.limit + 1,
+      );
     const last = finished[history.limit - 1];
-    return { ...state, runs: [...ongoing, ...finished.slice(0, history.limit)].map((entry) => JSON.parse(String(entry.payload)) as CrewRun),
-      ...(finished.length > history.limit && last ? { historyNextCursor: JSON.stringify([Number(last.finished_at), String(last.run_id)]) } : {}) };
+    return {
+      ...state,
+      runs: [...ongoing, ...finished.slice(0, history.limit)].map(
+        (entry) => JSON.parse(String(entry.payload)) as CrewRun,
+      ),
+      ...(finished.length > history.limit && last
+        ? { historyNextCursor: JSON.stringify([Number(last.finished_at), String(last.run_id)]) }
+        : {}),
+    };
   });
 }
 
@@ -117,44 +176,67 @@ export async function readCrewState(store: HostStore): Promise<CrewState> {
 export async function writeCrewState(store: HostStore, state: CrewState): Promise<void> {
   if (!store.transactionActive) throw new Error("Crew writes require a transaction");
   const { runs, ...rest } = state;
-  if (new Set(runs.map((run) => run.id)).size !== runs.length) throw new Error("Crew run identities are duplicated");
-  await store.db.prepare("UPDATE metadata SET value=? WHERE key=? AND value<>?")
+  if (new Set(runs.map((run) => run.id)).size !== runs.length)
+    throw new Error("Crew run identities are duplicated");
+  await store.db
+    .prepare("UPDATE metadata SET value=? WHERE key=? AND value<>?")
     .run(JSON.stringify(rest), stateKey, JSON.stringify(rest));
-  const existing = await store.db.prepare("SELECT ordinal,payload FROM crew_runs_v2 ORDER BY ordinal").all();
+  const existing = await store.db
+    .prepare("SELECT ordinal,payload FROM crew_runs_v2 ORDER BY ordinal")
+    .all();
   for (let ordinal = 0; ordinal < runs.length; ordinal++)
-    if (Number(existing[ordinal]?.ordinal) !== ordinal || existing[ordinal]?.payload !== JSON.stringify(runs[ordinal]))
+    if (
+      Number(existing[ordinal]?.ordinal) !== ordinal ||
+      existing[ordinal]?.payload !== JSON.stringify(runs[ordinal])
+    )
       await saveRun(store, ordinal, runs[ordinal]);
   if (existing.length > runs.length)
     await store.db.prepare("DELETE FROM crew_runs_v2 WHERE ordinal>=?").run(runs.length);
 }
 
 export async function readCrewSchedulerRuns(store: HostStore): Promise<CrewRun[]> {
-  const state = await store.db.prepare(`SELECT CASE WHEN json_valid(value)
-    THEN json_type(value,'$.definitions')='array' ELSE 0 END AS valid FROM metadata WHERE key=?`).get(stateKey);
-  if (!state || Number(state.valid) !== 1) throw new Error("Crew storage is invalid or unavailable");
-  const rows = await store.db.prepare(`SELECT payload FROM crew_runs_v2
+  const state = await store.db
+    .prepare(`SELECT CASE WHEN json_valid(value)
+    THEN json_type(value,'$.definitions')='array' ELSE 0 END AS valid FROM metadata WHERE key=?`)
+    .get(stateKey);
+  if (!state || Number(state.valid) !== 1)
+    throw new Error("Crew storage is invalid or unavailable");
+  const rows = await store.db
+    .prepare(`SELECT payload FROM crew_runs_v2
     WHERE status='active' AND coordinator_session_id IS NOT NULL AND coordinator_session_id<>''
-    ORDER BY ordinal`).all();
+    ORDER BY ordinal`)
+    .all();
   return rows.map((row) => JSON.parse(String(row.payload)) as CrewRun);
 }
 
 export async function readCrewSchedulerRun(store: HostStore, id: string) {
   if (!store.transactionActive) throw new Error("Crew scheduler run reads require a transaction.");
-  const row = await store.db.prepare("SELECT ordinal,payload FROM crew_runs_v2 WHERE run_id=? ORDER BY ordinal LIMIT 1").get(id);
-  return row ? { ordinal: Number(row.ordinal), run: JSON.parse(String(row.payload)) as CrewRun } : undefined;
+  const row = await store.db
+    .prepare("SELECT ordinal,payload FROM crew_runs_v2 WHERE run_id=? ORDER BY ordinal LIMIT 1")
+    .get(id);
+  return row
+    ? { ordinal: Number(row.ordinal), run: JSON.parse(String(row.payload)) as CrewRun }
+    : undefined;
 }
 
 export async function readCrewRun(store: HostStore, id: string): Promise<CrewRun | undefined> {
-  const row = await store.db.prepare("SELECT payload FROM crew_runs_v2 WHERE run_id=? ORDER BY ordinal LIMIT 1").get(id);
-  return row ? JSON.parse(String(row.payload)) as CrewRun : undefined;
+  const row = await store.db
+    .prepare("SELECT payload FROM crew_runs_v2 WHERE run_id=? ORDER BY ordinal LIMIT 1")
+    .get(id);
+  return row ? (JSON.parse(String(row.payload)) as CrewRun) : undefined;
 }
 
 export async function patchCrewSchedulerRun(
-  store: HostStore, ordinal: number, run: CrewRun, _fields: ReadonlyArray<keyof CrewRun>,
+  store: HostStore,
+  ordinal: number,
+  run: CrewRun,
+  _fields: ReadonlyArray<keyof CrewRun>,
 ): Promise<void> {
   if (!store.transactionActive) throw new Error("Crew scheduler patches require a transaction.");
   if (!Number.isSafeInteger(ordinal) || ordinal < 0) throw new Error("Invalid Crew run ordinal.");
-  const existing = await store.db.prepare("SELECT run_id FROM crew_runs_v2 WHERE ordinal=?").get(ordinal);
+  const existing = await store.db
+    .prepare("SELECT run_id FROM crew_runs_v2 WHERE ordinal=?")
+    .get(ordinal);
   if (!existing || existing.run_id !== run.id) throw new Error("Crew run changed; retry");
   await saveRun(store, ordinal, run);
   store.afterCommit(() => store.changes.notify());

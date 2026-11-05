@@ -142,7 +142,7 @@ export function CrewMemberPicker({
               <div
                 role="group"
                 aria-label={t("Selected members")}
-                className="flex min-w-0 flex-col gap-1.5 rounded-(--ui-radius-card) bg-(--ui-surface-panel) p-2"
+                className="flex min-w-0 flex-col gap-1.5 rounded-(--ui-radius-card) bg-transparent p-2"
               >
                 <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-2">
                   <span role="status" className="text-ui-caption text-(--ui-text-secondary)">

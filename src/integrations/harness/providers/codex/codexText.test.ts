@@ -60,7 +60,9 @@ vi.mock("../../core/jsonRpc", () => ({
       if (method === "thread/start") return { thread: { id: "text-thread" } };
       if (method === "turn/start") {
         state.starts.push(params);
-        const text = state.chunks.length ? state.chunks.join("") : '{"subject":"Fix commit generation","body":""}';
+        const text = state.chunks.length
+          ? state.chunks.join("")
+          : '{"subject":"Fix commit generation","body":""}';
         if (state.chunks.length) {
           for (const delta of state.chunks)
             this.handlers.onNotification("item/agentMessage/delta", { delta });
@@ -91,8 +93,12 @@ it.each([{ chunks: ["ha", "ha"] }, { chunks: ["-", "--"] }, { chunks: ["\n", "\n
     state.chunks.push(...chunks);
     const emitted: string[] = [];
     const output = await runCodexTextPrompt({
-      cwd: "/repo", prompt: "Exact text", timeoutMs: 1000,
-      onEvent: (event) => { if (event.type === "message.delta") emitted.push(event.text); },
+      cwd: "/repo",
+      prompt: "Exact text",
+      timeoutMs: 1000,
+      onEvent: (event) => {
+        if (event.type === "message.delta") emitted.push(event.text);
+      },
     });
     expect(output).toBe(chunks.join(""));
     expect(emitted.join("")).toBe(output);

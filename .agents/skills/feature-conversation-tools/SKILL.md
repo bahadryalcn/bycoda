@@ -1,79 +1,78 @@
 ---
 name: feature-conversation-tools
-description: "Change tool navigation, computer/Host targeting, Browser, Devices, development servers, Logs, Resource usage, control leases and capture drafts."
+description: Change tool navigation, computer/Host targeting, Browser, Devices, development servers, Logs, Resource usage, control leases and capture drafts.
 ---
 
 # Conversation tools
 
-Own tool workspace composition and selected target. Each Browser/Devices/Logs/process controller retains its own lifecycle and permissions. App-level Conversation Tools usage belongs to the bycoda app skill; this developer skill does not grant operation authority.
+Own tool workspace composition and selected target in `src/features/host-tools/` and
+`host/conversation/`, with native window/remote adapters and corresponding mobile routes.
+Browser, Devices, Logs and process controllers keep their lifecycle and permissions;
+the bycoda app skill owns tool usage, never granting operation authority here.
 
-## Source entry points
+## Source starts
 
-Code paths below are repository-root relative.
-
-- `src/features/host-tools/SessionHostTools.tsx`
-- `src/features/host-tools/ToolsWorkspace.tsx`
-- `src/features/host-tools/toolsSessionRegistry.ts`, `toolsHubTransport.ts` and `HostToolsWindow.tsx`
-- `src/features/connections/model/hostFeatureClient.ts`
-- `host/conversation/tool-management.ts`, `host/conversation/conversation-preview.ts` and `host/conversation/conversation-tools.ts`
-- `src/integrations/harness/core/toolWorkflowGuidance.ts` and `runtimeGuidance.ts`
+- UI/presentation: `src/features/host-tools/`, through SessionHostTools and ToolsWorkspace;
+  `src/features/devices/` owns device inspection and capture.
+- Target/transport: `src/features/connections/model/`, through hostFeatureClient;
+  `src/integrations/harness/core/` supplies workflow/runtime guidance.
+- Host: `host/conversation/`, through tool-management and conversation-tools; domain
+  owners remain in `host/browser/`, `host/devices/` and `host/dev-servers/`.
+- Native: `src-tauri/src/` owns configured detached windows and remote delivery;
+  inspect corresponding `mobile/` routes independently.
 
 ## Workflow
 
-1. Identify the selected computer, canonical project, tool target and owning Host before tracing a failure; preserve unknown associations rather than guessing.
-2. Follow the existing domain controller through capability, lease, request and stale-result handling. Change shared shell composition separately from domain effects.
-3. Keep capture/annotation/attachment drafts through navigation and recoverable failures. Feed attachments through the existing composer integration.
-4. Exercise affected local/remote/offline and permission-denied states, control handoff, close/docking and retry without duplicate operations.
+1. Identify selected machine, canonical project, execution cwd, tool target and owning Host;
+   preserve unknown associations instead of guessing.
+2. Follow the domain controller through capability, lease, request and stale-result handling.
+   Separate shell presentation changes from domain effects.
+3. Trace capture/annotation/attachment drafts through navigation, transfer and composer insertion.
+4. Exercise local/remote/offline, denial, control handoff, close/docking and uncertain retry
+   without duplicate operations; use the [owner map](references/surfaces.md).
 
 ## Preserve
 
-- Do not merge project identity, execution cwd and selected machine. Tool availability is not a control grant.
-- Browser/device control retains explicit lease ownership and capability checks; annotation must use the exact captured frame and target.
-- Devices require Host `controlProtocol: 1` and a device-bound lease before input.
-  Viewing, restored drafts and inspection selection never claim control. Preserve
-  request identity, expiry/revocation, competing controllers and stale-node rejection.
-  Inspect captures a fresh tree then frame; capture is not OS-atomic. Preview picking
-  requires verified pixel coordinates and matching dimensions; unknown scaling stays
-  list-only. Platform text limitations retain the entered draft.
-- Retain listeners with unknown project association, bounded logs/samples, process review/confirmation and truthful partial results.
-- Development-server output redacts split credentials before bounded retention and releases discarded fragments. A port-conflict error clears only when the exact owned process identity is observed listening on that port; unrelated errors and unknown shutdown remain held.
-- Keep pending/error/cancellation at the initiating control, target-generation guards and cleanup after navigation/close.
-- Native/mobile counterparts retain their own transport and platform contracts; desktop fixtures cannot establish device acceptance.
-- Tool metadata is not authority. Preserve legacy grant scopes independently from
-  effect/retry descriptions, and filter discovery to each caller's exposure.
-  Discovery `group` selects transport; `family` selects domain. Invalid options
-  must identify the field and allowed values without echoing caller input.
-  Numeric errors name field/type/bounds without echoing input. Align schema
-  and service bounds; document default/cursor recovery.
-- Preview execution, frame evidence and actual panel mounting are separate results.
-  Viewport changes invalidate annotations; repeated request IDs must not renavigate.
-- Dock visibility follows the active canonical conversation. Detached presentation
-  follows by default and can be pinned; presentation selection never changes
-  composer ownership or grants a browser lease. Retain hidden drafts and stop
-  hidden polling. Native transfers require destination mount acknowledgement.
-  Create detached windows through the native configured-window path, retaining
-  the main WebView2 environment options and data directory. Window URLs contain
-  bounded presentation metadata only; drafts travel through targeted events.
-- Browser contexts are scoped to canonical native sessions. Alternate-machine
-  presentation uses a separate owner-scoped namespace and advertised capability;
-  unavailable scope support must not silently fall back to a shared page.
-- Retain same-target frames during input, serialize input with document/lease
-  checks, and reject stale results. Keep capture IDs and comments bound to their
-  originating annotation scope. Browser drafts transfer capture references. Other
-  domain drafts use bounded targeted native messages; never put draft text or image
-  bytes in window URLs or persistent layout metadata. A transfer acknowledgement
-  must match its source, destination, conversation, tool and machine.
-  Retry an uncertain transfer with its immutable operation identity and payload;
-  reconcile existing receipts and preserve both drafts when editable content changed.
-  Persist versioned, bounded inspection geometry while keeping DOM node handles
-  ephemeral. Traversal and layout overlays must reject stale or unsupported targets.
+- Project identity, execution cwd and selected machine remain distinct. Availability and
+  metadata grant no control; discovery respects caller exposure and legacy grant scopes.
+- Browser/device input needs exact lease ownership and capability checks. Inspection/viewing
+  and restored drafts never claim control; annotations retain exact captured frame/target.
+- Devices retain protocol/device-bound admission, expiry/revocation, competing controllers,
+  stale-node rejection, coordinate proof and entered text across platform limitations.
+- Unknown project listeners remain visible. Logs/samples stay bounded; process effects retain
+  review/confirmation and truthful partial results. Unknown shutdown is not success.
+- Pending/error/cancellation stay at initiating controls. Target generations and cleanup fence
+  delayed results across navigation/close; native/mobile keep their own acceptance contracts.
+- Discovery transport/domain filters, schema/service bounds and cursor/default recovery stay
+  aligned; validation identifies fields/types/bounds without echoing caller input.
+- Preview execution, frame evidence and mounted panel are separate. Viewport changes invalidate
+  annotations; repeated immutable request IDs never renavigate.
+- Dock follows active canonical conversation; detached view follows or pins without changing
+  composer ownership/leases. Retain hidden drafts, stop hidden polling, require mount ACK.
+- Detached windows retain native configured-window environment/data directory. URLs carry
+  bounded presentation metadata only; drafts use targeted native events, never URLs/layout storage.
+- Browser contexts are canonical-session scoped; alternate-machine presentation requires a separate
+  owner namespace and advertised support, never fallback to a shared page.
+- Input retains same-target frames, document/lease checks and serialization. Capture IDs/comments
+  remain annotation-scoped; geometry persists bounded/versioned, DOM handles stay ephemeral.
+- Transfers match source, destination, conversation, tool and machine. Uncertain retry retains
+  immutable identity/payload and reconciles receipts; changed content preserves both drafts.
 
-## Verification and references
+## Focused checks
 
-- Choose SessionHostTools/ToolsWorkspace and changed Browser, Devices, Logs or resource/process model tests; cover target changes during pending work.
-- Use the affected UI matrix and isolated dev-Host/native/device checks when effects change. Review long labels, keyboard, annotation recovery and reduced motion as applicable.
-- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
-- [Host contracts](../../../docs/reference/host-runtime.md)
-- [Agent tool management](../../../docs/reference/agent-tools.md)
-- [User tool guide](../../../docs/guides/agent-tools.md)
-- [Workbench behavior](../../../docs/guides/workbench.md)
+Run adjacent SessionHostTools/ToolsWorkspace and changed Browser, Devices, Logs, resource/
+process model suites in `src/features/host-tools/` and `src/features/devices/`, then affected
+Host domain suites using `host/vitest.config.ts`. Follow
+[verification order](../../../docs/reference/testing.md#order-of-verification). For changed
+effects, exercise isolated Host/native/device paths and relevant `tests/browser/` fixtures;
+review keyboard, long labels, annotation recovery and reduced motion as applicable.
+
+## References
+
+- [Owner map](references/surfaces.md): locate UI, model, transport and domain tests.
+- [Control and transfer contracts](references/contracts.md): device admission, discovery,
+  presentation, draft transfer and process lifecycle details.
+- [Host contracts](../../../docs/reference/host-runtime.md): common authority and transport.
+- [Agent tool management](../../../docs/reference/agent-tools.md): exposure and discovery.
+- [User tool guide](../../../docs/guides/agent-tools.md): user-visible operations.
+- [Workbench behavior](../../../docs/guides/workbench.md): dock and detached navigation.

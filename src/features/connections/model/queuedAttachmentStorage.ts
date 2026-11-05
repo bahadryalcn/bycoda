@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Attachment, QueuedMessage } from "../../sessions/model/session";
+import type { Attachment, QueuedMessage } from "../../sessions";
 
 const saved = new WeakMap<Attachment, Promise<string>>();
 const needsPath = (file: Attachment) =>

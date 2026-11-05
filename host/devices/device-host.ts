@@ -142,7 +142,8 @@ export function deviceActionArgs(action: DeviceAction): string[] {
         throw new Error("Invalid device element label");
       return ["snapshot", "-i"];
     case "pressNode":
-      if (!/^[A-Za-z0-9_-]{1,200}$/.test(action.inspectionId) || !/^\d{1,3}$/.test(action.nodeId)) throw new Error("Invalid device inspection identity");
+      if (!/^[A-Za-z0-9_-]{1,200}$/.test(action.inspectionId) || !/^\d{1,3}$/.test(action.nodeId))
+        throw new Error("Invalid device inspection identity");
       return ["snapshot", "-i"];
     case "waitForText": {
       const timeout = action.timeoutMs ?? 30_000;
@@ -182,7 +183,16 @@ function localPort(): Promise<number> {
 /** One owner per host. No hub origin, daemon endpoint or token is returned to clients. */
 export class DeviceHost {
   readonly control = new DeviceControlLeases();
-  private readonly inspections = new Map<string, { deviceId: string; scope: string; expiresAt: number; nodes: InspectionNode[]; fingerprint: string }>();
+  private readonly inspections = new Map<
+    string,
+    {
+      deviceId: string;
+      scope: string;
+      expiresAt: number;
+      nodes: InspectionNode[];
+      fingerprint: string;
+    }
+  >();
   private child?: ChildProcess;
   private origin?: string;
   private error?: string;
@@ -1179,175 +1189,235 @@ export class DeviceHost {
     };
   }
   inspect(id: string, scope: string, effect?: DeviceEffectContext) {
-    return this.runForDevice(id, async () => {
-      const raw = await this.performAction(id, { type: "snapshot" }, effect);
-      const nodes = inspectionNodes(raw);
-      const inspectedAt = new Date().toISOString();
-      const frame = await this.captureFrame(id, effect);
-      const device = await this.device(id);
-      const bytes = Buffer.from(frame.base64, "base64");
-      const viewportCandidate = device.platform === "android" && frame.mime === "image/png" && bytes.length >= 24 && bytes.toString("ascii", 12, 16) === "IHDR"
-        ? { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
-        : undefined;
-      const viewport = viewportCandidate && viewportCandidate.width > 0 && viewportCandidate.height > 0 && viewportCandidate.width <= 20000 && viewportCandidate.height <= 20000 ? viewportCandidate : undefined;
-      const inspectionId = randomUUID();
-      for (const [key, value] of this.inspections) if (value.deviceId === id || value.expiresAt <= performance.now()) this.inspections.delete(key);
-      if (this.inspections.size >= 128) throw new Error("DEVICE_INSPECTION_CAPACITY");
-      this.inspections.set(inspectionId, { deviceId: id, scope, expiresAt: performance.now() + 30_000, nodes, fingerprint: inspectionFingerprint(raw) });
-      return { deviceId: id, inspectionId, raw, nodes, inspectedAt, frame, coordinateSpace: device.platform === "android" ? "pixels" as const : "points" as const, ...(viewport ? { viewport } : {}) };
-    }, effect);
-  }
-  action(id: string, action: DeviceAction, effect?: DeviceEffectContext, scope?: string): Promise<string> {
-    return this.runForDevice(id, async () => {
-      if (action.type === "pressNode") {
-        deviceActionArgs(action);
-        const inspection = this.inspections.get(action.inspectionId);
-        if (!inspection || inspection.deviceId !== id || !scope || inspection.scope !== scope || inspection.expiresAt <= performance.now()) throw new Error("DEVICE_INSPECTION_STALE");
-        const selected = inspection.nodes.find((node) => node.id === action.nodeId);
-        if (!selected || !selected.enabled || !selected.clickable) throw new Error("DEVICE_NODE_NOT_ACTIONABLE");
-        const currentRaw = await this.performAction(id, { type: "snapshot" }, effect);
-        if (inspectionFingerprint(currentRaw) !== inspection.fingerprint) throw new Error("DEVICE_INSPECTION_STALE");
-        this.inspections.delete(action.inspectionId);
-        return this.performAction(id, { type: "press", x: Math.round(selected.bounds.x + selected.bounds.width / 2), y: Math.round(selected.bounds.y + selected.bounds.height / 2) }, effect);
-      }
-      if (action.type !== "snapshot" && action.type !== "waitForText") for (const [key, value] of this.inspections) if (value.deviceId === id) this.inspections.delete(key);
-      return this.performAction(id, action, effect);
-    }, effect);
-  }
-  private async performAction(id: string, action: DeviceAction, effect?: DeviceEffectContext): Promise<string> {
-        let args = deviceActionArgs(action);
+    return this.runForDevice(
+      id,
+      async () => {
+        const raw = await this.performAction(id, { type: "snapshot" }, effect);
+        const nodes = inspectionNodes(raw);
+        const inspectedAt = new Date().toISOString();
+        const frame = await this.captureFrame(id, effect);
         const device = await this.device(id);
-        if (!device.booted) throw new Error("Boot the device before interacting");
-        if (!(await this.installed("agent")))
-          throw new Error("Enable agent control in device setup first");
-        await assertDeviceAuthority(effect);
-        if (this.platform === "win32" && device.platform === "android") {
-          this.lastCapture = undefined;
-          return androidDeviceControl(this.androidBinary("adb"), device.id, action, {
-            env: this.env,
-            authorize: () => assertDeviceAuthority(effect),
-            track: effect?.track,
-          });
-        }
-        await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
-        const session = `bycoda-${device.platform}-${device.id.replace(/[^A-Za-z0-9_-]/g, "_")}`;
-        const selector = [
-          "--platform",
-          device.platform,
-          device.platform === "ios" ? "--udid" : "--serial",
-          device.id,
-          "--session",
-          session,
-          "--json",
-        ];
-        const options = {
-          cwd: this.baseDir,
-          env: {
-            ...this.env,
-            AGENT_DEVICE_STATE_DIR: this.stateDir,
-            AGENT_DEVICE_DAEMON_IDLE_TIMEOUT_MS: "10000",
-            AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1",
-          },
-          timeoutMs: 30_000,
+        const bytes = Buffer.from(frame.base64, "base64");
+        const viewportCandidate =
+          device.platform === "android" &&
+          frame.mime === "image/png" &&
+          bytes.length >= 24 &&
+          bytes.toString("ascii", 12, 16) === "IHDR"
+            ? { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) }
+            : undefined;
+        const viewport =
+          viewportCandidate &&
+          viewportCandidate.width > 0 &&
+          viewportCandidate.height > 0 &&
+          viewportCandidate.width <= 20000 &&
+          viewportCandidate.height <= 20000
+            ? viewportCandidate
+            : undefined;
+        const inspectionId = randomUUID();
+        for (const [key, value] of this.inspections)
+          if (value.deviceId === id || value.expiresAt <= performance.now())
+            this.inspections.delete(key);
+        if (this.inspections.size >= 128) throw new Error("DEVICE_INSPECTION_CAPACITY");
+        this.inspections.set(inspectionId, {
+          deviceId: id,
+          scope,
+          expiresAt: performance.now() + 30_000,
+          nodes,
+          fingerprint: inspectionFingerprint(raw),
+        });
+        return {
+          deviceId: id,
+          inspectionId,
+          raw,
+          nodes,
+          inspectedAt,
+          frame,
+          coordinateSpace:
+            device.platform === "android" ? ("pixels" as const) : ("points" as const),
+          ...(viewport ? { viewport } : {}),
         };
-        // The private daemon exits after ten idle seconds. Never trust the local
-        // session cache after that exit, and never replay a potentially sent input.
-        {
-          const active = JSON.parse(
-            await this.command(
-              effect,
-              this.nodePath,
-              [this.entry("agent"), "session", "list", "--json"],
-              options,
-            ),
-          ) as {
-            success?: boolean;
-            data?: { sessions?: { name: string; platform: string; id: string }[] };
-          };
-          if (!active.success || !Array.isArray(active.data?.sessions))
-            throw new Error("Could not verify device control sessions");
-          const existing = active.data.sessions.find((item) => item.name === session);
-          if (existing && (existing.platform !== device.platform || existing.id !== device.id))
-            throw new Error("Device control session belongs to a different device");
-          const remembered = this.agentTargets.get(session);
-          if (action.type === "openApp") {
-            this.lastCapture = undefined;
-            const output = await this.command(
-              effect,
-              this.nodePath,
-              [this.entry("agent"), ...args, ...selector],
-              {
-                ...options,
-                timeoutMs: 60_000,
-              },
-            );
-            const result = this.verifyAgentResult(output);
-            this.agentTargets.set(
-              session,
-              typeof result.data?.appBundleId === "string" && result.data.appBundleId
-                ? result.data.appBundleId
-                : args[1],
-            );
-            this.agentSessions.add(session);
-            return output;
-          }
-          const homeTarget =
-            device.platform === "ios" && action.type === "home"
-              ? "com.apple.springboard"
-              : undefined;
-          const target = homeTarget ?? remembered;
-          // session list does not disclose app targets in the pinned CLI. A
-          // previously existing session alone cannot establish safe app ownership.
-          if (device.platform === "ios" && !target)
-            throw new Error("Open an app before controlling this iOS simulator.");
-          if (!existing || (homeTarget && remembered !== homeTarget)) {
-            const opened = await this.command(
-              effect,
-              this.nodePath,
-              [this.entry("agent"), "open", ...(target ? [target] : []), ...selector],
-              {
-                ...options,
-                timeoutMs: 60_000,
-              },
-            );
-            const result = this.verifyAgentResult(opened);
-            if (target)
-              this.agentTargets.set(
-                session,
-                typeof result.data?.appBundleId === "string" && result.data.appBundleId
-                  ? result.data.appBundleId
-                  : target,
-              );
-          }
-          this.agentSessions.add(session);
+      },
+      effect,
+    );
+  }
+  action(
+    id: string,
+    action: DeviceAction,
+    effect?: DeviceEffectContext,
+    scope?: string,
+  ): Promise<string> {
+    return this.runForDevice(
+      id,
+      async () => {
+        if (action.type === "pressNode") {
+          deviceActionArgs(action);
+          const inspection = this.inspections.get(action.inspectionId);
+          if (
+            !inspection ||
+            inspection.deviceId !== id ||
+            !scope ||
+            inspection.scope !== scope ||
+            inspection.expiresAt <= performance.now()
+          )
+            throw new Error("DEVICE_INSPECTION_STALE");
+          const selected = inspection.nodes.find((node) => node.id === action.nodeId);
+          if (!selected || !selected.enabled || !selected.clickable)
+            throw new Error("DEVICE_NODE_NOT_ACTIONABLE");
+          const currentRaw = await this.performAction(id, { type: "snapshot" }, effect);
+          if (inspectionFingerprint(currentRaw) !== inspection.fingerprint)
+            throw new Error("DEVICE_INSPECTION_STALE");
+          this.inspections.delete(action.inspectionId);
+          return this.performAction(
+            id,
+            {
+              type: "press",
+              x: Math.round(selected.bounds.x + selected.bounds.width / 2),
+              y: Math.round(selected.bounds.y + selected.bounds.height / 2),
+            },
+            effect,
+          );
         }
+        if (action.type !== "snapshot" && action.type !== "waitForText")
+          for (const [key, value] of this.inspections)
+            if (value.deviceId === id) this.inspections.delete(key);
+        return this.performAction(id, action, effect);
+      },
+      effect,
+    );
+  }
+  private async performAction(
+    id: string,
+    action: DeviceAction,
+    effect?: DeviceEffectContext,
+  ): Promise<string> {
+    let args = deviceActionArgs(action);
+    const device = await this.device(id);
+    if (!device.booted) throw new Error("Boot the device before interacting");
+    if (!(await this.installed("agent")))
+      throw new Error("Enable agent control in device setup first");
+    await assertDeviceAuthority(effect);
+    if (this.platform === "win32" && device.platform === "android") {
+      this.lastCapture = undefined;
+      return androidDeviceControl(this.androidBinary("adb"), device.id, action, {
+        env: this.env,
+        authorize: () => assertDeviceAuthority(effect),
+        track: effect?.track,
+      });
+    }
+    await mkdir(this.stateDir, { recursive: true, mode: 0o700 });
+    const session = `bycoda-${device.platform}-${device.id.replace(/[^A-Za-z0-9_-]/g, "_")}`;
+    const selector = [
+      "--platform",
+      device.platform,
+      device.platform === "ios" ? "--udid" : "--serial",
+      device.id,
+      "--session",
+      session,
+      "--json",
+    ];
+    const options = {
+      cwd: this.baseDir,
+      env: {
+        ...this.env,
+        AGENT_DEVICE_STATE_DIR: this.stateDir,
+        AGENT_DEVICE_DAEMON_IDLE_TIMEOUT_MS: "10000",
+        AGENT_DEVICE_NO_UPDATE_NOTIFIER: "1",
+      },
+      timeoutMs: 30_000,
+    };
+    // The private daemon exits after ten idle seconds. Never trust the local
+    // session cache after that exit, and never replay a potentially sent input.
+    {
+      const active = JSON.parse(
+        await this.command(
+          effect,
+          this.nodePath,
+          [this.entry("agent"), "session", "list", "--json"],
+          options,
+        ),
+      ) as {
+        success?: boolean;
+        data?: { sessions?: { name: string; platform: string; id: string }[] };
+      };
+      if (!active.success || !Array.isArray(active.data?.sessions))
+        throw new Error("Could not verify device control sessions");
+      const existing = active.data.sessions.find((item) => item.name === session);
+      if (existing && (existing.platform !== device.platform || existing.id !== device.id))
+        throw new Error("Device control session belongs to a different device");
+      const remembered = this.agentTargets.get(session);
+      if (action.type === "openApp") {
         this.lastCapture = undefined;
-        if (action.type === "pressElement") {
-          const snapshot = JSON.parse(
-            await this.command(
-              effect,
-              this.nodePath,
-              [this.entry("agent"), ...args, ...selector],
-              options,
-            ),
-          );
-          if (snapshot.success !== true)
-            throw new Error("DEVICE_SNAPSHOT_FAILED: Could not inspect the selected app.");
-          args = elementPressArgs(
-            snapshot.data?.nodes ?? snapshot.data?.snapshot?.nodes,
-            action.label,
-          );
-        }
         const output = await this.command(
           effect,
           this.nodePath,
           [this.entry("agent"), ...args, ...selector],
-          action.type === "waitForText"
-            ? { ...options, timeoutMs: (action.timeoutMs ?? 30_000) + 5000 }
-            : options,
+          {
+            ...options,
+            timeoutMs: 60_000,
+          },
         );
-        this.verifyAgentResult(output);
+        const result = this.verifyAgentResult(output);
+        this.agentTargets.set(
+          session,
+          typeof result.data?.appBundleId === "string" && result.data.appBundleId
+            ? result.data.appBundleId
+            : args[1],
+        );
+        this.agentSessions.add(session);
         return output;
+      }
+      const homeTarget =
+        device.platform === "ios" && action.type === "home" ? "com.apple.springboard" : undefined;
+      const target = homeTarget ?? remembered;
+      // session list does not disclose app targets in the pinned CLI. A
+      // previously existing session alone cannot establish safe app ownership.
+      if (device.platform === "ios" && !target)
+        throw new Error("Open an app before controlling this iOS simulator.");
+      if (!existing || (homeTarget && remembered !== homeTarget)) {
+        const opened = await this.command(
+          effect,
+          this.nodePath,
+          [this.entry("agent"), "open", ...(target ? [target] : []), ...selector],
+          {
+            ...options,
+            timeoutMs: 60_000,
+          },
+        );
+        const result = this.verifyAgentResult(opened);
+        if (target)
+          this.agentTargets.set(
+            session,
+            typeof result.data?.appBundleId === "string" && result.data.appBundleId
+              ? result.data.appBundleId
+              : target,
+          );
+      }
+      this.agentSessions.add(session);
+    }
+    this.lastCapture = undefined;
+    if (action.type === "pressElement") {
+      const snapshot = JSON.parse(
+        await this.command(
+          effect,
+          this.nodePath,
+          [this.entry("agent"), ...args, ...selector],
+          options,
+        ),
+      );
+      if (snapshot.success !== true)
+        throw new Error("DEVICE_SNAPSHOT_FAILED: Could not inspect the selected app.");
+      args = elementPressArgs(snapshot.data?.nodes ?? snapshot.data?.snapshot?.nodes, action.label);
+    }
+    const output = await this.command(
+      effect,
+      this.nodePath,
+      [this.entry("agent"), ...args, ...selector],
+      action.type === "waitForText"
+        ? { ...options, timeoutMs: (action.timeoutMs ?? 30_000) + 5000 }
+        : options,
+    );
+    this.verifyAgentResult(output);
+    return output;
   }
   private verifyAgentResult(output: string) {
     const result = JSON.parse(output) as {

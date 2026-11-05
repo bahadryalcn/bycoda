@@ -69,7 +69,10 @@ async function discoverViaAcp(workingDirectory?: string): Promise<AgentModel[]> 
   const { path } = await resolveCursorBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const probeProcess = retirements.admit(createChildProcessHandle(probeId, undefined, "management"), "cursor.catalog");
+  const probeProcess = retirements.admit(
+    createChildProcessHandle(probeId, undefined, "management"),
+    "cursor.catalog",
+  );
   const acp = new AcpClient(probeProcess, {
     onRequest: (id) => {
       void acp.respond(id, {}).catch(() => undefined);

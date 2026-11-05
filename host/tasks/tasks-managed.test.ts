@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
-import { HostTasks } from "./tasks";
+import { HostTasks } from "./service";
 import { previewTaskFinalization, type TaskWorkspaceServices } from "./task-workspace-runtime";
 import { writerWorkspaces } from "../workspaces/writer-workspaces.test-support";
 import type { SessionRunEngine } from "../sessions/sessionRuns";

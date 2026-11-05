@@ -1,15 +1,16 @@
 import { generateHarnessTitle } from "../../../integrations/harness";
 import { getSession, storedSessionUpdatedAt, upsertSessionIfUnchanged } from "../data/sessionStore";
-import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import {
   loadRemoteSession,
   remoteMachineFor,
   remoteSessionFor,
   sessionAccessForMachine,
-} from "../../connections/model/connections";
-import { sessionExecutionClient } from "../../connections/model/sessionExecutionClient";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
-import { isRemoteProvider, type HostCommand } from "../../connections/model/protocol";
+} from "../../connections/public/connections";
+import { sessionExecutionClient } from "../../connections/public/sessionExecutionClient";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
+import { isRemoteProvider, type HostCommand } from "../../connections/public/protocol";
+
 import { formatSessionTitle, type Session } from "./session";
 import type { TitleGenerationChoice } from "./titlePreferences";
 import { isModelEnabled, modelBelongsToHarness } from "./models";

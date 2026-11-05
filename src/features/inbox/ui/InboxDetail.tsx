@@ -1,3 +1,4 @@
+import { InboxStatusBadge } from "./InboxStatusBadge";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
 import { BadgeList } from "../../../shared/ui/BadgeList";
@@ -279,13 +280,7 @@ export function InboxDetail({
         {item.kind === "pr" ? (gitlab ? t("Merge request") : t("Pull request")) : t("Issue")}
       </span>
       <span className="shrink-0 tabular-nums">{inboxItemRef(item)}</span>
-      <span className={`flex shrink-0 items-center gap-1 ${statusMark.className}`}>
-        <statusMark.Icon className="icon-sm" strokeWidth={1.75} />
-        {status}
-      </span>
-      {attentionLabel ? (
-        <span className="shrink-0 text-(--ui-tone-accent-fg)">{attentionLabel}</span>
-      ) : null}
+      <InboxStatusBadge mark={statusMark} label={status} attention={attentionLabel} />
       {source ? <span className="min-w-0 wrap-anywhere">{source}</span> : null}
       {panel ? (
         <Button
@@ -410,7 +405,9 @@ export function InboxDetail({
                           ? "success"
                           : reviewDecision.toUpperCase() === "CHANGES_REQUESTED"
                             ? "danger"
-                            : "neutral"
+                            : reviewDecision.toUpperCase() === "REVIEW_REQUIRED"
+                              ? "warning"
+                              : "neutral"
                       }
                     >
                       {reviewLabel}

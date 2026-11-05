@@ -21,12 +21,24 @@ const organizationPage = {
   memberOffset: {
     type: "integer",
     minimum: 0,
-    description: "Offset for sessionIds within each returned folder. Keep the parent offset when following membership pagination.",
+    description:
+      "Offset for sessionIds within each returned folder. Keep the parent offset when following membership pagination.",
   },
 };
 export const PROJECT_MANAGEMENT_TOOLS = {
   "projects.organization.read": object(organizationPage),
-  "projects.organization.status": object({ requestId: text, originalInput: { type: "object", description: "For a Room workspace transfer, the exact original patch input; status never replays it." }, ...organizationPage }, ["requestId"]),
+  "projects.organization.status": object(
+    {
+      requestId: text,
+      originalInput: {
+        type: "object",
+        description:
+          "For a Room workspace transfer, the exact original patch input; status never replays it.",
+      },
+      ...organizationPage,
+    },
+    ["requestId"],
+  ),
   "projects.organization.patch": object(
     {
       requestId: text,

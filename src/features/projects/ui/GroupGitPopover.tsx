@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { gitDiffIndex } from "../../../platform/tauri/fs";
 import { basename } from "../../../platform/tauri/fs";
 import { Popover, type PopoverAnchor } from "../../../shared/ui/Popover";
-import { applyProjectDiffStats } from "../../source-control/hooks/useProjectDiffStats";
+import { applyProjectDiffStats } from "../../source-control/public/useProjectDiffStats";
 import { summarizeGroupGit } from "../model/groupGit";
 import { isLocalProject } from "../model/recents";
 

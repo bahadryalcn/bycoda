@@ -315,13 +315,25 @@ describe("session persistence concurrency", () => {
 describe("guarded session save", () => {
   it("waits for a missing-row native acknowledgement before accepting an empty Room conversation", async () => {
     let release!: (value: unknown) => void;
-    mocks.invoke.mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    mocks.invoke.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    );
     const { createRoomSession } = await loadStore();
     const empty = { ...session("room-create"), blocks: [] };
     const creation = createRoomSession(empty as never);
-    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("session_upsert", expect.objectContaining({ expectMissing: true })));
+    await vi.waitFor(() =>
+      expect(mocks.invoke).toHaveBeenCalledWith(
+        "session_upsert",
+        expect.objectContaining({ expectMissing: true }),
+      ),
+    );
     let settled = false;
-    void creation.then(() => { settled = true; });
+    void creation.then(() => {
+      settled = true;
+    });
     await Promise.resolve();
     expect(settled).toBe(false);
     release({ id: "room-create", cwd: empty.cwd, updatedAt: 1, transcriptRevision: 1 });
@@ -330,14 +342,36 @@ describe("guarded session save", () => {
   it("does not report Room creation accepted after an unknown native write", async () => {
     mocks.invoke.mockResolvedValue(null);
     const { createRoomSession } = await loadStore();
-    await expect(createRoomSession({ ...session("room-unknown"), blocks: [] } as never)).rejects.toThrow("Room conversation creation outcome is unknown");
+    await expect(
+      createRoomSession({ ...session("room-unknown"), blocks: [] } as never),
+    ).rejects.toThrow("Room conversation creation outcome is unknown");
   });
   it("persists the original Room draft with its request identity", async () => {
-    mocks.invoke.mockResolvedValue({ id: "room-draft", cwd: "/repo", updatedAt: 1, transcriptRevision: 1 });
+    mocks.invoke.mockResolvedValue({
+      id: "room-draft",
+      cwd: "/repo",
+      updatedAt: 1,
+      transcriptRevision: 1,
+    });
     const { createRoomSession } = await loadStore();
-    const draft = { ...session("room-draft"), blocks: [{ id: "draft", role: "user", draft: true, text: "unsent", appRequestId: "original" }] };
+    const draft = {
+      ...session("room-draft"),
+      blocks: [
+        { id: "draft", role: "user", draft: true, text: "unsent", appRequestId: "original" },
+      ],
+    };
     await createRoomSession(draft as never);
-    expect(mocks.invoke).toHaveBeenCalledWith("session_upsert", expect.objectContaining({ expectMissing: true, session: expect.objectContaining({ blocks: [expect.objectContaining({ draft: true, text: "unsent", appRequestId: "original" })] }) }));
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "session_upsert",
+      expect.objectContaining({
+        expectMissing: true,
+        session: expect.objectContaining({
+          blocks: [
+            expect.objectContaining({ draft: true, text: "unsent", appRequestId: "original" }),
+          ],
+        }),
+      }),
+    );
   });
   it("writes only while the stored updatedAt is the one the caller read", async () => {
     let stored = 10;

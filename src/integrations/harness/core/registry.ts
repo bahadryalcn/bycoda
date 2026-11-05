@@ -26,9 +26,18 @@ import { loadSkillRestrictions } from "../../../features/skills/model/skillPrefe
 import { withInstalledSkillScope } from "../../../features/skills/model/skillProviderScope";
 import { listSkills } from "../../../platform/tauri/fs";
 import { withSkillPolicy } from "./skillPolicy";
-import { captureChildProcess, captureChildControlTurn, hasHeadlessChildBackend, type ChildProcessHandle } from "./child";
+import {
+  captureChildProcess,
+  captureChildControlTurn,
+  hasHeadlessChildBackend,
+  type ChildProcessHandle,
+} from "./child";
 import { flushHostSessionBindings } from "../../../features/connections/model/sessionExecutionBinding";
-import { acquireNativeSessionClaim, markNativeSessionClaim, settleNativeSessionClaim } from "../../../features/connections/model/hostSessionBindingDatabase";
+import {
+  acquireNativeSessionClaim,
+  markNativeSessionClaim,
+  settleNativeSessionClaim,
+} from "../../../features/connections/model/hostSessionBindingDatabase";
 import {
   beginNativeControlTurn,
   finishNativeControlTurn,
@@ -256,8 +265,13 @@ const retainedWriters = new Map<string, HarnessId>();
 // A claim survives turn completion and follows the warm physical writer. A
 // rejected/unknown acquisition stays in this map: silently issuing another ID
 // could overlap an accepted original request.
-const nativeSessionClaims = new Map<string, Promise<import("./controlTurn").NativeSessionCapability | null>>();
-function captureNativeSessionClaim(sessionId: string): Promise<import("./controlTurn").NativeSessionCapability | null> | undefined {
+const nativeSessionClaims = new Map<
+  string,
+  Promise<import("./controlTurn").NativeSessionCapability | null>
+>();
+function captureNativeSessionClaim(
+  sessionId: string,
+): Promise<import("./controlTurn").NativeSessionCapability | null> | undefined {
   if (!(typeof isTauri === "function" && isTauri()) || hasHeadlessChildBackend()) return undefined;
   const existing = nativeSessionClaims.get(sessionId);
   if (existing) return existing;
@@ -279,7 +293,10 @@ function captureNativeSessionClaim(sessionId: string): Promise<import("./control
   nativeSessionClaims.set(sessionId, claim);
   return claim;
 }
-async function confirmCapturedNativeClaim(sessionId: string, claim: Promise<import("./controlTurn").NativeSessionCapability | null> | undefined): Promise<void> {
+async function confirmCapturedNativeClaim(
+  sessionId: string,
+  claim: Promise<import("./controlTurn").NativeSessionCapability | null> | undefined,
+): Promise<void> {
   if (!claim) return;
   await claim;
   if (nativeSessionClaims.get(sessionId) !== claim)
@@ -416,7 +433,10 @@ function operationInput<I extends HarnessSessionInput>(input: I, owner: AdapterO
   };
 }
 
-async function beginOperationControl(input: HarnessSessionInput, claim: Promise<import("./controlTurn").NativeSessionCapability | null> | undefined): Promise<{
+async function beginOperationControl(
+  input: HarnessSessionInput,
+  claim: Promise<import("./controlTurn").NativeSessionCapability | null> | undefined,
+): Promise<{
   control?: ControlTurnHandle;
   processes: Set<ChildProcessHandle>;
 }> {
@@ -426,7 +446,13 @@ async function beginOperationControl(input: HarnessSessionInput, claim: Promise<
   const capability = await claim;
   const control =
     typeof isTauri === "function" && isTauri()
-      ? await beginNativeControlTurn(input.sessionId, input.cwd, input.appAccess === true, invoke, capability ?? undefined)
+      ? await beginNativeControlTurn(
+          input.sessionId,
+          input.cwd,
+          input.appAccess === true,
+          invoke,
+          capability ?? undefined,
+        )
       : undefined;
   if (control) nativeControlTurns.set(input.sessionId, { handle: control, processes });
   activeTurnSessions.add(input.sessionId);
@@ -1235,7 +1261,13 @@ export async function forgetHarnessSession(harness: HarnessId, sessionId: string
     else await adapter.forgetSession(sessionId);
     await retireProviderOwner(sessionId);
     if (retainedWriters.get(sessionId) === harness) retainedWriters.delete(sessionId);
-    retireProviderEpoch(cancellationEpoch, sessionOperationTails, sessionId, sessionSteerTails, turnReady);
+    retireProviderEpoch(
+      cancellationEpoch,
+      sessionOperationTails,
+      sessionId,
+      sessionSteerTails,
+      turnReady,
+    );
   } catch (error) {
     warnCleanup("forget session", error);
     throw error;

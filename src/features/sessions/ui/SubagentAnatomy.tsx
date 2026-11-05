@@ -1,3 +1,5 @@
+import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { t, useT } from "../../../shared/i18n";
 import { Tooltip } from "../../../shared/ui/Tooltip";
 import { blockLifecycle, type DockAgentStatus } from "../model/activityDock";
@@ -49,21 +51,9 @@ export function SubagentStatusSummary({
   return parts.map((part, index) => (
     <span key={index}>
       {index ? separator : ""}
-      <span
-        className={
-          part.tone === "danger"
-            ? "text-(--ui-tone-danger-fg)"
-            : part.tone === "warning"
-              ? "text-(--ui-tone-warning-fg)"
-              : part.tone === "success"
-                ? "text-(--ui-tone-success-fg)"
-                : part.tone === "accent"
-                  ? "text-(--ui-tone-accent-fg)"
-                  : undefined
-        }
-      >
+      <Badge size="xs" appearance="subtle" tone={part.tone ?? "neutral"}>
         {part.text}
-      </span>
+      </Badge>
     </span>
   ));
 }
@@ -102,19 +92,22 @@ export function SubagentStateLine({
       data-subagent-state
       className={`flex min-w-0 items-center gap-x-2 whitespace-nowrap text-ui-caption text-(--ui-text-secondary) ${className}`}
     >
-      <span
-        className={`shrink-0 font-medium ${
+      <Badge
+        size="xs"
+        appearance="subtle"
+        tone={
           failed
-            ? "text-(--ui-tone-danger-fg)"
+            ? "danger"
             : running
-              ? "text-(--ui-tone-accent-fg)"
+              ? "accent"
               : lifecycle === "interrupted" || lifecycle === "stopped"
-                ? "text-(--ui-tone-warning-fg)"
-                : "text-(--ui-tone-success-fg)"
-        }`}
+                ? "warning"
+                : "success"
+        }
+        icon={running ? <StatusDot label={t("Running")} aria-hidden /> : undefined}
       >
         {lifecycleLabel(lifecycle)}
-      </span>
+      </Badge>
       <AgentClock startedAt={run?.startedAt} endedAt={run?.endedAt} live={running} />
       {quietMeta ? (
         <Tooltip

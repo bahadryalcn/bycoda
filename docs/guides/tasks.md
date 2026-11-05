@@ -1,5 +1,9 @@
 # Tasks: progress and recovery
 
+List view scrolls through all loaded tasks without numbered pages. Bulk selection
+and the open task remain selected while offscreen rows are recycled. Search and
+project, sprint and status filters retain their own list position.
+
 Tasks opens on the current project's Host. Select All projects to include other machines. A remote machine being unavailable does not mean a successfully read local task list failed. Connection details and optional data warnings describe the affected source; Retry refreshes the selected scope.
 
 Local project options can appear while other sources are still loading. Sprint data appears as soon as its planning Host answers; source history synchronization can continue afterward. Actions that require current history still wait for that synchronization. Repeated refresh ticks do not accumulate an unlimited queue.

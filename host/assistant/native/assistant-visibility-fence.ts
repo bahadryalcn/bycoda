@@ -43,14 +43,33 @@ export class AssistantVisibilityFence {
   private closed = true;
 
   /** Capture before obtaining a trusted native snapshot, never after the wait. */
-  currentEpoch(): number { return this.epoch; }
+  currentEpoch(): number {
+    return this.epoch;
+  }
 
   /** Only a fresh, trusted snapshot may reopen admission after revocation drains. */
-  register(source: RoomVisibilitySource, sequence: number, targets: readonly RoomVisibilityTarget[], epoch: number): void {
-    if (!validSource(source) ||
-        this.closed || epoch !== this.epoch ||
-        !Number.isSafeInteger(sequence) || sequence < 1 || targets.length > 1000 ||
-        targets.some((target) => !target.projectId || target.projectId.length > 200 || !target.cwd || target.cwd.length > 4096 || target.cwd.includes("\0"))) {
+  register(
+    source: RoomVisibilitySource,
+    sequence: number,
+    targets: readonly RoomVisibilityTarget[],
+    epoch: number,
+  ): void {
+    if (
+      !validSource(source) ||
+      this.closed ||
+      epoch !== this.epoch ||
+      !Number.isSafeInteger(sequence) ||
+      sequence < 1 ||
+      targets.length > 1000 ||
+      targets.some(
+        (target) =>
+          !target.projectId ||
+          target.projectId.length > 200 ||
+          !target.cwd ||
+          target.cwd.length > 4096 ||
+          target.cwd.includes("\0"),
+      )
+    ) {
       throw new Error("Invalid Room visibility registration");
     }
     const key = sourceKey(source);
@@ -59,7 +78,14 @@ export class AssistantVisibilityFence {
     if (previous && (sequence <= previous.sequence || previous.inFlight !== 0)) {
       throw new Error("Stale or undrained Room visibility registration");
     }
-    this.entries.set(key, { sequence, source: { ...source }, targets: new Set(targets.map(targetKey)), active: true, inFlight: 0, waiters: [] });
+    this.entries.set(key, {
+      sequence,
+      source: { ...source },
+      targets: new Set(targets.map(targetKey)),
+      active: true,
+      inFlight: 0,
+      waiters: [],
+    });
   }
 
   /** A privacy change invalidates every window and all snapshots in flight. */
@@ -87,12 +113,24 @@ export class AssistantVisibilityFence {
   revoke(source: RoomVisibilitySource, sequence: number): Promise<void> {
     const key = sourceKey(source);
     const entry = this.entries.get(key);
-    if (!validSource(source) || !Number.isSafeInteger(sequence) || sequence < 1 || (entry && sequence <= entry.sequence)) {
+    if (
+      !validSource(source) ||
+      !Number.isSafeInteger(sequence) ||
+      sequence < 1 ||
+      (entry && sequence <= entry.sequence)
+    ) {
       throw new Error("Stale Room visibility revocation");
     }
     if (!entry) {
       if (this.entries.size >= 1024) throw new Error("Room visibility capacity reached");
-      this.entries.set(key, { sequence, source: { ...source }, targets: new Set(), active: false, inFlight: 0, waiters: [] });
+      this.entries.set(key, {
+        sequence,
+        source: { ...source },
+        targets: new Set(),
+        active: false,
+        inFlight: 0,
+        waiters: [],
+      });
       return Promise.resolve();
     }
     entry.sequence = sequence;
@@ -103,9 +141,13 @@ export class AssistantVisibilityFence {
   }
 
   /** Acquire immediately before admitting the physical effect; always release. */
-  acquire(source: RoomVisibilitySource, target: RoomVisibilityTarget): { valid: () => boolean; release: () => void } {
+  acquire(
+    source: RoomVisibilitySource,
+    target: RoomVisibilityTarget,
+  ): { valid: () => boolean; release: () => void } {
     const entry = this.entries.get(sourceKey(source));
-    if (!entry?.active || !entry.targets.has(targetKey(target))) throw new Error("Room project visibility unavailable");
+    if (!entry?.active || !entry.targets.has(targetKey(target)))
+      throw new Error("Room project visibility unavailable");
     return this.acquireEntry(entry);
   }
   /** Global Room source permit, with no fabricated project target. */

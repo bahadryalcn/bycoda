@@ -121,7 +121,12 @@ describe("autoAddRemoteProjects", () => {
     const sync = await load();
     let current = true;
     let finish!: (value: unknown) => void;
-    const request = vi.fn(() => new Promise<unknown>((resolve) => { finish = resolve; }));
+    const request = vi.fn(
+      () =>
+        new Promise<unknown>((resolve) => {
+          finish = resolve;
+        }),
+    );
     sync.setRemoteOpenTargets([{ environmentId: "env-a", name: "PC", request }]);
     applyRemoteProjectRecords(PEER, [pathRecord("C:/code/app", "env-a")]);
     const adding = sync.autoAddRemoteProjects(0, () => current);
@@ -270,7 +275,12 @@ describe("adoptLocalProjects", () => {
     applyRemoteProjectRecords(PEER, [pathRecord(SHOP, "env-own")]);
     let current = true;
     let finish!: (value: boolean) => void;
-    const exists = vi.fn(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    const exists = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
     const adopting = sync.adoptLocalProjects(exists, () => current);
     expect(exists).toHaveBeenCalledTimes(1);
     current = false;
@@ -285,16 +295,31 @@ describe("adoptLocalProjects", () => {
     const privacy = await import("../../group-lock/model/roomPrivacyProjection");
     let release!: () => void;
     let entered!: () => void;
-    const queued = new Promise<void>((resolve) => { entered = resolve; });
-    const waiting = new Promise<void>((resolve) => { release = resolve; });
-    const mutation = vi.spyOn(privacy, "withRoomPrivacyMutation").mockImplementation(async <T>(write: (token: import("../../group-lock/model/roomPrivacyProjection").PrivacyMutationToken) => T | Promise<T>): Promise<T> => {
-      entered();
-      await waiting;
-      return write({} as never);
+    const queued = new Promise<void>((resolve) => {
+      entered = resolve;
     });
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const mutation = vi
+      .spyOn(privacy, "withRoomPrivacyMutation")
+      .mockImplementation(
+        async <T>(
+          write: (
+            token: import("../../group-lock/model/roomPrivacyProjection").PrivacyMutationToken,
+          ) => T | Promise<T>,
+        ): Promise<T> => {
+          entered();
+          await waiting;
+          return write({} as never);
+        },
+      );
     let current = true;
     try {
-      const adopting = sync.adoptLocalProjects(async () => true, () => current);
+      const adopting = sync.adoptLocalProjects(
+        async () => true,
+        () => current,
+      );
       await queued;
       current = false;
       release();

@@ -1,6 +1,7 @@
 import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { SettingsFeedback } from "./settingsControls";
 import { Badge } from "../../../shared/ui/Badge";
+import { McpStatusDetails } from "./McpStatusDetails";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
 import { Select as SharedSelect } from "../../../shared/ui/Select";
 import { TextareaField } from "../../../shared/ui/TextareaField";
@@ -21,10 +22,11 @@ import {
 } from "react";
 import { copyText } from "../../../platform/tauri/clipboard";
 import { revealPath } from "../../../platform/tauri/fs";
-import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
-import { SearchableProjectPicker } from "../../projects/ui/SearchableProjectPicker";
-import type { RecentProject } from "../../projects/model/recents";
+import { HarnessIcon } from "../../sessions/public/HarnessIcon";
+import { SearchableProjectPicker } from "../../projects/public/SearchableProjectPicker";
+import type { RecentProject } from "../../projects";
 import { Button } from "../../../shared/ui/Button";
+import { ContinuousList, CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { TextField } from "../../../shared/ui/TextField";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
@@ -36,7 +38,6 @@ import { Popover } from "../../../shared/ui/Popover";
 import { Globe, Plus, RefreshCw, ListFilter, MoreHorizontal } from "../../../shared/ui/icons";
 import {
   canSignInMcp,
-  isMcpConnected,
   MCP_PROVIDER_LABELS,
   needsMcpSignIn,
   type McpConnection,
@@ -74,7 +75,6 @@ function actionErrorText(cause: unknown, provider?: Provider): string {
 }
 type Provider = McpConnection["provider"];
 const PROVIDERS: Provider[] = ["claude", "claude_desktop", "codex", "cursor", "opencode"];
-const BATCH_SIZE = 16;
 const SCOPES: Record<Provider, Scope[]> = {
   claude: ["user", "project", "local"],
   claude_desktop: ["user"],
@@ -372,9 +372,6 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
   const [query, setQuery] = useRetainedState(`${stateKey}:query`, "");
   const [scopeFilter, setScopeFilter] = useRetainedState<ScopeFilter>(`${stateKey}:scope`, "all");
   const [actionError, setActionError] = useState("");
-  const [reveal, setReveal] = useState({ key: "", count: BATCH_SIZE });
-  const listRoot = useRef<HTMLDivElement>(null);
-  const continuation = useRef<HTMLDivElement>(null);
   const [showAllProviders, setShowAllProviders] = useRetainedState(
     `${stateKey}:all-providers`,
     false,
@@ -418,7 +415,7 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
         setClaudePartial(previous?.claudePartial ?? false);
       }
       setLoading(force || !previous);
-      const snapshot = await loadMcpSettings(cwd, force);
+      const snapshot = await loadMcpSettings(cwd, force, { claudeHealth: force });
       if (generation === refreshGeneration.current) {
         applySnapshot(getCachedMcpSettings(cwd) ?? snapshot);
       }
@@ -465,44 +462,6 @@ function McpConnections({ cwd, projectPicker }: { cwd: string; projectPicker: Re
             .includes(search)),
     );
   }, [effectiveFilter, scopeFilter, servers, query]);
-  // The revealed page size belongs to the current filter and query and starts over when either changes.
-  const revealKey = `${effectiveFilter}
-${scopeFilter}
-${query}`;
-  const visibleCount = reveal.key === revealKey ? reveal.count : BATCH_SIZE;
-  const revealMore = useCallback(
-    (limit: number) =>
-      setReveal((current) => ({
-        key: revealKey,
-        count: Math.min(
-          (current.key === revealKey ? current.count : BATCH_SIZE) + BATCH_SIZE,
-          limit,
-        ),
-      })),
-    [revealKey],
-  );
-  const pageServers = visible.slice(0, visibleCount);
-  useEffect(() => {
-    if (
-      !continuation.current ||
-      !listRoot.current ||
-      visibleCount >= visible.length ||
-      typeof IntersectionObserver === "undefined"
-    )
-      return;
-    let cancelled = false;
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!cancelled && entries.some((entry) => entry.isIntersecting)) revealMore(visible.length);
-      },
-      { root: listRoot.current, rootMargin: "160px" },
-    );
-    observer.observe(continuation.current);
-    return () => {
-      cancelled = true;
-      observer.disconnect();
-    };
-  }, [visible.length, visibleCount, revealMore]);
 
   async function login(server: ServerRow) {
     if (busyRef.current || !canSignInMcp(server)) return;
@@ -751,30 +710,6 @@ ${query}`;
           {actionError}
         </SettingsFeedback>
       ) : null}
-      {error ? (
-        <SettingsFeedback
-          state="error"
-          action={
-            <Button loading={loading} onClick={() => void refresh()}>
-              {t("Retry")}
-            </Button>
-          }
-        >
-          {servers.length ? `${t("Showing the last successful result.")} ` : ""}
-          {error}
-        </SettingsFeedback>
-      ) : null}
-      {claudeError && (effectiveFilter === "all" || effectiveFilter === "claude") ? (
-        <ExpandableWarning>
-          {t("Claude connection status unavailable: ")} {claudeError}
-        </ExpandableWarning>
-      ) : claudePartial && (effectiveFilter === "all" || effectiveFilter === "claude") ? (
-        <SettingsFeedback state="warning">
-          {t(
-            "Claude did not finish checking every server in time. Servers it did not reach show Configured.",
-          )}
-        </SettingsFeedback>
-      ) : null}
       {loading && servers.length === 0 ? (
         <SettingsFeedback state="loading">{t("Checking servers…")}</SettingsFeedback>
       ) : visible.length === 0 && !error ? (
@@ -803,127 +738,101 @@ ${query}`;
               : t("No MCP servers configured for this provider.")}
         </SettingsFeedback>
       ) : (
-        <div
-          ref={listRoot}
-          className={styles.list}
-          role="region"
-          aria-label={t("MCP connections")}
-          tabIndex={0}
-        >
-          {pageServers.map((server) => {
-            // Until Claude reports health, a configured Claude row is unknown, not signed out.
-            const checking =
-              claudeChecking && server.provider === "claude" && server.status === "Configured";
-            return (
-              <div key={serverRowKey(server)} className={styles.row}>
-                <span className={styles.providerIcon}>
-                  <ProviderIcon provider={server.provider} />
-                </span>
-                <div className={styles.identity}>
-                  <div className={styles.nameLine}>
-                    <OverflowTooltip label={server.name}>
-                      <div className={styles.name}>{server.name}</div>
-                    </OverflowTooltip>
-                    <Badge
-                      size="xs"
-                      appearance="subtle"
-                      tone={server.scope === "user" ? "info" : "neutral"}
-                      className={styles.scopeTag}
-                    >
-                      {scopeLabel(server.scope)}
-                    </Badge>
+        <div role="region" aria-label={t("MCP connections")}>
+          <ContinuousList
+            className={styles.list}
+            items={visible}
+            itemKey={serverRowKey}
+            stateKey={`${stateKey}:${effectiveFilter}:${scopeFilter}:${query}`}
+            estimateSize={88}
+            renderItem={(server) => {
+              // Until Claude reports health, a configured Claude row is unknown, not signed out.
+              const checking =
+                claudeChecking && server.provider === "claude" && server.status === "Configured";
+              return (
+                <div key={serverRowKey(server)} className={styles.row}>
+                  <span className={styles.providerIcon}>
+                    <ProviderIcon provider={server.provider} />
+                  </span>
+                  <div className={styles.identity}>
+                    <div className={styles.nameLine}>
+                      <OverflowTooltip label={server.name}>
+                        <div className={styles.name}>{server.name}</div>
+                      </OverflowTooltip>
+                      <Badge
+                        size="xs"
+                        appearance="subtle"
+                        tone={server.scope === "user" ? "info" : "neutral"}
+                        className={styles.scopeTag}
+                      >
+                        {scopeLabel(server.scope)}
+                      </Badge>
+                    </div>
                   </div>
-                </div>
-                <span className={styles.status}>
-                  <Badge
-                    className={styles.statusBadge}
-                    size="sm"
-                    appearance="subtle"
-                    tone={
-                      checking
-                        ? "neutral"
-                        : /needs authentication/i.test(server.status)
-                          ? "warning"
-                          : /failed|error|disconnected/i.test(server.status)
-                            ? "danger"
-                            : isMcpConnected(server.status) || server.auth === "signed_in"
-                              ? "success"
-                              : "neutral"
-                    }
+                  <McpStatusDetails
+                    server={server}
+                    checking={!!checking}
+                    loading={loading}
+                    snapshot={{ servers, error, claudeError }}
+                  />
+                  <div className={styles.rowActions}>
+                    {!checking && needsMcpSignIn(server) ? (
+                      <Button
+                        stableWidth
+                        type="button"
+                        loading={busy?.server === serverRowKey(server) && busy.action === "login"}
+                        disabled={loading || busy !== null}
+                        onClick={() => void login(server)}
+                      >
+                        {t("Sign in")}
+                      </Button>
+                    ) : null}
+                  </div>
+                  <Button
+                    className={styles.rowMenu}
+                    type="button"
+                    variant="ghost"
+                    iconOnly
+                    label={t("Actions for {p0}", { p0: server.name })}
+                    tooltip={t("Actions for {p0}", { p0: server.name })}
+                    aria-haspopup="menu"
+                    aria-expanded={menu?.server === server}
+                    disabled={loading || busy !== null}
+                    loading={busy?.server === serverRowKey(server) && busy.action === "remove"}
+                    onClick={(event) => setMenu({ server, anchor: event.currentTarget })}
                   >
-                    {checking ? t("Checking…") : server.status}
-                  </Badge>
-                </span>
-                <div className={styles.details}>
-                  <p className={styles.metadata} title={server.configPath || undefined}>
-                    {MCP_PROVIDER_LABELS[server.provider]} &#183; {server.transport || "MCP"}
-                  </p>
-                  {server.configPath ? (
-                    <details className={styles.disclosure}>
-                      <summary>{t("Connection details")}</summary>
-                      <div className={styles.detailContent}>
-                        <span className={styles.path}>{server.configPath}</span>
-                        {server.provider === "claude" ? (
-                          <p>
-                            {t(
-                              "Claude CLI status is matched by server name; it is not verified separately for each scope.",
-                            )}
-                          </p>
-                        ) : null}
-                      </div>
-                    </details>
-                  ) : null}
+                    <MoreHorizontal className="icon-sm" />
+                  </Button>
                 </div>
-                <div className={styles.rowActions}>
-                  {!checking && needsMcpSignIn(server) ? (
-                    <Button
-                      stableWidth
-                      type="button"
-                      loading={busy?.server === serverRowKey(server) && busy.action === "login"}
-                      disabled={loading || busy !== null}
-                      onClick={() => void login(server)}
-                    >
-                      {t("Sign in")}
-                    </Button>
-                  ) : null}
-                </div>
-                <Button
-                  className={styles.rowMenu}
-                  type="button"
-                  variant="ghost"
-                  iconOnly
-                  label={t("Actions for {p0}", { p0: server.name })}
-                  tooltip={t("Actions for {p0}", { p0: server.name })}
-                  aria-haspopup="menu"
-                  aria-expanded={menu?.server === server}
-                  disabled={loading || busy !== null}
-                  loading={busy?.server === serverRowKey(server) && busy.action === "remove"}
-                  onClick={(event) => setMenu({ server, anchor: event.currentTarget })}
-                >
-                  <MoreHorizontal className="icon-sm" />
-                </Button>
-              </div>
-            );
-          })}
-          {visibleCount < visible.length ? (
-            <div ref={continuation} className={styles.continuation}>
-              <Button variant="ghost" onClick={() => revealMore(visible.length)}>
-                {t("Show more connections")}
-              </Button>
-            </div>
-          ) : null}
+              );
+            }}
+          />
         </div>
       )}
-      {visibleCount < visible.length ? (
-        <div className={styles.pagination}>
-          <span role="status">
-            {t("{p0}–{p1} of {p2} connections", {
-              p0: 1,
-              p1: Math.min(visibleCount, visible.length),
-              p2: visible.length,
-            })}
-          </span>
-        </div>
+      <CollectionFooter loading={loading && servers.length > 0} />
+      {error ? (
+        <SettingsFeedback
+          state="error"
+          action={
+            <Button loading={loading} onClick={() => void refresh()}>
+              {t("Retry")}
+            </Button>
+          }
+        >
+          {servers.length ? `${t("Showing the last successful result.")} ` : ""}
+          {error}
+        </SettingsFeedback>
+      ) : null}
+      {claudeError && (effectiveFilter === "all" || effectiveFilter === "claude") ? (
+        <ExpandableWarning>
+          {t("Claude connection status unavailable: ")} {claudeError}
+        </ExpandableWarning>
+      ) : claudePartial && (effectiveFilter === "all" || effectiveFilter === "claude") ? (
+        <SettingsFeedback state="warning">
+          {t(
+            "Claude did not finish checking every server in time. Servers it did not reach show Configured.",
+          )}
+        </SettingsFeedback>
       ) : null}
       {busy ? (
         <p role="status" className="text-ui-caption text-(--ui-text-secondary)">

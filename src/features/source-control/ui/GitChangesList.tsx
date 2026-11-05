@@ -7,9 +7,10 @@ import { ChevronDown, ChevronRight, Minus, Plus } from "../../../shared/ui/icons
 import { t, useLocale } from "../../../shared/i18n/git";
 import { collator } from "../../../shared/lib/intl";
 import { useStableCallback } from "../../../shared/hooks/useStableCallback";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
-import { selectTreePaths, type TreeSelectionModifiers } from "../../files/model/treeSelection";
-import type { ChangesView } from "../../settings/model/appearance";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
+import { selectTreePaths, type TreeSelectionModifiers } from "../../files/public/treeSelection";
+
+import type { ChangesView } from "../../settings";
 import { basename, type GitChangedFile, type GitFileDiffKind } from "../../../platform/tauri/fs";
 import { ChangeRow, ChangeSelectionCtx, statusColor } from "./ChangeRow";
 

@@ -63,14 +63,20 @@ export function useTabActivation(deps: TabActivationDeps): TabActivation {
   // The title tabs, explorer, changes and session list all follow
   // `projectCwd`, so anything that reveals a tab from another project has to
   // move it along with the active tab.
-  const followProject = useCallback((cwd: string | null | undefined, token?: PrivacyMutationToken) => {
-    if (!cwd || !looksLikeProject(cwd)) return;
-    const normalized = normalizeProjectPath(cwd);
-    if (sameProjectPath(normalized, projectCwdRef.current)) return;
-    setProjectCwd(normalized);
-    if (token) setRecents(rememberProjectInMutation(normalized, token));
-    else void rememberProject(normalized).then(setRecents).catch((error: unknown) => console.error("Could not remember project", error));
-  }, []);
+  const followProject = useCallback(
+    (cwd: string | null | undefined, token?: PrivacyMutationToken) => {
+      if (!cwd || !looksLikeProject(cwd)) return;
+      const normalized = normalizeProjectPath(cwd);
+      if (sameProjectPath(normalized, projectCwdRef.current)) return;
+      setProjectCwd(normalized);
+      if (token) setRecents(rememberProjectInMutation(normalized, token));
+      else
+        void rememberProject(normalized)
+          .then(setRecents)
+          .catch((error: unknown) => console.error("Could not remember project", error));
+    },
+    [],
+  );
 
   const activateTab = useCallback(
     (id: string, paneId?: string, reason: "session" | "workspace" = "session") => {

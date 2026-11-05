@@ -650,7 +650,10 @@ export async function guardedRemoveWorkspace(
         force: false,
         filter: (source) => source !== join(input.path, ".git"),
       });
-      const index = resolve(input.path, (await git(input.path, ["rev-parse", "--git-path", "index"])).trim());
+      const index = resolve(
+        input.path,
+        (await git(input.path, ["rev-parse", "--git-path", "index"])).trim(),
+      );
       if (exists(index)) copyFileSync(index, join(input.archiveRoot, "index"));
       const ref = `refs/bycoda/rewinds/${input.operationId}/rescue-head`;
       await git(input.projectCwd, ["update-ref", ref, registered.head]);
@@ -822,7 +825,10 @@ export function createWorkspaceRemovalService(
           registered.locked
         )
           throw new Error("Managed ownership/branch/registration is invalid or locked.");
-        const common = resolve(workspace.path, (await git(workspace.path, ["rev-parse", "--git-common-dir"])).trim());
+        const common = resolve(
+          workspace.path,
+          (await git(workspace.path, ["rev-parse", "--git-common-dir"])).trim(),
+        );
         if (!sameWorkspacePath(common, workspace.repositoryId))
           throw new Error("Workspace repository identity changed.");
         links = await inventoryWorkspaceLinks(workspace.path);

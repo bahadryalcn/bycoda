@@ -1,7 +1,5 @@
-import type { Block, Session } from "../../sessions/model/session";
-import type { ApprovalRequestToken } from "../../sessions/model/approvalIntents";
+import type { Block, Session, ApprovalRequestToken, UserQuestionReply } from "../../sessions";
 import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence";
-import type { UserQuestionReply } from "../../sessions/model/userQuestion";
 import type { DesktopProjectDirectory } from "./protocol";
 import type { NativeControlTurnReceipt } from "../../../integrations/harness/core/controlTurn";
 import {

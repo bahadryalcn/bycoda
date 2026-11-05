@@ -7,7 +7,7 @@ import {
 } from "../data/sessionStore";
 import type { Session } from "../model/session";
 import { buildGlobalRecentSessions, GLOBAL_RECENT_WINDOW_MS } from "../model/globalRecentSessions";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import { t } from "../../../shared/i18n";
 
 export function useGlobalRecentSessions(

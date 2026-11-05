@@ -92,9 +92,13 @@ export function createManagedWorkspaceRuntime(
   ];
   const pending = async (workspaceId: string, except?: string) => {
     const candidate = except ? await store.workspaceOperation(except) : null;
-    const completedDelivery = candidate?.workspaceId === workspaceId &&
-      candidate.kind === "delivery" && candidate.phase === "complete" && candidate.merge
-      ? candidate : undefined;
+    const completedDelivery =
+      candidate?.workspaceId === workspaceId &&
+      candidate.kind === "delivery" &&
+      candidate.phase === "complete" &&
+      candidate.merge
+        ? candidate
+        : undefined;
     return (
       (await store.workspaceHasPendingOperations(workspaceId, except)) ||
       (await options.artifactPending?.(workspaceId, completedDelivery?.id)) === true

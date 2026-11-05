@@ -119,10 +119,28 @@ it("preserves pre-serialized native data without parsing or copying its large va
 it("requires a captured Native proof before releasing Native tool output", async () => {
   const f = fixture();
   await f.adapter.begin("context", "request");
-  f.adapter.bind({ threadId: "thread", family: "conversation", action: "observations.read", nativeLibrary: true });
-  await expect(f.adapter.body({ events: [] })).rejects.toThrow("Native library provenance is unavailable");
-  const native = { environmentId: "host", threadId: "thread", installationId: "installation", issuer: "issuer", registryRevision: "revision", visibilityEpoch: 1, policyGeneration: "policy" };
+  f.adapter.bind({
+    threadId: "thread",
+    family: "conversation",
+    action: "observations.read",
+    nativeLibrary: true,
+  });
+  await expect(f.adapter.body({ events: [] })).rejects.toThrow(
+    "Native library provenance is unavailable",
+  );
+  const native = {
+    environmentId: "host",
+    threadId: "thread",
+    installationId: "installation",
+    issuer: "issuer",
+    registryRevision: "revision",
+    visibilityEpoch: 1,
+    policyGeneration: "policy",
+  };
   f.adapter.bindNativeProofs([native]);
   await f.adapter.body({ events: [] });
-  expect(f.finish).toHaveBeenCalledWith("ticket", expect.objectContaining({ nativeLibrary: true, nativeProofs: [native] }));
+  expect(f.finish).toHaveBeenCalledWith(
+    "ticket",
+    expect.objectContaining({ nativeLibrary: true, nativeProofs: [native] }),
+  );
 });

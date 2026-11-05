@@ -34,10 +34,18 @@ import {
 export { readHostToolsWindow } from "../../app/model/hostToolsWindow";
 import "./tools-workspace.css";
 import { setDockedToolPanes } from "./toolPaneState";
-import { registerToolsUiControl, type ToolsUiState, type ToolsTab, type RoomToolsUiContext } from "./toolsUiControl";
+import {
+  registerToolsUiControl,
+  type ToolsUiState,
+  type ToolsTab,
+  type RoomToolsUiContext,
+} from "./toolsUiControl";
 import { BrowserPanel } from "./BrowserPanel";
 import { subscribeGroupLock } from "../group-lock/model/groupLock";
-import { getRoomPrivacyStatus, subscribeRoomPrivacyStatus } from "../group-lock/model/roomPrivacyProjection";
+import {
+  getRoomPrivacyStatus,
+  subscribeRoomPrivacyStatus,
+} from "../group-lock/model/roomPrivacyProjection";
 import { sameProjectPath } from "../projects/model/recents";
 import { elapsedSince, monotonicNow } from "../../shared/lib/time/timestamps";
 import {
@@ -252,16 +260,21 @@ export async function openHostToolsWindow(tools: ConversationTools, onlyTab?: "l
     if (native) {
       const reusedWindow = new Error("Tools hub already exists");
       try {
-        await waitToolsAcknowledgement(requestId, "ready", async () => {
-          const { invoke } = await import("@tauri-apps/api/core");
-          const created = await invoke<boolean>("open_host_tools_window", {
-            title: t("Conversation tools"),
-            payload: { ...payload, transferRequestId: requestId },
-          });
-          // An existing destination has already booted; release the ready listener
-          // and send the immutable transfer under the outer mounted acknowledgement.
-          if (!created) throw reusedWindow;
-        }, () => ({ window: TOOLS_HUB_LABEL }));
+        await waitToolsAcknowledgement(
+          requestId,
+          "ready",
+          async () => {
+            const { invoke } = await import("@tauri-apps/api/core");
+            const created = await invoke<boolean>("open_host_tools_window", {
+              title: t("Conversation tools"),
+              payload: { ...payload, transferRequestId: requestId },
+            });
+            // An existing destination has already booted; release the ready listener
+            // and send the immutable transfer under the outer mounted acknowledgement.
+            if (!created) throw reusedWindow;
+          },
+          () => ({ window: TOOLS_HUB_LABEL }),
+        );
       } catch (error) {
         if (error !== reusedWindow) throw error;
       }
@@ -396,11 +409,17 @@ export function ToolsWorkspace({
       const current = roomPaneRef.current;
       const privacy = getRoomPrivacyStatus();
       if (current && (!current.context.valid() || privacy.pending || privacy.error)) {
-        roomPaneRef.current = undefined; roomMounted.current = undefined; setRoomPane(undefined);
+        roomPaneRef.current = undefined;
+        roomMounted.current = undefined;
+        setRoomPane(undefined);
       }
     };
-    const a = subscribeGroupLock(check), b = subscribeRoomPrivacyStatus(check);
-    return () => { a(); b(); };
+    const a = subscribeGroupLock(check),
+      b = subscribeRoomPrivacyStatus(check);
+    return () => {
+      a();
+      b();
+    };
   }, []);
   const paneOwner = useRef({});
   useEffect(() => {
@@ -454,21 +473,49 @@ export function ToolsWorkspace({
     () =>
       registerToolsUiControl(async (requestedContext, action, input) => {
         if (requestedContext.kind === "room") {
-          const owns = (pane: typeof roomPane) => !!pane && pane.context.threadId === requestedContext.threadId && pane.context.projectId === requestedContext.projectId && pane.context.environmentId === requestedContext.environmentId && sameProjectPath(pane.context.cwd, requestedContext.cwd);
+          const owns = (pane: typeof roomPane) =>
+            !!pane &&
+            pane.context.threadId === requestedContext.threadId &&
+            pane.context.projectId === requestedContext.projectId &&
+            pane.context.environmentId === requestedContext.environmentId &&
+            sameProjectPath(pane.context.cwd, requestedContext.cwd);
           const snapshot = (): ToolsUiState => {
             const pane = roomPaneRef.current;
             const open = owns(pane) && requestedContext.valid();
-            return { open, visible: open, presentation: "docked", placement: "right", panels: open && pane ? [{ id: pane.id, tab: "browser", machine: "project", mounted: roomMounted.current === pane.id, visible: true, presentationKnown: true }] : [] };
+            return {
+              open,
+              visible: open,
+              presentation: "docked",
+              placement: "right",
+              panels:
+                open && pane
+                  ? [
+                      {
+                        id: pane.id,
+                        tab: "browser",
+                        machine: "project",
+                        mounted: roomMounted.current === pane.id,
+                        visible: true,
+                        presentationKnown: true,
+                      },
+                    ]
+                  : [],
+            };
           };
           if (action === "ui.tools.status") return snapshot();
-          if (action !== "ui.tools.open" || !requestedContext.valid()) throw new Error("Room browser source is unavailable.");
+          if (action !== "ui.tools.open" || !requestedContext.valid())
+            throw new Error("Room browser source is unavailable.");
           const existing = roomPaneRef.current;
-          const pane = owns(existing) && existing ? { ...existing, context: requestedContext } : { id: crypto.randomUUID(), context: requestedContext };
+          const pane =
+            owns(existing) && existing
+              ? { ...existing, context: requestedContext }
+              : { id: crypto.randomUUID(), context: requestedContext };
           if (!existing || existing.id !== pane.id) roomMounted.current = undefined;
-          roomPaneRef.current = pane; setRoomPane(pane);
+          roomPaneRef.current = pane;
+          setRoomPane(pane);
           const startedAt = monotonicNow();
           while (elapsedSince(startedAt) < 10000) {
-            await new Promise<void>(resolve => setTimeout(resolve, 25));
+            await new Promise<void>((resolve) => setTimeout(resolve, 25));
             if (!requestedContext.valid()) throw new Error("Room browser source changed.");
             if (roomMounted.current === pane.id) return snapshot();
           }
@@ -694,14 +741,28 @@ export function ToolsWorkspace({
       const session = activeRef.current;
       if (!session || !eligibleRef.current || !sourceWindow.current || !document.hasFocus()) return;
       const revision = ++focusRevision;
-      void verifyToolsComposerOwner(session).then((owns) => {
-        if (disposed || !owns || revision !== focusRevision || !document.hasFocus() || !eligibleRef.current || !sameToolsSession(session, activeRef.current)) return;
-        selectionRevision.current = Math.max(Date.now(), selectionRevision.current + 1);
-        publishRef.current();
-      }).catch(() => {});
+      void verifyToolsComposerOwner(session)
+        .then((owns) => {
+          if (
+            disposed ||
+            !owns ||
+            revision !== focusRevision ||
+            !document.hasFocus() ||
+            !eligibleRef.current ||
+            !sameToolsSession(session, activeRef.current)
+          )
+            return;
+          selectionRevision.current = Math.max(Date.now(), selectionRevision.current + 1);
+          publishRef.current();
+        })
+        .catch(() => {});
     };
     window.addEventListener("focus", focus);
-    return () => { disposed = true; ++focusRevision; window.removeEventListener("focus", focus); };
+    return () => {
+      disposed = true;
+      ++focusRevision;
+      window.removeEventListener("focus", focus);
+    };
   }, []);
   useEffect(() => {
     if (!nativeToolsAvailable()) return;
@@ -849,10 +910,41 @@ export function ToolsWorkspace({
               </Alert>
             ) : null}
             <div className="tools-workspace-panes">
-              {roomPane && <section className="tools-workspace-pane" key={roomPane.id}>
-                <PaneHeader as="header" className="tools-workspace-toolbar" icon={<Wrench className="icon-sm" aria-hidden />} titleAs="div" title={t("Browser")} meta={roomPane.context.title} actions={<Button variant="ghost" size="sm" iconOnly label={t("Close panel")} onClick={() => { roomPaneRef.current = undefined; roomMounted.current = undefined; setRoomPane(undefined); }}><X className="icon-sm" aria-hidden /></Button>} />
-                <BrowserPanel cwd={roomPane.context.cwd} roomSubject={roomPane.context} onMounted={() => { roomMounted.current = roomPane.id; }} annotationsAllowed={false} />
-              </section>}
+              {roomPane && (
+                <section className="tools-workspace-pane" key={roomPane.id}>
+                  <PaneHeader
+                    as="header"
+                    className="tools-workspace-toolbar"
+                    icon={<Wrench className="icon-sm" aria-hidden />}
+                    titleAs="div"
+                    title={t("Browser")}
+                    meta={roomPane.context.title}
+                    actions={
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        iconOnly
+                        label={t("Close panel")}
+                        onClick={() => {
+                          roomPaneRef.current = undefined;
+                          roomMounted.current = undefined;
+                          setRoomPane(undefined);
+                        }}
+                      >
+                        <X className="icon-sm" aria-hidden />
+                      </Button>
+                    }
+                  />
+                  <BrowserPanel
+                    cwd={roomPane.context.cwd}
+                    roomSubject={roomPane.context}
+                    onMounted={() => {
+                      roomMounted.current = roomPane.id;
+                    }}
+                    annotationsAllowed={false}
+                  />
+                </section>
+              )}
               {panes.map((pane) => (
                 <section
                   className="tools-workspace-pane"

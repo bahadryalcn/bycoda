@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { invoke } from "@tauri-apps/api/core";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -14,7 +15,7 @@ import {
   LinkedWorkItemPanel as RawLinkedWorkItemPanel,
 } from "./InboxView";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
 
 const InboxDetail = withQueryClient(RawInboxDetail);
 const LinkedWorkItemPanel = withQueryClient(RawLinkedWorkItemPanel);
@@ -55,12 +56,12 @@ describe("InboxDetail layout", () => {
   it("marks issues closed as completed with the success check and a Completed label", () => {
     const completed = inboxStatusMark(item({ state: "closed", stateReason: "completed" }));
     expect(completed.Icon.displayName).toBe("CheckCircle");
-    expect(completed.className).toBe("text-(--ui-tone-success-fg)");
+    expect(completed.tone).toBe("success");
     expect(completed.label).toBe("Completed");
 
     const notPlanned = inboxStatusMark(item({ state: "closed", stateReason: "not_planned" }));
     expect(notPlanned.Icon.displayName).toBe("CircleX");
-    expect(notPlanned.className).toBe("text-(--ui-text-secondary)");
+    expect(notPlanned.tone).toBe("neutral");
   });
 
   it("renders a linked item as a standalone, closable side panel", () => {

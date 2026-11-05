@@ -66,11 +66,14 @@ export function ServerForwards({
         const result = await listSshForwards();
         if (!disposed && sequence === statusSequence.current) {
           const next = result.filter((item) => item.connectionId === server.id);
-          setStatuses((previous) => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+          setStatuses((previous) =>
+            JSON.stringify(previous) === JSON.stringify(next) ? previous : next,
+          );
           setStatusError("");
         }
       } catch {
-        if (!disposed && sequence === statusSequence.current) setStatusError(t("Couldn’t read forwarding status."));
+        if (!disposed && sequence === statusSequence.current)
+          setStatusError(t("Couldn’t read forwarding status."));
       } finally {
         pending = false;
       }

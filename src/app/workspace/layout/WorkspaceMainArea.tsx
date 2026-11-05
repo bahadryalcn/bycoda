@@ -246,7 +246,16 @@ function WorkspaceMainAreaComponent({
   return (
     <main className="relative flex min-h-0 min-w-0 flex-1">
       <ToolsWorkspace
-        followEligible={!(inboxViewOpen || searchViewOpen || settingsOpen || notesViewOpen || serversViewOpen || automationsViewOpen)}
+        followEligible={
+          !(
+            inboxViewOpen ||
+            searchViewOpen ||
+            settingsOpen ||
+            notesViewOpen ||
+            serversViewOpen ||
+            automationsViewOpen
+          )
+        }
         activeConversation={activeToolsConversation}
         accessibleSessions={toolsSessions}
       >

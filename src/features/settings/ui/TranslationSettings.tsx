@@ -2,8 +2,8 @@ import { lazy, Suspense, useState } from "react";
 import { t } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { HARNESSES } from "../../sessions/model/session";
-import { defaultModelSettings, resolveModel } from "../../sessions/model/models";
+import { HARNESSES } from "../../sessions";
+import { defaultModelSettings, resolveModel } from "../../sessions/public/models";
 import { canRunHarnessTextPrompt } from "../../../integrations/harness";
 import {
   defaultProviderAccountId,
@@ -16,11 +16,13 @@ import {
   useDefaultRepromptChoice,
   defaultTextActionChoice,
   type TranslationChoice,
-} from "../../sessions/model/translationPreferences";
+} from "../../sessions/public/translationPreferences";
 import { Group, Row, SettingsFeedback } from "./settingsControls";
 
 const ModelPicker = lazy(() =>
-  import("../../sessions/ui/ModelPicker").then((module) => ({ default: module.ModelPicker })),
+  import("../../sessions")
+    .then((entry) => entry.loadModelPicker())
+    .then((module) => ({ default: module.ModelPicker })),
 );
 
 export function TranslationSettings({

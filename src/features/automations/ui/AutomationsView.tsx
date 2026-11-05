@@ -1641,7 +1641,12 @@ function AutomationEditor({
                         </SettingsRow>
                         <SettingsRow
                           label={t("Session folder")}
-                          hint={folderChoices.error ?? (folderChoices.loading ? t("Loading folders…") : "Where runs appear in the sidebar")}
+                          hint={
+                            folderChoices.error ??
+                            (folderChoices.loading
+                              ? t("Loading folders…")
+                              : "Where runs appear in the sidebar")
+                          }
                         >
                           <SearchableSelect
                             variant="pill"

@@ -32,10 +32,7 @@ export async function listenAssistantBriefing(
     if (isVoiceConversationActive())
       controller.abort(new Error("Voice became active. The briefing stopped."));
   });
-  let timer = setTimeout(
-    () => controller.abort(new Error("Briefing playback timed out.")),
-    120000,
-  );
+  let timer = setTimeout(() => controller.abort(new Error("Briefing playback timed out.")), 120000);
   try {
     const owner = await captureAssistantHostRead(environmentId);
     const current = await owner.snapshot();

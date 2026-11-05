@@ -3,6 +3,47 @@ const captureRoot =
   process.env.BYCODA_APPROVAL_VERIFICATION_DIR ?? "temp/verification/question-flow";
 
 for (const theme of ["light", "dark"] as const) {
+  for (const width of [1280, 800]) {
+    test(`fixed choices retain additional notes at ${width}px in ${theme}`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 950 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/question-flow.html?theme=${theme}&variant=choices`);
+      const form = page.locator("[data-question-form]");
+      await form.getByRole("radio", { name: /Windows and macOS/ }).check();
+      const note = form.getByRole("textbox", { name: "Additional note (optional)", exact: true });
+      const text =
+        "Keep existing drafts.\nTürkçe not: seçenek aynı kalsın; klavye desteği korunsun.";
+      await note.fill(text);
+      await page.getByRole("button", { name: "Hide question", exact: true }).click();
+      await page.getByRole("button", { name: "Show question", exact: true }).click();
+      await expect(note).toHaveValue(text);
+      await expect(form.getByRole("radio", { name: /Windows and macOS/ })).toBeChecked();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(
+        false,
+      );
+      await form.screenshot({ path: `${captureRoot}/question-note-${theme}-${width}.png` });
+      await form.locator('button[type="submit"]').click();
+      await expect(note).toHaveAttribute("readonly", "");
+      await page.getByRole("button", { name: "Confirm delivery", exact: true }).click();
+      const card = page.locator("[data-question-answer]");
+      await expect(card).toContainText("Windows and macOS");
+      await expect(card).toContainText("Türkçe not: seçenek aynı kalsın; klavye desteği korunsun.");
+      await card.locator(".user-message-row").hover();
+      const actions = card.locator(".user-message-actions");
+      await expect(actions).toHaveCSS("opacity", "1");
+      await actions.getByRole("button", { name: "Copy message", exact: true }).focus();
+      await expect(actions).toHaveCSS("opacity", "1");
+      const bounds = await actions.evaluate((node) => ({
+        bottom: node.getBoundingClientRect().bottom,
+        rowBottom: node.closest(".user-message-row")!.getBoundingClientRect().bottom,
+      }));
+      expect(bounds.bottom).toBeLessThanOrEqual(bounds.rowBottom);
+      await card.screenshot({ path: `${captureRoot}/question-answer-note-${theme}-${width}.png` });
+    });
+  }
+}
+
+for (const theme of ["light", "dark"] as const) {
   for (const width of [390, 1100]) {
     test(`question lifecycle preserves answers at ${width}px in ${theme}`, async ({ page }) => {
       await page.setViewportSize({ width, height: 950 });
@@ -117,6 +158,27 @@ for (const theme of ["light", "dark"] as const) {
       await expect(card).toContainText("Answered");
       await expect(card).toContainText("Windows and macOS");
       await expect(card.locator(".user-message-bubble")).toHaveCount(0);
+      const answerRows = card.locator(".user-message-row");
+      for (const row of await answerRows.all()) {
+        await row.hover();
+        const actions = row.locator(".user-message-actions");
+        await expect(actions).toHaveCSS("opacity", "1");
+        const bounds = await row.evaluate((node) => {
+          const row = node.getBoundingClientRect();
+          const actions = node.querySelector(".user-message-actions")!.getBoundingClientRect();
+          const content = node
+            .querySelector(".user-message-hover-zone")!
+            .firstElementChild!.getBoundingClientRect();
+          return {
+            rowBottom: row.bottom,
+            actionTop: actions.top,
+            actionBottom: actions.bottom,
+            contentBottom: content.bottom,
+          };
+        });
+        expect(bounds.actionTop).toBeGreaterThanOrEqual(bounds.contentBottom);
+        expect(bounds.actionBottom).toBeLessThanOrEqual(bounds.rowBottom);
+      }
       const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
       expect(overflow).toBe(false);
       await page.screenshot({

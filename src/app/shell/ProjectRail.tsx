@@ -1,3 +1,5 @@
+import { Badge } from "../../shared/ui/Badge";
+import { StatusDot } from "../../shared/ui/StatusDot";
 import { InlineError } from "../../shared/ui/InlineError";
 import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
@@ -998,7 +1000,9 @@ export function ProjectRail({
       aria-label={t("Projects")}
       className={`bycoda-project-rail sidebar-glass relative shrink-0 flex-col border-r border-(--ui-pane-border) pe-1.5 ${visible ? "flex" : "hidden"}`}
     >
-      {groupMutationError && <InlineError>{t("Could not add projects to the group. Please try again.")}</InlineError>}
+      {groupMutationError && (
+        <InlineError>{t("Could not add projects to the group. Please try again.")}</InlineError>
+      )}
       {!navigator ? (
         <div
           className="@container/rail flex h-10 shrink-0 select-none items-center overflow-hidden pr-1.5"
@@ -1103,9 +1107,10 @@ export function ProjectRail({
                                 <span className="relative">
                                   <Inbox />
                                   {inboxUnseen ? (
-                                    <span
+                                    <StatusDot
+                                      label={t("New items")}
                                       aria-hidden
-                                      className="absolute size-1.5 rounded-full bg-accent [inset-inline-end:-3px] [inset-block-start:-2px]"
+                                      className="absolute [inset-inline-end:-3px] [inset-block-start:-2px]"
                                     />
                                   ) : null}
                                 </span>
@@ -1982,9 +1987,9 @@ function ProjectGroupSection({
             never moves the name or the count. */}
         {gitSummary.dirty > 0 ? (
           <Tooltip label={group.name} details={[gitTitle]}>
-            <span className="my-auto shrink-0 tabular-nums text-ui-caption text-warning @max-[140px]/rail:hidden">
+            <Badge variant="count" size="xs" className="my-auto shrink-0 @max-[140px]/rail:hidden">
               {gitSummary.dirty}
-            </span>
+            </Badge>
           </Tooltip>
         ) : null}
         <div className="my-auto flex shrink-0 items-center gap-0.5 @max-[140px]/rail:hidden">
@@ -2392,15 +2397,17 @@ function ProjectCard({
             className="relative grid size-4 shrink-0 place-items-center text-(--ui-text-secondary) @max-[140px]/rail:hidden"
           >
             <Internet className="icon-xs" strokeWidth={1.75} aria-hidden="true" />
-            <span
+            <StatusDot
+              label={connection}
               aria-hidden="true"
-              className={`absolute right-0 bottom-0 size-1.5 rounded-full ring-1 ring-background-base ${
+              tone={
                 indicator.tone === "connected"
-                  ? "bg-success"
+                  ? "success"
                   : indicator.tone === "connecting"
-                    ? "bg-warning"
-                    : "bg-danger"
-              }`}
+                    ? "warning"
+                    : "danger"
+              }
+              className="absolute right-0 bottom-0"
             />
           </span>
         ) : null}
@@ -2415,9 +2422,10 @@ function ProjectCard({
         ) : null}
       </Button>
       {change ? (
-        <span
+        <StatusDot
+          label={t("Changes")}
           aria-hidden
-          className="pointer-events-none absolute right-1.5 top-1.5 hidden size-1.5 rounded-full bg-success @max-[140px]/rail:block"
+          className="pointer-events-none absolute right-1.5 top-1.5 hidden @max-[140px]/rail:block"
         />
       ) : null}
       {!multi?.active ? (
@@ -2537,11 +2545,7 @@ function CompactLiveAgents({
           {summary.headline === "attention" ? (
             <CircleAlert className="icon-xs text-(--ui-tone-warning-fg)" strokeWidth={1.75} />
           ) : (
-            <span
-              className={`size-1.5 rounded-full ${
-                working > 0 ? "bg-accent" : "bg-(--ui-text-muted)"
-              }`}
-            />
+            <StatusDot label={heading} aria-hidden tone={working > 0 ? "accent" : "neutral"} />
           )}
         </div>
       </Tooltip>
@@ -2586,9 +2590,11 @@ function CompactLiveAgents({
                 active={!agent.needsApproval && !agent.done}
               />
               {agent.needsApproval ? (
-                <span
+                <StatusDot
+                  label={activity}
+                  tone="warning"
                   aria-hidden
-                  className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-warning"
+                  className="absolute right-1.5 top-1.5"
                 />
               ) : null}
             </Button>
@@ -2636,9 +2642,9 @@ function ProjectGitChangeMark({ change }: { change: ProjectGitChange }) {
       >
         <FileDiff className="icon-xs shrink-0" strokeWidth={1.75} />
         {change.files > 0 ? (
-          <span data-git-count="" className="text-ui-micro font-medium tabular-nums">
+          <Badge data-git-count="" variant="count" size="xs">
             {projectGitCountLabel(change.files)}
-          </span>
+          </Badge>
         ) : null}
       </span>
     </>

@@ -3,6 +3,7 @@ import { useSessionProjectAppearance } from "./useSessionProjectAppearance";
 import { sessionProviderHistory } from "../../features/sessions/model/sessionProviderHistory";
 import { AssistantManagedBadge } from "../../features/sessions/ui/AssistantManagedBadge";
 import { Badge, type BadgeTone } from "../../shared/ui/Badge";
+import { StatusDot } from "../../shared/ui/StatusDot";
 import { localReferenceForSession } from "../../features/sessions/model/localSessionNavigation";
 import { localSessionLinkFields } from "../../features/sessions/model/localSessionReference";
 import { Alert } from "../../shared/ui/Alert";
@@ -58,13 +59,10 @@ import {
   CheckList,
   DashboardSquare,
   Bot,
-  ChevronRight,
   CircleAlert,
   CircleDot,
   Clock,
   FileScript,
-  Folder,
-  FolderOpen,
   FolderTree,
   GitBranch,
   GitPullRequest,
@@ -107,7 +105,6 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
   type Ref,
-  type RefObject,
 } from "react";
 import {
   loadSessionSidebarWidth,
@@ -189,7 +186,6 @@ import {
   buildSessionList,
   createFolderWithSessions,
   dissolveFolder,
-  folderAccent,
   folderContaining,
   loadPinnedSessionsCollapsed,
   loadReminderSessionsCollapsed,
@@ -211,14 +207,49 @@ import {
   type SessionListDropTarget,
   type SessionListEntry,
 } from "../../features/sessions/model/sessionFolders";
-import { executeOrganizationOperation, folderPosition, organizationFoldersForProject, organizationOrderForProject, previewOrganizationOperation, type OrganizationOperation } from "../../features/sessions/model/sessionOrganizationOperations";
-import { cachedSessionOrganization, hydrateSessionOrganization, NATIVE_SESSION_ORGANIZATION_ACTIVE, subscribeSessionOrganization, unresolvedSessionOrganizationGestures, type SessionOrganizationState } from "../../features/sessions/model/sessionOrganizationStore";
+import {
+  executeOrganizationOperation,
+  folderPosition,
+  organizationFoldersForProject,
+  organizationOrderForProject,
+  previewOrganizationOperation,
+  type OrganizationOperation,
+} from "../../features/sessions/model/sessionOrganizationOperations";
+import {
+  cachedSessionOrganization,
+  hydrateSessionOrganization,
+  NATIVE_SESSION_ORGANIZATION_ACTIVE,
+  subscribeSessionOrganization,
+  unresolvedSessionOrganizationGestures,
+  type SessionOrganizationState,
+} from "../../features/sessions/model/sessionOrganizationStore";
 import { isProjectPasswordLocked } from "../../features/group-lock/model/groupLock";
 import { withRoomPrivacyMutation } from "../../features/group-lock/model/roomPrivacyProjection";
-import { pinState, resolvePinTarget, samePinTarget, type PinTarget } from "../../features/sessions/data/sessionPinReceipts";
-import { acknowledgePartialPinSaga, listPinSagas, preparePinSaga, resumePinSaga, type PinSaga, type PinSagaStep } from "../../features/sessions/model/sessionPinSaga";
-import { LIST_PAGE_SIZE, listWindowSize } from "../../shared/lib/listWindow";
-import { folderSessionWindow } from "../../features/sessions/model/folderWindow";
+import {
+  pinState,
+  resolvePinTarget,
+  samePinTarget,
+  type PinTarget,
+} from "../../features/sessions/data/sessionPinReceipts";
+import {
+  acknowledgePartialPinSaga,
+  listPinSagas,
+  preparePinSaga,
+  resumePinSaga,
+  type PinSaga,
+  type PinSagaStep,
+} from "../../features/sessions/model/sessionPinSaga";
+import {
+  folderMoveTargetAt,
+  flattenSessionList,
+  SessionListWindow,
+  type SessionListRow,
+  type SessionListVirtualProps,
+} from "./sessionListWindow";
+import { SessionFolderListHeader, SessionGroupListRow } from "./SessionFolderListRows";
+import { SessionListItem } from "./SessionListItem";
+import { GlobalSessionListWindow } from "./GlobalSessionListWindow";
+import { CollectionFooter } from "../../shared/ui/ContinuousList";
 import {
   filterSessionsByHarness,
   filterAssistantManagedSessions,
@@ -242,10 +273,10 @@ import { useDragResize } from "../../shared/hooks/useDragResize";
 import { sidePaneMaxWidth } from "./sidePaneWidth";
 import { useGitFileStatuses } from "../../features/source-control/hooks/useGitFileStatuses";
 import { useLockOverscroll } from "../../shared/hooks/useLockOverscroll";
+import { useRetainedScroll } from "../../shared/hooks/useRetainedScroll";
 import { useCheckoutChangeStats } from "./useCheckoutChangeStats";
 import { useCompactRailDrawer } from "./useCompactRailDrawer";
-import { useSessionListLimits, useSessionListSentinel } from "./useSessionListPaging";
-import { useSessionListMotion, type SessionInsertMotion } from "./useSessionListMotion";
+import { useSessionListMotion } from "./useSessionListMotion";
 import { useSessionSelection } from "./useSessionSelection";
 import { useAnimatedReorder } from "../../shared/hooks/useAnimatedReorder";
 import { normalizeHex } from "../../shared/lib/colorUtils";
@@ -273,7 +304,7 @@ import { LiveAgentsPreview } from "../../features/sessions/ui/LiveAgentsPreview"
 import { ProjectRail } from "./ProjectRail";
 import { RailAction } from "./RailAction";
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
-import { ActionHost, InlineAction, InlineMoreAction } from "../../shared/ui/ActionHost";
+import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { PaneHeader } from "../../shared/ui/PaneHeader";
 import { Sash } from "../../shared/ui/Sash";
@@ -399,7 +430,12 @@ type Props = {
   onArchiveSessions?: (sessionIds: readonly string[], archived: boolean) => void;
   onPinSession?: (sessionId: string, pinned: boolean) => void;
   onPinSessions?: (sessionIds: readonly string[], pinned: boolean) => void;
-  onConfirmedPin?: (sessionId: string, cwd: string, pinned: boolean, target: PinTarget) => Promise<void>;
+  onConfirmedPin?: (
+    sessionId: string,
+    cwd: string,
+    pinned: boolean,
+    target: PinTarget,
+  ) => Promise<void>;
   onPreparePin?: (sessionId: string, cwd: string) => Promise<void>;
   onSetSessionLinkedWorkItem?: (sessionId: string, item: LinkedWorkItem | undefined) => void;
   reminders?: readonly SessionReminder[];
@@ -901,7 +937,9 @@ function SidebarComponent({
     }
   };
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
-  const [sessionOrder, setSessionOrder] = useState<SessionOrder>(() => NATIVE_SESSION_ORGANIZATION_ACTIVE ? {} : loadSessionOrder(cwd));
+  const [sessionOrder, setSessionOrder] = useState<SessionOrder>(() =>
+    NATIVE_SESSION_ORGANIZATION_ACTIVE ? {} : loadSessionOrder(cwd),
+  );
   const [listNotice, setListNotice] = useState<{ message: string; undo: () => void } | null>(null);
   const [organizationNotice, setOrganizationNotice] = useState<string | null>(null);
   const [partialPinSagas, setPartialPinSagas] = useState<PinSaga[]>([]);
@@ -1062,19 +1100,25 @@ function SidebarComponent({
     return () => window.clearTimeout(timer);
   }, [activeListedSessionId, openingSessionId]);
   const searchNarrowed = Boolean(deferredSearchQuery.trim());
-  const sessionListKey = `${cwd}\0${sessionFilters.showArchived}\0${sessionFilters.assistantManaged}\0${sessionFilters.time}\0${sessionFilters.hiddenHarnesses.join(",")}\0${sessionFilters.status.working}\0${sessionFilters.status.needsApproval}\0${sessionFilters.status.done}\0${searchQuery}`;
-  const { sessionListLimit, folderListLimits, showMoreSessions, showMoreInFolder } =
-    useSessionListLimits(sessionListKey, sessionsScrollRef);
-  // Summaries for the whole project stay in `sessions` so filters still work.
-  // Folders sit above the ungrouped list. Only a page of ungrouped cards
-  // mounts; the sentinel below asks for the next page.
-  const {
-    reminderIds,
-    ungroupedVisible,
-    shownUngroupedCount,
-    sessionListEntries,
-    sessionNavigationIds,
-  } = useMemo(() => {
+  const listFilters = lastSessionsOpen ? globalSessionFilters : sessionFilters;
+  const sessionListKey = JSON.stringify([
+    lastSessionsOpen ? "last-sessions" : "project-sessions",
+    lastSessionsOpen ? "all-projects" : cwd,
+    lastSessionsOpen
+      ? "all-machines"
+      : (remote.machine?.environmentId ?? (remoteProject ? "remote-offline" : "local")),
+    listFilters.showArchived,
+    listFilters.assistantManaged,
+    listFilters.time,
+    listFilters.hiddenHarnesses,
+    listFilters.status,
+    deferredSearchQuery,
+  ]);
+  const retainSessionsScroll = useRetainedScroll<HTMLDivElement>(sessionListKey, {
+    ready: tab === "sessions",
+  });
+  // Keep the complete loaded collection in the model; the shared window bounds the mounted rows.
+  const { reminderIds, sessionListEntries, sessionNavigationIds } = useMemo(() => {
     const reminderIds = new Set(reminders.map((reminder) => reminder.sessionId));
     const reminderGroup = {
       sessionIds: [...reminders]
@@ -1097,19 +1141,10 @@ function SidebarComponent({
         sessionOrder.loose,
       ),
     ].sort(compareStatus);
-    const activeUngroupedIndex = ungroupedVisible.findIndex(
-      (session) => session.id === activeListedSessionId,
-    );
-    const shownUngroupedCount = listWindowSize(
-      ungroupedVisible.length,
-      sessionListLimit,
-      activeUngroupedIndex,
-    );
-    const shownUngrouped = ungroupedVisible.slice(0, shownUngroupedCount);
     const sessionListEntries = buildSessionList(
       visibleSessions,
       sessionFolders,
-      shownUngrouped,
+      ungroupedVisible,
       pinnedSessionsCollapsed,
       reminderGroup,
       compareStatus,
@@ -1119,7 +1154,6 @@ function SidebarComponent({
       reminderIds,
       reminderGroup,
       ungroupedVisible,
-      shownUngroupedCount,
       sessionListEntries,
       sessionNavigationIds,
       compareStatus,
@@ -1134,10 +1168,13 @@ function SidebarComponent({
     unseenFinishedIds,
     sessionOrder,
     activeListedSessionId,
-    sessionListLimit,
     pinnedSessionsCollapsed,
     searchNarrowed,
   ]);
+  const flatSessionRows = useMemo(
+    () => flattenSessionList(sessionListEntries, searchNarrowed),
+    [sessionListEntries, searchNarrowed],
+  );
   const sessionNavigationKey = sessionNavigationIds.join("\0");
   const listDisplay = useSessionListDisplay();
   // The workspace keeps this order in a ref for keyboard navigation between
@@ -1176,13 +1213,6 @@ function SidebarComponent({
     dismissBulkNotice,
     bulkDeleteSessions,
   } = selection;
-  const hasMoreSessions = shownUngroupedCount < ungroupedVisible.length;
-  const setLoadMoreElement = useSessionListSentinel({
-    enabled: tab === "sessions" && hasMoreSessions,
-    rootRef: sessionsScrollRef,
-    shownCount: shownUngroupedCount,
-    onLoadMore: showMoreSessions,
-  });
   // A session drop lets the list settle first: the gap it opened is released here, in the commit
   // that reorders the list and before the motion hook measures where each card ended up.
   useLayoutEffect(() => {
@@ -1292,60 +1322,102 @@ function SidebarComponent({
     setOrganizationNotice(t("Loading folders…"));
     let alive = true;
     let reconciliation = 0;
-    const unsubscribe = subscribeSessionOrganization(() => {
-      const snapshot = cachedSessionOrganization();
-      if (!snapshot) return;
-      try {
-        setSessionFolders(organizationFoldersForProject(snapshot, cwd));
-        setSessionOrder(organizationOrderForProject(snapshot, cwd));
-        organizationRefreshRequired.current = false;
-        if (!organizationBusy.current) {
-          const generation = ++reconciliation;
-          void Promise.all([unresolvedSessionOrganizationGestures(), listPinSagas()]).then(([pending, sagas]) => {
-            if (!alive || organizationBusy.current || generation !== reconciliation) return;
-            const openSagas = sagas.filter((saga) => saga.state !== "applied" && saga.state !== "accepted");
-            setPartialPinSagas(openSagas.filter((saga) => saga.state === "partial"));
-            organizationUnresolved.current = pending.length > 0 || openSagas.length > 0;
-            organizationReady.current = true;
-            if (pending.length) setOrganizationNotice(`Folder change outcome is unknown: ${pending[0].operationId}`);
-            else if (openSagas.length) setOrganizationNotice(`Pin change needs review: ${openSagas[0].id}`);
-            else setOrganizationNotice((current) => current === t("Loading folders…") ? null : current);
-          }).catch((error: unknown) => { if (alive && generation === reconciliation) setOrganizationNotice(String(error)); });
+    const unsubscribe = subscribeSessionOrganization(
+      () => {
+        const snapshot = cachedSessionOrganization();
+        if (!snapshot) return;
+        try {
+          setSessionFolders(organizationFoldersForProject(snapshot, cwd));
+          setSessionOrder(organizationOrderForProject(snapshot, cwd));
+          organizationRefreshRequired.current = false;
+          if (!organizationBusy.current) {
+            const generation = ++reconciliation;
+            void Promise.all([unresolvedSessionOrganizationGestures(), listPinSagas()])
+              .then(([pending, sagas]) => {
+                if (!alive || organizationBusy.current || generation !== reconciliation) return;
+                const openSagas = sagas.filter(
+                  (saga) => saga.state !== "applied" && saga.state !== "accepted",
+                );
+                setPartialPinSagas(openSagas.filter((saga) => saga.state === "partial"));
+                organizationUnresolved.current = pending.length > 0 || openSagas.length > 0;
+                organizationReady.current = true;
+                if (pending.length)
+                  setOrganizationNotice(
+                    `Folder change outcome is unknown: ${pending[0].operationId}`,
+                  );
+                else if (openSagas.length)
+                  setOrganizationNotice(`Pin change needs review: ${openSagas[0].id}`);
+                else
+                  setOrganizationNotice((current) =>
+                    current === t("Loading folders…") ? null : current,
+                  );
+              })
+              .catch((error: unknown) => {
+                if (alive && generation === reconciliation) setOrganizationNotice(String(error));
+              });
+          }
+        } catch (error) {
+          setOrganizationNotice(String(error));
         }
-      } catch (error) { setOrganizationNotice(String(error)); }
-    }, (error) => setOrganizationNotice(String(error)));
-    return () => { alive = false; unsubscribe(); };
+      },
+      (error) => setOrganizationNotice(String(error)),
+    );
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
   }, [cwd]);
 
   useEffect(() => {
     if (!NATIVE_SESSION_ORGANIZATION_ACTIVE) return;
     const onFeedback = (event: Event) => {
-      const detail = (event as CustomEvent<{ cwd: string; sessionId: string; runId: string; result?: { state: string; operationId?: string }; error?: string }>).detail;
+      const detail = (
+        event as CustomEvent<{
+          cwd: string;
+          sessionId: string;
+          runId: string;
+          result?: { state: string; operationId?: string };
+          error?: string;
+        }>
+      ).detail;
       if (!detail || !sameProjectPath(detail.cwd, cwd)) return;
       if (detail.result?.state === "unknown") organizationUnresolved.current = true;
-      if (isProjectPasswordLocked(detail.cwd)) { setOrganizationNotice("Folder placement needs review after unlocking the project."); return; }
-      setOrganizationNotice(detail.result?.state === "unknown"
-        ? `Automation session ${detail.sessionId} retained; folder outcome is unknown: ${detail.result.operationId}`
-        : detail.result?.state === "applied-unavailable"
-          ? `Automation session ${detail.sessionId} retained; folder change was applied but refresh failed.`
-          : `Automation session ${detail.sessionId} retained; folder placement needs review${detail.error ? `: ${detail.error}` : "."}`);
+      if (isProjectPasswordLocked(detail.cwd)) {
+        setOrganizationNotice("Folder placement needs review after unlocking the project.");
+        return;
+      }
+      setOrganizationNotice(
+        detail.result?.state === "unknown"
+          ? `Automation session ${detail.sessionId} retained; folder outcome is unknown: ${detail.result.operationId}`
+          : detail.result?.state === "applied-unavailable"
+            ? `Automation session ${detail.sessionId} retained; folder change was applied but refresh failed.`
+            : `Automation session ${detail.sessionId} retained; folder placement needs review${detail.error ? `: ${detail.error}` : "."}`,
+      );
     };
     window.addEventListener("bycoda:organization-operation-feedback", onFeedback);
     return () => window.removeEventListener("bycoda:organization-operation-feedback", onFeedback);
   }, [cwd]);
 
   useEffect(
-    () => NATIVE_SESSION_ORGANIZATION_ACTIVE ? undefined :
-      subscribeSessionFolders(cwd, () => {
-        setSessionFolders(loadSessionFolders(cwd));
-      }),
+    () =>
+      NATIVE_SESSION_ORGANIZATION_ACTIVE
+        ? undefined
+        : subscribeSessionFolders(cwd, () => {
+            setSessionFolders(loadSessionFolders(cwd));
+          }),
     [cwd],
   );
   useEffect(() => {
     const onStorage = (event: StorageEvent) => {
-      if (!NATIVE_SESSION_ORGANIZATION_ACTIVE && (event.key === null || event.key === "bycoda.sessionFolders"))
+      if (
+        !NATIVE_SESSION_ORGANIZATION_ACTIVE &&
+        (event.key === null || event.key === "bycoda.sessionFolders")
+      )
         setSessionFolders(loadSessionFolders(cwd));
-      if (!NATIVE_SESSION_ORGANIZATION_ACTIVE && (event.key === null || event.key === "bycoda.sessionOrder"))
+      if (
+        !NATIVE_SESSION_ORGANIZATION_ACTIVE &&
+        (event.key === null || event.key === "bycoda.sessionOrder")
+      )
         setSessionOrder(loadSessionOrder(cwd));
       if (event.key === null || event.key === "bycoda.pinnedSessionsCollapsed")
         setPinnedSessionsCollapsed(loadPinnedSessionsCollapsed(cwd));
@@ -1400,7 +1472,11 @@ function SidebarComponent({
     const next = migrated;
     if (next === sessionFolders) return;
     if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-      void performOrganizationOperation({ kind: "replaceSessionIds", cwd, aliases: [...completedFolderSessions].map(([from, to]) => ({ from, to })) }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      void performOrganizationOperation({
+        kind: "replaceSessionIds",
+        cwd,
+        aliases: [...completedFolderSessions].map(([from, to]) => ({ from, to })),
+      }).catch((error: unknown) => setOrganizationNotice(String(error)));
       return;
     }
     setSessionFolders(next);
@@ -1449,8 +1525,17 @@ function SidebarComponent({
     saveSessionFolders(cwd, next);
   };
 
-  const performOrganizationOperation = async (operation: OrganizationOperation, onApplied?: (state: SessionOrganizationState, previous?: SessionOrganizationState) => void): Promise<boolean> => {
-    if (!organizationReady.current || organizationBusy.current || organizationUnresolved.current || organizationRefreshRequired.current) return false;
+  const performOrganizationOperation = async (
+    operation: OrganizationOperation,
+    onApplied?: (state: SessionOrganizationState, previous?: SessionOrganizationState) => void,
+  ): Promise<boolean> => {
+    if (
+      !organizationReady.current ||
+      organizationBusy.current ||
+      organizationUnresolved.current ||
+      organizationRefreshRequired.current
+    )
+      return false;
     organizationBusy.current = true;
     setOrganizationNotice(t("Saving…"));
     const gestureId = crypto.randomUUID();
@@ -1463,23 +1548,34 @@ function SidebarComponent({
       });
       if (result.state === "applied") {
         setOrganizationNotice(null);
-        try { onApplied?.(result.value, result.previous); }
-        catch (error) { setOrganizationNotice(`Change was applied, but the display could not be updated: ${String(error)}`); }
+        try {
+          onApplied?.(result.value, result.previous);
+        } catch (error) {
+          setOrganizationNotice(
+            `Change was applied, but the display could not be updated: ${String(error)}`,
+          );
+        }
         return true;
       }
       if (result.state === "unknown") organizationUnresolved.current = true;
       if (result.state === "applied-unavailable") organizationRefreshRequired.current = true;
-      setOrganizationNotice(result.state === "unknown"
-        ? `Folder change outcome is unknown: ${result.operationId}`
-        : result.state === "applied-unavailable" ? `Folder change was applied, but refresh failed: ${result.operationId}`
-          : "Folder change conflicted; refresh before retrying.");
+      setOrganizationNotice(
+        result.state === "unknown"
+          ? `Folder change outcome is unknown: ${result.operationId}`
+          : result.state === "applied-unavailable"
+            ? `Folder change was applied, but refresh failed: ${result.operationId}`
+            : "Folder change conflicted; refresh before retrying.",
+      );
       return false;
     } catch (error) {
       if (admitted) organizationUnresolved.current = true;
-      setOrganizationNotice(admitted ? `Folder change outcome needs verification: ${gestureId}` : String(error));
+      setOrganizationNotice(
+        admitted ? `Folder change outcome needs verification: ${gestureId}` : String(error),
+      );
       return false;
+    } finally {
+      organizationBusy.current = false;
     }
-    finally { organizationBusy.current = false; }
   };
 
   const onNewInFolder = (folderId: string) => {
@@ -1488,10 +1584,14 @@ function SidebarComponent({
     pendingFolderSessionIds.current.add(sessionId);
     setSearchQuery("");
     if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-      void performOrganizationOperation({ kind: "batch", cwd, operations: [
-        { kind: "assign", cwd, folderId, sessionIds: [sessionId] },
-        { kind: "folderCollapsed", cwd, folderId, collapsed: false },
-      ] }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      void performOrganizationOperation({
+        kind: "batch",
+        cwd,
+        operations: [
+          { kind: "assign", cwd, folderId, sessionIds: [sessionId] },
+          { kind: "folderCollapsed", cwd, folderId, collapsed: false },
+        ],
+      }).catch((error: unknown) => setOrganizationNotice(String(error)));
       return;
     }
     commitSessionFolders(
@@ -1927,9 +2027,11 @@ function SidebarComponent({
     if (id === "folder-new") {
       if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
         const folderId = crypto.randomUUID();
-        void performOrganizationOperation({ kind: "create", cwd, folderId, sessionIds }).then((applied) => {
-          if (applied) setRenamingFolderId(folderId);
-        }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        void performOrganizationOperation({ kind: "create", cwd, folderId, sessionIds })
+          .then((applied) => {
+            if (applied) setRenamingFolderId(folderId);
+          })
+          .catch((error: unknown) => setOrganizationNotice(String(error)));
         return;
       }
       const { folders, id: createdId } = createFolderWithSessions(sessionFolders, sessionIds);
@@ -1941,10 +2043,14 @@ function SidebarComponent({
     if (id.startsWith("folder-add:")) {
       const folderId = id.slice("folder-add:".length);
       if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-        void performOrganizationOperation({ kind: "batch", cwd, operations: [
-          { kind: "assign", cwd, folderId, sessionIds },
-          { kind: "folderCollapsed", cwd, folderId, collapsed: false },
-        ] }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        void performOrganizationOperation({
+          kind: "batch",
+          cwd,
+          operations: [
+            { kind: "assign", cwd, folderId, sessionIds },
+            { kind: "folderCollapsed", cwd, folderId, collapsed: false },
+          ],
+        }).catch((error: unknown) => setOrganizationNotice(String(error)));
         return;
       }
       const folders = sessionIds.reduce(
@@ -1956,7 +2062,12 @@ function SidebarComponent({
     }
     if (id === "folder-remove") {
       if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-        void performOrganizationOperation({ kind: "assign", cwd, folderId: null, sessionIds }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        void performOrganizationOperation({
+          kind: "assign",
+          cwd,
+          folderId: null,
+          sessionIds,
+        }).catch((error: unknown) => setOrganizationNotice(String(error)));
         return;
       }
       commitSessionFolders(
@@ -1987,7 +2098,9 @@ function SidebarComponent({
 
   const pinSessions = (sessionIds: readonly string[], pinned: boolean) => {
     if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-      void performPinSaga(null, [...sessionIds], pinned, false).catch((error: unknown) => setOrganizationNotice(String(error)));
+      void performPinSaga(null, [...sessionIds], pinned, false).catch((error: unknown) =>
+        setOrganizationNotice(String(error)),
+      );
       return;
     }
     if (sessionIds.length > 1 && onPinSessions) {
@@ -2019,34 +2132,66 @@ function SidebarComponent({
       return;
     }
     if (id === "move-out") {
-      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) { void performOrganizationOperation({ kind: "moveFolderOut", cwd, folderId }).catch((error: unknown) => setOrganizationNotice(String(error))); return; }
+      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+        void performOrganizationOperation({ kind: "moveFolderOut", cwd, folderId }).catch(
+          (error: unknown) => setOrganizationNotice(String(error)),
+        );
+        return;
+      }
       commitSessionFolders(moveFolderOut(sessionFolders, folderId));
       return;
     }
     if (id === "pin-folder") {
       const folder = sessionFolders.find((entry) => entry.id === folderId);
       if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-        if (folder) void performOrganizationOperation({ kind: "folderPinned", cwd, folderId, pinned: !folder.pinned }).catch((error: unknown) => setOrganizationNotice(String(error)));
+        if (folder)
+          void performOrganizationOperation({
+            kind: "folderPinned",
+            cwd,
+            folderId,
+            pinned: !folder.pinned,
+          }).catch((error: unknown) => setOrganizationNotice(String(error)));
         return;
       }
       if (folder) commitSessionFolders(setFolderPinned(sessionFolders, folderId, !folder.pinned));
       return;
     }
     if (id === "ungroup") {
-      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) { void performOrganizationOperation({ kind: "deleteFolder", cwd, folderId }).catch((error: unknown) => setOrganizationNotice(String(error))); return; }
+      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+        void performOrganizationOperation({ kind: "deleteFolder", cwd, folderId }).catch(
+          (error: unknown) => setOrganizationNotice(String(error)),
+        );
+        return;
+      }
       commitSessionFolders(dissolveFolder(sessionFolders, folderId));
     }
   };
 
   const onFolderColorChange = (colorIndex: number | null) => {
     if (!folderMenu) return;
-    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) { void performOrganizationOperation({ kind: "folderColor", cwd, folderId: folderMenu.folderId, colorIndex }).catch((error: unknown) => setOrganizationNotice(String(error))); return; }
+    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+      void performOrganizationOperation({
+        kind: "folderColor",
+        cwd,
+        folderId: folderMenu.folderId,
+        colorIndex,
+      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      return;
+    }
     commitSessionFolders(setFolderColor(sessionFolders, folderMenu.folderId, colorIndex));
   };
 
   const onFolderCustomColorChange = (color: string) => {
     if (!folderMenu) return;
-    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) { void performOrganizationOperation({ kind: "folderCustomColor", cwd, folderId: folderMenu.folderId, color }).catch((error: unknown) => setOrganizationNotice(String(error))); return; }
+    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+      void performOrganizationOperation({
+        kind: "folderCustomColor",
+        cwd,
+        folderId: folderMenu.folderId,
+        color,
+      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      return;
+    }
     commitSessionFolders(setFolderCustomColor(sessionFolders, folderMenu.folderId, color));
   };
 
@@ -2072,113 +2217,253 @@ function SidebarComponent({
       sessionOrder[list],
     ).map((session) => session.id);
 
-  const sessionDropUndo = (previous: SessionOrganizationState, state: SessionOrganizationState): OrganizationOperation => {
+  const sessionDropUndo = (
+    previous: SessionOrganizationState,
+    state: SessionOrganizationState,
+  ): OrganizationOperation => {
     const beforeFolders = organizationFoldersForProject(previous, cwd);
     const afterFolders = organizationFoldersForProject(state, cwd);
-    const changed = new Set([...beforeFolders, ...afterFolders].map((folder) => folder.id).filter((id) =>
-      JSON.stringify(beforeFolders.find((folder) => folder.id === id) ?? null) !== JSON.stringify(afterFolders.find((folder) => folder.id === id) ?? null)));
+    const changed = new Set(
+      [...beforeFolders, ...afterFolders]
+        .map((folder) => folder.id)
+        .filter(
+          (id) =>
+            JSON.stringify(beforeFolders.find((folder) => folder.id === id) ?? null) !==
+            JSON.stringify(afterFolders.find((folder) => folder.id === id) ?? null),
+        ),
+    );
     const patches = [...changed].map((id) => {
       const index = beforeFolders.findIndex((folder) => folder.id === id);
-      return { id, restore: beforeFolders[index] ?? null, expected: afterFolders.find((folder) => folder.id === id) ?? null,
-        beforeId: index < 0 ? undefined : beforeFolders.slice(index + 1).find((folder) => !changed.has(folder.id))?.id };
+      return {
+        id,
+        restore: beforeFolders[index] ?? null,
+        expected: afterFolders.find((folder) => folder.id === id) ?? null,
+        beforeId:
+          index < 0
+            ? undefined
+            : beforeFolders.slice(index + 1).find((folder) => !changed.has(folder.id))?.id,
+      };
     });
     const beforeOrder = organizationOrderForProject(previous, cwd);
     const afterOrder = organizationOrderForProject(state, cwd);
-    const changedList = (["loose", "pinned"] as const).find((list) => JSON.stringify(beforeOrder[list]) !== JSON.stringify(afterOrder[list]));
-    return { kind: "undoSessionDrop", cwd, folders: patches,
-      ...(changedList ? { order: { list: changedList, expected: afterOrder[changedList], restore: beforeOrder[changedList] } } : {}) };
+    const changedList = (["loose", "pinned"] as const).find(
+      (list) => JSON.stringify(beforeOrder[list]) !== JSON.stringify(afterOrder[list]),
+    );
+    return {
+      kind: "undoSessionDrop",
+      cwd,
+      folders: patches,
+      ...(changedList
+        ? {
+            order: {
+              list: changedList,
+              expected: afterOrder[changedList],
+              restore: beforeOrder[changedList],
+            },
+          }
+        : {}),
+    };
   };
 
-  const performPinSaga = async (operation: OrganizationOperation | null, sessionIds: string[], desiredPinned: boolean, offerUndo = true) => {
-    if (!organizationReady.current || organizationBusy.current || organizationUnresolved.current || organizationRefreshRequired.current) return;
+  const performPinSaga = async (
+    operation: OrganizationOperation | null,
+    sessionIds: string[],
+    desiredPinned: boolean,
+    offerUndo = true,
+  ) => {
+    if (
+      !organizationReady.current ||
+      organizationBusy.current ||
+      organizationUnresolved.current ||
+      organizationRefreshRequired.current
+    )
+      return;
     organizationBusy.current = true;
     setOrganizationNotice(t("Saving…"));
     let sagaPrepared = false;
     let pinConfirmed = false;
     try {
       await withRoomPrivacyMutation(async () => {
-      if (isProjectPasswordLocked(cwd)) throw new Error("Project is locked.");
-      const steps: PinSagaStep[] = [];
-      for (const sessionId of sessionIds) {
-        let target: PinTarget;
-        if (remoteProject) {
-          if (!remote.machine || !hostProject) throw new Error("The session's machine is unavailable.");
-          const authorityGeneration = remote.sessions.find((item) => item.id === sessionId)?.authorityGeneration;
-          target = { kind: "host", machineId: remote.machine.id, environmentId: hostProject.environmentId, projectId: hostProject.projectId, sessionId,
-            ...(authorityGeneration == null ? {} : { authorityGeneration }) };
-        } else {
-          if (!onPreparePin || !onConfirmedPin) throw new Error("Pin owner is unavailable.");
-          const sessionCwd = summaryById.get(sessionId)?.cwd;
-          if (!sessionCwd) throw new Error("Session project identity is unavailable.");
-          target = await resolvePinTarget(sessionId, sessionCwd);
-          await onPreparePin(sessionId, sessionCwd);
-          if (!samePinTarget(target, await resolvePinTarget(sessionId, sessionCwd))) throw new Error("The pin owner changed; refresh before retrying.");
+        if (isProjectPasswordLocked(cwd)) throw new Error("Project is locked.");
+        const steps: PinSagaStep[] = [];
+        for (const sessionId of sessionIds) {
+          let target: PinTarget;
+          if (remoteProject) {
+            if (!remote.machine || !hostProject)
+              throw new Error("The session's machine is unavailable.");
+            const authorityGeneration = remote.sessions.find(
+              (item) => item.id === sessionId,
+            )?.authorityGeneration;
+            target = {
+              kind: "host",
+              machineId: remote.machine.id,
+              environmentId: hostProject.environmentId,
+              projectId: hostProject.projectId,
+              sessionId,
+              ...(authorityGeneration == null ? {} : { authorityGeneration }),
+            };
+          } else {
+            if (!onPreparePin || !onConfirmedPin) throw new Error("Pin owner is unavailable.");
+            const sessionCwd = summaryById.get(sessionId)?.cwd;
+            if (!sessionCwd) throw new Error("Session project identity is unavailable.");
+            target = await resolvePinTarget(sessionId, sessionCwd);
+            await onPreparePin(sessionId, sessionCwd);
+            if (!samePinTarget(target, await resolvePinTarget(sessionId, sessionCwd)))
+              throw new Error("The pin owner changed; refresh before retrying.");
+          }
+          const current = await pinState(target);
+          if (current.state !== "current" || current.pinned === null)
+            throw new Error("Pin state is unavailable.");
+          steps.push({
+            viewSessionId: sessionId,
+            viewCwd: remoteProject ? cwd : summaryById.get(sessionId)!.cwd,
+            viewKind: remoteProject ? "remote" : "local",
+            target,
+            operationId: crypto.randomUUID(),
+            desiredPinned,
+            expectedVersion: current.version,
+            expectedAuthority: current.authority ?? null,
+            previousPinned: current.pinned,
+            state: "not-started",
+          });
         }
-        const current = await pinState(target);
-        if (current.state !== "current" || current.pinned === null) throw new Error("Pin state is unavailable.");
-        steps.push({ viewSessionId: sessionId, viewCwd: remoteProject ? cwd : summaryById.get(sessionId)!.cwd, viewKind: remoteProject ? "remote" : "local", target, operationId: crypto.randomUUID(), desiredPinned,
-          expectedVersion: current.version, expectedAuthority: current.authority ?? null, previousPinned: current.pinned, state: "not-started" });
-      }
-      const saga: PinSaga = { id: crypto.randomUUID(), organizationId: crypto.randomUUID(), organization: operation, steps, state: "prepared" };
-      const prepared = await preparePinSaga(saga);
-      if (prepared !== "applied") {
-        organizationUnresolved.current = prepared === "unknown";
-        setOrganizationNotice(prepared === "unknown" ? "Pin preparation outcome is unknown. Check again before another change." : "Pin preparation conflicted; refresh before retrying.");
-        return;
-      }
-      sagaPrepared = true;
-      const result = await resumePinSaga(saga.id);
-      pinConfirmed = result.saga.steps.some((step) => step.state === "applied");
-      for (const step of result.saga.steps) if (step.state === "applied") {
-        if (step.viewKind === "remote") { if (remoteProject) refreshRemoteProjectSessions(); }
-        else await onConfirmedPin!(step.viewSessionId, step.viewCwd, step.desiredPinned, step.target);
-      }
-      if (result.state !== "applied" || (operation && result.organization?.state !== "applied")) {
-        organizationUnresolved.current = result.state !== "conflict";
-        setOrganizationNotice(result.state === "unknown" ? `Pin change outcome is unknown: ${result.operationId ?? saga.id}`
-          : result.state === "applied-unavailable" ? `${operation ? "Pin and folder changes were" : "Pin changes were"} applied, but final confirmation failed: ${result.operationId ?? saga.id}`
-            : "Pin change is partial. Review the confirmed state before continuing.");
-        return;
-      }
-      setOrganizationNotice(null);
-      if (!offerUndo) return;
-      if (!result.organization || result.organization.state !== "applied") return;
-      const previous = result.organization.previous;
-      if (!previous) return;
-      const undo = sessionDropUndo(previous, result.organization.value);
-      const reverse = result.saga.steps.map((step) => ({ ...step, operationId: crypto.randomUUID(), desiredPinned: step.previousPinned,
-        previousPinned: step.desiredPinned, expectedVersion: step.receipt!.version, expectedAuthority: step.receipt!.authority ?? null, state: "not-started" as const, receipt: undefined, attempts: undefined }));
-      setListNotice({ message: t("Moved"), undo: () => { void performPreparedPinUndo(undo, reverse).catch((error: unknown) => setOrganizationNotice(String(error))); } });
+        const saga: PinSaga = {
+          id: crypto.randomUUID(),
+          organizationId: crypto.randomUUID(),
+          organization: operation,
+          steps,
+          state: "prepared",
+        };
+        const prepared = await preparePinSaga(saga);
+        if (prepared !== "applied") {
+          organizationUnresolved.current = prepared === "unknown";
+          setOrganizationNotice(
+            prepared === "unknown"
+              ? "Pin preparation outcome is unknown. Check again before another change."
+              : "Pin preparation conflicted; refresh before retrying.",
+          );
+          return;
+        }
+        sagaPrepared = true;
+        const result = await resumePinSaga(saga.id);
+        pinConfirmed = result.saga.steps.some((step) => step.state === "applied");
+        for (const step of result.saga.steps)
+          if (step.state === "applied") {
+            if (step.viewKind === "remote") {
+              if (remoteProject) refreshRemoteProjectSessions();
+            } else
+              await onConfirmedPin!(
+                step.viewSessionId,
+                step.viewCwd,
+                step.desiredPinned,
+                step.target,
+              );
+          }
+        if (result.state !== "applied" || (operation && result.organization?.state !== "applied")) {
+          organizationUnresolved.current = result.state !== "conflict";
+          setOrganizationNotice(
+            result.state === "unknown"
+              ? `Pin change outcome is unknown: ${result.operationId ?? saga.id}`
+              : result.state === "applied-unavailable"
+                ? `${operation ? "Pin and folder changes were" : "Pin changes were"} applied, but final confirmation failed: ${result.operationId ?? saga.id}`
+                : "Pin change is partial. Review the confirmed state before continuing.",
+          );
+          return;
+        }
+        setOrganizationNotice(null);
+        if (!offerUndo) return;
+        if (!result.organization || result.organization.state !== "applied") return;
+        const previous = result.organization.previous;
+        if (!previous) return;
+        const undo = sessionDropUndo(previous, result.organization.value);
+        const reverse = result.saga.steps.map((step) => ({
+          ...step,
+          operationId: crypto.randomUUID(),
+          desiredPinned: step.previousPinned,
+          previousPinned: step.desiredPinned,
+          expectedVersion: step.receipt!.version,
+          expectedAuthority: step.receipt!.authority ?? null,
+          state: "not-started" as const,
+          receipt: undefined,
+          attempts: undefined,
+        }));
+        setListNotice({
+          message: t("Moved"),
+          undo: () => {
+            void performPreparedPinUndo(undo, reverse).catch((error: unknown) =>
+              setOrganizationNotice(String(error)),
+            );
+          },
+        });
       });
-    } catch (error) { if (sagaPrepared) organizationUnresolved.current = true; setOrganizationNotice(pinConfirmed ? `A pin was applied; final confirmation failed: ${String(error)}` : String(error)); }
-    finally { organizationBusy.current = false; }
+    } catch (error) {
+      if (sagaPrepared) organizationUnresolved.current = true;
+      setOrganizationNotice(
+        pinConfirmed
+          ? `A pin was applied; final confirmation failed: ${String(error)}`
+          : String(error),
+      );
+    } finally {
+      organizationBusy.current = false;
+    }
   };
 
   const performPreparedPinUndo = async (operation: OrganizationOperation, steps: PinSagaStep[]) => {
-    if (!organizationReady.current || organizationBusy.current || organizationUnresolved.current) return;
+    if (!organizationReady.current || organizationBusy.current || organizationUnresolved.current)
+      return;
     organizationBusy.current = true;
     setOrganizationNotice(t("Saving…"));
     let sagaPrepared = false;
     try {
       await withRoomPrivacyMutation(async () => {
-      if (isProjectPasswordLocked(cwd) || steps.some((step) => isProjectPasswordLocked(step.viewCwd))) throw new Error("Project is locked.");
-      previewOrganizationOperation(await hydrateSessionOrganization(), operation);
-      const saga: PinSaga = { id: crypto.randomUUID(), organizationId: crypto.randomUUID(), organization: operation, steps, state: "prepared" };
-      const prepared = await preparePinSaga(saga);
-      if (prepared !== "applied") { organizationUnresolved.current = prepared === "unknown"; setOrganizationNotice("Undo preparation could not be confirmed."); return; }
-      sagaPrepared = true;
-      const result = await resumePinSaga(saga.id);
-      for (const step of result.saga.steps) if (step.state === "applied") {
-        if (step.viewKind === "remote") { if (remoteProject) refreshRemoteProjectSessions(); }
-        else await onConfirmedPin?.(step.viewSessionId, step.viewCwd, step.desiredPinned, step.target);
-      }
-      if (result.state !== "applied" || result.organization?.state !== "applied") {
-        organizationUnresolved.current = true;
-        setOrganizationNotice(result.state === "applied-unavailable" ? "Undo was applied, but refresh failed. Check again before continuing." : "Undo is partial or unconfirmed. Review the current state before continuing.");
-      } else setOrganizationNotice(null);
+        if (
+          isProjectPasswordLocked(cwd) ||
+          steps.some((step) => isProjectPasswordLocked(step.viewCwd))
+        )
+          throw new Error("Project is locked.");
+        previewOrganizationOperation(await hydrateSessionOrganization(), operation);
+        const saga: PinSaga = {
+          id: crypto.randomUUID(),
+          organizationId: crypto.randomUUID(),
+          organization: operation,
+          steps,
+          state: "prepared",
+        };
+        const prepared = await preparePinSaga(saga);
+        if (prepared !== "applied") {
+          organizationUnresolved.current = prepared === "unknown";
+          setOrganizationNotice("Undo preparation could not be confirmed.");
+          return;
+        }
+        sagaPrepared = true;
+        const result = await resumePinSaga(saga.id);
+        for (const step of result.saga.steps)
+          if (step.state === "applied") {
+            if (step.viewKind === "remote") {
+              if (remoteProject) refreshRemoteProjectSessions();
+            } else
+              await onConfirmedPin?.(
+                step.viewSessionId,
+                step.viewCwd,
+                step.desiredPinned,
+                step.target,
+              );
+          }
+        if (result.state !== "applied" || result.organization?.state !== "applied") {
+          organizationUnresolved.current = true;
+          setOrganizationNotice(
+            result.state === "applied-unavailable"
+              ? "Undo was applied, but refresh failed. Check again before continuing."
+              : "Undo is partial or unconfirmed. Review the current state before continuing.",
+          );
+        } else setOrganizationNotice(null);
       });
-    } catch (error) { if (sagaPrepared) organizationUnresolved.current = true; setOrganizationNotice(String(error)); }
-    finally { organizationBusy.current = false; }
+    } catch (error) {
+      if (sagaPrepared) organizationUnresolved.current = true;
+      setOrganizationNotice(String(error));
+    } finally {
+      organizationBusy.current = false;
+    }
   };
 
   const onSessionListDrop = (draggedId: string, target: SessionListDropTarget) => {
@@ -2255,32 +2540,78 @@ function SidebarComponent({
       let operation: OrganizationOperation;
       if (target.kind === "session") {
         const host = folderContaining(sessionFolders, target.id);
-        operation = host && folderDepth(sessionFolders, host.id) >= MAX_FOLDER_DEPTH
-          ? { kind: "folderInsert", cwd, folderId: host.id, sessionIds: dragged, anchorId: target.id, place: "after", seedOrder: folderMemberIds(host) }
-          : { kind: "create", cwd, folderId: createdId, sessionIds: [target.id, ...dragged], parentId: host?.id, pinned: !host && !!summaryById.get(target.id)?.pinned };
+        operation =
+          host && folderDepth(sessionFolders, host.id) >= MAX_FOLDER_DEPTH
+            ? {
+                kind: "folderInsert",
+                cwd,
+                folderId: host.id,
+                sessionIds: dragged,
+                anchorId: target.id,
+                place: "after",
+                seedOrder: folderMemberIds(host),
+              }
+            : {
+                kind: "create",
+                cwd,
+                folderId: createdId,
+                sessionIds: [target.id, ...dragged],
+                parentId: host?.id,
+                pinned: !host && !!summaryById.get(target.id)?.pinned,
+              };
       } else if (target.kind === "folder") {
         const host = sessionFolders.find((folder) => folder.id === target.id);
         if (!host) return;
-        operation = { kind: "folderInsert", cwd, folderId: host.id, sessionIds: dragged, seedOrder: folderMemberIds(host), preserveUnordered: true };
+        operation = {
+          kind: "folderInsert",
+          cwd,
+          folderId: host.id,
+          sessionIds: dragged,
+          seedOrder: folderMemberIds(host),
+          preserveUnordered: true,
+        };
       } else if (target.kind === "pinned") {
         operation = { kind: "assign", cwd, folderId: null, sessionIds: dragged };
       } else {
         const host = folderContaining(sessionFolders, target.id);
         operation = host
-          ? { kind: "folderInsert", cwd, folderId: host.id, sessionIds: dragged, anchorId: target.id, place: target.place, seedOrder: folderMemberIds(host) }
-          : { kind: "looseInsert", cwd, list: summaryById.get(target.id)?.pinned ? "pinned" : "loose", sessionIds: dragged, anchorId: target.id, place: target.place, seedOrder: orderListIds(summaryById.get(target.id)?.pinned ? "pinned" : "loose") };
+          ? {
+              kind: "folderInsert",
+              cwd,
+              folderId: host.id,
+              sessionIds: dragged,
+              anchorId: target.id,
+              place: target.place,
+              seedOrder: folderMemberIds(host),
+            }
+          : {
+              kind: "looseInsert",
+              cwd,
+              list: summaryById.get(target.id)?.pinned ? "pinned" : "loose",
+              sessionIds: dragged,
+              anchorId: target.id,
+              place: target.place,
+              seedOrder: orderListIds(summaryById.get(target.id)?.pinned ? "pinned" : "loose"),
+            };
       }
       if (pinChanges.length) {
-        void performPinSaga(operation, pinChanges, pinTo!).catch((error: unknown) => setOrganizationNotice(String(error)));
+        void performPinSaga(operation, pinChanges, pinTo!).catch((error: unknown) =>
+          setOrganizationNotice(String(error)),
+        );
         return;
       }
       void performOrganizationOperation(operation, (state, previous) => {
         if (createdId) setRenamingFolderId(createdId);
         if (!previous) return;
         const undo = sessionDropUndo(previous, state);
-        setListNotice({ message: t("Moved"), undo: () => {
-          void performOrganizationOperation(undo).catch((error: unknown) => setOrganizationNotice(String(error)));
-        } });
+        setListNotice({
+          message: t("Moved"),
+          undo: () => {
+            void performOrganizationOperation(undo).catch((error: unknown) =>
+              setOrganizationNotice(String(error)),
+            );
+          },
+        });
       }).catch((error: unknown) => setOrganizationNotice(String(error)));
       return;
     }
@@ -2369,7 +2700,9 @@ function SidebarComponent({
     onArchiveSession,
     setRenamingSessionId,
     onSessionCardDelete,
-    onPinSession: NATIVE_SESSION_ORGANIZATION_ACTIVE ? (sessionId: string, pinned: boolean) => pinSessions([sessionId], pinned) : onPinSession,
+    onPinSession: NATIVE_SESSION_ORGANIZATION_ACTIVE
+      ? (sessionId: string, pinned: boolean) => pinSessions([sessionId], pinned)
+      : onPinSession,
   });
   cardHandlers.current = {
     onSessionCardSelect,
@@ -2383,7 +2716,9 @@ function SidebarComponent({
     onArchiveSession,
     setRenamingSessionId,
     onSessionCardDelete,
-    onPinSession: NATIVE_SESSION_ORGANIZATION_ACTIVE ? (sessionId: string, pinned: boolean) => pinSessions([sessionId], pinned) : onPinSession,
+    onPinSession: NATIVE_SESSION_ORGANIZATION_ACTIVE
+      ? (sessionId: string, pinned: boolean) => pinSessions([sessionId], pinned)
+      : onPinSession,
   };
   const cardActions = useMemo(
     () => ({
@@ -2497,15 +2832,27 @@ function SidebarComponent({
     const next = moveFolder(before, folderId, target);
     if (next === before) return;
     if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-      void performOrganizationOperation({ kind: "moveFolder", cwd, folderId, target }, (state, previous) => {
-        if (!previous) return;
-        const original = folderPosition(organizationFoldersForProject(previous, cwd), folderId);
-        const applied = organizationFoldersForProject(state, cwd);
-        const expected = folderPosition(applied, folderId);
-        setListNotice({ message: t("Folder moved"), undo: () => {
-          void performOrganizationOperation({ kind: "undoFolderMove", cwd, folderId, expected, restore: original }).catch((error: unknown) => setOrganizationNotice(String(error)));
-        } });
-      }).catch((error: unknown) => setOrganizationNotice(String(error)));
+      void performOrganizationOperation(
+        { kind: "moveFolder", cwd, folderId, target },
+        (state, previous) => {
+          if (!previous) return;
+          const original = folderPosition(organizationFoldersForProject(previous, cwd), folderId);
+          const applied = organizationFoldersForProject(state, cwd);
+          const expected = folderPosition(applied, folderId);
+          setListNotice({
+            message: t("Folder moved"),
+            undo: () => {
+              void performOrganizationOperation({
+                kind: "undoFolderMove",
+                cwd,
+                folderId,
+                expected,
+                restore: original,
+              }).catch((error: unknown) => setOrganizationNotice(String(error)));
+            },
+          });
+        },
+      ).catch((error: unknown) => setOrganizationNotice(String(error)));
       return;
     }
     const prev = before.find((folder) => folder.id === folderId);
@@ -2625,107 +2972,126 @@ function SidebarComponent({
     window.addEventListener("blur", onCancel);
   };
 
-  // Folders draw recursively: subfolders first, then the folder's sessions.
-  const folderRows = <T extends { id: string }>(sessions: readonly T[], key: string) =>
-    folderSessionWindow(sessions, folderListLimits[key] ?? LIST_PAGE_SIZE, activeListedSessionId);
-  const moreFolderRows = (sessions: readonly { id: string }[], key: string) =>
-    folderRows(sessions, key).length < sessions.length ? (
-      <li>
-        <Button variant="ghost" size="sm" motion="none" onClick={() => showMoreInFolder(key)}>
-          {t("Show more")}
-        </Button>
-      </li>
-    ) : null;
-  const renderFolderEntry = (entry: FolderEntry, depth: number): ReactNode => {
+  const renderFolderHeader = (
+    entry: FolderEntry,
+    depth: number,
+    virtual: SessionListVirtualProps,
+  ): ReactNode => {
     const expanded = searchNarrowed || !entry.folder.collapsed;
-    // No filled box and no rule: a folder's own colour stays on its header mark.
-    const topLevel = depth === 0 && !entry.folder.pinned;
+    const folderBusy = entry.allSessions.some((session) => listedBusySessionIds.has(session.id));
+    const folderDone = entry.allSessions.some((session) => unseenFinishedIds.has(session.id));
+    const folderNeedsApproval = entry.allSessions.some((session) =>
+      listedApprovalSessionIds.has(session.id),
+    );
     return (
-      <li
-        key={entry.folder.id}
-        data-session-folder={entry.folder.id}
-        data-folder-collapsed={expanded ? undefined : "true"}
-        data-section-divided={topLevel ? "" : undefined}
-        data-section-collapsed={expanded ? undefined : ""}
-        className={`relative ${styles.folder}`}
-      >
-        <div className="overflow-hidden rounded-md">
-          {renamingFolderId === entry.folder.id ? (
-            <FolderRenameRow
-              folder={entry.folder}
-              memberCount={entry.allSessions.length}
-              onCommit={(name) => {
-                if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-                  void performOrganizationOperation({ kind: "rename", cwd, folderId: entry.folder.id, name }).then((applied) => {
-                    if (applied) setRenamingFolderId(null);
-                  }).catch((error: unknown) => setOrganizationNotice(String(error)));
-                  return;
-                }
-                commitSessionFolders(renameFolder(sessionFolders, entry.folder.id, name));
-                setRenamingFolderId(null);
-              }}
-              onCancel={() => setRenamingFolderId(null)}
-            />
-          ) : (
-            <FolderRow
-              folder={entry.folder}
-              sessions={entry.allSessions}
-              expanded={expanded}
-              busy={entry.allSessions.some((session) => listedBusySessionIds.has(session.id))}
-              done={entry.allSessions.some((session) => unseenFinishedIds.has(session.id))}
-              needsApproval={entry.allSessions.some((session) =>
-                listedApprovalSessionIds.has(session.id),
-              )}
-              onPointerDown={
-                searchNarrowed ? undefined : (event) => startFolderDrag(entry.folder.id, event)
-              }
-              onToggle={() => {
-                if (performance.now() < skipFolderClickUntil.current) return;
-                if (searchNarrowed) return;
-                if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-                  void performOrganizationOperation({ kind: "folderCollapsed", cwd, folderId: entry.folder.id, collapsed: !entry.folder.collapsed }).catch((error: unknown) => setOrganizationNotice(String(error)));
-                  return;
-                }
-                commitSessionFolders(
-                  setFolderCollapsed(sessionFolders, entry.folder.id, !entry.folder.collapsed),
-                );
-              }}
-              onContextMenu={(event) => onFolderContextMenu(entry.folder.id, event)}
-              onRename={() => setRenamingFolderId(entry.folder.id)}
-              onNewSession={onNew ? () => onNewInFolder(entry.folder.id) : undefined}
-              onOpenMenu={(anchor) => openFolderMenuAt(entry.folder.id, anchor)}
-              menuOpen={folderMenu?.folderId === entry.folder.id}
-            />
-          )}
-          {expanded && (entry.folders.length > 0 || entry.sessions.length > 0) ? (
-            // Subgroups and sessions sit indented under the header so their titles line up with
-            // the group name; the indent alone carries the hierarchy, with no guide line.
-            <div data-folder-children="" className={styles.folderChildren}>
-              {entry.folders.length > 0 ? (
-                <ul className="flex flex-col gap-px pb-0.5">
-                  {entry.folders.map((child) => renderFolderEntry(child, depth + 1))}
-                </ul>
-              ) : null}
-              <ul className={`flex flex-col gap-px ${entry.sessions.length ? "" : "hidden"}`}>
-                {folderRows(entry.sessions, entry.folder.id).map((session) => (
-                  <SessionListItem
-                    key={session.id}
-                    session={session}
-                    cwd={cwd}
-                    motion={sessionInsertMotion}
-                  >
-                    {renderSessionCard(session)}
-                  </SessionListItem>
-                ))}
-                {moreFolderRows(entry.sessions, entry.folder.id)}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      </li>
+      <SessionFolderListHeader
+        entry={entry}
+        depth={depth}
+        virtual={virtual}
+        expanded={expanded}
+        renaming={renamingFolderId === entry.folder.id}
+        busy={folderBusy}
+        done={folderDone}
+        needsApproval={folderNeedsApproval}
+        nameNode={<SessionSearchText text={entry.folder.name} />}
+        menuOpen={folderMenu?.folderId === entry.folder.id}
+        onRenameCommit={(name) => {
+          if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+            void performOrganizationOperation({
+              kind: "rename",
+              cwd,
+              folderId: entry.folder.id,
+              name,
+            })
+              .then((applied) => {
+                if (applied) setRenamingFolderId(null);
+              })
+              .catch((error: unknown) => setOrganizationNotice(String(error)));
+            return;
+          }
+          commitSessionFolders(renameFolder(sessionFolders, entry.folder.id, name));
+          setRenamingFolderId(null);
+        }}
+        onRenameCancel={() => setRenamingFolderId(null)}
+        onPointerDown={
+          searchNarrowed ? undefined : (event) => startFolderDrag(entry.folder.id, event)
+        }
+        onToggle={() => {
+          if (performance.now() < skipFolderClickUntil.current || searchNarrowed) return;
+          if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+            void performOrganizationOperation({
+              kind: "folderCollapsed",
+              cwd,
+              folderId: entry.folder.id,
+              collapsed: !entry.folder.collapsed,
+            }).catch((error: unknown) => setOrganizationNotice(String(error)));
+            return;
+          }
+          commitSessionFolders(
+            setFolderCollapsed(sessionFolders, entry.folder.id, !entry.folder.collapsed),
+          );
+        }}
+        onContextMenu={(event) => onFolderContextMenu(entry.folder.id, event)}
+        onRename={() => setRenamingFolderId(entry.folder.id)}
+        onNewSession={onNew ? () => onNewInFolder(entry.folder.id) : undefined}
+        onOpenMenu={(anchor) => openFolderMenuAt(entry.folder.id, anchor)}
+      />
     );
   };
 
+  const renderSessionListRow = (
+    row: SessionListRow,
+    virtual: SessionListVirtualProps,
+  ): ReactNode => {
+    if (row.kind === "folder") return renderFolderHeader(row.entry, row.depth, virtual);
+    if (row.kind === "session") {
+      return (
+        <SessionListItem
+          key={row.key}
+          session={row.session}
+          cwd={cwd}
+          motion={sessionInsertMotion}
+          virtual={virtual}
+          depth={row.depth}
+          folderId={row.folderId}
+          groupSection={row.groupSection}
+        >
+          {renderSessionCard(row.session, row.section === "reminders")}
+        </SessionListItem>
+      );
+    }
+    const reminders = row.entry.kind === "reminders";
+    const expanded = searchNarrowed || !row.entry.collapsed;
+    const groupSessions =
+      row.entry.kind === "pinned"
+        ? [...row.entry.folders.flatMap((folder) => folder.allSessions), ...row.entry.sessions]
+        : row.entry.sessions;
+    return (
+      <SessionGroupListRow
+        entry={row.entry}
+        virtual={virtual}
+        expanded={expanded}
+        busy={groupSessions.some((session) => listedBusySessionIds.has(session.id))}
+        done={groupSessions.some((session) => unseenFinishedIds.has(session.id))}
+        needsApproval={groupSessions.some((session) => listedApprovalSessionIds.has(session.id))}
+        nameNode={<SessionSearchText text={reminders ? "Reminders" : t("Pinned")} />}
+        folder={
+          reminders ? { name: "Reminders", customColor: REMINDERS_COLOR } : { name: t("Pinned") }
+        }
+        onToggle={() => {
+          if (searchNarrowed) return;
+          const collapsed = !row.entry.collapsed;
+          if (reminders) {
+            setReminderSessionsCollapsed(collapsed);
+            saveReminderSessionsCollapsed(cwd, collapsed);
+          } else {
+            setPinnedSessionsCollapsed(collapsed);
+            savePinnedSessionsCollapsed(cwd, collapsed);
+          }
+        }}
+      />
+    );
+  };
   const onSessionFiltersChange = (next: SessionSidebarFilters) => {
     setSessionFilters(next);
     saveSessionSidebarFilters(next);
@@ -2998,7 +3364,7 @@ function SidebarComponent({
                 <Badge
                   variant="count"
                   size="sm"
-                  tone="neutral"
+                  tone="accent"
                   appearance="subtle"
                   max={99}
                   data-workspace-tab-file-count=""
@@ -3009,7 +3375,7 @@ function SidebarComponent({
                   {changeFileCount}
                 </Badge>
               </span>
-              <span aria-hidden className="workspace-tab-dot" />
+              <StatusDot label={changedFilesText} aria-hidden className="workspace-tab-dot" />
             </>
           ) : isChangesTab && hasChangeStats ? (
             <span
@@ -3017,16 +3383,18 @@ function SidebarComponent({
               role="img"
               aria-label={[changeScopeLabel, changeChurnText].filter(Boolean).join(", ")}
             >
-              <span
+              <StatusDot
+                label={changeChurnText}
+                tone="neutral"
                 aria-hidden
-                className="size-1.5 self-center rounded-full bg-(--ui-text-secondary)"
+                className="self-center"
               />
             </span>
           ) : null}
           {itemId === "sessions" && workingSessionsBadge ? (
             <>
               <span className="workspace-tab-badge">{workingSessionsBadge}</span>
-              <span aria-hidden className="workspace-tab-dot" data-tone="working" />
+              <StatusDot label={t("Working")} aria-hidden className="workspace-tab-dot" />
             </>
           ) : null}
         </Button>
@@ -3376,6 +3744,7 @@ function SidebarComponent({
           layoutScroll
           ref={(el) => {
             sessionsLock(el);
+            retainSessionsScroll(el);
             sessionsScrollRef.current = el;
           }}
           data-session-list-panel
@@ -3385,12 +3754,12 @@ function SidebarComponent({
         >
           {lastSessionsOpen ? (
             <SessionSearchQueryContext.Provider value={deferredSearchQuery}>
-              {lastSessionsData?.remoteHistoryLimited ? (
+              {lastSessionsData?.remoteHistoryLimited && !lastSessionsData.rows.length ? (
                 <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
                   {t("Remote sessions shown from available history")}
                 </p>
               ) : null}
-              {lastSessionsData?.error ? (
+              {lastSessionsData?.error && !lastSessionsData.rows.length ? (
                 <Alert tone="danger" role="alert">
                   <p>{t("Couldn’t load sessions")}</p>
                   <Button
@@ -3433,42 +3802,43 @@ function SidebarComponent({
                     deferredSearchQuery,
                   );
                   return rows.length ? (
-                    <ul data-session-list className="flex flex-col gap-0.5 p-1.5 pb-10">
-                      {rows.map((session) => (
-                        <li key={`${session.cwd}:${session.id}`}>
-                          <SessionCard
-                            session={session}
-                            isActive={
-                              sameProjectPath(session.cwd, cwd) &&
-                              (session.id === activeSessionId ||
-                                (isRemoteProjectPath(session.cwd) && session.id === activeRemoteId))
-                            }
-                            isSelected={false}
-                            busy={busySessionIds.has(session.id)}
-                            done={unseenFinishedIds.has(session.id)}
-                            linkedUpdate={linkedSessionUpdateIds.has(session.id)}
-                            needsApproval={approvalSessionIds.has(session.id)}
-                            startedAt={liveAgentsById.get(session.id)?.startedAt}
-                            inputKind={liveAgentsById.get(session.id)?.inputKind}
-                            groupDelayMs={listDisplay.groupDelayMs}
-                            density={listDisplay.density}
-                            showModel={listDisplay.showModel}
-                            showBranch={listDisplay.showBranch}
-                            showProjectAppearance
-                            onPin={
-                              !isRemoteProjectPath(session.cwd) && onPinListedSession
-                                ? (id, pinned) => onPinListedSession(id, session.cwd, pinned)
-                                : undefined
-                            }
-                            onSelect={(id, event) =>
-                              onSelectListedSession?.(id, session.cwd, {
-                                keepOpen: (event.detail ?? 0) > 1,
-                              })
-                            }
-                          />
-                        </li>
-                      ))}
-                    </ul>
+                    <GlobalSessionListWindow
+                      sessions={rows}
+                      scrollRef={sessionsScrollRef}
+                      isActive={(session) =>
+                        sameProjectPath(session.cwd, cwd) &&
+                        (session.id === activeSessionId ||
+                          (isRemoteProjectPath(session.cwd) && session.id === activeRemoteId))
+                      }
+                      renderSession={(session, active) => (
+                        <SessionCard
+                          session={session}
+                          isActive={active}
+                          isSelected={false}
+                          busy={busySessionIds.has(session.id)}
+                          done={unseenFinishedIds.has(session.id)}
+                          linkedUpdate={linkedSessionUpdateIds.has(session.id)}
+                          needsApproval={approvalSessionIds.has(session.id)}
+                          startedAt={liveAgentsById.get(session.id)?.startedAt}
+                          inputKind={liveAgentsById.get(session.id)?.inputKind}
+                          groupDelayMs={listDisplay.groupDelayMs}
+                          density={listDisplay.density}
+                          showModel={listDisplay.showModel}
+                          showBranch={listDisplay.showBranch}
+                          showProjectAppearance
+                          onPin={
+                            !isRemoteProjectPath(session.cwd) && onPinListedSession
+                              ? (id, pinned) => onPinListedSession(id, session.cwd, pinned)
+                              : undefined
+                          }
+                          onSelect={(id, event) =>
+                            onSelectListedSession?.(id, session.cwd, {
+                              keepOpen: (event.detail ?? 0) > 1,
+                            })
+                          }
+                        />
+                      )}
+                    />
                   ) : (
                     <SessionsEmpty
                       message={
@@ -3478,6 +3848,18 @@ function SidebarComponent({
                   );
                 })()
               )}
+              {lastSessionsData?.rows.length ? (
+                <CollectionFooter
+                  loading={lastSessionsData.loading}
+                  error={lastSessionsData.error}
+                  onRetry={lastSessionsData.refresh}
+                  partial={
+                    lastSessionsData.remoteHistoryLimited
+                      ? t("Remote sessions shown from available history")
+                      : null
+                  }
+                />
+              ) : null}
             </SessionSearchQueryContext.Provider>
           ) : !cwd || cwd === "~" ? (
             <p className="px-3 py-2 text-ui-caption text-(--ui-text-secondary)">
@@ -3593,115 +3975,12 @@ function SidebarComponent({
                     <SessionsEmpty message="Sessions you start will show up here" />
                   )
                 ) : (
-                  <ul data-session-list className="flex flex-col gap-0.5 p-1.5 pb-10">
-                    {sessionListEntries.map((entry) => {
-                      if (entry.kind === "pinned" || entry.kind === "reminders") {
-                        const isReminders = entry.kind === "reminders";
-                        const groupSessions =
-                          entry.kind === "pinned"
-                            ? [
-                                ...entry.folders.flatMap((folder) => folder.allSessions),
-                                ...entry.sessions,
-                              ]
-                            : entry.sessions;
-                        const expanded = searchNarrowed || !entry.collapsed;
-                        return (
-                          <li
-                            key={`${entry.kind}-sessions`}
-                            data-pinned-sessions={isReminders ? undefined : ""}
-                            data-reminder-sessions={isReminders ? "" : undefined}
-                            data-section-divided=""
-                            data-section-collapsed={expanded ? undefined : ""}
-                            className={`relative ${styles.folder}`}
-                          >
-                            <div className="overflow-hidden rounded-md">
-                              <FolderRow
-                                folder={
-                                  isReminders
-                                    ? {
-                                        name: "Reminders",
-                                        customColor: REMINDERS_COLOR,
-                                      }
-                                    : { name: t("Pinned") }
-                                }
-                                sessions={groupSessions}
-                                expanded={expanded}
-                                busy={groupSessions.some((session) =>
-                                  listedBusySessionIds.has(session.id),
-                                )}
-                                done={groupSessions.some((session) =>
-                                  unseenFinishedIds.has(session.id),
-                                )}
-                                needsApproval={groupSessions.some((session) =>
-                                  listedApprovalSessionIds.has(session.id),
-                                )}
-                                groupIcon={
-                                  isReminders ? (
-                                    <Clock className="icon-sm" strokeWidth={1.75} />
-                                  ) : (
-                                    <Pin className="icon-sm" strokeWidth={1.75} />
-                                  )
-                                }
-                                onToggle={() => {
-                                  if (searchNarrowed) return;
-                                  const collapsed = !entry.collapsed;
-                                  if (isReminders) {
-                                    setReminderSessionsCollapsed(collapsed);
-                                    saveReminderSessionsCollapsed(cwd, collapsed);
-                                    return;
-                                  }
-                                  setPinnedSessionsCollapsed(collapsed);
-                                  savePinnedSessionsCollapsed(cwd, collapsed);
-                                }}
-                              />
-                              {expanded &&
-                              ((entry.kind === "pinned" && entry.folders.length > 0) ||
-                                entry.sessions.length > 0) ? (
-                                <div data-folder-children="" className={styles.folderChildren}>
-                                  {entry.kind === "pinned" && entry.folders.length > 0 ? (
-                                    <ul className="flex flex-col gap-px pb-0.5">
-                                      {entry.folders.map((child) => renderFolderEntry(child, 0))}
-                                    </ul>
-                                  ) : null}
-                                  {entry.sessions.length > 0 ? (
-                                    <ul className="flex flex-col gap-px">
-                                      {folderRows(entry.sessions, entry.kind).map((session) => (
-                                        <SessionListItem
-                                          key={session.id}
-                                          session={session}
-                                          cwd={cwd}
-                                          motion={sessionInsertMotion}
-                                        >
-                                          {renderSessionCard(session, !isReminders)}
-                                        </SessionListItem>
-                                      ))}
-                                      {moreFolderRows(entry.sessions, entry.kind)}
-                                    </ul>
-                                  ) : null}
-                                </div>
-                              ) : null}
-                            </div>
-                          </li>
-                        );
-                      }
-                      if (entry.kind === "folder") {
-                        return renderFolderEntry(entry, 0);
-                      }
-                      return (
-                        <SessionListItem
-                          key={entry.session.id}
-                          session={entry.session}
-                          cwd={cwd}
-                          motion={sessionInsertMotion}
-                        >
-                          {renderSessionCard(entry.session)}
-                        </SessionListItem>
-                      );
-                    })}
-                    {hasMoreSessions ? (
-                      <li ref={setLoadMoreElement} aria-hidden className="h-px list-none" />
-                    ) : null}
-                  </ul>
+                  <SessionListWindow
+                    rows={flatSessionRows}
+                    scrollRef={sessionsScrollRef}
+                    activeKey={activeListedSessionId ?? null}
+                    renderRow={renderSessionListRow}
+                  />
                 )}
               </div>
             </SessionSearchQueryContext.Provider>
@@ -3828,51 +4107,111 @@ function SidebarComponent({
           onDismiss={() => setListNotice(null)}
         />
       ) : null}
-      {organizationNotice ? <TransientNotice message={organizationNotice}
-        action={organizationUnresolved.current ? { label: t("Check and continue"), onClick: () => {
-          void (async () => {
-            const sagas = (await listPinSagas()).filter((saga) => saga.state !== "applied" && saga.state !== "accepted");
-            for (const saga of sagas) {
-              const result = await withRoomPrivacyMutation(() => {
-                if (saga.steps.some((step) => isProjectPasswordLocked(step.viewCwd)) || (saga.organization && isProjectPasswordLocked(saga.organization.cwd))) throw new Error("Project is locked.");
-                return resumePinSaga(saga.id);
-              });
-              for (const step of result.saga.steps) if (step.state === "applied" && step.viewKind === "local") await onConfirmedPin?.(step.viewSessionId, step.viewCwd, step.desiredPinned, step.target);
-            }
-            if (remoteProject) refreshRemoteProjectSessions();
-            const remaining = (await listPinSagas()).filter((saga) => saga.state !== "applied" && saga.state !== "accepted");
-            setPartialPinSagas(remaining.filter((saga) => saga.state === "partial"));
-            if (remaining.length) { setOrganizationNotice(`Pin change needs review: ${remaining[0].id}`); return; }
-            const pending = await unresolvedSessionOrganizationGestures();
-            if (pending.length) { setOrganizationNotice(`Folder change outcome is unknown: ${pending[0].operationId}`); return; }
-            await hydrateSessionOrganization();
-            organizationUnresolved.current = false;
-            setOrganizationNotice("Folder state refreshed. Review your change.");
-          })().catch((error: unknown) => setOrganizationNotice(String(error)));
-        } } : undefined}
-        actions={partialPinSagas.length ? <Button variant="ghost" size="sm" onClick={() => {
-          void (async () => {
-            for (const saga of partialPinSagas) {
-              const acknowledged = await withRoomPrivacyMutation(() => {
-                if (saga.steps.some((step) => isProjectPasswordLocked(step.viewCwd))) throw new Error("Project is locked.");
-                return acknowledgePartialPinSaga(saga.id);
-              });
-              if (acknowledged !== "applied") throw new Error("Pin acknowledgement could not be confirmed.");
-            }
-            setPartialPinSagas([]);
-            const remaining = (await listPinSagas()).filter((saga) => saga.state !== "applied" && saga.state !== "accepted");
-            if (!remaining.length && !(await unresolvedSessionOrganizationGestures()).length) {
-              await hydrateSessionOrganization();
-              organizationUnresolved.current = false;
-              setOrganizationNotice("Confirmed pin changes kept. Review the folder state.");
-            }
-          })().catch((error: unknown) => setOrganizationNotice(String(error)));
-        }}>{t("Keep confirmed changes")}</Button> : undefined}
-        onDismiss={() => { if (!organizationUnresolved.current) setOrganizationNotice(null); }}>
-        {partialPinSagas.flatMap((saga) => saga.steps.filter((step) => !isProjectPasswordLocked(step.viewCwd)).map((step) => <div key={`${saga.id}:${step.operationId}`}>
-          {step.viewSessionId}: {step.state} ({step.desiredPinned ? t("Pinned") : t("Unpinned")})
-        </div>))}
-      </TransientNotice> : null}
+      {organizationNotice ? (
+        <TransientNotice
+          message={organizationNotice}
+          action={
+            organizationUnresolved.current
+              ? {
+                  label: t("Check and continue"),
+                  onClick: () => {
+                    void (async () => {
+                      const sagas = (await listPinSagas()).filter(
+                        (saga) => saga.state !== "applied" && saga.state !== "accepted",
+                      );
+                      for (const saga of sagas) {
+                        const result = await withRoomPrivacyMutation(() => {
+                          if (
+                            saga.steps.some((step) => isProjectPasswordLocked(step.viewCwd)) ||
+                            (saga.organization && isProjectPasswordLocked(saga.organization.cwd))
+                          )
+                            throw new Error("Project is locked.");
+                          return resumePinSaga(saga.id);
+                        });
+                        for (const step of result.saga.steps)
+                          if (step.state === "applied" && step.viewKind === "local")
+                            await onConfirmedPin?.(
+                              step.viewSessionId,
+                              step.viewCwd,
+                              step.desiredPinned,
+                              step.target,
+                            );
+                      }
+                      if (remoteProject) refreshRemoteProjectSessions();
+                      const remaining = (await listPinSagas()).filter(
+                        (saga) => saga.state !== "applied" && saga.state !== "accepted",
+                      );
+                      setPartialPinSagas(remaining.filter((saga) => saga.state === "partial"));
+                      if (remaining.length) {
+                        setOrganizationNotice(`Pin change needs review: ${remaining[0].id}`);
+                        return;
+                      }
+                      const pending = await unresolvedSessionOrganizationGestures();
+                      if (pending.length) {
+                        setOrganizationNotice(
+                          `Folder change outcome is unknown: ${pending[0].operationId}`,
+                        );
+                        return;
+                      }
+                      await hydrateSessionOrganization();
+                      organizationUnresolved.current = false;
+                      setOrganizationNotice("Folder state refreshed. Review your change.");
+                    })().catch((error: unknown) => setOrganizationNotice(String(error)));
+                  },
+                }
+              : undefined
+          }
+          actions={
+            partialPinSagas.length ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  void (async () => {
+                    for (const saga of partialPinSagas) {
+                      const acknowledged = await withRoomPrivacyMutation(() => {
+                        if (saga.steps.some((step) => isProjectPasswordLocked(step.viewCwd)))
+                          throw new Error("Project is locked.");
+                        return acknowledgePartialPinSaga(saga.id);
+                      });
+                      if (acknowledged !== "applied")
+                        throw new Error("Pin acknowledgement could not be confirmed.");
+                    }
+                    setPartialPinSagas([]);
+                    const remaining = (await listPinSagas()).filter(
+                      (saga) => saga.state !== "applied" && saga.state !== "accepted",
+                    );
+                    if (
+                      !remaining.length &&
+                      !(await unresolvedSessionOrganizationGestures()).length
+                    ) {
+                      await hydrateSessionOrganization();
+                      organizationUnresolved.current = false;
+                      setOrganizationNotice("Confirmed pin changes kept. Review the folder state.");
+                    }
+                  })().catch((error: unknown) => setOrganizationNotice(String(error)));
+                }}
+              >
+                {t("Keep confirmed changes")}
+              </Button>
+            ) : undefined
+          }
+          onDismiss={() => {
+            if (!organizationUnresolved.current) setOrganizationNotice(null);
+          }}
+        >
+          {partialPinSagas.flatMap((saga) =>
+            saga.steps
+              .filter((step) => !isProjectPasswordLocked(step.viewCwd))
+              .map((step) => (
+                <div key={`${saga.id}:${step.operationId}`}>
+                  {step.viewSessionId}: {step.state} (
+                  {step.desiredPinned ? t("Pinned") : t("Unpinned")})
+                </div>
+              )),
+          )}
+        </TransientNotice>
+      ) : null}
       {filterMenu ? (
         <SessionFiltersMenu
           x={filterMenu.x}
@@ -4346,9 +4685,10 @@ function SidebarProjectPicker({
                 <span className="relative">
                   <Inbox className="icon-sm" strokeWidth={1.75} />
                   {inboxUnseen ? (
-                    <span
+                    <StatusDot
+                      label={t("Inbox, new items")}
                       aria-hidden
-                      className="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-accent"
+                      className="absolute -right-0.5 -top-0.5"
                     />
                   ) : null}
                 </span>
@@ -4810,13 +5150,9 @@ function CompactRailAction({
   };
   const marks = (
     <>
-      {dot ? (
-        <span aria-hidden className="absolute right-1 top-1 size-1.5 rounded-full bg-accent" />
-      ) : null}
+      {dot ? <StatusDot label={label} aria-hidden className="absolute right-1 top-1" /> : null}
       {badge ? (
-        <span className="pointer-events-none absolute -right-1 -top-1 [&>span]:ml-0 [&>span]:min-h-4 [&>span]:h-auto [&>span]:min-w-4 [&>span]:text-ui-caption [&>span]:leading-4">
-          {badge}
-        </span>
+        <span className="pointer-events-none absolute -right-1 -top-1 [&>span]:ml-0">{badge}</span>
       ) : null}
     </>
   );
@@ -5001,6 +5337,9 @@ function snapshotSessionList(scroller: HTMLElement | null) {
   };
   const pinned = single("[data-pinned-sessions]");
   const reminders = single("[data-reminder-sessions]");
+  const reminderRows = [
+    ...(scroller?.querySelectorAll<HTMLElement>('[data-session-section="reminders"]') ?? []),
+  ].map(zone);
   return {
     /** The live element of a card, so the list can open a gap beside it. */
     cardElement: (id: string) => cards.find((card) => card.id === id)?.element ?? null,
@@ -5012,7 +5351,7 @@ function snapshotSessionList(scroller: HTMLElement | null) {
       // The rows are a pixel or two apart: a hair of slack keeps the pointer from falling between.
       const inside = (z: Zone) =>
         x >= z.left && x <= z.right && at >= z.top - 1 && at <= z.bottom + 1;
-      if (reminders && inside(reminders)) return null;
+      if ((reminders && inside(reminders)) || reminderRows.some(inside)) return null;
       const card = cards.find((entry) => inside(entry.zone));
       if (card) {
         if (card.id === draggedId) return { kind: "self" };
@@ -5033,30 +5372,6 @@ function snapshotSessionList(scroller: HTMLElement | null) {
       return pinned && inside(pinned) ? { kind: "pinned" } : null;
     },
   };
-}
-
-function folderMoveTargetAt(
-  x: number,
-  y: number,
-  list: HTMLElement | null,
-): FolderMoveTarget | null {
-  const el = document.elementFromPoint(x, y);
-  if (!el || !list?.contains(el) || el.closest("[data-reminder-sessions]")) return null;
-  const folder = el.closest("[data-session-folder]") as HTMLElement | null;
-  const id = folder?.dataset.sessionFolder;
-  if (folder && id) {
-    const row = el.closest("[data-folder-row]");
-    if (row && folder.contains(row) && row.closest("[data-session-folder]") === folder) {
-      const rect = row.getBoundingClientRect();
-      const at = rect.height > 0 ? (y - rect.top) / rect.height : 0.5;
-      if (at < 0.3) return { kind: "beside", id, place: "before" };
-      if (at > 0.7 && folder.dataset.folderCollapsed === "true") {
-        return { kind: "beside", id, place: "after" };
-      }
-    }
-    return { kind: "into", id };
-  }
-  return el.closest("[data-pinned-sessions]") ? { kind: "pinned" } : { kind: "root" };
 }
 
 function folderMoveLabel(target: FolderMoveTarget): string {
@@ -5178,334 +5493,10 @@ function FolderColorSwatches({
   );
 }
 
-function FolderRow({
-  folder,
-  sessions,
-  expanded,
-  busy,
-  done,
-  needsApproval,
-  groupIcon,
-  onPointerDown,
-  onToggle,
-  onContextMenu,
-  onRename,
-  onNewSession,
-  onOpenMenu,
-  menuOpen,
-}: {
-  folder: Pick<SessionFolder, "name" | "colorIndex" | "customColor">;
-  sessions: SessionSummary[];
-  expanded: boolean;
-  busy: boolean;
-  done: boolean;
-  needsApproval: boolean;
-  groupIcon?: ReactNode;
-  onPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
-  onToggle: () => void;
-  onContextMenu?: (event: ReactMouseEvent<HTMLButtonElement>) => void;
-  onRename?: () => void;
-  /** Starts a session inside this group: a `+` in the header, shown on hover and focus. */
-  onNewSession?: () => void;
-  /** Opens the group's own menu (same as right-click) from the header's `…` action. */
-  onOpenMenu?: (anchor: HTMLButtonElement) => void;
-  menuOpen?: boolean;
-}) {
-  const t = useT();
-  const count = sessions.length;
-  const accent = folderAccent(folder.colorIndex, folder.customColor);
-  const actionCount = (onNewSession ? 1 : 0) + (onOpenMenu ? 1 : 0);
-  const header = (
-    <Button
-      variant="item"
-      motion="none"
-      type="button"
-      tooltip={folder.name}
-      tooltipWhen="overflow"
-      tooltipDetails={[busy ? t("Working") : null, needsApproval ? t("Needs input") : null]}
-      tooltipWide
-      data-folder-row=""
-      aria-expanded={expanded}
-      data-tauri-drag-region="false"
-      onPointerDown={onPointerDown}
-      onClick={onToggle}
-      onContextMenu={onContextMenu}
-      onKeyDown={(event) => {
-        if (event.key === "F2" && onRename) {
-          event.preventDefault();
-          onRename();
-          return;
-        }
-        if (
-          onOpenMenu &&
-          (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10"))
-        ) {
-          event.preventDefault();
-          onOpenMenu(event.currentTarget);
-        }
-      }}
-      // One quiet ~28px line: the group's mark (a chevron while pointed at or focused), the
-      // name in secondary ink and a muted count. No box, no rule; spacing separates groups.
-      className="group relative flex min-h-7 w-full min-w-0 touch-none items-center gap-1.5 px-2.5 py-1 text-start"
-    >
-      <span
-        aria-hidden
-        className={`relative grid size-4 shrink-0 place-items-center ${
-          accent ? "" : "text-(--ui-text-muted)"
-        }`}
-        style={accent ? { color: accent } : undefined}
-      >
-        <span className="contents group-hover:hidden group-focus-visible:hidden">
-          {groupIcon ??
-            (expanded ? (
-              <FolderOpen className="icon-sm" strokeWidth={1.75} />
-            ) : (
-              <Folder className="icon-sm" strokeWidth={1.75} />
-            ))}
-        </span>
-        <ChevronRight
-          className={`hidden icon-sm text-(--ui-text-secondary) transition-transform duration-150 ease-out motion-reduce:transition-none group-hover:block group-focus-visible:block ${
-            expanded ? "rotate-90" : ""
-          }`}
-          strokeWidth={1.75}
-        />
-      </span>
-      <span className="relative min-w-0 flex-1 truncate text-ui-secondary font-medium leading-snug text-(--ui-text-secondary) group-hover:text-content group-focus-visible:text-content">
-        <SessionSearchText text={folder.name} />
-      </span>
-      <span className="relative flex shrink-0 items-center gap-1.5 text-ui-micro tabular-nums text-(--ui-text-muted)">
-        {busy ? (
-          <span role="img" aria-label={t("Working")}>
-            <TerminalSpinner />
-          </span>
-        ) : null}
-        {needsApproval ? (
-          <span role="img" aria-label={t("Needs input")}>
-            <CircleAlert className="icon-xs text-warning" strokeWidth={1.75} />
-          </span>
-        ) : !expanded && !busy && done ? (
-          <Check className="icon-xs text-success" strokeWidth={2} />
-        ) : null}
-        {/* With a fine pointer the count steps aside for the header actions on hover and focus;
-            it is as wide as they are, so they cover only the count, never the status marks
-            beside it. Touch shows the actions after the count instead. */}
-        <span
-          data-action-yield={actionCount ? "" : undefined}
-          className={`text-end ${
-            actionCount === 2 ? "pointer-fine:w-10" : actionCount === 1 ? "pointer-fine:w-5" : ""
-          }`}
-        >
-          {count}
-        </span>
-      </span>
-    </Button>
-  );
-  if (!actionCount) return header;
-  const newSessionLabel = t("New session");
-  const menuLabel = t("More actions");
-  return (
-    <ActionHost className="w-full">
-      {header}
-      <span data-action-slot="collapse" className="flex shrink-0 items-center pe-2">
-        {onNewSession ? (
-          <InlineAction
-            label={newSessionLabel}
-            tooltipDetails={[folder.name]}
-            motion="none"
-            type="button"
-            data-no-drag
-            data-tauri-drag-region="false"
-            aria-label={`${newSessionLabel}: ${folder.name}`}
-            onClick={onNewSession}
-          >
-            <Plus className="icon-xs shrink-0" strokeWidth={1.75} />
-          </InlineAction>
-        ) : null}
-        {onOpenMenu ? (
-          <InlineMoreAction
-            label={t("Actions for {p0}", { p0: folder.name })}
-            tooltip={menuLabel}
-            tooltipDetails={[folder.name]}
-            motion="none"
-            type="button"
-            data-no-drag
-            data-tauri-drag-region="false"
-            expanded={menuOpen}
-            onOpen={onOpenMenu}
-          />
-        ) : null}
-      </span>
-    </ActionHost>
-  );
-}
-
-function FolderRenameRow({
-  folder,
-  memberCount,
-  onCommit,
-  onCancel,
-}: {
-  folder: SessionFolder;
-  memberCount: number;
-  onCommit: (name: string) => void;
-  onCancel: () => void;
-}) {
-  const t = useT();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const finished = useRef(false);
-  const [value, setValue] = useState(folder.name);
-
-  useEffect(() => {
-    const input = inputRef.current;
-    if (!input) return;
-    input.focus();
-    input.select();
-  }, []);
-
-  const finish = (success: boolean) => {
-    if (finished.current) return;
-    if (success) {
-      const trimmed = value.trim();
-      if (!trimmed) {
-        onCancel();
-        return;
-      }
-      finished.current = true;
-      onCommit(trimmed);
-      return;
-    }
-    finished.current = true;
-    onCancel();
-  };
-
-  return (
-    // data-folder-row keeps this row a drop target (and its mark) while the name is being edited.
-    <div
-      data-folder-row=""
-      className="relative flex min-h-7 w-full items-center gap-1.5 px-2.5 py-0.5 text-content"
-    >
-      <span className="relative grid size-4 shrink-0 place-items-center text-(--ui-text-muted)">
-        <FolderOpen className="icon-sm" strokeWidth={1.75} />
-      </span>
-      <TextField
-        fieldClassName="min-w-0 flex-1"
-        hideLabel
-        label={t("Name")}
-        ref={inputRef}
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        onBlur={() => finish(true)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            finish(true);
-            return;
-          }
-          if (event.key === "Escape") {
-            event.preventDefault();
-            finish(false);
-          }
-        }}
-        className="relative min-w-0 flex-1 leading-snug"
-      />
-      <span className="relative shrink-0 text-ui-micro tabular-nums text-(--ui-text-muted)">
-        {memberCount}
-      </span>
-    </div>
-  );
-}
-
 const SESSION_PREFETCH_DELAY_MS = 120;
 /** Hover waits this long before the detail card; keyboard focus shows it at once. */
 const SESSION_DETAIL_DELAY_MS = 600;
 /** Rows created this recently slide in; older ones are just being listed. */
-const SESSION_INSERT_WINDOW_MS = 15_000;
-
-/** List row that grows open when a new session lands, pushing rows below it down. */
-function SessionListItem({
-  session,
-  cwd,
-  motion,
-  children,
-}: {
-  session: SessionSummary;
-  cwd: string;
-  motion: RefObject<SessionInsertMotion>;
-  children: ReactNode;
-}) {
-  useLocale();
-  const ref = useRef<HTMLLIElement>(null);
-  // Decided once per row: effects can replay (StrictMode, reordering), and a
-  // row that already slid in must not do it again.
-  const played = useRef(false);
-  useLayoutEffect(() => {
-    if (played.current) return;
-    played.current = true;
-    const state = motion.current;
-    const fresh =
-      state.cwd === cwd &&
-      !state.seen.has(session.id) &&
-      !document.hidden &&
-      ((session.createdAt === 0 && !remoteProjectFor(session.cwd)) ||
-        (session.createdAt >= state.since &&
-          Date.now() - session.createdAt < SESSION_INSERT_WINDOW_MS));
-    state.seen.add(session.id);
-    const el = ref.current;
-    const content = el?.firstElementChild;
-    if (
-      !fresh ||
-      !el ||
-      !(content instanceof HTMLElement) ||
-      typeof el.animate !== "function" ||
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-    )
-      return;
-    // The card takes its place at once; everything below starts where it was
-    // and slides down, uncovering it as it fades in.
-    const offset =
-      el.offsetHeight + (parseFloat(getComputedStyle(el.parentElement ?? el).rowGap) || 0);
-    const animations: Animation[] = [];
-    const timing = {
-      duration: 380,
-      easing: "cubic-bezier(0.32, 0.72, 0, 1)",
-    };
-    for (
-      let node: Element | null = el;
-      node && !node.hasAttribute("data-session-list");
-      node = node.parentElement
-    ) {
-      for (let below = node.nextElementSibling; below; below = below.nextElementSibling) {
-        if (!(below instanceof HTMLElement)) continue;
-        animations.push(
-          below.animate(
-            [{ transform: `translateY(${-offset}px)` }, { transform: "none" }],
-            // Stack with a push already in flight instead of restarting it.
-            { ...timing, composite: "add" },
-          ),
-        );
-      }
-    }
-    animations.push(
-      content.animate([{ opacity: 0 }, { opacity: 1 }], {
-        duration: 220,
-        easing: "ease-out",
-      }),
-    );
-    // Web Animations rejects finished on cancellation; teardown is expected.
-    for (const animation of animations) void animation?.finished?.catch(() => undefined);
-    const stop = () => animations.forEach((animation) => animation?.cancel());
-    const onVisibility = () => {
-      if (document.hidden) stop();
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => {
-      document.removeEventListener("visibilitychange", onVisibility);
-      stop();
-    };
-  }, []);
-  return <li ref={ref}>{children}</li>;
-}
-
 /** The folder-less list search: the session filter owns the matches, rows only draw them. */
 const NO_SEARCH_ITEMS: ExpandingSearchItem[] = [];
 
@@ -5687,7 +5678,7 @@ const SessionCard = memo(function SessionCard({
       : issue === "retrying" || interrupted || needsApproval
         ? "warning"
         : busy
-          ? "info"
+          ? "accent"
           : done
             ? "success"
             : draft && !opening
@@ -5701,10 +5692,9 @@ const SessionCard = memo(function SessionCard({
       <RelativeSessionTime at={session.lastActivityAt ?? session.updatedAt} />
     </span>
   ) : working ? (
-    // Same pill as Done/Failed, so a running session reads at a glance.
     <Badge
       size="sm"
-      tone="info"
+      tone="accent"
       appearance="subtle"
       data-session-working-badge
       className="shrink-0 whitespace-nowrap tabular-nums"
@@ -5769,10 +5759,7 @@ const SessionCard = memo(function SessionCard({
           : "Linked issue updated since this session",
       )}
     >
-      <span
-        aria-label={t("Linked work item updated")}
-        className="size-1.5 shrink-0 rounded-full bg-accent"
-      />
+      <StatusDot label={t("Linked work item updated")} />
     </Tooltip>
   ) : null;
   const workItemBadge = linkedWorkItem ? (

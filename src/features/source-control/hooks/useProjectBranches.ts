@@ -6,8 +6,8 @@ import {
   subscribeGitChanged,
   type GitBranches,
 } from "../../../platform/tauri/fs";
-import { reportRemoteLoad } from "../../connections/model/remoteHealth";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { reportRemoteLoad } from "../../connections/public/remoteHealth";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 
 export type ProjectBranchesState = {
   branches: GitBranches | null;
@@ -29,7 +29,10 @@ type Entry = {
   onResume: (() => void) | null;
 };
 
-const entries = new CheckoutCache<string, Entry>((entry) => entry.listeners.size > 0 || !!entry.inFlight, (entry) => entry.state);
+const entries = new CheckoutCache<string, Entry>(
+  (entry) => entry.listeners.size > 0 || !!entry.inFlight,
+  (entry) => entry.state,
+);
 
 function branchesEqual(a: GitBranches | null, b: GitBranches | null): boolean {
   if (a === b) return true;

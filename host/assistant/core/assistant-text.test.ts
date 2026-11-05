@@ -2,8 +2,12 @@ import { afterEach, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-vi.mock("../../../src/integrations/harness/core/register", () => ({ registerBuiltinHarnesses: vi.fn() }));
-vi.mock("../../../src/integrations/harness/core/registry", () => ({ runHarnessTextPrompt: vi.fn() }));
+vi.mock("../../../src/integrations/harness/core/register", () => ({
+  registerBuiltinHarnesses: vi.fn(),
+}));
+vi.mock("../../../src/integrations/harness/core/registry", () => ({
+  runHarnessTextPrompt: vi.fn(),
+}));
 import { runHarnessTextPrompt } from "../../../src/integrations/harness/core/registry";
 import { assistantText } from "./assistant-text";
 import type { AssistantProfile } from "../../../src/shared/model/host-contracts/assistant";

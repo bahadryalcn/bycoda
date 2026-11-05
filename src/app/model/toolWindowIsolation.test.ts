@@ -8,7 +8,10 @@ import {
   saveWorkspaceSnapshot,
 } from "../../features/sessions/data/sessionStore";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined), isTauri: () => false }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+  isTauri: () => false,
+}));
 vi.mock("../../features/connections/model/hostSessionBindingDatabase", () => ({
   readBindingEvidencePage: vi.fn(async () => []),
   skipImportedNativeBindingLegacy: vi.fn(),

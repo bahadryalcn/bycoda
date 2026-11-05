@@ -180,7 +180,11 @@ export class ProviderInboxBridge {
       };
       for (const row of rows) {
         const operation = JSON.parse(String(row.operation_json)) as RemoteInboxOperation;
-        if (operation.action !== "list" || !operation.projects.some(project => path(project.path) === path(cwd))) continue;
+        if (
+          operation.action !== "list" ||
+          !operation.projects.some((project) => path(project.path) === path(cwd))
+        )
+          continue;
         const result = JSON.parse(String(row.result_json ?? "null")) as {
           items?: RemoteInboxTarget[];
         } | null;

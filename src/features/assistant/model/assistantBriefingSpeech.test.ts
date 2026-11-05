@@ -54,12 +54,16 @@ it("lets a long briefing finish beyond two minutes while keeping its length-base
   snapshot.briefing.text = "a".repeat(3000);
   let finish!: () => void;
   let started!: () => void;
-  const entered = new Promise<void>((resolve) => { started = resolve; });
+  const entered = new Promise<void>((resolve) => {
+    started = resolve;
+  });
   let playbackSignal!: AbortSignal;
   voice.preview.mockImplementation(async (_settings, _language, _name, signal: AbortSignal) => {
     playbackSignal = signal;
     started();
-    await new Promise<void>((resolve) => { finish = resolve; });
+    await new Promise<void>((resolve) => {
+      finish = resolve;
+    });
   });
   try {
     const playing = listenAssistantBriefing("brief", new AbortController().signal, () => {});
@@ -81,14 +85,20 @@ it("still bounds a stalled long playback without creating a retry", async () => 
   vi.useFakeTimers();
   snapshot.briefing.text = "a".repeat(3000);
   let started!: () => void;
-  const entered = new Promise<void>((resolve) => { started = resolve; });
+  const entered = new Promise<void>((resolve) => {
+    started = resolve;
+  });
   voice.preview.mockImplementation(async (_settings, _language, _name, signal: AbortSignal) => {
     started();
-    await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+    await new Promise<void>((resolve) =>
+      signal.addEventListener("abort", () => resolve(), { once: true }),
+    );
   });
   try {
-    const result = listenAssistantBriefing("brief", new AbortController().signal, () => {})
-      .then(() => undefined, (error: unknown) => error);
+    const result = listenAssistantBriefing("brief", new AbortController().signal, () => {}).then(
+      () => undefined,
+      (error: unknown) => error,
+    );
     await entered;
     await vi.advanceTimersByTimeAsync(570_001);
     expect(String(await result)).toContain("Briefing playback timed out.");

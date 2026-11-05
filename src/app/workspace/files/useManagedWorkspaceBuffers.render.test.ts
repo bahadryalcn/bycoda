@@ -4,7 +4,9 @@ import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
 import { useManagedWorkspaceBuffers } from "./useManagedWorkspaceBuffers";
 import type { FilePaneTab } from "../../../features/workspace/model/layout";
-const native = vi.hoisted(() => ({ invoke: vi.fn(async (_command: string, _args?: unknown) => undefined) }));
+const native = vi.hoisted(() => ({
+  invoke: vi.fn(async (_command: string, _args?: unknown) => undefined),
+}));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
 
 it("does not sort/serialize unchanged editor snapshots on unrelated renders and reports new dirty state", async () => {
@@ -18,12 +20,17 @@ it("does not sort/serialize unchanged editor snapshots on unrelated renders and 
     return null;
   }
   const stringify = vi.spyOn(JSON, "stringify");
-  const relevant = () => stringify.mock.calls.filter(([value]) => Array.isArray(value) && value[0]?.path === "/owned/a.ts");
+  const relevant = () =>
+    stringify.mock.calls.filter(
+      ([value]) => Array.isArray(value) && value[0]?.path === "/owned/a.ts",
+    );
   try {
     for (let tick = 0; tick < 12; tick++)
       await act(async () => root.render(createElement(Probe, { dirty: clean, tick })));
     expect(relevant()).toHaveLength(1);
-    await act(async () => root.render(createElement(Probe, { dirty: new Set(["file"]), tick: 13 })));
+    await act(async () =>
+      root.render(createElement(Probe, { dirty: new Set(["file"]), tick: 13 })),
+    );
     expect(relevant()).toHaveLength(2);
     expect(native.invoke).toHaveBeenLastCalledWith("managed_workspace_buffers", {
       buffers: [{ path: "/owned/a.ts", dirty: true }],

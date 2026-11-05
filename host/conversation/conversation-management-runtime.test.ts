@@ -19,11 +19,21 @@ it("reads only finite Host metadata from a real projectless Room principal", asy
   const snapshot = vi.fn(async () => []);
   const runtime = new ConversationManagementRuntime({ read, snapshot, subscribe: () => () => {} });
   const room = { kind: "assistant-thread" as const, threadId: "global", environmentId: "host" };
-  expect(await runtime.call("environment.describe", {}, room, async () => true)).toEqual({ environmentId: "host" });
-  await expect(runtime.call("events.subscribe", {}, room, async () => true)).rejects.toThrow("explicit project");
-  await expect(runtime.call("tunnels.status", {}, room, async () => true)).rejects.toThrow("explicit project");
-  await expect(runtime.call("tunnels.status", {}, { ...room, projectId: undefined }, async () => true)).rejects.toThrow("explicit project");
-  await expect(runtime.call("environment.describe", {}, room, async () => false)).rejects.toThrow("revoked");
+  expect(await runtime.call("environment.describe", {}, room, async () => true)).toEqual({
+    environmentId: "host",
+  });
+  await expect(runtime.call("events.subscribe", {}, room, async () => true)).rejects.toThrow(
+    "explicit project",
+  );
+  await expect(runtime.call("tunnels.status", {}, room, async () => true)).rejects.toThrow(
+    "explicit project",
+  );
+  await expect(
+    runtime.call("tunnels.status", {}, { ...room, projectId: undefined }, async () => true),
+  ).rejects.toThrow("explicit project");
+  await expect(runtime.call("environment.describe", {}, room, async () => false)).rejects.toThrow(
+    "revoked",
+  );
   expect(read).toHaveBeenCalledOnce();
   expect(snapshot).not.toHaveBeenCalled();
 });

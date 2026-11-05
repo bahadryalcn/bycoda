@@ -19,7 +19,7 @@ import {
   isValidTrigger,
   normalizeTrigger,
   type PromptTemplate,
-} from "../../sessions/model/promptTemplates";
+} from "../../sessions/public/promptTemplates";
 
 function sameTemplates(a: readonly PromptTemplate[], b: readonly PromptTemplate[]) {
   return (

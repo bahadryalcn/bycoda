@@ -22,7 +22,7 @@ import {
   type ViewUpdate,
 } from "@codemirror/view";
 import { MOD, ALT, SHIFT, IS_MAC } from "../../../platform/tauri/platform";
-import { keybindingPressed } from "../../settings/model/settings";
+import { keybindingPressed } from "../../settings/public/settings";
 import { handleFilePreviewFindKey, openFindInActiveFilePreview } from "../ui/FilePreviewSearch";
 import { t } from "../../../shared/i18n";
 import { nativeButtonPresentation } from "../../../shared/ui/Button";

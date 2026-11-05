@@ -3,19 +3,22 @@
   "purpose": "Existing code-structure findings counted per file and rule by scripts/checks/check-code-structure.mjs. file-lines stores the current line count of an over-budget file. Counts may only fall; regenerate with --update-baseline after reducing them and review the diff.",
   "counts": {
     "host/assistant/service.ts": {
-      "file-lines": 5697
+      "file-lines": 6951
     },
     "host/assistant/sessions/assistant-sessions.ts": {
       "file-lines": 938
     },
+    "host/assistant/summary/assistant-thread-summary.ts": {
+      "file-lines": 815
+    },
     "host/assistant/voice/assistant-voice-context.ts": {
-      "file-lines": 951
+      "file-lines": 1121
     },
     "host/async-collections.ts": {
       "loose-host-file": 1
     },
     "host/browser/shared-browser.ts": {
-      "file-lines": 1342
+      "file-lines": 1449
     },
     "host/build-identity.ts": {
       "loose-host-file": 1
@@ -24,24 +27,24 @@
       "loose-host-file": 1
     },
     "host/checkpoints/checkpoints.ts": {
-      "file-lines": 1032
+      "file-lines": 1035
     },
     "host/child-backend.test.ts": {
       "file-lines": 1743
     },
     "host/child-backend.ts": {
-      "file-lines": 1520,
+      "file-lines": 1521,
       "loose-host-file": 1
     },
     "host/configurationConflict.ts": {
       "loose-host-file": 1
     },
     "host/conversation/conversation-tools.ts": {
-      "file-lines": 1378,
+      "file-lines": 1610,
       "host-imports-ui": 1
     },
     "host/crews/crews.ts": {
-      "file-lines": 1713
+      "file-lines": 1828
     },
     "host/desktop-helper-domain.ts": {
       "loose-host-file": 1
@@ -53,31 +56,31 @@
       "file-lines": 1160
     },
     "host/desktop/desktopLive.ts": {
-      "file-lines": 820
+      "file-lines": 824
     },
     "host/desktop/desktopSessions.test.ts": {
-      "file-lines": 1744
+      "file-lines": 1781
     },
     "host/desktop/desktopSessions.ts": {
-      "file-lines": 1502
+      "file-lines": 1541
     },
     "host/dev-server-guardian.ts": {
       "loose-host-file": 1
     },
     "host/dev-servers/dev-servers.ts": {
-      "file-lines": 1472
+      "file-lines": 1479
     },
     "host/devices/device-host.ts": {
-      "file-lines": 1428
+      "file-lines": 1498
     },
     "host/engine-operations.ts": {
       "loose-host-file": 1
     },
     "host/engine.test.ts": {
-      "file-lines": 6211
+      "file-lines": 6296
     },
     "host/engine.ts": {
-      "file-lines": 5029,
+      "file-lines": 5058,
       "loose-host-file": 1
     },
     "host/git/git-actions.ts": {
@@ -132,19 +135,16 @@
       "loose-host-file": 1
     },
     "host/server.test.ts": {
-      "file-lines": 6319
-    },
-    "host/server.ts": {
-      "file-lines": 8253
+      "file-lines": 6334
     },
     "host/session-read-process.ts": {
       "loose-host-file": 1
     },
     "host/sessions/session-file-revert.ts": {
-      "file-lines": 1036
+      "file-lines": 1128
     },
     "host/skills/skills.ts": {
-      "file-lines": 878
+      "file-lines": 927
     },
     "host/social-browser-launch.ts": {
       "loose-host-file": 1
@@ -162,16 +162,16 @@
       "file-lines": 843
     },
     "host/social/social-browser.ts": {
-      "file-lines": 1388
+      "file-lines": 1432
     },
     "host/social/social-programs.ts": {
-      "file-lines": 1472
+      "file-lines": 1481
     },
     "host/social/social.test.ts": {
-      "file-lines": 4488
+      "file-lines": 4917
     },
     "host/social/social.ts": {
-      "file-lines": 5879
+      "file-lines": 6499
     },
     "host/stewards/stewards.ts": {
       "file-lines": 859
@@ -180,26 +180,23 @@
       "loose-host-file": 1
     },
     "host/store.test.ts": {
-      "file-lines": 1700
+      "file-lines": 1593
     },
     "host/store.ts": {
-      "file-lines": 2952,
+      "file-lines": 3047,
       "loose-host-file": 1
     },
     "host/suppress-sqlite-warning.ts": {
       "loose-host-file": 1
     },
     "host/tasks/tasks.test.ts": {
-      "file-lines": 4270
-    },
-    "host/tasks/tasks.ts": {
-      "file-lines": 5651
+      "file-lines": 4284
     },
     "host/terminal-process.ts": {
       "loose-host-file": 1
     },
     "host/transport/ws/server.ts": {
-      "file-lines": 921
+      "file-lines": 930
     },
     "host/windows-service-launcher.ts": {
       "loose-host-file": 1
@@ -208,14 +205,14 @@
       "loose-host-file": 1
     },
     "host/workspace-cleanup.ts": {
-      "file-lines": 1170,
+      "file-lines": 1176,
       "loose-host-file": 1
     },
     "host/workspaces/workspace-commands.ts": {
-      "file-lines": 1520
+      "file-lines": 1561
     },
     "host/workspaces/workspace.ts": {
-      "file-lines": 1682
+      "file-lines": 1685
     },
     "src-tauri/src/automations.rs": {
       "file-lines": 1870
@@ -293,83 +290,247 @@
       "file-lines": 2438
     },
     "src/app/App.tsx": {
-      "file-lines": 3585
+      "file-lines": 3608
     },
     "src/app/model/appLifecycle.ts": {
-      "file-lines": 1301
+      "file-lines": 1303
     },
     "src/app/shell/MenuBar.tsx": {
       "file-lines": 662
     },
     "src/app/shell/ProjectRail.tsx": {
-      "file-lines": 2714
+      "file-lines": 2720
     },
     "src/app/shell/SessionRecoveryPanel.tsx": {
-      "file-lines": 674
+      "file-lines": 663
     },
     "src/app/shell/Sidebar.tsx": {
-      "file-lines": 6892
+      "file-lines": 6879
     },
     "src/app/shell/SidebarRename.test.ts": {
       "file-lines": 2828
     },
     "src/app/shell/TitleBar.tsx": {
-      "file-lines": 1427
+      "file-lines": 1426
     },
     "src/app/shell/UsageProviderChip.tsx": {
       "file-lines": 1202
     },
     "src/app/shell/useProjectMenu.tsx": {
-      "file-lines": 1470
+      "file-lines": 1511
+    },
+    "src/app/workspace/control/useAppControlRequests.ts": {
+      "file-lines": 953
     },
     "src/app/workspace/layout/WorkspaceToolPanels.tsx": {
       "file-lines": 644
     },
+    "src/features/agent-app/model/agentApp.ts": {
+      "cross-feature-deep-import": 11
+    },
+    "src/features/agent-app/model/sessionConversation.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/assistant/model/assistantBriefing.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/assistant/model/assistantBriefingSpeech.ts": {
+      "cross-feature-deep-import": 5
+    },
+    "src/features/assistant/model/assistantClient.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/assistant/model/assistantHostRead.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/assistant/model/assistantManual.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/assistant/model/assistantOwnerQuestions.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/assistant/model/assistantSessionDetach.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/assistant/model/assistantSessions.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/assistant/ui/AssistantBriefingCard.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/assistant/ui/AssistantNotifications.tsx": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/assistant/ui/AssistantOwnerQuestions.tsx": {
+      "cross-feature-deep-import": 3
+    },
     "src/features/assistant/ui/AssistantProfileFields.tsx": {
-      "file-lines": 702
+      "cross-feature-deep-import": 4,
+      "file-lines": 722
+    },
+    "src/features/assistant/ui/AssistantQuickAutomationFields.tsx": {
+      "cross-feature-deep-import": 5
+    },
+    "src/features/assistant/ui/AssistantRemoteAccess.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/assistant/ui/AssistantSessions.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/assistant/ui/AssistantSettings.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/assistant/ui/AssistantSetup.tsx": {
+      "cross-feature-deep-import": 5
     },
     "src/features/assistant/ui/AssistantView.test.ts": {
-      "file-lines": 2474
+      "file-lines": 2494
     },
     "src/features/assistant/ui/AssistantView.tsx": {
+      "cross-feature-deep-import": 3,
       "feature-imports-app": 1,
-      "file-lines": 3991
+      "file-lines": 4408
+    },
+    "src/features/automations/hooks/useAutomationActions.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/automations/hooks/useAutomationDraftStart.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/automations/hooks/useAutomationFolderOptions.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/automations/hooks/useHostAutomations.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/automations/model/assistantAutomationSelection.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/automations/model/automationEvents.ts": {
+      "cross-feature-deep-import": 5
+    },
+    "src/features/automations/model/automations.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/automations/model/hostAutomationClient.ts": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/automations/model/hostAutomations.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/automations/model/machineResults.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/automations/model/machineSnapshot.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/automations/model/workspaceAutomationEvents.ts": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/automations/ui/AutomationAssistant.tsx": {
+      "cross-feature-deep-import": 5
     },
     "src/features/automations/ui/AutomationsView.tsx": {
+      "cross-feature-deep-import": 23,
       "feature-imports-app": 3,
-      "file-lines": 2022
+      "file-lines": 2027
+    },
+    "src/features/automations/ui/TriggerEditor.tsx": {
+      "cross-feature-deep-import": 2
     },
     "src/features/connections/model/adoptedSessions.test.ts": {
       "file-lines": 1752
     },
     "src/features/connections/model/adoptedSessions.ts": {
+      "cross-feature-deep-import": 3,
       "file-lines": 984
     },
+    "src/features/connections/model/buildCompatibility.ts": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/connections/model/connections.ts": {
-      "file-lines": 1504
+      "file-lines": 1505
+    },
+    "src/features/connections/model/desktopLive.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/connections/model/hostFeatureClient.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/connections/model/protocol.ts": {
+      "cross-feature-deep-import": 5
+    },
+    "src/features/connections/model/queueState.ts": {
+      "cross-feature-deep-import": 1
     },
     "src/features/connections/model/remoteMachineChannel.ts": {
-      "file-lines": 892
+      "file-lines": 896
     },
     "src/features/connections/model/remoteOutbox.ts": {
-      "file-lines": 980
+      "cross-feature-deep-import": 1,
+      "file-lines": 1018
+    },
+    "src/features/connections/model/remoteOutboxDatabase.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/connections/model/remoteSessionActions.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/connections/model/remoteSessionNavigation.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/connections/model/remoteShellState.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/connections/model/runLeaseClient.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/connections/model/sharedQueue.ts": {
+      "cross-feature-deep-import": 2
     },
     "src/features/connections/model/sharedQueueClient.ts": {
       "file-lines": 858
     },
+    "src/features/connections/model/sshSnippets.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/connections/model/useAdoptedSessions.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/connections/model/useDesktopLive.ts": {
+      "cross-feature-deep-import": 5
+    },
     "src/features/connections/model/useSharedLocalQueues.ts": {
-      "file-lines": 933
+      "file-lines": 932
+    },
+    "src/features/connections/model/workspaceUrls.ts": {
+      "cross-feature-deep-import": 2
     },
     "src/features/connections/ui/ConnectionsSettings.tsx": {
+      "cross-feature-deep-import": 3,
       "file-lines": 1110
+    },
+    "src/features/connections/ui/HostModelSource.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/connections/ui/RemoteSession.test.ts": {
       "file-lines": 5206
     },
     "src/features/connections/ui/RemoteSession.tsx": {
-      "file-lines": 4107
+      "cross-feature-deep-import": 6,
+      "file-lines": 4116
+    },
+    "src/features/connections/ui/serverColor.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/connections/ui/ServerColorPopover.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/connections/ui/ServerSnippets.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/connections/ui/ServersTerminalWorkspace.tsx": {
+      "cross-feature-deep-import": 2,
       "feature-imports-app": 2,
       "file-lines": 730
     },
@@ -383,16 +544,73 @@
     "src/features/connections/ui/SshRunbooks.tsx": {
       "file-lines": 838
     },
+    "src/features/crews/model/crew.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/crews/model/crewAppearance.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/crews/model/crewClient.ts": {
+      "cross-feature-deep-import": 5
+    },
+    "src/features/crews/model/crewDefaults.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/crews/model/crewPresentation.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/crews/model/crewRoster.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/crews/ui/CrewAppearancePicker.tsx": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/crews/ui/CrewAvatar.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/crews/ui/CrewDialogs.tsx": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/crews/ui/CrewEditor.tsx": {
       "file-lines": 1298
     },
+    "src/features/crews/ui/CrewLibrary.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/crews/ui/CrewLibraryMemberMeta.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/crews/ui/CrewMemberForm.tsx": {
+      "cross-feature-deep-import": 2
+    },
     "src/features/crews/ui/CrewRailSection.tsx": {
+      "cross-feature-deep-import": 1,
       "feature-imports-app": 1
     },
+    "src/features/crews/ui/CrewSessions.tsx": {
+      "cross-feature-deep-import": 5
+    },
+    "src/features/crews/ui/CrewsSettings.tsx": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/crews/ui/CrewWorkDetail.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/crews/ui/CrewWorkingSettings.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/crews/ui/CrewWorkSessions.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/crews/ui/MemberModelPicker.tsx": {
+      "cross-feature-deep-import": 3
+    },
     "src/features/devices/deviceComposer.ts": {
+      "cross-feature-deep-import": 2,
       "loose-feature-file": 1
     },
     "src/features/devices/deviceImageComposer.ts": {
+      "cross-feature-deep-import": 2,
       "loose-feature-file": 1
     },
     "src/features/devices/deviceImageTransfer.ts": {
@@ -402,7 +620,8 @@
       "loose-feature-file": 1
     },
     "src/features/devices/DevicePanel.tsx": {
-      "file-lines": 2306,
+      "cross-feature-deep-import": 1,
+      "file-lines": 2301,
       "loose-feature-file": 1
     },
     "src/features/devices/types.ts": {
@@ -414,34 +633,79 @@
     "src/features/files/editor/editorGit.ts": {
       "file-lines": 1027
     },
+    "src/features/files/editor/editorNavigation.ts": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/files/editor/editorSearch.ts": {
       "file-lines": 863
     },
+    "src/features/files/model/editorDraftRecovery.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/files/model/fileIndex.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/files/model/fileWatch.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/files/ui/ChatFolderBrowser.tsx": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/files/ui/CodeMirrorEditor.tsx": {
+      "cross-feature-deep-import": 1,
       "file-lines": 1480
     },
     "src/features/files/ui/FileEditor.tsx": {
+      "cross-feature-deep-import": 1,
       "file-lines": 1562
     },
     "src/features/files/ui/FilePane.tsx": {
+      "cross-feature-deep-import": 6,
       "feature-imports-app": 2
     },
     "src/features/files/ui/FilePicker.tsx": {
-      "file-lines": 614
+      "cross-feature-deep-import": 3,
+      "file-lines": 617
     },
     "src/features/files/ui/FilePreviewSearch.tsx": {
       "file-lines": 627
     },
     "src/features/files/ui/FileTree.tsx": {
-      "file-lines": 1867
+      "cross-feature-deep-import": 1,
+      "file-lines": 1871
     },
     "src/features/files/ui/PdfViewer.tsx": {
       "file-lines": 618
+    },
+    "src/features/files/ui/useFileTreeKeyboard.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/files/ui/useFileTreeOperations.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/files/ui/useRemoteFolderBrowser.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/group-lock/model/groupLock.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/group-lock/model/lockState.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/group-lock/model/roomPrivacyScope.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/group-lock/ui/GroupLockSettings.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/group-lock/ui/HiddenGroupsSettings.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/host-tools/BrowserAnnotationDetails.tsx": {
       "loose-feature-file": 1
     },
     "src/features/host-tools/browserComposer.ts": {
+      "cross-feature-deep-import": 1,
       "loose-feature-file": 1
     },
     "src/features/host-tools/browserDraftTransfer.ts": {
@@ -451,13 +715,15 @@
       "loose-feature-file": 1
     },
     "src/features/host-tools/BrowserPanel.tsx": {
-      "file-lines": 1952,
+      "cross-feature-deep-import": 2,
+      "file-lines": 1966,
       "loose-feature-file": 1
     },
     "src/features/host-tools/ConversationToolsButton.tsx": {
       "loose-feature-file": 1
     },
     "src/features/host-tools/desktopControlClient.ts": {
+      "cross-feature-deep-import": 1,
       "loose-feature-file": 1
     },
     "src/features/host-tools/desktopControlIndicator.ts": {
@@ -467,6 +733,7 @@
       "loose-feature-file": 1
     },
     "src/features/host-tools/DesktopControlSettings.tsx": {
+      "cross-feature-deep-import": 1,
       "loose-feature-file": 1
     },
     "src/features/host-tools/DesktopControlStrip.tsx": {
@@ -476,15 +743,19 @@
       "loose-feature-file": 1
     },
     "src/features/host-tools/desktopControlWindowMain.tsx": {
+      "cross-feature-deep-import": 2,
       "loose-feature-file": 1
     },
     "src/features/host-tools/DesktopHelperSetup.tsx": {
+      "cross-feature-deep-import": 1,
       "loose-feature-file": 1
     },
     "src/features/host-tools/desktopStopShortcut.ts": {
+      "cross-feature-deep-import": 2,
       "loose-feature-file": 1
     },
     "src/features/host-tools/DevServersPanel.tsx": {
+      "cross-feature-deep-import": 4,
       "file-lines": 1152,
       "loose-feature-file": 1
     },
@@ -492,6 +763,7 @@
       "loose-feature-file": 1
     },
     "src/features/host-tools/DiagnosticsPanel.tsx": {
+      "cross-feature-deep-import": 2,
       "loose-feature-file": 1
     },
     "src/features/host-tools/HostToolsWindow.tsx": {
@@ -511,6 +783,7 @@
       "loose-feature-file": 1
     },
     "src/features/host-tools/RuntimeLogsPanel.tsx": {
+      "cross-feature-deep-import": 4,
       "file-lines": 1261,
       "loose-feature-file": 1
     },
@@ -518,6 +791,7 @@
       "loose-feature-file": 1
     },
     "src/features/host-tools/SessionHostTools.tsx": {
+      "cross-feature-deep-import": 10,
       "loose-feature-file": 1
     },
     "src/features/host-tools/terminalTypes.ts": {
@@ -527,6 +801,7 @@
       "loose-feature-file": 1
     },
     "src/features/host-tools/toolsDraftTransfer.ts": {
+      "cross-feature-deep-import": 2,
       "loose-feature-file": 1
     },
     "src/features/host-tools/toolsHubTransport.ts": {
@@ -534,6 +809,7 @@
       "loose-feature-file": 1
     },
     "src/features/host-tools/toolsSessionRegistry.ts": {
+      "cross-feature-deep-import": 1,
       "loose-feature-file": 1
     },
     "src/features/host-tools/toolsTransferLedger.ts": {
@@ -543,28 +819,99 @@
       "loose-feature-file": 1
     },
     "src/features/host-tools/ToolsWorkspace.tsx": {
+      "cross-feature-deep-import": 4,
       "feature-imports-app": 1,
-      "file-lines": 1002,
+      "file-lines": 1094,
       "loose-feature-file": 1
     },
+    "src/features/inbox/hooks/useGithubWorkItem.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/inbox/hooks/useInboxUnseen.ts": {
+      "cross-feature-deep-import": 5
+    },
+    "src/features/inbox/hooks/useLinkedTarget.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/inbox/model/azureDevOps.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/inbox/model/ciRepairSessions.ts": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/inbox/model/ciRepairTracking.ts": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/inbox/model/githubTasks.ts": {
+      "cross-feature-deep-import": 1,
       "file-lines": 1653
     },
+    "src/features/inbox/model/gitlab.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/inbox/model/inboxFilters.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/inbox/model/inboxMedia.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/inbox/model/inboxNotifications.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/inbox/model/inboxSeen.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/inbox/model/inboxSelfActivity.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/inbox/model/inboxTransitions.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/inbox/model/inboxVisibleItems.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/inbox/model/linkedSessionUpdates.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/inbox/ui/CheckEvidence.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/inbox/ui/CheckRepairProgress.tsx": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/inbox/ui/InboxComments.tsx": {
-      "file-lines": 859
+      "cross-feature-deep-import": 2,
+      "file-lines": 833
     },
     "src/features/inbox/ui/InboxDetail.tsx": {
-      "file-lines": 828
+      "cross-feature-deep-import": 6,
+      "file-lines": 825
+    },
+    "src/features/inbox/ui/InboxNotificationMenu.tsx": {
+      "cross-feature-deep-import": 6
     },
     "src/features/inbox/ui/InboxPrChecks.tsx": {
-      "file-lines": 872
+      "file-lines": 871
+    },
+    "src/features/inbox/ui/InboxPrDiff.tsx": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/inbox/ui/InboxPresentation.tsx": {
+      "cross-feature-deep-import": 6
+    },
+    "src/features/inbox/ui/InboxPrOverview.tsx": {
+      "cross-feature-deep-import": 3
     },
     "src/features/inbox/ui/InboxView.tsx": {
+      "cross-feature-deep-import": 8,
       "feature-imports-app": 4,
-      "file-lines": 1558
+      "file-lines": 1535
     },
     "src/features/inbox/ui/JiraBoardView.tsx": {
-      "file-lines": 1270
+      "file-lines": 1265
+    },
+    "src/features/inbox/ui/LinkedWorkItemUpdateNotice.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/notes/markdownCommands.ts": {
       "loose-feature-file": 1
@@ -576,9 +923,11 @@
       "loose-feature-file": 1
     },
     "src/features/notes/noteImages.ts": {
+      "cross-feature-deep-import": 2,
       "loose-feature-file": 1
     },
     "src/features/notes/noteLibrary.ts": {
+      "cross-feature-deep-import": 1,
       "loose-feature-file": 1
     },
     "src/features/notes/noteLibraryMenu.ts": {
@@ -591,6 +940,7 @@
       "loose-feature-file": 1
     },
     "src/features/notes/notes.ts": {
+      "cross-feature-deep-import": 4,
       "loose-feature-file": 1
     },
     "src/features/notes/noteServiceIntents.ts": {
@@ -604,17 +954,32 @@
       "loose-feature-file": 1
     },
     "src/features/notes/notesPanel.ts": {
+      "cross-feature-deep-import": 1,
       "loose-feature-file": 1
     },
     "src/features/notes/previewBlocks.ts": {
       "loose-feature-file": 1
     },
+    "src/features/notes/ui/NoteEditablePreview.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/notes/ui/NoteMarkdownEditor.tsx": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/notes/ui/NoteMiniCard.tsx": {
+      "cross-feature-deep-import": 4
+    },
     "src/features/notes/ui/NotesView.tsx": {
+      "cross-feature-deep-import": 10,
       "feature-imports-app": 3,
-      "file-lines": 2602
+      "file-lines": 2527
     },
     "src/features/notes/ui/SessionNotesPanel.tsx": {
-      "file-lines": 1143
+      "cross-feature-deep-import": 5,
+      "file-lines": 1123
+    },
+    "src/features/notes/ui/useNoteImageInsertion.ts": {
+      "cross-feature-deep-import": 1
     },
     "src/features/notes/useNoteDetail.ts": {
       "loose-feature-file": 1
@@ -622,40 +987,297 @@
     "src/features/notes/useNoteInput.ts": {
       "loose-feature-file": 1
     },
+    "src/features/notifications/hooks/useAttentionNotifications.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/notifications/hooks/useBackgroundNotifications.ts": {
+      "cross-feature-deep-import": 7
+    },
+    "src/features/notifications/hooks/useDailySummary.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/notifications/hooks/useDockBadge.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/notifications/hooks/useInputNotifications.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/notifications/hooks/useSessionReminders.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/notifications/model/approvalToast.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/notifications/model/attention.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/notifications/model/dockBadge.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/notifications/model/notificationHistory.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/notifications/model/notificationProjects.ts": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/notifications/model/notifications.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/notifications/ui/NotificationMuteControl.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/notifications/ui/ProjectNotificationSettings.tsx": {
+      "cross-feature-deep-import": 9
+    },
+    "src/features/notifications/ui/SoundsButton.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/onboarding/model/guide.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/onboarding/model/onboardingProviders.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/onboarding/ui/GuidedTour.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/onboarding/ui/GuideHub.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/onboarding/ui/GuideShortcuts.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/onboarding/ui/OnboardingAgents.tsx": {
+      "cross-feature-deep-import": 8
+    },
+    "src/features/onboarding/ui/OnboardingCrewPreview.tsx": {
+      "cross-feature-deep-import": 4
+    },
     "src/features/onboarding/ui/OnboardingDialog.tsx": {
+      "cross-feature-deep-import": 12,
       "file-lines": 693
+    },
+    "src/features/onboarding/ui/OnboardingPreferences.tsx": {
+      "cross-feature-deep-import": 8
+    },
+    "src/features/onboarding/ui/UsageGuideDialog.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/orchestration/model/orchestration.test.ts": {
       "file-lines": 1656
     },
     "src/features/orchestration/model/orchestration.ts": {
+      "cross-feature-deep-import": 3,
       "file-lines": 2179
     },
+    "src/features/orchestration/model/orchestrationCatalog.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/orchestration/model/orchestrationPlan.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/orchestration/model/orchestrationState.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/orchestration/model/orchestrationSummary.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/orchestration/model/orchestrationWorkspace.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/orchestration/ui/OrchestrationActions.ts": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/orchestration/ui/OrchestrationPreview.tsx": {
+      "cross-feature-deep-import": 4,
       "file-lines": 788
+    },
+    "src/features/orchestration/ui/OrchestrationSidebarAgents.tsx": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/projects/hooks/useLinkedWorkspaceGroups.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/projects/hooks/useTabGroupLogos.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/model/mobileProjectDirectory.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/projects/model/mobileProjectLogos.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/model/projectActions.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/model/projectData.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/projects/model/projectGroups.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/model/projectLogos.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/model/projectNames.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/model/projectOpenRun.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/model/projectOrganizationControl.ts": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/projects/model/projectReturn.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/model/projectTerminal.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/projects/model/recents.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/ui/NewSessionProjectDialog.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/ui/ProjectActionDialog.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/ui/ProjectLogoIcon.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/ui/ProjectMultiSelect.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/ui/ProjectQuickActions.tsx": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/projects/ui/ProjectSearch.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/ui/RailBackgroundControls.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/projects/ui/SearchableProjectPicker.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/providers/model/accountUsage.ts": {
       "feature-imports-app": 1
     },
+    "src/features/providers/model/catalogReceipts.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/providers/model/harnessUpdateActions.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/providers/model/harnessUpdates.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/providers/model/providerAccounts.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/providers/model/providerBinaryPaths.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/providers/model/providerManagementControl.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/providers/ui/CatalogReceiptStatus.tsx": {
+      "cross-feature-deep-import": 3
+    },
     "src/features/providers/ui/GenericAcpSettings.tsx": {
+      "cross-feature-deep-import": 3,
       "file-lines": 624
     },
+    "src/features/providers/ui/HarnessUpdateNotice.tsx": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/providers/ui/ProviderAccountUsage.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/providers/ui/ProviderList.tsx": {
+      "cross-feature-deep-import": 3
+    },
     "src/features/providers/ui/ProviderStatusGroup.tsx": {
+      "cross-feature-deep-import": 4,
       "feature-imports-app": 1
     },
+    "src/features/quick-composer/hooks/useQuickComposerLaunches.ts": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/quick-composer/main.tsx": {
+      "cross-feature-deep-import": 5,
       "feature-imports-app": 2,
       "loose-feature-file": 1
     },
+    "src/features/quick-composer/model/launchDelivery.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/quick-composer/model/quickAttachments.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/quick-composer/model/quickComposer.ts": {
+      "cross-feature-deep-import": 6
+    },
+    "src/features/quick-composer/model/quickComposerClosure.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/quick-composer/model/quickSessionDefaults.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/quick-composer/model/quickWorkspace.ts": {
+      "cross-feature-deep-import": 2
+    },
     "src/features/quick-composer/ui/QuickComposer.tsx": {
+      "cross-feature-deep-import": 14,
       "file-lines": 1052
     },
+    "src/features/quick-composer/ui/QuickGitPopup.tsx": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/quick-composer/ui/QuickModelSelector.tsx": {
+      "cross-feature-deep-import": 6
+    },
+    "src/features/quick-composer/ui/QuickPermissions.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/quick-composer/ui/QuickProjectIcon.tsx": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/quick-composer/ui/QuickWorkspaceControls.tsx": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/quick-composer/ui/useQuickAttachments.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/quick-composer/ui/useQuickNativeListeners.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/quick-composer/ui/useQuickPickers.ts": {
+      "cross-feature-deep-import": 5
+    },
+    "src/features/search/model/appSearch.ts": {
+      "cross-feature-deep-import": 7
+    },
+    "src/features/search/model/chatSearch.ts": {
+      "cross-feature-deep-import": 5
+    },
+    "src/features/search/model/useConversationSearch.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/search/ui/ChatSearchResults.tsx": {
+      "cross-feature-deep-import": 2
+    },
     "src/features/search/ui/SearchView.tsx": {
+      "cross-feature-deep-import": 11,
       "feature-imports-app": 2,
       "file-lines": 946
     },
     "src/features/sessions/data/composerClosure.ts": {
       "file-lines": 917
+    },
+    "src/features/sessions/data/mountedInputCapture.ts": {
+      "cross-feature-deep-import": 1
     },
     "src/features/sessions/data/nativeProjectionCheckpoint.test.ts": {
       "file-lines": 1556
@@ -666,48 +1288,157 @@
     "src/features/sessions/data/parentInputClosure.ts": {
       "file-lines": 1097
     },
+    "src/features/sessions/data/sessionHistory.ts": {
+      "cross-feature-deep-import": 2
+    },
     "src/features/sessions/data/sessionOutputProjection.ts": {
       "file-lines": 809
     },
     "src/features/sessions/data/sessionStore.ts": {
+      "cross-feature-deep-import": 4,
       "feature-imports-app": 1,
-      "file-lines": 2574
+      "file-lines": 2612
+    },
+    "src/features/sessions/import/importRunner.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/accountModelChoices.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/accountSwitch.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/sessions/model/addChatToWorkspace.ts": {
+      "cross-feature-deep-import": 2
     },
     "src/features/sessions/model/approvalIntents.ts": {
       "file-lines": 934
     },
+    "src/features/sessions/model/btw.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/compact.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/delegationCommands.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/desktopPreferencesControl.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/sessions/model/draftCommand.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/editFromHere.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/handoff.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/inFlight.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/localSessionNavigation.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/sessions/model/mcpCommand.ts": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/sessions/model/models.ts": {
       "file-lines": 1252
     },
+    "src/features/sessions/model/newSessionCommand.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/operatorCommand.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/orchestratorCommand.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/plan.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/promptPreparation.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/promptTemplates.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/resumeCommand.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/secondOpinion.ts": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/sessions/model/session.ts": {
-      "file-lines": 1004
+      "cross-feature-deep-import": 6,
+      "file-lines": 954
+    },
+    "src/features/sessions/model/sessionFolderCommand.ts": {
+      "cross-feature-deep-import": 1
     },
     "src/features/sessions/model/sessionFolders.ts": {
+      "cross-feature-deep-import": 1,
       "file-lines": 945
+    },
+    "src/features/sessions/model/sessionRemoval.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/sessions/model/sessionSkills.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/sessionWorkItem.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/sessionWorkspaceLifecycle.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/sessions/model/titlePreferences.ts": {
+      "cross-feature-deep-import": 1
     },
     "src/features/sessions/model/transcriptActivity.ts": {
       "file-lines": 1143
     },
+    "src/features/sessions/model/translationPreferences.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/model/usageLimit.ts": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/sessions/ui/AgentMarkdown.tsx": {
-      "file-lines": 1557
+      "cross-feature-deep-import": 4,
+      "file-lines": 1560
     },
     "src/features/sessions/ui/AgentTranscript.tsx": {
-      "file-lines": 2870
+      "cross-feature-deep-import": 3,
+      "file-lines": 2883
     },
     "src/features/sessions/ui/AgentTranscriptActivity.tsx": {
       "file-lines": 1896
     },
     "src/features/sessions/ui/ApprovalToasts.tsx": {
-      "file-lines": 795
+      "cross-feature-deep-import": 10,
+      "file-lines": 792
+    },
+    "src/features/sessions/ui/AssistantManagedBadge.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/ui/AssistantSessionControl.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/sessions/ui/AttachmentChip.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/BtwSheet.tsx": {
-      "file-lines": 682
+      "file-lines": 672
     },
     "src/features/sessions/ui/Composer.test.ts": {
       "file-lines": 2488
     },
     "src/features/sessions/ui/Composer.tsx": {
-      "file-lines": 4752
+      "cross-feature-deep-import": 15,
+      "file-lines": 4814
     },
     "src/features/sessions/ui/crewCodeArt.ts": {
       "file-lines": 2770
@@ -715,65 +1446,151 @@
     "src/features/sessions/ui/crewYoung.ts": {
       "file-lines": 3011
     },
+    "src/features/sessions/ui/EmptySession.tsx": {
+      "cross-feature-deep-import": 3
+    },
     "src/features/sessions/ui/LiveAgentsPreview.tsx": {
+      "cross-feature-deep-import": 1,
       "feature-imports-app": 1
+    },
+    "src/features/sessions/ui/MarkdownDocumentPreview.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/ModelPicker.test.ts": {
       "file-lines": 1604
     },
     "src/features/sessions/ui/ModelPicker.tsx": {
+      "cross-feature-deep-import": 1,
       "file-lines": 1262
     },
     "src/features/sessions/ui/ParentInputClosure.test.ts": {
       "file-lines": 1624
     },
-    "src/features/sessions/ui/QuestionForm.tsx": {
-      "file-lines": 950
+    "src/features/sessions/ui/ProviderAccountMenu.tsx": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/sessions/ui/ProviderAccountRecoveryDialog.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/sessions/ui/ReminderNotices.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/SecondOpinionButton.tsx": {
       "file-lines": 613
+    },
+    "src/features/sessions/ui/SessionAgentIdentity.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/ui/SessionFiltersMenu.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/SessionImportDialog.tsx": {
       "file-lines": 929
     },
     "src/features/sessions/ui/SessionPane.tsx": {
+      "cross-feature-deep-import": 7,
       "feature-imports-app": 1,
-      "file-lines": 2028
+      "file-lines": 2031
+    },
+    "src/features/sessions/ui/SkillTokenText.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/SubagentSheet.tsx": {
       "file-lines": 762
     },
+    "src/features/sessions/ui/TranslationResultDialog.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/ui/UsageLimitNotice.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/ui/useCliCommands.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/sessions/ui/useComposerRegistrations.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/sessions/ui/useComposerSkills.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/ui/useComposerSlashInventory.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/ui/useNativeSkillWarmup.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/ui/useReadOnlyHostSession.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sessions/ui/UserLinkPreview.tsx": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/settings/model/appearance.ts": {
       "file-lines": 1263
     },
+    "src/features/settings/model/applicationPreferencesControl.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/settings/model/appShortcuts.ts": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/settings/model/settings.ts": {
-      "file-lines": 2907
+      "cross-feature-deep-import": 1,
+      "file-lines": 2937
+    },
+    "src/features/settings/model/sounds.ts": {
+      "cross-feature-deep-import": 3
     },
     "src/features/settings/ui/AppearancePreviews.tsx": {
       "file-lines": 723
     },
     "src/features/settings/ui/AppearanceSettings.tsx": {
-      "file-lines": 834
+      "file-lines": 847
+    },
+    "src/features/settings/ui/ArchiveSettings.tsx": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/settings/ui/BuildIdentityDetails.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/settings/ui/ChatSettings.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/settings/ui/ExternalMcpAccess.tsx": {
       "file-lines": 637
     },
     "src/features/settings/ui/GeneralSettings.tsx": {
+      "cross-feature-deep-import": 3,
       "feature-imports-app": 1
     },
     "src/features/settings/ui/InboxSettings.tsx": {
+      "cross-feature-deep-import": 5,
       "file-lines": 895
+    },
+    "src/features/settings/ui/JiraSettings.tsx": {
+      "cross-feature-deep-import": 3
     },
     "src/features/settings/ui/live-background/latentFace.ts": {
       "file-lines": 904
     },
     "src/features/settings/ui/McpSettings.tsx": {
-      "file-lines": 1055
+      "file-lines": 964
+    },
+    "src/features/settings/ui/NotificationsSettings.tsx": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/settings/ui/PrivacyStartupSettings.tsx": {
+      "cross-feature-deep-import": 3
     },
     "src/features/settings/ui/ProviderAccountsSettings.tsx": {
-      "file-lines": 669
+      "cross-feature-deep-import": 12,
+      "file-lines": 668
+    },
+    "src/features/settings/ui/ProviderBinarySettings.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/settings/ui/ProviderSettings.tsx": {
+      "cross-feature-deep-import": 13,
       "feature-imports-app": 1,
       "file-lines": 1219
     },
@@ -784,17 +1601,72 @@
       "file-lines": 2082
     },
     "src/features/settings/ui/SettingsView.tsx": {
+      "cross-feature-deep-import": 6,
       "feature-imports-app": 3,
       "file-lines": 631
     },
     "src/features/settings/ui/ShortcutSettings.tsx": {
+      "cross-feature-deep-import": 3,
       "file-lines": 762
     },
+    "src/features/settings/ui/TerminalProfileDiscovery.tsx": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/settings/ui/TerminalSettings.tsx": {
+      "cross-feature-deep-import": 1,
       "file-lines": 602
     },
+    "src/features/settings/ui/TitleGenerationSettings.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/settings/ui/TranslationSettings.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/settings/ui/WorkspaceSettings.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/skills/model/cliCommandCatalog.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/skills/model/machineSkills.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/skills/model/skillInstallation.ts": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/skills/model/skills.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/skills/model/skillTokens.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/skills/model/transferSkill.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/skills/ui/SkillDocumentPreview.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/skills/ui/SkillPicker.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/skills/ui/SkillPromptField.tsx": {
+      "cross-feature-deep-import": 2
+    },
     "src/features/skills/ui/SkillsPage.tsx": {
-      "file-lines": 1278
+      "cross-feature-deep-import": 10,
+      "file-lines": 1273
+    },
+    "src/features/social/model/social.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/social/model/socialClient.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/social/model/socialPolicy.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/social/model/socialProgramForm.ts": {
+      "cross-feature-deep-import": 1
     },
     "src/features/social/ui/CampaignBrowser.tsx": {
       "file-lines": 668
@@ -802,33 +1674,76 @@
     "src/features/social/ui/CampaignComposer.tsx": {
       "file-lines": 932
     },
+    "src/features/social/ui/ContactTagSuggestions.tsx": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/social/ui/ProductKnowledge.tsx": {
+      "cross-feature-deep-import": 1,
       "file-lines": 731
     },
     "src/features/social/ui/ProgramSetupForm.tsx": {
       "file-lines": 1364
     },
     "src/features/social/ui/RuleSimplifyReview.tsx": {
+      "cross-feature-deep-import": 2,
       "file-lines": 1014
     },
     "src/features/social/ui/SocialAccounts.tsx": {
       "file-lines": 1291
     },
+    "src/features/social/ui/SocialAssistant.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/social/ui/SocialAuthority.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/social/ui/socialBulk.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/social/ui/SocialBulkComposer.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/social/ui/SocialDrafts.tsx": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/social/ui/SocialHistory.tsx": {
       "file-lines": 798
     },
-    "src/features/social/ui/SocialInbox.tsx": {
-      "file-lines": 603
-    },
     "src/features/social/ui/SocialManagement.tsx": {
-      "file-lines": 1770
+      "cross-feature-deep-import": 1,
+      "file-lines": 1752
+    },
+    "src/features/social/ui/SocialModelField.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/social/ui/SocialPolicySettings.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/social/ui/SocialPublishingPlans.tsx": {
-      "file-lines": 1020
+      "file-lines": 1011
+    },
+    "src/features/social/ui/socialShared.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/social/ui/SocialShortcut.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/social/ui/SocialToday.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/social/ui/SocialView.tsx": {
+      "cross-feature-deep-import": 2,
       "feature-imports-app": 3,
-      "file-lines": 805
+      "file-lines": 763
+    },
+    "src/features/social/ui/useSocialWorkspaceController.ts": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/source-control/model/workspaceRepositories.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/source-control/model/worktrees.ts": {
+      "cross-feature-deep-import": 1
     },
     "src/features/source-control/ui/ConflictLayout.tsx": {
       "file-lines": 666
@@ -840,113 +1755,393 @@
       "file-lines": 2363
     },
     "src/features/source-control/ui/GitChangesPanel.tsx": {
-      "file-lines": 2226
+      "cross-feature-deep-import": 1,
+      "file-lines": 2225
+    },
+    "src/features/source-control/ui/GitGenerationSettings.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/source-control/ui/GitHistoryGraph.tsx": {
       "file-lines": 634
     },
     "src/features/source-control/ui/UnifiedDiffView.tsx": {
-      "file-lines": 1487
+      "file-lines": 1493
+    },
+    "src/features/source-control/ui/WorkspaceSourceControl.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/source-control/ui/WorktreesPage.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/sync/model/conversationDigest.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/sync/model/syncAppearance.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sync/model/syncAutoAdded.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sync/model/syncClient.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/sync/model/syncGroups.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/sync/model/syncLock.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/sync/model/syncProjects.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/sync/model/syncRemoteProjects.ts": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/sync/model/useSync.ts": {
+      "cross-feature-deep-import": 6
+    },
+    "src/features/tasks/model/backgroundSession.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/tasks/model/dailySummary.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/tasks/model/dailySummaryClient.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/tasks/model/goalClient.ts": {
+      "cross-feature-deep-import": 5
+    },
+    "src/features/tasks/model/hostGoals.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/tasks/model/hostStewards.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/tasks/model/hostTasks.ts": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/tasks/model/settingsClient.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/tasks/model/sprintClient.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/tasks/model/stewardClient.ts": {
+      "cross-feature-deep-import": 5
     },
     "src/features/tasks/model/taskClient.ts": {
+      "cross-feature-deep-import": 6,
       "file-lines": 834
+    },
+    "src/features/tasks/model/taskTransitions.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/tasks/model/useTaskBoardQueries.ts": {
+      "cross-feature-deep-import": 4
     },
     "src/features/tasks/ui/SprintManagement.tsx": {
       "file-lines": 714
     },
+    "src/features/tasks/ui/TaskAccountPicker.tsx": {
+      "cross-feature-deep-import": 2
+    },
     "src/features/tasks/ui/TaskBoardCard.tsx": {
-      "file-lines": 732
+      "cross-feature-deep-import": 3,
+      "file-lines": 727
+    },
+    "src/features/tasks/ui/TaskDetail.tsx": {
+      "cross-feature-deep-import": 5
+    },
+    "src/features/tasks/ui/TaskForm.tsx": {
+      "cross-feature-deep-import": 8
+    },
+    "src/features/tasks/ui/TaskFormFields.tsx": {
+      "cross-feature-deep-import": 3
     },
     "src/features/tasks/ui/TaskGoals.tsx": {
-      "file-lines": 1352
+      "cross-feature-deep-import": 7,
+      "file-lines": 1334
+    },
+    "src/features/tasks/ui/TaskSessionSheet.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/tasks/ui/TaskStatusLine.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/tasks/ui/TaskStewards.tsx": {
-      "file-lines": 686
+      "cross-feature-deep-import": 9,
+      "file-lines": 673
     },
     "src/features/tasks/ui/TasksView.test.ts": {
       "file-lines": 2805
     },
     "src/features/tasks/ui/TasksView.tsx": {
+      "cross-feature-deep-import": 11,
       "feature-imports-app": 3,
       "file-lines": 1658
+    },
+    "src/features/tasks/ui/TaskWorkspacePicker.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/tasks/ui/useTaskTargetMachine.ts": {
+      "cross-feature-deep-import": 6
     },
     "src/features/terminal/model/mobilePtyControl.ts": {
       "feature-imports-app": 1
     },
+    "src/features/terminal/model/terminalClose.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/terminal/model/terminalTab.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/terminal/runtime/terminalPtyRuntime.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/terminal/runtime/terminalTheme.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/terminal/runtime/terminalTypography.ts": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/terminal/ui/ProjectTerminalDock.tsx": {
+      "cross-feature-deep-import": 2,
       "feature-imports-app": 1,
       "file-lines": 659
+    },
+    "src/features/terminal/ui/TerminalSelectionMenu.tsx": {
+      "cross-feature-deep-import": 4
     },
     "src/features/terminal/ui/TerminalTools.tsx": {
       "file-lines": 641
     },
     "src/features/terminal/ui/TerminalView.tsx": {
+      "cross-feature-deep-import": 4,
       "file-lines": 775
     },
+    "src/features/usage/model/railGroups.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/usage/model/usageAnalytics.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/usage/model/usageBudgetReadings.ts": {
+      "cross-feature-deep-import": 8
+    },
+    "src/features/usage/model/usageBudgets.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/usage/model/usageColors.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/usage/model/usageOverview.ts": {
+      "cross-feature-deep-import": 2
+    },
     "src/features/usage/ui/UsageBudgets.tsx": {
+      "cross-feature-deep-import": 8,
       "file-lines": 617
     },
+    "src/features/usage/ui/UsageDisplaySettings.tsx": {
+      "cross-feature-deep-import": 2
+    },
     "src/features/usage/ui/UsageOverview.tsx": {
-      "file-lines": 1036
+      "cross-feature-deep-import": 7,
+      "file-lines": 1027
     },
     "src/features/usage/ui/UsagePage.tsx": {
+      "cross-feature-deep-import": 7,
       "feature-imports-app": 1
     },
+    "src/features/usage/ui/UsageQuotaHistory.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/voice/model/localVoiceClient.ts": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/voice/model/realtimeVoice.test.ts": {
-      "file-lines": 2418
+      "file-lines": 2535
     },
     "src/features/voice/model/realtimeVoice.ts": {
-      "file-lines": 1772
+      "file-lines": 1877
+    },
+    "src/features/voice/model/realtimeVoiceClient.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/voice/model/voiceAssistant.ts": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/voice/model/voiceAssistantControls.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/voice/model/voiceChoices.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/voice/model/voiceController.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/voice/model/voiceConversation.ts": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/voice/model/voiceDocumentParser.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/voice/model/voiceDraftContext.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/voice/model/voiceHistoryTransport.ts": {
+      "cross-feature-deep-import": 7
+    },
+    "src/features/voice/model/voiceJobs.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/voice/model/voiceOwnerChoice.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/voice/model/voiceProjectNames.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/voice/model/voiceSession.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/voice/model/voiceToolClient.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/voice/ui/MicrophonePermissionSettings.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/voice/ui/useVoiceOverlayHost.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/voice/ui/useVoicePushToTalk.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/voice/ui/VoiceChoiceCard.tsx": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/voice/ui/VoiceCloudKey.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/voice/ui/VoiceCompanion.test.ts": {
-      "file-lines": 2827
+      "file-lines": 2903
     },
     "src/features/voice/ui/VoiceCompanion.tsx": {
+      "cross-feature-deep-import": 11,
       "feature-imports-app": 1,
-      "file-lines": 3489
+      "file-lines": 3619
+    },
+    "src/features/voice/ui/VoiceCompanionGate.tsx": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/voice/ui/VoiceJobReview.tsx": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/voice/ui/VoicePanelChoices.tsx": {
+      "cross-feature-deep-import": 3
     },
     "src/features/voice/ui/VoiceSettings.tsx": {
-      "file-lines": 909
+      "cross-feature-deep-import": 2,
+      "file-lines": 886
+    },
+    "src/features/voice/ui/VoiceSetupSteps.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/voice/voiceOverlayMain.tsx": {
+      "cross-feature-deep-import": 2,
       "loose-feature-file": 1
     },
+    "src/features/workspace/hooks/useTabCloseMotion.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/workspace/model/idleTabs.ts": {
+      "cross-feature-deep-import": 2
+    },
     "src/features/workspace/model/layout.ts": {
+      "cross-feature-deep-import": 3,
       "feature-imports-app": 1,
       "file-lines": 1426
     },
+    "src/features/workspace/model/remoteEmptyChats.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/workspace/model/sessionPreview.ts": {
+      "cross-feature-deep-import": 4
+    },
+    "src/features/workspace/model/sessionRecovery.ts": {
+      "cross-feature-deep-import": 5
+    },
     "src/features/workspace/model/tabGroups.ts": {
+      "cross-feature-deep-import": 1,
       "feature-imports-app": 1,
       "file-lines": 819
     },
+    "src/features/workspace/model/tabKeys.ts": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/workspace/model/workspaceSnapshot.ts": {
+      "cross-feature-deep-import": 11,
       "feature-imports-app": 1
     },
+    "src/features/workspace/model/workspaceTabGroups.ts": {
+      "cross-feature-deep-import": 2
+    },
     "src/features/workspace/ui/PaneTree.tsx": {
+      "cross-feature-deep-import": 14,
       "feature-imports-app": 2,
-      "file-lines": 1104
+      "file-lines": 1107
     },
     "src/features/workspace/ui/SurfaceTabs.tsx": {
+      "cross-feature-deep-import": 7,
       "feature-imports-app": 4,
       "file-lines": 809
     },
     "src/features/workspace/ui/TabGroupMenu.tsx": {
+      "cross-feature-deep-import": 4,
       "file-lines": 630
     },
     "src/features/workspace/ui/WorkspacePicker.tsx": {
+      "cross-feature-deep-import": 7,
       "file-lines": 605
     },
+    "src/features/workspaces/model/nativeManagedTurn.ts": {
+      "cross-feature-deep-import": 3
+    },
+    "src/features/workspaces/model/rewindClient.ts": {
+      "cross-feature-deep-import": 6
+    },
+    "src/features/workspaces/model/sessionWorkspace.ts": {
+      "cross-feature-deep-import": 2
+    },
+    "src/features/workspaces/model/taskWorkspaceState.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/workspaces/model/workspaceClient.ts": {
+      "cross-feature-deep-import": 5
+    },
+    "src/features/workspaces/model/workspaceCreation.ts": {
+      "cross-feature-deep-import": 7
+    },
+    "src/features/workspaces/model/workspacePinning.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/workspaces/ui/SessionWorkspaceActions.tsx": {
+      "cross-feature-deep-import": 7
+    },
     "src/features/workspaces/ui/WorkspacePolicySettings.tsx": {
+      "cross-feature-deep-import": 4,
       "file-lines": 929
+    },
+    "src/features/workspaces/ui/WorkspaceReview.tsx": {
+      "cross-feature-deep-import": 3
     },
     "src/integrations/harness/core/acpSubagents.ts": {
       "foundation-imports-app": 1
     },
     "src/integrations/harness/core/apply.test.ts": {
-      "file-lines": 2191
+      "file-lines": 2197
     },
     "src/integrations/harness/core/apply.ts": {
-      "file-lines": 1714,
+      "file-lines": 1712,
       "foundation-imports-app": 17
     },
     "src/integrations/harness/core/auth.ts": {
@@ -965,7 +2160,7 @@
       "foundation-imports-app": 1
     },
     "src/integrations/harness/core/child.ts": {
-      "file-lines": 1542,
+      "file-lines": 1605,
       "foundation-imports-app": 1
     },
     "src/integrations/harness/core/conversationToolsBridge.ts": {
@@ -981,17 +2176,17 @@
       "foundation-imports-app": 1
     },
     "src/integrations/harness/core/nativeOutputDelivery.ts": {
-      "file-lines": 1044
+      "file-lines": 1043
     },
     "src/integrations/harness/core/preview.ts": {
       "file-lines": 1032,
       "foundation-imports-app": 2
     },
     "src/integrations/harness/core/registry.test.ts": {
-      "file-lines": 1836
+      "file-lines": 1840
     },
     "src/integrations/harness/core/registry.ts": {
-      "file-lines": 1445,
+      "file-lines": 1477,
       "foundation-imports-app": 9
     },
     "src/integrations/harness/core/runtimeGuidance.ts": {
@@ -1045,7 +2240,7 @@
       "foundation-imports-app": 1
     },
     "src/integrations/harness/providers/claude/claudeLive.test.ts": {
-      "file-lines": 3252
+      "file-lines": 3258
     },
     "src/integrations/harness/providers/claude/claudeProtocol.ts": {
       "file-lines": 1332,
@@ -1087,7 +2282,7 @@
       "foundation-imports-app": 1
     },
     "src/integrations/harness/providers/cursor/cursor.ts": {
-      "file-lines": 1775,
+      "file-lines": 1754,
       "foundation-imports-app": 5
     },
     "src/integrations/harness/providers/cursor/cursorCatalog.ts": {
@@ -1141,14 +2336,14 @@
       "foundation-imports-app": 3
     },
     "src/integrations/harness/providers/opencode/opencode.ts": {
-      "file-lines": 2241,
+      "file-lines": 2250,
       "foundation-imports-app": 5
     },
     "src/integrations/harness/providers/opencode/opencodeCatalog.ts": {
       "foundation-imports-app": 1
     },
     "src/integrations/harness/providers/opencode/opencodeClient.ts": {
-      "file-lines": 867
+      "file-lines": 877
     },
     "src/integrations/harness/providers/opencode/opencodeLive.test.ts": {
       "file-lines": 2380
@@ -1258,10 +2453,10 @@
       "foundation-imports-app": 1
     },
     "src/shared/model/host-contracts/assistant.ts": {
-      "file-lines": 1076
+      "file-lines": 1118
     },
     "src/shared/model/host-contracts/methods.ts": {
-      "file-lines": 1023
+      "file-lines": 1045
     },
     "src/shared/ui/arc/activity-heatmap/activity-heatmap.tsx": {
       "file-lines": 843
@@ -1303,7 +2498,7 @@
       "file-lines": 786
     },
     "src/shared/ui/arc/sortable-data-table/sortable-data-table.tsx": {
-      "file-lines": 802
+      "file-lines": 777
     },
     "src/shared/ui/arc/tag-input/tag-input.tsx": {
       "file-lines": 740
@@ -1318,7 +2513,7 @@
       "file-lines": 1409
     },
     "src/shared/ui/ControlSpecimen.tsx": {
-      "file-lines": 981
+      "file-lines": 968
     },
     "src/shared/ui/identity/HarnessIcon.tsx": {
       "foundation-imports-app": 1

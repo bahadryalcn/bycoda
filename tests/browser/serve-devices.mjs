@@ -3,7 +3,11 @@ import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 const require = createRequire(import.meta.url);
 const vite = join(dirname(require.resolve("vite/package.json")), "bin/vite.js");
-const launch = (args) => spawn(process.execPath, [vite, ...args, "--config", "tests/browser/vite.devices.config.ts"], { stdio: "inherit", windowsHide: true });
+const launch = (args) =>
+  spawn(process.execPath, [vite, ...args, "--config", "tests/browser/vite.devices.config.ts"], {
+    stdio: "inherit",
+    windowsHide: true,
+  });
 const build = launch(["build"]);
 const code = await new Promise((resolve) => build.on("exit", resolve));
 if (code !== 0) process.exit(code ?? 1);

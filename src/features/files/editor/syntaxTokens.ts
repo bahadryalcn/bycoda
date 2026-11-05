@@ -1,20 +1,17 @@
-import { highlightSource } from "../../source-control/model/diffHighlightSource";
-export { highlightSource } from "../../source-control/model/diffHighlightSource";
-import { runDiffWorker } from "../../source-control/model/diffWorker";
-import type { ColorScheme } from "../../settings/model/appearance";
-import type { UnifiedBlock, UnifiedLine } from "../../source-control/model/unifiedDiff";
+import { highlightSource } from "../../../shared/lib/syntaxHighlight";
+import type { SyntaxToken } from "../../../shared/lib/syntaxHighlight";
+import type { ColorScheme } from "../../settings";
+import type { UnifiedBlock, UnifiedLine } from "../../source-control";
 import { languageForPath } from "./editorLanguage";
+
+export { highlightSource };
+export type { SyntaxToken };
 
 type DiffFile = {
   path: string;
   binary?: boolean;
   tooLarge?: boolean;
   blocks: readonly UnifiedBlock[];
-};
-
-export type SyntaxToken = {
-  text: string;
-  color?: string;
 };
 
 // Translation catalogs routinely exceed 250 kB. Keep a bounded parsing budget
@@ -47,15 +44,17 @@ function diffTokens(
     tokenCache.set(key, cached);
     return cached.value;
   }
-  const value = runDiffWorker(
-    (remote) => remote.highlight(path, original, current, scheme),
-    async () => {
-      const language = await languageForPath(path);
-      return [
-        highlightSource(original, language, scheme),
-        highlightSource(current, language, scheme),
-      ] as const;
-    },
+  const value = import("../../source-control/public/diffWorker").then(({ runDiffWorker }) =>
+    runDiffWorker(
+      (remote) => remote.highlight(path, original, current, scheme),
+      async () => {
+        const language = await languageForPath(path);
+        return [
+          highlightSource(original, language, scheme),
+          highlightSource(current, language, scheme),
+        ] as const;
+      },
+    ),
   );
   if (cached) cachedChars -= cached.original.length + cached.current.length;
   tokenCache.set(key, { original, current, value });

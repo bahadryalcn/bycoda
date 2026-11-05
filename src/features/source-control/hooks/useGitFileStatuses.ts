@@ -2,10 +2,10 @@ import { CheckoutCache } from "../model/checkoutCache";
 import { useCallback, useSyncExternalStore } from "react";
 import { subscribeGitChanged, type GitDiffIndex } from "../../../platform/tauri/fs";
 import { fetchGitIndex } from "../model/gitIndexStore";
-import { subscribeDirsChanged } from "../../files/model/fileTree";
+import { subscribeDirsChanged } from "../../files/public/fileTree";
 import { parentPath } from "../../../shared/lib/paths";
-import { remotePollDue, reportRemoteLoad } from "../../connections/model/remoteHealth";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { remotePollDue, reportRemoteLoad } from "../../connections/public/remoteHealth";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import { IS_MAC } from "../../../platform/tauri/platform";
 
 export type GitStatusMap = {
@@ -16,7 +16,10 @@ export type GitStatusMap = {
 const normalizedStatuses = new WeakMap<Map<string, string>, Map<string, string | null>>();
 
 /** Match decomposed native macOS names without changing the actual operation path. */
-export function gitStatusForPath(map: Map<string, string> | undefined, path: string): string | undefined {
+export function gitStatusForPath(
+  map: Map<string, string> | undefined,
+  path: string,
+): string | undefined {
   const exact = map?.get(path);
   if (exact !== undefined || !map || !IS_MAC || isRemoteProjectPath(path)) return exact;
   let aliases = normalizedStatuses.get(map);
@@ -51,7 +54,10 @@ type Entry = {
   onResume: (() => void) | null;
 };
 
-const entries = new CheckoutCache<string, Entry>((entry) => entry.listeners.size > 0 || !!entry.inFlight, (entry) => entry.data);
+const entries = new CheckoutCache<string, Entry>(
+  (entry) => entry.listeners.size > 0 || !!entry.inFlight,
+  (entry) => entry.data,
+);
 
 function entryFor(cwd: string): Entry {
   const existing = entries.get(cwd);

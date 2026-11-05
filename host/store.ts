@@ -1,4 +1,5 @@
 import { SessionReadProcesses } from "./session-read-process";
+import { dispatchCommittedEffect, TransactionEffects } from "./storage/transaction-effects";
 import { ProjectIdentityFence } from "./projects/project-identity-fence";
 import { ChangeSignal } from "./changeSignal";
 import { sessionProviderHistory } from "../src/features/sessions/model/sessionProviderHistory";
@@ -236,12 +237,20 @@ export class HostStore {
   private readonly projectIdentityFence = new ProjectIdentityFence();
   /** Project identity writers must acquire their lease before SQL ownership. */
   withProjectIdentityWrite<T>(effect: () => Promise<T>): Promise<T> {
-    if (this.db.ownsScope) return Promise.reject(new Error("Project identity write lease must be acquired before database ownership."));
+    if (this.db.ownsScope)
+      return Promise.reject(
+        new Error("Project identity write lease must be acquired before database ownership."),
+      );
     return this.projectIdentityFence.write(effect);
   }
-  withProjectIdentityRead<T>(proofs: { projectId: string; cwd: string }[], effect: (valid: () => boolean) => Promise<T>): Promise<T> {
-    return this.projectIdentityFence.read(async valid => {
-      for (const proof of proofs) if ((await this.project(proof.projectId)).cwd !== proof.cwd) throw new Error("Room project identity changed.");
+  withProjectIdentityRead<T>(
+    proofs: { projectId: string; cwd: string }[],
+    effect: (valid: () => boolean) => Promise<T>,
+  ): Promise<T> {
+    return this.projectIdentityFence.read(async (valid) => {
+      for (const proof of proofs)
+        if ((await this.project(proof.projectId)).cwd !== proof.cwd)
+          throw new Error("Room project identity changed.");
       if (!valid()) throw new Error("Room project identity changed.");
       return effect(valid);
     });
@@ -286,7 +295,7 @@ export class HostStore {
   // Kept apart from the LRU cache so eviction can never drop unwritten data.
   private pending = new Map<string, PendingWrite>();
   private inTransaction = false;
-  private commitEffects: Array<() => void | Promise<void>> = [];
+  private readonly transactionEffects = new TransactionEffects();
   private flushedInTransaction: PendingWrite[] = [];
   /** Snapshot upserts issued so far; lets tests count checkpoints. */
   snapshotWrites = 0;
@@ -607,17 +616,23 @@ export class HostStore {
         COMMIT;`);
     }
     await this.db.exec("CREATE INDEX IF NOT EXISTS receipts_created_at ON receipts(created_at)");
-    const workspaceReceiptColumns = await this.db.prepare("PRAGMA table_info(workspace_mutation_receipts)").all();
+    const workspaceReceiptColumns = await this.db
+      .prepare("PRAGMA table_info(workspace_mutation_receipts)")
+      .all();
     if (!workspaceReceiptColumns.some((column) => column.name === "created_at")) {
       await this.db.exec(`ALTER TABLE workspace_mutation_receipts ADD COLUMN created_at INTEGER`);
     }
     // These three receipts are created atomically with their complete SQLite
     // mutations. Legacy rows get a full retention window; operation receipts
     // and unknown delivery evidence have no age-based deletion here.
-    await this.db.prepare(`UPDATE workspace_mutation_receipts SET created_at=?
+    await this.db
+      .prepare(`UPDATE workspace_mutation_receipts SET created_at=?
       WHERE created_at IS NULL AND (scope LIKE 'workspace-policy:%' OR
-        scope LIKE 'workspace-feature-acquire:%' OR scope LIKE 'workspace-feature-release:%')`).run(Date.now());
-    await this.db.exec("CREATE INDEX IF NOT EXISTS workspace_receipts_created_at ON workspace_mutation_receipts(created_at)");
+        scope LIKE 'workspace-feature-acquire:%' OR scope LIKE 'workspace-feature-release:%')`)
+      .run(Date.now());
+    await this.db.exec(
+      "CREATE INDEX IF NOT EXISTS workspace_receipts_created_at ON workspace_mutation_receipts(created_at)",
+    );
     await this.pruneReceipts();
     await this.migrateSessionState();
     // Covering partial index: adopted() is answered from the index alone.
@@ -717,7 +732,7 @@ export class HostStore {
           this.transactionChanges = 0;
           this.transactionProjectChanges.clear();
           this.flushedInTransaction = [];
-          const effects = this.commitEffects.splice(0);
+          const effects = this.transactionEffects.committed();
           this.db.outsideScope(() => {
             if (this.db.dataMutationVersion !== mutationVersion) this.publishChanges();
             try {
@@ -725,15 +740,7 @@ export class HostStore {
             } catch (error) {
               console.error("Committed change notification failed:", error);
             }
-            for (const effect of effects) {
-              try {
-                void Promise.resolve(effect()).catch((error) =>
-                  console.error("Committed command dispatch failed:", error),
-                );
-              } catch (error) {
-                console.error("Committed command dispatch failed:", error);
-              }
-            }
+            for (const effect of effects) dispatchCommittedEffect(effect);
           });
           return value;
         } catch (error) {
@@ -746,7 +753,7 @@ export class HostStore {
           this.cacheWeights.clear();
           this.stateMetadata.clear();
           this.clearAuthCache();
-          this.commitEffects = [];
+          this.transactionEffects.commit = [];
           this.flushedInTransaction = [];
           for (const [id, entry] of pendingBefore) {
             clearTimeout(this.pending.get(id)?.timer);
@@ -758,6 +765,7 @@ export class HostStore {
           } catch (rollbackError) {
             console.error("Could not roll back host transaction:", rollbackError);
           }
+          this.transactionEffects.rolledBack();
           throw error;
         }
       };
@@ -769,18 +777,16 @@ export class HostStore {
   get transactionActive(): boolean {
     return this.db.ownsScope && this.inTransaction;
   }
+  /** Restore synchronous process-local observations if the owning SQL batch fails. */
+  afterRollback(effect: () => void): void {
+    if (this.transactionActive) this.transactionEffects.afterRollback(effect);
+  }
   /** Provider side effects must never escape an uncommitted command batch. */
   afterCommit(effect: () => void | Promise<void>): void {
-    if (this.transactionActive) this.commitEffects.push(effect);
+    if (this.transactionActive) this.transactionEffects.commit.push(effect);
     else {
       this.db.outsideScope(() => {
-        try {
-          void Promise.resolve(effect()).catch((error) =>
-            console.error("Committed command dispatch failed:", error),
-          );
-        } catch (error) {
-          console.error("Committed command dispatch failed:", error);
-        }
+        dispatchCommittedEffect(effect);
       });
     }
   }
@@ -988,9 +994,14 @@ export class HostStore {
     });
   }
   /** Check recovery without transferring or parsing settled operation history. */
-  async workspaceHasPendingOperations(workspaceId: string, except?: string, includeUnfinalizedRewinds = true): Promise<boolean> {
+  async workspaceHasPendingOperations(
+    workspaceId: string,
+    except?: string,
+    includeUnfinalizedRewinds = true,
+  ): Promise<boolean> {
     return this.db.storeScope(async () => {
-      const row = await this.db.prepare(`SELECT 1 AS pending FROM workspace_operations
+      const row = await this.db
+        .prepare(`SELECT 1 AS pending FROM workspace_operations
         WHERE workspace_id=? AND CASE
           WHEN json_valid(payload)=0 THEN 1
           WHEN json_extract(payload, '$.phase') IS NOT phase OR
@@ -1003,7 +1014,8 @@ export class HostStore {
             WHEN 'real' THEN json_extract(payload, '$.finalized')=0
             WHEN 'text' THEN json_extract(payload, '$.finalized')=''
             ELSE json_type(payload, '$.finalized') IS NULL END
-          ELSE 0 END LIMIT 1`).get(workspaceId, except ?? null, except ?? null, includeUnfinalizedRewinds ? 1 : 0);
+          ELSE 0 END LIMIT 1`)
+        .get(workspaceId, except ?? null, except ?? null, includeUnfinalizedRewinds ? 1 : 0);
       return !!row;
     });
   }
@@ -1314,7 +1326,8 @@ export class HostStore {
     if (readSignal && this.sessionReadPath !== ":memory:") {
       readSignal.throwIfAborted();
       const value = await this.sessionReadProcesses.read<HostSession | undefined>(
-        { kind: "host", path: this.sessionReadPath, sessionId: id }, readSignal,
+        { kind: "host", path: this.sessionReadPath, sessionId: id },
+        readSignal,
       );
       readSignal.throwIfAborted();
       if (!value) return undefined;
@@ -1643,18 +1656,22 @@ export class HostStore {
           CASE WHEN json_valid(summary) THEN json_extract(summary, '$.worktreeCwd') END AS worktree_cwd,
           EXISTS(SELECT 1 FROM host_authority_heads h WHERE h.session_id=session_state.id) AS has_authority
         FROM session_state`;
-      const rows = candidateWorkspaceId === undefined
-        ? await this.db.prepare(`${columns} ORDER BY updated_at DESC`).all()
-        : await this.db.prepare(`${columns} WHERE id IN (
+      const rows =
+        candidateWorkspaceId === undefined
+          ? await this.db.prepare(`${columns} ORDER BY updated_at DESC`).all()
+          : await this.db
+              .prepare(`${columns} WHERE id IN (
             SELECT id FROM session_state WHERE json_valid(summary) AND json_extract(summary, '$.workspaceId')=?
             UNION SELECT id FROM session_state WHERE json_valid(summary) AND json_extract(summary, '$.worktreeCwd') IS NOT NULL
             UNION SELECT id FROM session_state WHERE NOT json_valid(summary)
             UNION SELECT value FROM json_each(?)
-          )`).all(candidateWorkspaceId, JSON.stringify([...this.pending.keys()]));
+          )`)
+              .all(candidateWorkspaceId, JSON.stringify([...this.pending.keys()]));
       const legacy = new Map<string, HostSession>();
       for (const row of rows) {
         const id = String(row.id);
-        if (!Number(row.summary_valid) && !this.pending.has(id)) legacy.set(id, await this.session(id));
+        if (!Number(row.summary_valid) && !this.pending.has(id))
+          legacy.set(id, await this.session(id));
       }
       return rows.map((row) => {
         const unwritten = this.pending.get(String(row.id))?.value ?? legacy.get(String(row.id));
@@ -1668,7 +1685,9 @@ export class HostStore {
               unwritten.authorityGeneration !== undefined || !!Number(row.has_authority),
             hasDesktop: unwritten.desktop != null,
             running: unwritten.status === "running",
-            shellRunning: unwritten.session.blocks.some((block) => block.shell?.running || block.shell?.terminationFailed),
+            shellRunning: unwritten.session.blocks.some(
+              (block) => block.shell?.running || block.shell?.terminationFailed,
+            ),
             workspaceId: unwritten.session.workspaceId,
             worktreeCwd: unwritten.session.worktreeCwd,
             providerSessionId: unwritten.session.providerSessionId || null,
@@ -1889,7 +1908,7 @@ export class HostStore {
         status: value.status,
         desktop: value.desktop != null,
       });
-    if (this.inTransaction) this.commitEffects.push(update);
+    if (this.inTransaction) this.transactionEffects.commit.push(update);
     else update();
   }
   /** Returns the saved value, stamped with per-block change revisions.
@@ -2147,7 +2166,11 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some((block) => block.shell?.running || block.shell?.terminationFailed) ? 1 : 0,
+          value.session.blocks.some(
+            (block) => block.shell?.running || block.shell?.terminationFailed,
+          )
+            ? 1
+            : 0,
         );
       await this.db
         .prepare(`INSERT INTO session_state (id, project_id, summary, revision, updated_at, status, has_desktop, desktop_updated_at, provider_session_id, harness, session_cwd, shell_running) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -2164,7 +2187,11 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some((block) => block.shell?.running || block.shell?.terminationFailed) ? 1 : 0,
+          value.session.blocks.some(
+            (block) => block.shell?.running || block.shell?.terminationFailed,
+          )
+            ? 1
+            : 0,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
       const eventRows = rows.map((row) => [
@@ -2248,7 +2275,11 @@ export class HostStore {
           value.session.providerSessionId || null,
           value.session.harness ?? null,
           value.session.cwd ?? null,
-          value.session.blocks.some((block) => block.shell?.running || block.shell?.terminationFailed) ? 1 : 0,
+          value.session.blocks.some(
+            (block) => block.shell?.running || block.shell?.terminationFailed,
+          )
+            ? 1
+            : 0,
           id,
         );
       const insert = this.db.prepare("INSERT INTO events VALUES (?, ?, ?)");
@@ -2263,41 +2294,103 @@ export class HostStore {
     if (this.inTransaction) await guarded();
     else await this.transaction(guarded, "checkpoint");
   }
-  async pinState(id: string, projectId: string, authorityGeneration?: number): Promise<{ state: "current"; version: number; pinned: boolean }> {
+  async pinState(
+    id: string,
+    projectId: string,
+    authorityGeneration?: number,
+  ): Promise<{ state: "current"; version: number; pinned: boolean }> {
     await this.assertAuthority(id, authorityGeneration);
     const current = await this.session(id);
     if (current.projectId !== projectId) throw new Error("Session does not belong to this project");
-    if (!Number.isSafeInteger(current.revision) || current.revision < 0) throw new Error("Invalid session revision");
+    if (!Number.isSafeInteger(current.revision) || current.revision < 0)
+      throw new Error("Invalid session revision");
     return { state: "current", version: current.revision, pinned: !!current.pinned };
   }
-  async pinReceipt(id: string, projectId: string, operationId: string): Promise<{ state: "applied" | "superseded" | "refused"; version: number; pinned: boolean | null } | null> {
+  async pinReceipt(
+    id: string,
+    projectId: string,
+    operationId: string,
+  ): Promise<{
+    state: "applied" | "superseded" | "refused";
+    version: number;
+    pinned: boolean | null;
+  } | null> {
     return this.db.scope(async () => {
-      const row = await this.db.prepare("SELECT result FROM session_pin_receipts WHERE operation_id=? AND session_id=? AND project_id=?").get(operationId, id, projectId);
+      const row = await this.db
+        .prepare(
+          "SELECT result FROM session_pin_receipts WHERE operation_id=? AND session_id=? AND project_id=?",
+        )
+        .get(operationId, id, projectId);
       return row ? JSON.parse(String(row.result)) : null;
     });
   }
-  async pinApply(id: string, projectId: string, operationId: string, desiredPinned: boolean, expectedVersion: number, authorityGeneration?: number): Promise<{ state: "applied" | "superseded" | "refused"; version: number; pinned: boolean | null }> {
-    const hash = createHash("sha256").update(JSON.stringify([id, projectId, desiredPinned, expectedVersion, authorityGeneration ?? null])).digest("hex");
-    return this.transaction(() => this.sessionWrite(id, authorityGeneration, async () => {
-      const prior = await this.db.prepare("SELECT request_hash,result FROM session_pin_receipts WHERE operation_id=?").get(operationId);
-      if (prior) {
-        if (prior.request_hash !== hash) throw new Error("Pin operation ID reused with different request");
-        return JSON.parse(String(prior.result));
-      }
-      const current = await this.find(id);
-      if (current && current.projectId !== projectId) throw new Error("Session does not belong to this project");
-      let result: { state: "applied" | "superseded" | "refused"; version: number; pinned: boolean | null };
-      if (!current) result = { state: "refused", version: 0, pinned: null };
-      else if (!Number.isSafeInteger(current.revision) || current.revision < 0 || current.revision >= Number.MAX_SAFE_INTEGER)
-        result = { state: "refused", version: 0, pinned: null };
-      else if (current.revision !== expectedVersion) result = { state: "superseded", version: current.revision, pinned: !!current.pinned };
-      else {
-        const next = await this.save({ ...current, revision: current.revision + 1, pinned: desiredPinned }, { type: "session.metadata", patch: { pinned: desiredPinned } });
-        result = { state: "applied", version: next.revision, pinned: !!next.pinned };
-      }
-      await this.db.prepare("INSERT INTO session_pin_receipts(operation_id,session_id,project_id,request_hash,result) VALUES(?,?,?,?,?)").run(operationId, id, projectId, hash, JSON.stringify(result));
-      return result;
-    }), "critical");
+  async pinApply(
+    id: string,
+    projectId: string,
+    operationId: string,
+    desiredPinned: boolean,
+    expectedVersion: number,
+    authorityGeneration?: number,
+  ): Promise<{
+    state: "applied" | "superseded" | "refused";
+    version: number;
+    pinned: boolean | null;
+  }> {
+    const hash = createHash("sha256")
+      .update(
+        JSON.stringify([
+          id,
+          projectId,
+          desiredPinned,
+          expectedVersion,
+          authorityGeneration ?? null,
+        ]),
+      )
+      .digest("hex");
+    return this.transaction(
+      () =>
+        this.sessionWrite(id, authorityGeneration, async () => {
+          const prior = await this.db
+            .prepare("SELECT request_hash,result FROM session_pin_receipts WHERE operation_id=?")
+            .get(operationId);
+          if (prior) {
+            if (prior.request_hash !== hash)
+              throw new Error("Pin operation ID reused with different request");
+            return JSON.parse(String(prior.result));
+          }
+          const current = await this.find(id);
+          if (current && current.projectId !== projectId)
+            throw new Error("Session does not belong to this project");
+          let result: {
+            state: "applied" | "superseded" | "refused";
+            version: number;
+            pinned: boolean | null;
+          };
+          if (!current) result = { state: "refused", version: 0, pinned: null };
+          else if (
+            !Number.isSafeInteger(current.revision) ||
+            current.revision < 0 ||
+            current.revision >= Number.MAX_SAFE_INTEGER
+          )
+            result = { state: "refused", version: 0, pinned: null };
+          else if (current.revision !== expectedVersion)
+            result = { state: "superseded", version: current.revision, pinned: !!current.pinned };
+          else {
+            const next = await this.save(
+              { ...current, revision: current.revision + 1, pinned: desiredPinned },
+              { type: "session.metadata", patch: { pinned: desiredPinned } },
+            );
+            result = { state: "applied", version: next.revision, pinned: !!next.pinned };
+          }
+          await this.db
+            .prepare(
+              "INSERT INTO session_pin_receipts(operation_id,session_id,project_id,request_hash,result) VALUES(?,?,?,?,?)",
+            )
+            .run(operationId, id, projectId, hash, JSON.stringify(result));
+          return result;
+        }),
+      "critical",
+    );
   }
   async updateSession(
     id: string,
@@ -2470,7 +2563,7 @@ export class HostStore {
         await this.db.prepare("DELETE FROM events WHERE session_id=?").run(id);
         await this.db.prepare("DELETE FROM sessions WHERE id=?").run(id);
         this.cache.delete(id);
-        this.commitEffects.push(() => {
+        this.transactionEffects.commit.push(() => {
           this.stateMetadata.delete(id);
         });
         this.bumpChangeVersion();
@@ -2713,9 +2806,11 @@ export class HostStore {
           "DELETE FROM receipts WHERE (created_at IS NULL OR created_at < ?) AND id NOT IN (SELECT id FROM desktop_command_delivery)",
         )
         .run(now - RECEIPT_RETENTION_MS);
-      await this.db.prepare(`DELETE FROM workspace_mutation_receipts WHERE created_at < ? AND
+      await this.db
+        .prepare(`DELETE FROM workspace_mutation_receipts WHERE created_at < ? AND
         (scope LIKE 'workspace-policy:%' OR scope LIKE 'workspace-feature-acquire:%' OR
-         scope LIKE 'workspace-feature-release:%')`).run(now - RECEIPT_RETENTION_MS);
+         scope LIKE 'workspace-feature-release:%')`)
+        .run(now - RECEIPT_RETENTION_MS);
     });
   }
   async events(

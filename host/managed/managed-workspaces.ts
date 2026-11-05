@@ -76,9 +76,7 @@ export function createManagedWorkspaceRegistry(
       throw new Error("Workspace mutation requires an idempotency key and nonnegative revision");
   };
   const settled = async (id: string) => {
-    if (
-      await store.workspaceHasPendingOperations(id)
-    )
+    if (await store.workspaceHasPendingOperations(id))
       throw new Error("Workspace operation recovery required before further writes");
   };
   const releaseClaims = async (id: string) => {
@@ -206,9 +204,7 @@ export function createManagedWorkspaceRegistry(
             : false)
         )
           throw new Error("Workspace creation target identity changed");
-        if (
-          await store.workspaceHasPendingOperations(workspace.id, operation.id)
-        )
+        if (await store.workspaceHasPendingOperations(workspace.id, operation.id))
           throw new Error("Another workspace operation recovery is pending");
         if (await options.isActive?.(workspace))
           throw new Error("Workspace is still active or activity is unknown");

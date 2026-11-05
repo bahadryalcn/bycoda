@@ -16,17 +16,19 @@ import { Search } from "../../../shared/ui/icons";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
-import { languageForPath, schemeExtensions } from "../../files/editor/editorChrome";
-import { editorReadability } from "../../files/editor/editorReadability";
-import { editorSurface } from "../../files/editor/editorSurface";
-import { editorSearch } from "../../files/editor/editorSearch";
-import { editorZoom } from "../../files/editor/editorZoom";
+import { languageForPath } from "../../files/public/editorLanguage";
+import { schemeExtensions } from "../../files/public/editorChrome";
+import { editorReadability } from "../../files/public/editorReadability";
+import { editorSurface } from "../../files/public/editorSurface";
+import { editorSearch } from "../../files/public/editorSearch";
+import { editorZoom } from "../../files/public/editorZoom";
 import {
   installEditorInputGate,
   applyExternalEditorUpdate,
   type MountedEditorObserver,
   type EditorWorkTicket,
-} from "../../files/ui/useMountedEditorClosure";
+} from "../../files/public/useMountedEditorClosure";
+
 import { hasConflictMarkers } from "../model/conflictMarkers";
 import { nextConflictedFile } from "../model/conflictSection";
 import {

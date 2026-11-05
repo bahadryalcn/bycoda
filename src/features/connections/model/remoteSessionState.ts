@@ -1,4 +1,4 @@
-import type { Session } from "../../sessions/model/session";
+import type { Session } from "../../sessions";
 import type { HostSession } from "./protocol";
 import { parseRemotePath, remotePath, type RemoteProject } from "./remoteProjects";
 

@@ -60,11 +60,20 @@ it("rejects a deleted directory prefix while allowing an exact deleted tracked f
   await mkdir(directory);
   await writeFile(file, "nested original");
   await f.git("add", "deleted/owned.txt");
-  await f.git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-m", "nested fixture");
+  await f.git(
+    "-c",
+    "user.name=Fixture",
+    "-c",
+    "user.email=fixture@example.invalid",
+    "commit",
+    "-m",
+    "nested fixture",
+  );
   await rm(file);
   await rmdir(directory);
-  await expect(runConversationGitAction(f.root, "git.stash", { paths: ["deleted"] }))
-    .rejects.toThrow("explicit regular files");
+  await expect(
+    runConversationGitAction(f.root, "git.stash", { paths: ["deleted"] }),
+  ).rejects.toThrow("explicit regular files");
   expect((await f.git("stash", "list")).stdout).toBe("");
   await runConversationGitAction(f.root, "git.stash", { paths: ["deleted/owned.txt"] });
   expect(await readFile(file, "utf8")).toBe("nested original");

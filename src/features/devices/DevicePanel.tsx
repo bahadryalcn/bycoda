@@ -1,4 +1,6 @@
 import { NumberField } from "../../shared/ui/NumberField";
+import { DeviceCapabilityStatus } from "./ui/DeviceCapabilityStatus";
+import { useDeviceStatus } from "./hooks/useDeviceStatus";
 import {
   peekToolsDraftPart,
   subscribeToolsDraftTransfer,
@@ -187,6 +189,7 @@ function DevicePanelSurface({
     return undefined;
   }
   const [connectionUnavailable, setConnectionUnavailable] = useState(false);
+  const [discoveryUnavailable, setDiscoveryUnavailable] = useState(false);
   const [live, setLive] = useState(false);
   // The surface starts by reading the Host status in the effect below.
   const [busy, setBusy] = useState(true);
@@ -369,33 +372,7 @@ function DevicePanelSurface({
       mounted.current = false;
     };
   }, []);
-  useEffect(() => {
-    if (!visible) return;
-    let active = true;
-    void (async () => {
-      try {
-        let value = await api.status();
-        if (!active) return;
-        // Reuse an installed runtime. SDK/tool downloads remain an explicit action.
-        if (!value.running && value.installed && value.platforms.some((item) => item.available)) {
-          const releaseTransfer = transferScope ? holdToolsDraftTransfer(transferScope) : undefined;
-          try {
-            value = await api.start();
-          } finally {
-            releaseTransfer?.();
-          }
-        }
-        if (active) setStatus(value);
-      } catch (cause) {
-        if (active) setError(String(cause));
-      } finally {
-        if (active) setBusy(false);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [api, visible, transferScope?.cwd, transferScope?.sessionId, transferScope?.targetValue]);
+  useDeviceStatus(api, visible, setStatus, setError, setBusy);
   const execute = useCallback(
     async <T,>(
       name: DeviceOperation,
@@ -427,6 +404,8 @@ function DevicePanelSurface({
       } catch (cause) {
         if (current()) {
           setError(String(cause));
+          if (name === "status") setStatus(undefined);
+          if (name === "refresh") setDiscoveryUnavailable(true);
           if (/DEVICE_CONTROL_BUSY/.test(String(cause)) && name === "claim")
             setControlStatus({ deviceId: selectedRef.current, busy: true });
           if (/DEVICE_CONTROL_LEASE_INVALID/.test(String(cause))) {
@@ -530,6 +509,7 @@ function DevicePanelSurface({
   selectedRef.current = selected;
   const applyDevices = useCallback(
     (value: Awaited<ReturnType<DevicePanelApi["list"]>>) => {
+      setDiscoveryUnavailable(value.errors.length > 0);
       setDevices(value.devices);
       if (!retainedOutcome.current) {
         setErrorOperation("refresh");
@@ -573,7 +553,11 @@ function DevicePanelSurface({
           applyDevices(value);
         },
         (cause: unknown) => {
-          if (active) setError(String(cause));
+          if (active) {
+            setDiscoveryUnavailable(true);
+            setConnectionUnavailable(true);
+            setError(String(cause));
+          }
         },
       )
       .finally(() => {
@@ -1055,6 +1039,13 @@ function DevicePanelSurface({
       aria-label={t("Devices")}
       aria-busy={busy || loadingDevices}
     >
+      <DeviceCapabilityStatus
+        status={status}
+        checking={operation === "status" || (!status && busy)}
+        unavailable={connectionUnavailable || discoveryUnavailable}
+        viewing={live && !!selected}
+        operating={!!operation && !["status", "refresh", "capture"].includes(operation)}
+      />
       {error && (
         <details className="device-panel-error" role="alert">
           <summary>
@@ -2233,7 +2224,11 @@ function DevicePanelSurface({
                 {t("Setup and access")}
                 <span className="host-tool-muted device-panel-setup-summary">
                   {hostLabel ? `${hostLabel} · ` : ""}
-                  {status.running ? t("Device host running") : t("Device host stopped")}
+                  {connectionUnavailable || discoveryUnavailable
+                    ? t("Unknown")
+                    : status.running
+                      ? t("Device host running")
+                      : t("Device host stopped")}
                   {" · "}
                   {t("{p0} devices found", { p0: devices.length })}
                 </span>

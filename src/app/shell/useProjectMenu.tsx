@@ -523,10 +523,12 @@ export function useProjectMenu({
       if (!saveProjectGroups([...current, group])) throw new Error("Could not save group.");
       if (projectPath) setProjectGroupAssignment(projectPath, group.id);
       return group;
-    }).then((group) => {
-      if (!projectPath) captureTrigger();
-      setGroupMenu({ x, y, id: group.id });
-    }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
+    })
+      .then((group) => {
+        if (!projectPath) captureTrigger();
+        setGroupMenu({ x, y, id: group.id });
+      })
+      .catch(() => setMenuError(t("Could not save project changes. Try again.")));
   };
 
   const close = () => {
@@ -559,10 +561,12 @@ export function useProjectMenu({
       setLockDialog({ kind: "set", groupId, lockNow });
       return;
     }
-    void makeGroupLockable(groupId).then(async (saved) => {
-      if (!saved) throw new Error("Could not save group privacy.");
-      if (lockNow) await lockGroup(groupId);
-    }).catch(() => setMenuError(t("Could not save group privacy. Please try again.")));
+    void makeGroupLockable(groupId)
+      .then(async (saved) => {
+        if (!saved) throw new Error("Could not save group privacy.");
+        if (lockNow) await lockGroup(groupId);
+      })
+      .catch(() => setMenuError(t("Could not save group privacy. Please try again.")));
   };
 
   /** The padlock on a group header: lock an open group, ask to open a locked one. */
@@ -608,11 +612,16 @@ export function useProjectMenu({
     } else if (action === "project-group:new") {
       createGroup(projectMenu.x, projectMenu.y, path);
     } else if (action === "project-group:none") {
-      void withRoomPrivacyMutation(() => setProjectGroupAssignment(path, null)).catch(() => setMenuError(t("Could not save project changes. Try again.")));
+      void withRoomPrivacyMutation(() => setProjectGroupAssignment(path, null)).catch(() =>
+        setMenuError(t("Could not save project changes. Try again.")),
+      );
     } else if (action.startsWith("project-group:")) {
       const groupId = action.slice("project-group:".length);
       void withRoomPrivacyMutation(() => {
-        if (getGroupLockView().lock.lockedGroupIds.has(groupId) || !loadProjectGroups().some((group) => group.id === groupId))
+        if (
+          getGroupLockView().lock.lockedGroupIds.has(groupId) ||
+          !loadProjectGroups().some((group) => group.id === groupId)
+        )
           throw new Error("Project group is unavailable.");
         return setProjectGroupAssignment(path, groupId);
       }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
@@ -1136,19 +1145,40 @@ export function useProjectMenu({
             )
               return false;
             void withRoomPrivacyMutation(() => {
-              if (getGroupLockView().lock.lockedGroupIds.has(group.id) ||
-                  (targetId !== "none" && (!loadProjectGroups().some((item) => item.id === targetId && !item.workspaceFile) || getGroupLockView().lock.lockedGroupIds.has(targetId))))
+              if (
+                getGroupLockView().lock.lockedGroupIds.has(group.id) ||
+                (targetId !== "none" &&
+                  (!loadProjectGroups().some(
+                    (item) => item.id === targetId && !item.workspaceFile,
+                  ) ||
+                    getGroupLockView().lock.lockedGroupIds.has(targetId)))
+              )
                 throw new Error("Project group is unavailable.");
               setProjectGroupAssignment(workspaceRoot, targetId === "none" ? null : targetId);
-              if (targetId !== "none") updateProjectGroup(targetId, (current) => ({ ...current, collapsed: false }));
+              if (targetId !== "none")
+                updateProjectGroup(targetId, (current) => ({ ...current, collapsed: false }));
             }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
             return;
           }
           if (action === "hide-group") {
-            void hideGroup(group.id).then((saved) => {
-              if (!saved) setMenuError(t("Visibility could not be confirmed. Check the group before trying again."));
-              else captureTrigger(document.querySelector<HTMLElement>('button[data-workspace-control="hiddenGroups"]'));
-            }, () => setMenuError(t("Visibility could not be confirmed. Check the group before trying again.")));
+            void hideGroup(group.id).then(
+              (saved) => {
+                if (!saved)
+                  setMenuError(
+                    t("Visibility could not be confirmed. Check the group before trying again."),
+                  );
+                else
+                  captureTrigger(
+                    document.querySelector<HTMLElement>(
+                      'button[data-workspace-control="hiddenGroups"]',
+                    ),
+                  );
+              },
+              () =>
+                setMenuError(
+                  t("Visibility could not be confirmed. Check the group before trying again."),
+                ),
+            );
             return;
           }
           // Up/down go through the group's own sortable (announced, same order rules as a drag).
@@ -1197,9 +1227,12 @@ export function useProjectMenu({
           }
           if (action === "delete-project-group") {
             void withRoomPrivacyMutation(() => {
-              if (getGroupLockView().lock.lockedGroupIds.has(group.id)) throw new Error("Project group is locked.");
+              if (getGroupLockView().lock.lockedGroupIds.has(group.id))
+                throw new Error("Project group is locked.");
               if (!deleteProjectGroup(group.id)) throw new Error("Could not save project changes.");
-            }).then(() => setGroupMenu(null)).catch(() => setMenuError(t("Could not save project changes. Try again.")));
+            })
+              .then(() => setGroupMenu(null))
+              .catch(() => setMenuError(t("Could not save project changes. Try again.")));
             return false;
           }
           if (action === "add-project-to-group") {
@@ -1228,7 +1261,8 @@ export function useProjectMenu({
             void revealPath(file).catch(() => undefined);
           } else if (action === "workspace-unlink") {
             void withRoomPrivacyMutation(() => {
-              if (getGroupLockView().lock.lockedGroupIds.has(group.id)) throw new Error("Project group is locked.");
+              if (getGroupLockView().lock.lockedGroupIds.has(group.id))
+                throw new Error("Project group is locked.");
               unlinkProjectGroup(group.id);
               setLinkedGroupStatus(group.id, null);
             }).catch(() => setMenuError(t("Could not save project changes. Try again.")));
@@ -1328,7 +1362,9 @@ export function useProjectMenu({
                 }
                 await context.onRemoveProject(path, { purgeData: true });
                 await withRoomPrivacyMutation(() => {
-                  if (projectGroupIdForPath(path, loadProjectGroupAssignments()) === removingGroup.id)
+                  if (
+                    projectGroupIdForPath(path, loadProjectGroupAssignments()) === removingGroup.id
+                  )
                     setProjectGroupAssignment(path, null);
                 });
               }
@@ -1341,7 +1377,10 @@ export function useProjectMenu({
                   ),
                 );
               await withRoomPrivacyMutation(() => {
-                if (Object.values(loadProjectGroupAssignments()).includes(removingGroup.id) || !deleteProjectGroup(removingGroup.id))
+                if (
+                  Object.values(loadProjectGroupAssignments()).includes(removingGroup.id) ||
+                  !deleteProjectGroup(removingGroup.id)
+                )
                   throw new Error(t("Could not save project changes. Try again."));
               });
               setRemovingGroup(null);
@@ -1410,10 +1449,12 @@ export function useProjectMenu({
         <SetLockPasswordDialog
           mode="set"
           onDone={() => {
-            void makeGroupLockable(lockDialog.groupId).then(async (saved) => {
-              if (!saved) throw new Error("Could not save group privacy.");
-              if (lockDialog.lockNow) await lockGroup(lockDialog.groupId);
-            }).catch(() => setMenuError(t("Could not save group privacy. Please try again.")));
+            void makeGroupLockable(lockDialog.groupId)
+              .then(async (saved) => {
+                if (!saved) throw new Error("Could not save group privacy.");
+                if (lockDialog.lockNow) await lockGroup(lockDialog.groupId);
+              })
+              .catch(() => setMenuError(t("Could not save group privacy. Please try again.")));
           }}
           onClose={() => {
             setLockDialog(null);

@@ -1,13 +1,71 @@
 /** Desktop writes still require their exact native approval/allowlist/ref gates;
  * a thread subject never inherits a working copy or another session's lease. */
 export function voiceGlobalToolAllowed(family: string, action: string) {
-  if (family === "conversation" && ["remote.grants.list", "remote.call", "remote.result"].includes(action)) return true;
-  if (family === "conversation" && ["social.send.propose", "social.send.status"].includes(action)) return true;
-  if (family === "conversation" && ["environment.describe", "environment.persistence.status", "sync.status"].includes(action)) return true;
-  if (family === "social") return ["accounts.list", "inbox.list", "thread.read", "thread.page", "policy.get", "capabilities.get", "replies.draft", "messages.draft", "comments.draft", "drafts.read", "drafts.update"].includes(action);
-  if (family === "conversation" && ["observations.read", "observations.ack", "observations.resnapshot"].includes(action)) return true;
-  if (family === "conversation" && ["notebook.list", "notebook.get", "notebook.create", "notebook.update", "notebook.delete"].includes(action)) return true;
-  return family === "conversation" && ["tools.list", "tools.search", "tools.describe", "tools.status", "preferences.read", "preferences.patch", "preferences.status", "providers.status", "providers.quota.refresh", "providers.operation.status", "projects.organization.read", "servers.list", "servers.get", "servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel", "servers.ssh.save", "servers.ssh.remove"].includes(action);
+  if (
+    family === "conversation" &&
+    ["remote.grants.list", "remote.call", "remote.result"].includes(action)
+  )
+    return true;
+  if (family === "conversation" && ["social.send.propose", "social.send.status"].includes(action))
+    return true;
+  if (
+    family === "conversation" &&
+    ["environment.describe", "environment.persistence.status", "sync.status"].includes(action)
+  )
+    return true;
+  if (family === "social")
+    return [
+      "accounts.list",
+      "inbox.list",
+      "thread.read",
+      "thread.page",
+      "policy.get",
+      "capabilities.get",
+      "replies.draft",
+      "messages.draft",
+      "comments.draft",
+      "drafts.read",
+      "drafts.update",
+    ].includes(action);
+  if (
+    family === "conversation" &&
+    ["observations.read", "observations.ack", "observations.resnapshot"].includes(action)
+  )
+    return true;
+  if (
+    family === "conversation" &&
+    [
+      "notebook.list",
+      "notebook.get",
+      "notebook.create",
+      "notebook.update",
+      "notebook.delete",
+    ].includes(action)
+  )
+    return true;
+  return (
+    family === "conversation" &&
+    [
+      "tools.list",
+      "tools.search",
+      "tools.describe",
+      "tools.status",
+      "preferences.read",
+      "preferences.patch",
+      "preferences.status",
+      "providers.status",
+      "providers.quota.refresh",
+      "providers.operation.status",
+      "projects.organization.read",
+      "servers.list",
+      "servers.get",
+      "servers.ssh.execute",
+      "servers.ssh.status",
+      "servers.ssh.cancel",
+      "servers.ssh.save",
+      "servers.ssh.remove",
+    ].includes(action)
+  );
 }
 
 export function voiceDesktopInputAction(action: string) {
@@ -22,14 +80,104 @@ export function voiceDesktopInputAction(action: string) {
 }
 export function voiceThreadToolAllowed(family: string, action: string) {
   if (family === "conversation" && action === "browser.operation.status") return true;
-  if (family === "conversation" && ["terminals.list", "terminals.read", "terminals.create", "terminals.write", "terminals.interrupt", "terminals.close", "terminals.operation.status", "browser.status", "browser.claim", "browser.release", "browser.open", "browser.frame", "browser.resize", "browser.preview", "browser.input", "browser.close"].includes(action)) return true;
-  if (family === "conversation" && ["files.inspect", "files.list", "files.index", "files.search", "files.searchContent", "files.read", "files.create", "files.write", "files.rename", "files.move", "files.copy", "files.delete", "files.operation.status", "devServers.list", "devServers.details", "devServers.logs", "devServers.start", "devServers.stop", "devServers.restart", "devServers.operation.status"].includes(action)) return true;
-  if (family === "conversation" && ["sessions.create", "sessions.submit", "sessions.submit.status", "sessions.stop"].includes(action)) return true;
-  if (family === "conversation" && ["notebook.list", "notebook.get", "notebook.create", "notebook.update", "notebook.delete", "workspace.projects.select", "workspace.operation.status", "workspace.sessions.create", "workspace.sessions.open", "workspace.sessions.submit", "workspace.sessions.submit.status", "workspace.sessions.stop"].includes(action)) return true;
+  if (
+    family === "conversation" &&
+    [
+      "terminals.list",
+      "terminals.read",
+      "terminals.create",
+      "terminals.write",
+      "terminals.interrupt",
+      "terminals.close",
+      "terminals.operation.status",
+      "browser.status",
+      "browser.claim",
+      "browser.release",
+      "browser.open",
+      "browser.frame",
+      "browser.resize",
+      "browser.preview",
+      "browser.input",
+      "browser.close",
+    ].includes(action)
+  )
+    return true;
+  if (
+    family === "conversation" &&
+    [
+      "files.inspect",
+      "files.list",
+      "files.index",
+      "files.search",
+      "files.searchContent",
+      "files.read",
+      "files.create",
+      "files.write",
+      "files.rename",
+      "files.move",
+      "files.copy",
+      "files.delete",
+      "files.operation.status",
+      "devServers.list",
+      "devServers.details",
+      "devServers.logs",
+      "devServers.start",
+      "devServers.stop",
+      "devServers.restart",
+      "devServers.operation.status",
+    ].includes(action)
+  )
+    return true;
+  if (
+    family === "conversation" &&
+    ["sessions.create", "sessions.submit", "sessions.submit.status", "sessions.stop"].includes(
+      action,
+    )
+  )
+    return true;
+  if (
+    family === "conversation" &&
+    [
+      "notebook.list",
+      "notebook.get",
+      "notebook.create",
+      "notebook.update",
+      "notebook.delete",
+      "workspace.projects.select",
+      "workspace.operation.status",
+      "workspace.sessions.create",
+      "workspace.sessions.open",
+      "workspace.sessions.submit",
+      "workspace.sessions.submit.status",
+      "workspace.sessions.stop",
+    ].includes(action)
+  )
+    return true;
   if (family === "social" || family === "runtime-logs") return true;
   if (family !== "conversation") return false;
   return (
-    ["crews.list", "crews.schema", "crews.inspect", "crews.get", "crews.definitions.list", "crews.definition.get", "crews.agents.list", "crews.agent.get", "crews.runs.list", "crews.save", "crews.agent.save", "crews.start", "crews.assign", "crews.request", "crews.resolve", "crews.pause", "crews.stop", "crews.resume", "crews.accept", "crews.finish"].includes(action) ||
+    [
+      "crews.list",
+      "crews.schema",
+      "crews.inspect",
+      "crews.get",
+      "crews.definitions.list",
+      "crews.definition.get",
+      "crews.agents.list",
+      "crews.agent.get",
+      "crews.runs.list",
+      "crews.save",
+      "crews.agent.save",
+      "crews.start",
+      "crews.assign",
+      "crews.request",
+      "crews.resolve",
+      "crews.pause",
+      "crews.stop",
+      "crews.resume",
+      "crews.accept",
+      "crews.finish",
+    ].includes(action) ||
     [
       "projects.browse",
       "projects.createDirectory",

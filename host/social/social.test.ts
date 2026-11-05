@@ -49,8 +49,22 @@ it("pages owned publications by indexed identity without loading full account hi
   await s.store.transaction(async () => {
     const insert = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
     for (let index = 0; index < 7; index++) {
-      const job = { ...original, id: `owned-${index}`, dedupeKey: `owned-${index}`, status: "succeeded", kind: "publish", platformId: `post-${index}` };
-      await insert.run(job.id, job.dedupeKey, account.id, job.status, job.scheduledAt, JSON.stringify(job));
+      const job = {
+        ...original,
+        id: `owned-${index}`,
+        dedupeKey: `owned-${index}`,
+        status: "succeeded",
+        kind: "publish",
+        platformId: `post-${index}`,
+      };
+      await insert.run(
+        job.id,
+        job.dedupeKey,
+        account.id,
+        job.status,
+        job.scheduledAt,
+        JSON.stringify(job),
+      );
     }
   });
   s.adapters.facebook.ownedPostPages = true;
@@ -62,18 +76,30 @@ it("pages owned publications by indexed identity without loading full account hi
     return { events: [], cursor: JSON.stringify({ after: page.next }) };
   });
   const prepare = vi.spyOn(s.store.db, "prepare");
-  cleanups.push(() => { prepare.mockRestore(); });
+  cleanups.push(() => {
+    prepare.mockRestore();
+  });
   for (let index = 0; index < 5; index++) {
     await s.social.pollAccount(account.id);
     s.clock.value += 60_000;
   }
-  expect(pages).toEqual([["post-0", "post-1"], ["post-2", "post-3"], ["post-4", "post-5"], ["post-6"], ["post-0", "post-1"]]);
-  const ownedQueries = prepare.mock.calls.map(([sql]) => sql).filter((sql) => sql.includes("AS platform_id FROM social_jobs"));
+  expect(pages).toEqual([
+    ["post-0", "post-1"],
+    ["post-2", "post-3"],
+    ["post-4", "post-5"],
+    ["post-6"],
+    ["post-0", "post-1"],
+  ]);
+  const ownedQueries = prepare.mock.calls
+    .map(([sql]) => sql)
+    .filter((sql) => sql.includes("AS platform_id FROM social_jobs"));
   expect(ownedQueries).toHaveLength(5);
   expect(ownedQueries.every((sql) => sql.includes("ORDER BY id LIMIT 3"))).toBe(true);
-  const plan = await s.store.db.prepare(`EXPLAIN QUERY PLAN SELECT id,json_extract(value,'$.platformId') AS platform_id FROM social_jobs
+  const plan = await s.store.db
+    .prepare(`EXPLAIN QUERY PLAN SELECT id,json_extract(value,'$.platformId') AS platform_id FROM social_jobs
     WHERE account_id=? AND status='succeeded' AND json_extract(value,'$.kind')='publish'
-      AND json_extract(value,'$.platformId') IS NOT NULL AND id>? ORDER BY id LIMIT 3`).all(account.id, "");
+      AND json_extract(value,'$.platformId') IS NOT NULL AND id>? ORDER BY id LIMIT 3`)
+    .all(account.id, "");
   expect(JSON.stringify(plan)).toContain("social_jobs_owned_poll");
   expect(s.send).not.toHaveBeenCalled();
 });
@@ -85,8 +111,22 @@ it("pages explicit job history while retaining the legacy complete array and exa
   await s.store.transaction(async () => {
     const insert = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
     for (let index = 0; index < 257; index++) {
-      const job = { ...original, id: `settled-${String(index).padStart(4, "0")}`, dedupeKey: `settled-${index}`, status: "succeeded", historyOnly: true, scheduledAt: s.clock.value - 10_000 + index };
-      await insert.run(job.id, job.dedupeKey, account.id, job.status, job.scheduledAt, JSON.stringify(job));
+      const job = {
+        ...original,
+        id: `settled-${String(index).padStart(4, "0")}`,
+        dedupeKey: `settled-${index}`,
+        status: "succeeded",
+        historyOnly: true,
+        scheduledAt: s.clock.value - 10_000 + index,
+      };
+      await insert.run(
+        job.id,
+        job.dedupeKey,
+        account.id,
+        job.status,
+        job.scheduledAt,
+        JSON.stringify(job),
+      );
     }
   });
   const ids: string[] = [];
@@ -102,14 +142,23 @@ it("pages explicit job history while retaining the legacy complete array and exa
   expect(await s.call<SocialJob[]>("jobs.status")).toHaveLength(258);
   await expect(s.call("jobs.status", { offset: 1 })).rejects.toThrow("page=true");
   await expect(s.call("jobs.status", { page: true, limit: 101 })).rejects.toThrow("job limit");
-  const campaignPage = await s.call<SocialJobsPage>("campaigns.status", { id: campaign.id, page: true, offset: 200, limit: 100 });
+  const campaignPage = await s.call<SocialJobsPage>("campaigns.status", {
+    id: campaign.id,
+    page: true,
+    offset: 200,
+    limit: 100,
+  });
   expect(campaignPage.jobs).toHaveLength(58);
   expect(campaignPage.page.total).toBe(258);
   const otherAccount = await s.account("x", [s.b.id], "Unrelated project");
   const otherCampaign = await s.campaign([otherAccount], [s.b.id]);
   await s.call("campaigns.schedule", { id: otherCampaign.id });
   const session = await s.session();
-  const scoped = await s.call<SocialJobsPage>("jobs.status", { page: true, limit: 100 }, session.principal);
+  const scoped = await s.call<SocialJobsPage>(
+    "jobs.status",
+    { page: true, limit: 100 },
+    session.principal,
+  );
   expect(scoped.page.total).toBe(258);
   expect(scoped.jobs.every((job) => job.accountId === account.id)).toBe(true);
   expect(s.send).not.toHaveBeenCalled();
@@ -122,16 +171,36 @@ it("checks authority and restarts every running original without parsing unrelat
   await s.store.transaction(async () => {
     const insert = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
     for (let index = 0; index < 400; index++) {
-      const job = { ...original, id: `terminal-${index}`, dedupeKey: `terminal-${index}`, status: "succeeded", historyOnly: true };
-      await insert.run(job.id, job.dedupeKey, account.id, job.status, job.scheduledAt, JSON.stringify(job));
+      const job = {
+        ...original,
+        id: `terminal-${index}`,
+        dedupeKey: `terminal-${index}`,
+        status: "succeeded",
+        historyOnly: true,
+      };
+      await insert.run(
+        job.id,
+        job.dedupeKey,
+        account.id,
+        job.status,
+        job.scheduledAt,
+        JSON.stringify(job),
+      );
     }
   });
   const parse = JSON.parse;
   let unrelatedParses = 0;
-  const spy = vi.spyOn(JSON, "parse").mockImplementation((value: string, ...args: Parameters<typeof JSON.parse> extends [string, ...infer Tail] ? Tail : never) => {
-    if (value.includes('"historyOnly":true')) unrelatedParses++;
-    return parse(value, ...args);
-  });
+  const spy = vi
+    .spyOn(JSON, "parse")
+    .mockImplementation(
+      (
+        value: string,
+        ...args: Parameters<typeof JSON.parse> extends [string, ...infer Tail] ? Tail : never
+      ) => {
+        if (value.includes('"historyOnly":true')) unrelatedParses++;
+        return parse(value, ...args);
+      },
+    );
   const tick = vi.spyOn(s.social, "tick").mockResolvedValue();
   try {
     await s.social.suspendLocalExecution();
@@ -139,42 +208,99 @@ it("checks authority and restarts every running original without parsing unrelat
     await s.store.transaction(async () => {
       const insert = s.store.db.prepare("INSERT INTO social_jobs VALUES (?,?,?,?,?,?)");
       for (let index = 0; index < 260; index++) {
-        const job = { ...original, id: `unknown-${String(index).padStart(4, "0")}`, dedupeKey: `unknown-${index}`, status: "running", dispatchedAt: s.clock.value };
-        await insert.run(job.id, job.dedupeKey, account.id, job.status, job.scheduledAt, JSON.stringify(job));
+        const job = {
+          ...original,
+          id: `unknown-${String(index).padStart(4, "0")}`,
+          dedupeKey: `unknown-${index}`,
+          status: "running",
+          dispatchedAt: s.clock.value,
+        };
+        await insert.run(
+          job.id,
+          job.dedupeKey,
+          account.id,
+          job.status,
+          job.scheduledAt,
+          JSON.stringify(job),
+        );
       }
     });
     await s.social.start();
     await s.social.stop();
     expect(unrelatedParses).toBe(0);
-    const reviewed = await s.store.db.prepare("SELECT COUNT(*) AS total FROM social_jobs WHERE id LIKE 'unknown-%' AND status='review' AND json_extract(value,'$.dispatchedAt')=?").get(s.clock.value);
+    const reviewed = await s.store.db
+      .prepare(
+        "SELECT COUNT(*) AS total FROM social_jobs WHERE id LIKE 'unknown-%' AND status='review' AND json_extract(value,'$.dispatchedAt')=?",
+      )
+      .get(s.clock.value);
     expect(Number(reviewed!.total)).toBe(260);
-    const recoveryPlan = await s.store.db.prepare("EXPLAIN QUERY PLAN SELECT id,value FROM social_jobs WHERE status='running' AND id>? ORDER BY id LIMIT 128").all("");
+    const recoveryPlan = await s.store.db
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT id,value FROM social_jobs WHERE status='running' AND id>? ORDER BY id LIMIT 128",
+      )
+      .all("");
     expect(JSON.stringify(recoveryPlan)).toContain("social_jobs_status_id");
-    const countPlan = await s.store.db.prepare("EXPLAIN QUERY PLAN SELECT COUNT(*) FROM social_jobs WHERE json_extract(value,'$.ruleId')=? AND json_extract(value,'$.createdAt')>=? AND json_extract(value,'$.createdAt')<? AND status!='cancelled'").all("rule", s.clock.value, s.clock.value + 86_400_000);
+    const countPlan = await s.store.db
+      .prepare(
+        "EXPLAIN QUERY PLAN SELECT COUNT(*) FROM social_jobs WHERE json_extract(value,'$.ruleId')=? AND json_extract(value,'$.createdAt')>=? AND json_extract(value,'$.createdAt')<? AND status!='cancelled'",
+      )
+      .all("rule", s.clock.value, s.clock.value + 86_400_000);
     expect(JSON.stringify(countPlan)).toContain("social_jobs_rule_created");
     expect(await s.call("jobs.status", { id: original.id })).toEqual(original);
     expect(s.send).not.toHaveBeenCalled();
-  } finally { spy.mockRestore(); tick.mockRestore(); }
+  } finally {
+    spy.mockRestore();
+    tick.mockRestore();
+  }
 });
 it.each([
   ["America/Los_Angeles", "2026-03-08T09:59:00Z", "2026-03-08T10:01:00Z", 1],
   ["America/Los_Angeles", "2026-11-01T08:59:00Z", "2026-11-01T09:01:00Z", 1],
   ["Pacific/Kiritimati", "2026-11-03T23:59:00Z", "2026-11-04T00:01:00Z", 2],
-])("preserves UTC quota boundaries through DST and UTC midnight in %s", async (zone, before, after, expectedJobs) => {
-  const previous = process.env.TZ; process.env.TZ = String(zone);
-  try {
-    const s = await fixture(); s.clock.value = Date.parse(String(before));
-    const account = await s.account();
-    await s.call("profiles.save", { projectId: s.a.id, productName: "Product", brandVoice: "Calm", facts: [{ id: "public", topic: "release", text: "Verified release information.", source: "Public changelog" }] });
-    const rule = await s.call<SocialRule>("automations.create", { accountId: account.id, projectId: s.a.id, name: "Release", mode: "automatic", trigger: "message", topics: ["release"], dailyLimit: 1, answers: [{ keyword: "release", factId: "public" }] });
-    await s.call("automations.activate", { id: rule.id, confirm: "ENABLE_AUTOMATIC_REPLIES" });
-    await s.thread(account, "first", "release");
-    s.clock.value = Date.parse(String(after));
-    await s.thread(account, "second", "release");
-    expect((await s.social.snapshot(owner)).jobs).toHaveLength(Number(expectedJobs));
-    expect(s.send).not.toHaveBeenCalled();
-  } finally { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous; }
-});
+])(
+  "preserves UTC quota boundaries through DST and UTC midnight in %s",
+  async (zone, before, after, expectedJobs) => {
+    const previous = process.env.TZ;
+    process.env.TZ = String(zone);
+    try {
+      const s = await fixture();
+      s.clock.value = Date.parse(String(before));
+      const account = await s.account();
+      await s.call("profiles.save", {
+        projectId: s.a.id,
+        productName: "Product",
+        brandVoice: "Calm",
+        facts: [
+          {
+            id: "public",
+            topic: "release",
+            text: "Verified release information.",
+            source: "Public changelog",
+          },
+        ],
+      });
+      const rule = await s.call<SocialRule>("automations.create", {
+        accountId: account.id,
+        projectId: s.a.id,
+        name: "Release",
+        mode: "automatic",
+        trigger: "message",
+        topics: ["release"],
+        dailyLimit: 1,
+        answers: [{ keyword: "release", factId: "public" }],
+      });
+      await s.call("automations.activate", { id: rule.id, confirm: "ENABLE_AUTOMATIC_REPLIES" });
+      await s.thread(account, "first", "release");
+      s.clock.value = Date.parse(String(after));
+      await s.thread(account, "second", "release");
+      expect((await s.social.snapshot(owner)).jobs).toHaveLength(Number(expectedJobs));
+      expect(s.send).not.toHaveBeenCalled();
+    } finally {
+      if (previous === undefined) delete process.env.TZ;
+      else process.env.TZ = previous;
+    }
+  },
+);
 async function seedThreadCopies(store: HostStore, source: SocialThread, count: number, offset = 0) {
   const insert = store.db.prepare("INSERT INTO social_records VALUES ('thread',?,?)");
   // Seed history together so the query-count regression does not measure disk flushes.
@@ -1259,61 +1385,151 @@ describe("reviewed campaign approval", () => {
   });
 });
 describe("Room reviewed Social send", () => {
-  it.each(["normal", "revoked", "inflight", "personal", "comment", "message"] as const)("queues a real Room job and checks account access during fake provider dispatch (%s)", async (mode) => {
-    const s = await fixture();
-    const account = mode === "personal" ? await s.account("x", []) : await s.account();
-    let draft: SocialDraft;
-    if (mode === "comment" || mode === "message") {
-      const contact = await s.call<SocialContact>("contacts.upsert", { accountId: account.id, platformId: "recipient", name: "Recipient", projectIds: [s.a.id], commentEligible: true, consent: { allowed: true, source: "fixture", at: s.clock.value } });
-      draft = await s.call<SocialDraft>(mode === "comment" ? "comments.draft" : "messages.draft", { accountId: account.id, projectId: s.a.id, contactId: contact.id, ...(mode === "comment" ? { postId: "post" } : {}), text: "Reviewed text" });
-    } else {
-      const thread = await s.thread(account);
-      draft = await s.call<SocialDraft>("replies.draft", { threadId: thread.id, text: "Reviewed reply" });
-    }
-    s.social.setAssistantThreadResolver(async id => id === "room" ? { id } : null);
-    const granted = await s.call<SocialAccount>("accounts.assistantGrant", { accountId: account.id, permissions: ["read", "draft"], expectedVersion: null });
-    const projectId = mode === "personal" ? null : s.a.id;
-    const projectCwd = mode === "personal" ? null : s.a.cwd;
-    s.social.roomSendSourceAdmission = async source => source.projectId === projectId && source.projectCwd === projectCwd;
-    s.social.withRoomSendSource = async (source, effect) => s.social.withAssistantAccountProofs(source.threadId, [{ accountId: source.accountId, version: source.accountGrantVersion }], async () => !!(await s.social.roomSendSourceAdmission?.(source)), effect);
-    const principal = { kind: "assistant-thread" as const, threadId: "room", environmentId: s.store.environmentId };
-    const action = mode === "comment" ? "comments.send" as const : mode === "message" ? "messages.send" as const : "replies.send" as const;
-    const proposal = { requestId: "room-send-1", accountId: account.id, projectId, entityId: draft.id, action };
-    const receipts = new Map<string, ManagementReceipt>();
-    const tools = new AssistantRoomSocialSend({
-      approve: async operation => ({ approved: true, operationHash: operation.operationHash }),
-      receipt: async key => receipts.get(key), saveReceipt: async (key, value) => { receipts.set(key, value); },
-      snapshot: (value, who, authorized) => s.social.prepareRoomSend(value, who, projectCwd, authorized),
-      enqueue: (value, snapshot, who, authorized, review) => s.social.enqueueReviewedRoomSend(value, snapshot, who, authorized, review),
-      readback: (id, who, authorized) => s.social.roomSendJobStatus(id, who, authorized),
-    });
-    const allowed = async () => true;
-    const qualify = async <T>(effect: () => Promise<T>) => effect();
-    const result = await tools.submit(proposal, principal, allowed, proposal.requestId, qualify) as { state: string; result: SocialJob };
-    expect(result).toMatchObject({ state: "completed", result: { status: "queued", actorId: "assistant-thread:room", roomSource: { threadId: "room", accountGrantVersion: granted.assistantGrant!.version } } });
-    await tools.submit(proposal, principal, allowed, proposal.requestId, qualify);
-    expect((await s.social.snapshot(owner)).jobs).toHaveLength(1);
-    if (mode === "revoked") await s.call("accounts.assistantGrant", { accountId: account.id, permissions: [], expectedVersion: granted.assistantGrant!.version });
-    await s.enable();
-    if (mode === "inflight") {
-      let release!: () => void, entered!: () => void;
-      const hold = new Promise<void>(resolve => { release = resolve; });
-      const started = new Promise<void>(resolve => { entered = resolve; });
-      s.send.mockImplementationOnce(async (_account, job) => { entered(); await hold; return { platformId: `post-${job.id}` }; });
-      const tick = s.social.tick();
-      await started;
-      let revoked = false;
-      const rotation = s.call("accounts.assistantGrant", { accountId: account.id, permissions: [], expectedVersion: granted.assistantGrant!.version }).then(() => { revoked = true; });
-      await new Promise(resolve => setTimeout(resolve, 20));
-      expect(revoked).toBe(false);
-      release();
-      await tick;
-      await rotation;
-      expect(revoked).toBe(true);
-    } else await s.social.tick();
-    expect(s.send).toHaveBeenCalledTimes(mode === "revoked" ? 0 : 1);
-    if (mode === "normal" || mode === "personal") expect(await tools.status(principal, proposal.requestId, allowed, qualify)).toMatchObject({ result: { status: "succeeded" } });
-  });
+  it.each(["normal", "revoked", "inflight", "personal", "comment", "message"] as const)(
+    "queues a real Room job and checks account access during fake provider dispatch (%s)",
+    async (mode) => {
+      const s = await fixture();
+      const account = mode === "personal" ? await s.account("x", []) : await s.account();
+      let draft: SocialDraft;
+      if (mode === "comment" || mode === "message") {
+        const contact = await s.call<SocialContact>("contacts.upsert", {
+          accountId: account.id,
+          platformId: "recipient",
+          name: "Recipient",
+          projectIds: [s.a.id],
+          commentEligible: true,
+          consent: { allowed: true, source: "fixture", at: s.clock.value },
+        });
+        draft = await s.call<SocialDraft>(
+          mode === "comment" ? "comments.draft" : "messages.draft",
+          {
+            accountId: account.id,
+            projectId: s.a.id,
+            contactId: contact.id,
+            ...(mode === "comment" ? { postId: "post" } : {}),
+            text: "Reviewed text",
+          },
+        );
+      } else {
+        const thread = await s.thread(account);
+        draft = await s.call<SocialDraft>("replies.draft", {
+          threadId: thread.id,
+          text: "Reviewed reply",
+        });
+      }
+      s.social.setAssistantThreadResolver(async (id) => (id === "room" ? { id } : null));
+      const granted = await s.call<SocialAccount>("accounts.assistantGrant", {
+        accountId: account.id,
+        permissions: ["read", "draft"],
+        expectedVersion: null,
+      });
+      const projectId = mode === "personal" ? null : s.a.id;
+      const projectCwd = mode === "personal" ? null : s.a.cwd;
+      s.social.roomSendSourceAdmission = async (source) =>
+        source.projectId === projectId && source.projectCwd === projectCwd;
+      s.social.withRoomSendSource = async (source, effect) =>
+        s.social.withAssistantAccountProofs(
+          source.threadId,
+          [{ accountId: source.accountId, version: source.accountGrantVersion }],
+          async () => !!(await s.social.roomSendSourceAdmission?.(source)),
+          effect,
+        );
+      const principal = {
+        kind: "assistant-thread" as const,
+        threadId: "room",
+        environmentId: s.store.environmentId,
+      };
+      const action =
+        mode === "comment"
+          ? ("comments.send" as const)
+          : mode === "message"
+            ? ("messages.send" as const)
+            : ("replies.send" as const);
+      const proposal = {
+        requestId: "room-send-1",
+        accountId: account.id,
+        projectId,
+        entityId: draft.id,
+        action,
+      };
+      const receipts = new Map<string, ManagementReceipt>();
+      const tools = new AssistantRoomSocialSend({
+        approve: async (operation) => ({ approved: true, operationHash: operation.operationHash }),
+        receipt: async (key) => receipts.get(key),
+        saveReceipt: async (key, value) => {
+          receipts.set(key, value);
+        },
+        snapshot: (value, who, authorized) =>
+          s.social.prepareRoomSend(value, who, projectCwd, authorized),
+        enqueue: (value, snapshot, who, authorized, review) =>
+          s.social.enqueueReviewedRoomSend(value, snapshot, who, authorized, review),
+        readback: (id, who, authorized) => s.social.roomSendJobStatus(id, who, authorized),
+      });
+      const allowed = async () => true;
+      const qualify = async <T>(effect: () => Promise<T>) => effect();
+      const result = (await tools.submit(
+        proposal,
+        principal,
+        allowed,
+        proposal.requestId,
+        qualify,
+      )) as { state: string; result: SocialJob };
+      expect(result).toMatchObject({
+        state: "completed",
+        result: {
+          status: "queued",
+          actorId: "assistant-thread:room",
+          roomSource: { threadId: "room", accountGrantVersion: granted.assistantGrant!.version },
+        },
+      });
+      await tools.submit(proposal, principal, allowed, proposal.requestId, qualify);
+      expect((await s.social.snapshot(owner)).jobs).toHaveLength(1);
+      if (mode === "revoked")
+        await s.call("accounts.assistantGrant", {
+          accountId: account.id,
+          permissions: [],
+          expectedVersion: granted.assistantGrant!.version,
+        });
+      await s.enable();
+      if (mode === "inflight") {
+        let release!: () => void, entered!: () => void;
+        const hold = new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        const started = new Promise<void>((resolve) => {
+          entered = resolve;
+        });
+        s.send.mockImplementationOnce(async (_account, job) => {
+          entered();
+          await hold;
+          return { platformId: `post-${job.id}` };
+        });
+        const tick = s.social.tick();
+        await started;
+        let revoked = false;
+        const rotation = s
+          .call("accounts.assistantGrant", {
+            accountId: account.id,
+            permissions: [],
+            expectedVersion: granted.assistantGrant!.version,
+          })
+          .then(() => {
+            revoked = true;
+          });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        expect(revoked).toBe(false);
+        release();
+        await tick;
+        await rotation;
+        expect(revoked).toBe(true);
+      } else await s.social.tick();
+      expect(s.send).toHaveBeenCalledTimes(mode === "revoked" ? 0 : 1);
+      if (mode === "normal" || mode === "personal")
+        expect(await tools.status(principal, proposal.requestId, allowed, qualify)).toMatchObject({
+          result: { status: "succeeded" },
+        });
+    },
+  );
 });
 describe("reviewed draft approval", () => {
   it("rejects replacement while a reviewing client awaits policy lookup", async () => {
@@ -3231,23 +3447,46 @@ describe("Merkezi sosyal servis", () => {
     const session = await s.session();
     const before = (await s.call<SocialAccount[]>("accounts.list")).find((a) => a.id === first.id)!;
     expect(first.assistantGrant).toBeUndefined();
-    await expect(s.call("accounts.assistantGrant", {
-      accountId: first.id, permissions: ["read"], expectedVersion: null,
-    }, session.principal)).rejects.toThrow("Only the account owner");
-    await expect(s.call("accounts.assistantGrant", {
-      accountId: first.id, permissions: ["publish"], expectedVersion: null,
-    })).rejects.toThrow("Invalid Assistant social permission");
+    await expect(
+      s.call(
+        "accounts.assistantGrant",
+        {
+          accountId: first.id,
+          permissions: ["read"],
+          expectedVersion: null,
+        },
+        session.principal,
+      ),
+    ).rejects.toThrow("Only the account owner");
+    await expect(
+      s.call("accounts.assistantGrant", {
+        accountId: first.id,
+        permissions: ["publish"],
+        expectedVersion: null,
+      }),
+    ).rejects.toThrow("Invalid Assistant social permission");
     const granted = await s.call<SocialAccount>("accounts.assistantGrant", {
-      accountId: first.id, permissions: ["read", "draft"], expectedVersion: null,
+      accountId: first.id,
+      permissions: ["read", "draft"],
+      expectedVersion: null,
     });
     expect(granted.grants).toEqual(before.grants);
     expect(granted.assistantGrant?.permissions).toEqual(["read", "draft"]);
-    expect((await s.call<SocialAccount[]>("accounts.list")).find((a) => a.id === second.id)?.assistantGrant).toBeUndefined();
-    await expect(s.call("accounts.assistantGrant", {
-      accountId: first.id, permissions: [], expectedVersion: null,
-    })).rejects.toThrow("Assistant access changed");
+    expect(
+      (await s.call<SocialAccount[]>("accounts.list")).find((a) => a.id === second.id)
+        ?.assistantGrant,
+    ).toBeUndefined();
+    await expect(
+      s.call("accounts.assistantGrant", {
+        accountId: first.id,
+        permissions: [],
+        expectedVersion: null,
+      }),
+    ).rejects.toThrow("Assistant access changed");
     const revoked = await s.call<SocialAccount>("accounts.assistantGrant", {
-      accountId: first.id, permissions: [], expectedVersion: granted.assistantGrant!.version,
+      accountId: first.id,
+      permissions: [],
+      expectedVersion: granted.assistantGrant!.version,
     });
     expect(revoked.assistantGrant?.permissions).toEqual([]);
     expect(revoked.assistantGrant?.version).not.toBe(granted.assistantGrant?.version);
@@ -3256,25 +3495,65 @@ describe("Merkezi sosyal servis", () => {
     const s = await fixture();
     const account = await s.account("x", []);
     const other = await s.account("x", [], "Other");
-    s.social.setAssistantThreadResolver(async (id) => id === "room" ? { id } : null);
-    await expect(s.social.issueAccountThreadGrant("room", account.id)).rejects.toThrow("not granted");
+    s.social.setAssistantThreadResolver(async (id) => (id === "room" ? { id } : null));
+    await expect(s.social.issueAccountThreadGrant("room", account.id)).rejects.toThrow(
+      "not granted",
+    );
     const granted = await s.call<SocialAccount>("accounts.assistantGrant", {
-      accountId: account.id, permissions: ["read", "draft"], expectedVersion: null,
+      accountId: account.id,
+      permissions: ["read", "draft"],
+      expectedVersion: null,
     });
-    await s.social.ingest(account.id, [{ eventId: "first", threadId: "one", contactId: "person", contactName: "Person", kind: "message", text: "hello", at: s.clock.value }]);
-    await s.social.ingest(other.id, [{ eventId: "second", threadId: "two", contactId: "other", contactName: "Other", kind: "message", text: "private", at: s.clock.value }]);
+    await s.social.ingest(account.id, [
+      {
+        eventId: "first",
+        threadId: "one",
+        contactId: "person",
+        contactName: "Person",
+        kind: "message",
+        text: "hello",
+        at: s.clock.value,
+      },
+    ]);
+    await s.social.ingest(other.id, [
+      {
+        eventId: "second",
+        threadId: "two",
+        contactId: "other",
+        contactName: "Other",
+        kind: "message",
+        text: "private",
+        at: s.clock.value,
+      },
+    ]);
     const issued = await s.social.issueAccountThreadGrant("room", account.id);
     const principal = (await s.social.principalForToken(issued.token))!;
     const threads = await s.call<SocialThread[]>("inbox.list", {}, principal);
     expect(threads).toHaveLength(1);
     expect(threads[0].accountId).toBe(account.id);
-    expect((await s.call<SocialThread>("thread.read", { id: threads[0].id }, principal)).id).toBe(threads[0].id);
-    const otherThread = (await s.call<SocialThread[]>("inbox.list")).find((item) => item.accountId === other.id)!;
-    await expect(s.call("thread.read", { id: otherThread.id }, principal)).rejects.toThrow("permission");
-    expect((await s.call<SocialAccount[]>("accounts.list", {}, principal)).map((a) => a.id)).toEqual([account.id]);
-    await expect(s.call("capabilities.get", { accountId: other.id }, principal)).rejects.toThrow("permission");
-    await expect(s.call("replies.send", { id: "unknown" }, principal)).rejects.toThrow("not available");
-    await s.call("accounts.assistantGrant", { accountId: account.id, permissions: [], expectedVersion: granted.assistantGrant!.version });
+    expect((await s.call<SocialThread>("thread.read", { id: threads[0].id }, principal)).id).toBe(
+      threads[0].id,
+    );
+    const otherThread = (await s.call<SocialThread[]>("inbox.list")).find(
+      (item) => item.accountId === other.id,
+    )!;
+    await expect(s.call("thread.read", { id: otherThread.id }, principal)).rejects.toThrow(
+      "permission",
+    );
+    expect(
+      (await s.call<SocialAccount[]>("accounts.list", {}, principal)).map((a) => a.id),
+    ).toEqual([account.id]);
+    await expect(s.call("capabilities.get", { accountId: other.id }, principal)).rejects.toThrow(
+      "permission",
+    );
+    await expect(s.call("replies.send", { id: "unknown" }, principal)).rejects.toThrow(
+      "not available",
+    );
+    await s.call("accounts.assistantGrant", {
+      accountId: account.id,
+      permissions: [],
+      expectedVersion: granted.assistantGrant!.version,
+    });
     expect(await s.social.principalForToken(issued.token)).toBeUndefined();
     await expect(s.call("accounts.list", {}, principal)).rejects.toThrow("revoked or changed");
   });
@@ -3283,25 +3562,50 @@ describe("Merkezi sosyal servis", () => {
     const account = await s.account("x", []);
     const other = await s.account("x", [], "Other");
     const thread = await s.thread(account);
-    s.social.setAssistantThreadResolver(async (id) => id === "room" ? { id } : null);
+    s.social.setAssistantThreadResolver(async (id) => (id === "room" ? { id } : null));
     const granted = await s.call<SocialAccount>("accounts.assistantGrant", {
-      accountId: account.id, permissions: ["read", "draft"], expectedVersion: null,
+      accountId: account.id,
+      permissions: ["read", "draft"],
+      expectedVersion: null,
     });
     const issued = await s.social.issueAccountThreadGrant("room", account.id);
     const p = (await s.social.principalForToken(issued.token))!;
-    const draft = await s.call<SocialDraft>("replies.draft", { threadId: thread.id, text: "Initial reply" }, p, "draft-create");
+    const draft = await s.call<SocialDraft>(
+      "replies.draft",
+      { threadId: thread.id, text: "Initial reply" },
+      p,
+      "draft-create",
+    );
     expect(draft.projectId).toBeUndefined();
     expect(draft.accountId).toBe(account.id);
     expect(await s.call("drafts.read", { id: draft.id }, p)).toEqual(draft);
-    await expect(s.call("drafts.update", { id: draft.id, text: "Missing preview" }, p)).rejects.toThrow("Review the current");
-    const edited = await s.call<SocialDraft>("drafts.update", { id: draft.id, text: "Reviewed reply", expectedDraft: draft }, p);
-    await expect(s.call("drafts.update", { id: draft.id, text: "Stale", expectedDraft: draft }, p)).rejects.toThrow("changed");
-    await expect(s.call("drafts.approve", { id: draft.id, reviewedDraft: edited }, p)).rejects.toThrow("not available");
+    await expect(
+      s.call("drafts.update", { id: draft.id, text: "Missing preview" }, p),
+    ).rejects.toThrow("Review the current");
+    const edited = await s.call<SocialDraft>(
+      "drafts.update",
+      { id: draft.id, text: "Reviewed reply", expectedDraft: draft },
+      p,
+    );
+    await expect(
+      s.call("drafts.update", { id: draft.id, text: "Stale", expectedDraft: draft }, p),
+    ).rejects.toThrow("changed");
+    await expect(
+      s.call("drafts.approve", { id: draft.id, reviewedDraft: edited }, p),
+    ).rejects.toThrow("not available");
     await expect(s.call("replies.send", { id: draft.id }, p)).rejects.toThrow("not available");
     await expect(s.call("replies.send", { id: draft.id })).rejects.toThrow("approval");
-    const second = await s.call<SocialAccount>("accounts.assistantGrant", { accountId: other.id, permissions: ["read", "draft"], expectedVersion: null });
-    const otherPrincipal = (await s.social.principalForToken((await s.social.issueAccountThreadGrant("room", other.id)).token))!;
-    await expect(s.call("drafts.read", { id: draft.id }, otherPrincipal)).rejects.toThrow("permission");
+    const second = await s.call<SocialAccount>("accounts.assistantGrant", {
+      accountId: other.id,
+      permissions: ["read", "draft"],
+      expectedVersion: null,
+    });
+    const otherPrincipal = (await s.social.principalForToken(
+      (await s.social.issueAccountThreadGrant("room", other.id)).token,
+    ))!;
+    await expect(s.call("drafts.read", { id: draft.id }, otherPrincipal)).rejects.toThrow(
+      "permission",
+    );
     await s.call("drafts.approve", { id: edited.id, reviewedDraft: edited });
     const job = await s.call<SocialJob>("replies.send", { id: draft.id });
     expect(job.projectIds).toEqual([]);
@@ -3309,36 +3613,77 @@ describe("Merkezi sosyal servis", () => {
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(1);
     expect(s.send.mock.calls[0][1].payload.text).toBe("Reviewed reply");
-    await s.call("accounts.assistantGrant", { accountId: account.id, permissions: ["read"], expectedVersion: granted.assistantGrant!.version });
+    await s.call("accounts.assistantGrant", {
+      accountId: account.id,
+      permissions: ["read"],
+      expectedVersion: granted.assistantGrant!.version,
+    });
     expect(await s.social.principalForToken(issued.token)).toBeUndefined();
-    await s.call("accounts.assistantGrant", { accountId: other.id, permissions: [], expectedVersion: second.assistantGrant!.version });
+    await s.call("accounts.assistantGrant", {
+      accountId: other.id,
+      permissions: [],
+      expectedVersion: second.assistantGrant!.version,
+    });
   });
   it("discovers only granted account identities for a verified Room and live device", async () => {
     const s = await fixture();
     const allowed = await s.account("x", [], "Allowed");
     await s.account("x", [], "Private");
-    s.social.setAssistantThreadResolver(async (id) => id === "room" ? { id } : id === "project-room" ? { id, projectId: s.a.id } : null);
+    s.social.setAssistantThreadResolver(async (id) =>
+      id === "room" ? { id } : id === "project-room" ? { id, projectId: s.a.id } : null,
+    );
     const device = await s.store.issueDevice("Desktop");
     const { createHash } = await import("node:crypto");
     const deviceHash = createHash("sha256").update(device.token).digest("hex");
-    const granted = await s.call<SocialAccount>("accounts.assistantGrant", { accountId: allowed.id, permissions: ["read"], expectedVersion: null });
-    expect(await s.social.listAssistantAccounts("room", deviceHash, { limit: 1 })).toEqual({ items: [{ id: allowed.id, name: allowed.name, platform: allowed.platform }], offset: 0, limit: 1, total: 1 });
-    await expect(s.social.listAssistantAccounts("project-room", deviceHash)).rejects.toThrow("scope changed");
-    await expect(s.social.listAssistantAccounts("room", "invalid")).rejects.toThrow("Device revoked");
-    await expect(s.social.listAssistantAccounts("room", deviceHash, { limit: 51 })).rejects.toThrow("Invalid Assistant account page");
-    await s.call("accounts.assistantGrant", { accountId: allowed.id, permissions: [], expectedVersion: granted.assistantGrant!.version });
+    const granted = await s.call<SocialAccount>("accounts.assistantGrant", {
+      accountId: allowed.id,
+      permissions: ["read"],
+      expectedVersion: null,
+    });
+    expect(await s.social.listAssistantAccounts("room", deviceHash, { limit: 1 })).toEqual({
+      items: [{ id: allowed.id, name: allowed.name, platform: allowed.platform }],
+      offset: 0,
+      limit: 1,
+      total: 1,
+    });
+    await expect(s.social.listAssistantAccounts("project-room", deviceHash)).rejects.toThrow(
+      "scope changed",
+    );
+    await expect(s.social.listAssistantAccounts("room", "invalid")).rejects.toThrow(
+      "Device revoked",
+    );
+    await expect(s.social.listAssistantAccounts("room", deviceHash, { limit: 51 })).rejects.toThrow(
+      "Invalid Assistant account page",
+    );
+    await s.call("accounts.assistantGrant", {
+      accountId: allowed.id,
+      permissions: [],
+      expectedVersion: granted.assistantGrant!.version,
+    });
     expect((await s.social.listAssistantAccounts("room", deviceHash)).items).toEqual([]);
     await s.store.revokeDevice(device.id);
-    await expect(s.social.listAssistantAccounts("room", deviceHash)).rejects.toThrow("Device revoked");
+    await expect(s.social.listAssistantAccounts("room", deviceHash)).rejects.toThrow(
+      "Device revoked",
+    );
   });
   it("keeps a personal reply with unknown delivery in review without resending", async () => {
     const s = await fixture();
     const account = await s.account("x", []);
     const thread = await s.thread(account);
-    s.social.setAssistantThreadResolver(async (id) => id === "room" ? { id } : null);
-    await s.call("accounts.assistantGrant", { accountId: account.id, permissions: ["read", "draft"], expectedVersion: null });
-    const p = (await s.social.principalForToken((await s.social.issueAccountThreadGrant("room", account.id)).token))!;
-    const draft = await s.call<SocialDraft>("replies.draft", { threadId: thread.id, text: "A reply" }, p);
+    s.social.setAssistantThreadResolver(async (id) => (id === "room" ? { id } : null));
+    await s.call("accounts.assistantGrant", {
+      accountId: account.id,
+      permissions: ["read", "draft"],
+      expectedVersion: null,
+    });
+    const p = (await s.social.principalForToken(
+      (await s.social.issueAccountThreadGrant("room", account.id)).token,
+    ))!;
+    const draft = await s.call<SocialDraft>(
+      "replies.draft",
+      { threadId: thread.id, text: "A reply" },
+      p,
+    );
     await s.call("drafts.approve", { id: draft.id, reviewedDraft: draft });
     const job = await s.call<SocialJob>("replies.send", { id: draft.id });
     s.send.mockRejectedValueOnce(new SocialPlatformError("unknown"));
@@ -3346,20 +3691,49 @@ describe("Merkezi sosyal servis", () => {
     await s.social.tick();
     await s.social.tick();
     expect(s.send).toHaveBeenCalledTimes(1);
-    expect((await s.call<SocialSnapshot>("snapshot")).jobs.find((item) => item.id === job.id)?.status).toBe("review");
+    expect(
+      (await s.call<SocialSnapshot>("snapshot")).jobs.find((item) => item.id === job.id)?.status,
+    ).toBe("review");
   });
   it("drains an in-flight account disclosure before completing grant revocation", async () => {
     const s = await fixture();
     const account = await s.account("x", []);
-    s.social.setAssistantThreadResolver(async (id) => id === "room" ? { id } : null);
-    const granted = await s.call<SocialAccount>("accounts.assistantGrant", { accountId: account.id, permissions: ["read"], expectedVersion: null });
+    s.social.setAssistantThreadResolver(async (id) => (id === "room" ? { id } : null));
+    const granted = await s.call<SocialAccount>("accounts.assistantGrant", {
+      accountId: account.id,
+      permissions: ["read"],
+      expectedVersion: null,
+    });
     let entered!: () => void, finish!: () => void;
-    const active = new Promise<void>((resolve) => { entered = resolve; });
-    const pending = new Promise<void>((resolve) => { finish = resolve; });
-    const disclosure = s.social.withAssistantAccountProofs("room", [{ accountId: account.id, version: granted.assistantGrant!.version }], async () => true, async (valid) => { expect(valid()).toBe(true); entered(); await pending; return "private"; });
+    const active = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const pending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const disclosure = s.social.withAssistantAccountProofs(
+      "room",
+      [{ accountId: account.id, version: granted.assistantGrant!.version }],
+      async () => true,
+      async (valid) => {
+        expect(valid()).toBe(true);
+        entered();
+        await pending;
+        return "private";
+      },
+    );
     await active;
     let completed = false;
-    const revoke = s.call("accounts.assistantGrant", { accountId: account.id, permissions: [], expectedVersion: granted.assistantGrant!.version }).then((value) => { completed = true; return value; });
+    const revoke = s
+      .call("accounts.assistantGrant", {
+        accountId: account.id,
+        permissions: [],
+        expectedVersion: granted.assistantGrant!.version,
+      })
+      .then((value) => {
+        completed = true;
+        return value;
+      });
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(completed).toBe(false);
     finish();
@@ -3370,40 +3744,95 @@ describe("Merkezi sosyal servis", () => {
   it("keeps an account grant until its durable voice generation is retired", async () => {
     const s = await fixture();
     const account = await s.account("x", []);
-    s.social.setAssistantThreadResolver(async (id) => id === "room" ? { id } : null);
-    const granted = await s.call<SocialAccount>("accounts.assistantGrant", { accountId: account.id, permissions: ["read"], expectedVersion: null });
+    s.social.setAssistantThreadResolver(async (id) => (id === "room" ? { id } : null));
+    const granted = await s.call<SocialAccount>("accounts.assistantGrant", {
+      accountId: account.id,
+      permissions: ["read"],
+      expectedVersion: null,
+    });
     const proof = { accountId: account.id, version: granted.assistantGrant!.version };
-    await s.social.withAssistantAccountProofs("room", [proof], async () => true, valid => s.social.registerAssistantVoiceLease({ threadId: "room", generationKey: "generation", deviceHash: "device", accounts: [proof] }, valid));
-    await expect(s.call("accounts.assistantGrant", { accountId: account.id, permissions: [], expectedVersion: proof.version })).rejects.toThrow("cannot be retired");
+    await s.social.withAssistantAccountProofs(
+      "room",
+      [proof],
+      async () => true,
+      (valid) =>
+        s.social.registerAssistantVoiceLease(
+          {
+            threadId: "room",
+            generationKey: "generation",
+            deviceHash: "device",
+            accounts: [proof],
+          },
+          valid,
+        ),
+    );
+    await expect(
+      s.call("accounts.assistantGrant", {
+        accountId: account.id,
+        permissions: [],
+        expectedVersion: proof.version,
+      }),
+    ).rejects.toThrow("cannot be retired");
     expect(await s.social.assistantAccountProofsValid("room", [proof])).toBe(false);
-    expect((await s.call<SocialSnapshot>("snapshot")).accounts.find(item => item.id === account.id)?.assistantGrantPending).toEqual({ permissions: [] });
+    expect(
+      (await s.call<SocialSnapshot>("snapshot")).accounts.find((item) => item.id === account.id)
+        ?.assistantGrantPending,
+    ).toEqual({ permissions: [] });
     await s.restart();
-    s.social.setAssistantThreadResolver(async (id) => id === "room" ? { id } : null);
+    s.social.setAssistantThreadResolver(async (id) => (id === "room" ? { id } : null));
     expect(await s.social.assistantAccountProofsValid("room", [proof])).toBe(false);
-    expect((await s.call<SocialSnapshot>("snapshot")).accounts.find(item => item.id === account.id)?.assistantGrantPending).toEqual({ permissions: [] });
+    expect(
+      (await s.call<SocialSnapshot>("snapshot")).accounts.find((item) => item.id === account.id)
+        ?.assistantGrantPending,
+    ).toEqual({ permissions: [] });
     const retire = vi.fn(async (_inputs, effect) => effect(() => true));
     s.social.retireAssistantVoiceGenerations = retire;
-    await s.call("accounts.assistantGrant", { accountId: account.id, permissions: [], expectedVersion: proof.version });
-    expect(retire).toHaveBeenCalledWith([{ threadId: "room", generationKey: "generation", deviceHash: "device", accounts: [proof] }], expect.any(Function));
+    await s.call("accounts.assistantGrant", {
+      accountId: account.id,
+      permissions: [],
+      expectedVersion: proof.version,
+    });
+    expect(retire).toHaveBeenCalledWith(
+      [{ threadId: "room", generationKey: "generation", deviceHash: "device", accounts: [proof] }],
+      expect.any(Function),
+    );
   });
   it("does not restore revoked Assistant access when reconnect finishes", async () => {
     const s = await fixture();
     const account = await s.account();
     const granted = await s.call<SocialAccount>("accounts.assistantGrant", {
-      accountId: account.id, permissions: ["read", "draft"], expectedVersion: null,
+      accountId: account.id,
+      permissions: ["read", "draft"],
+      expectedVersion: null,
     });
     let finish!: () => void;
-    vi.mocked(s.credentials.set).mockImplementationOnce(async () => new Promise<void>((done) => { finish = done; }));
-    const reconnect = s.social.connectAccount(account.id, {
-      platformId: `x-${account.id}`, name: "Reconnected", scopes: ["tweet.read"], accessApproved: true,
-    }, { accessToken: "synthetic-new-token" });
+    vi.mocked(s.credentials.set).mockImplementationOnce(
+      async () =>
+        new Promise<void>((done) => {
+          finish = done;
+        }),
+    );
+    const reconnect = s.social.connectAccount(
+      account.id,
+      {
+        platformId: `x-${account.id}`,
+        name: "Reconnected",
+        scopes: ["tweet.read"],
+        accessApproved: true,
+      },
+      { accessToken: "synthetic-new-token" },
+    );
     while (!finish) await new Promise((resolve) => setTimeout(resolve, 0));
     const revoked = await s.call<SocialAccount>("accounts.assistantGrant", {
-      accountId: account.id, permissions: [], expectedVersion: granted.assistantGrant!.version,
+      accountId: account.id,
+      permissions: [],
+      expectedVersion: granted.assistantGrant!.version,
     });
     finish();
     await reconnect;
-    const current = (await s.call<SocialAccount[]>("accounts.list")).find((a) => a.id === account.id)!;
+    const current = (await s.call<SocialAccount[]>("accounts.list")).find(
+      (a) => a.id === account.id,
+    )!;
     expect(current.assistantGrant).toEqual(revoked.assistantGrant);
   });
   it("OAuth credential yazımı sürerken iptal edilen proje yetkisini geri yüklemez", async () => {

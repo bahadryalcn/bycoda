@@ -49,8 +49,8 @@ import { LAYER } from "../../../shared/lib/layers";
 import { HarnessIcon } from "./HarnessIcon";
 import { Popover } from "../../../shared/ui/Popover";
 import { MOD } from "../../../platform/tauri/platform";
-import { keybindingPressed } from "../../settings/model/settings";
-import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
+import { keybindingPressed } from "../../settings/public/settings";
+import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import "./ModelPicker.css";
 
 import { lazySurface } from "../../../shared/ui/lazySurface";

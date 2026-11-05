@@ -8,8 +8,10 @@ import { NativeSelect } from "../../../shared/ui/Select";
 import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { Button } from "../../../shared/ui/Button";
 import { SearchInput } from "../../../shared/ui/SearchInput";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { useState } from "react";
 import { socialRows } from "../model/socialWorkspace";
+import { socialQueryScope } from "../model/socialQuery";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
 import type { SocialJob, SocialSnapshot } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
@@ -38,7 +40,6 @@ const jobKinds: Record<SocialJob["kind"], string> = {
     return t("Comment");
   },
 };
-const PAGE_SIZE = 30;
 export type SocialHistoryAccountIntent = { accountId: string; token: number };
 
 /** Mirrors the currently shipped Host guard; the Host still authorizes cancellation. */
@@ -143,7 +144,15 @@ export function SocialHistory({
   run,
   onFilterChange,
   accountIntent,
-}: Props & { accountIntent?: SocialHistoryAccountIntent }) {
+  onLoadMore,
+  loadingMore,
+  loadError,
+}: Props & {
+  accountIntent?: SocialHistoryAccountIntent;
+  onLoadMore?: () => void;
+  loadingMore?: boolean;
+  loadError?: string;
+}) {
   useLocale();
   const waiting = snapshot.jobCounts
     ? (snapshot.jobCounts.queued ?? 0) + (snapshot.jobCounts.running ?? 0)
@@ -214,6 +223,9 @@ export function SocialHistory({
         run={run}
         onFilterChange={onFilterChange}
         accountIntent={accountIntent}
+        onLoadMore={onLoadMore}
+        loadingMore={loadingMore}
+        loadError={loadError}
       />
     </div>
   );
@@ -226,6 +238,9 @@ export function JobHistory({
   jobs = snapshot.jobs,
   onFilterChange,
   accountIntent,
+  onLoadMore,
+  loadingMore,
+  loadError,
 }: {
   snapshot: SocialSnapshot;
   client: SocialClient;
@@ -233,6 +248,9 @@ export function JobHistory({
   jobs?: SocialJob[];
   onFilterChange?: Props["onFilterChange"];
   accountIntent?: SocialHistoryAccountIntent;
+  onLoadMore?: () => void;
+  loadingMore?: boolean;
+  loadError?: string;
 }) {
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
@@ -242,7 +260,6 @@ export function JobHistory({
   const [accountId, setAccountId] = useState("");
   const [kind, setKind] = useState("");
   const [query, setQuery] = useState("");
-  const [page, setPage] = useState(0);
   const [since, setSince] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const intentKey = accountIntent ? `${accountIntent.token}:${accountIntent.accountId}` : "";
@@ -250,7 +267,6 @@ export function JobHistory({
   if (accountIntent && intentKey !== appliedIntent) {
     setAppliedIntent(intentKey);
     setAccountId(accountIntent.accountId);
-    setPage(0);
     setSelectedId(null);
   }
   const hostFiltered = useSocialWorkspaceFilter(
@@ -282,11 +298,8 @@ export function JobHistory({
       );
     })
     .sort((a, b) => b.createdAt - a.createdAt || b.scheduledAt - a.scheduledAt);
-  const currentPage = Math.min(page, Math.max(0, Math.ceil(filtered.length / PAGE_SIZE) - 1));
-  const shown =
-    onFilterChange && snapshot.pages
-      ? filtered
-      : filtered.slice(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE);
+  const remotePage = onFilterChange && snapshot.pages?.jobs;
+  const shown = filtered;
   const selected = (selectedId ? jobs.find((job) => job.id === selectedId) : shown[0]) ?? null;
   const reset = () => {
     setQuery("");
@@ -294,7 +307,6 @@ export function JobHistory({
     setAccountId("");
     setKind("");
     setSince("");
-    setPage(0);
   };
   return (
     <div className="social-job-list @container/history">
@@ -309,7 +321,6 @@ export function JobHistory({
             placeholder={t("Content, contact or campaign")}
             onChange={(event) => {
               setQuery(event.target.value);
-              setPage(0);
             }}
           />
         </label>
@@ -324,7 +335,6 @@ export function JobHistory({
               value={status}
               onChange={(event) => {
                 setStatus(event.target.value);
-                setPage(0);
               }}
             >
               <option value="">
@@ -361,7 +371,6 @@ export function JobHistory({
               ]}
               onChange={(nextValue) => {
                 setAccountId(nextValue);
-                setPage(0);
               }}
               searchLocale={getLocale()}
             />
@@ -373,7 +382,6 @@ export function JobHistory({
               value={kind}
               onChange={(event) => {
                 setKind(event.target.value);
-                setPage(0);
               }}
             >
               <option value="">{t("All jobs")}</option>
@@ -393,7 +401,6 @@ export function JobHistory({
               value={since}
               onChange={(next) => {
                 setSince(next);
-                setPage(0);
               }}
             />
           </div>
@@ -423,58 +430,74 @@ export function JobHistory({
                 </Button>
               </Empty>
             ) : null}
-            {shown.map((job) => {
-              const account = snapshot.accounts.find((item) => item.id === job.accountId);
-              const campaign = campaigns.find((item) => item.id === job.campaignId);
-              const contact = contacts.find((item) => item.id === job.contactId);
-              const title =
-                campaign?.name || contact?.name || job.payload.recipientId || jobKinds[job.kind];
-              return (
-                <article
-                  key={job.id}
-                  className="social-history-record min-w-0"
-                  data-status={job.status}
-                >
-                  <Button
-                    variant="item"
-                    layout="stacked"
-                    selected={selected?.id === job.id}
-                    aria-current={selected?.id === job.id ? "true" : undefined}
-                    tooltip={title}
-                    tooltipWhen="overflow"
-                    tooltipDetails={
-                      job.payload.text && title !== jobKinds[job.kind]
-                        ? [jobKinds[job.kind]]
-                        : undefined
-                    }
-                    onClick={() => setSelectedId(job.id)}
-                    className="w-full min-w-0"
+            <ContinuousList
+              items={shown}
+              itemKey={(job) => job.id}
+              stateKey={`social-history:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}:${status}:${accountId}:${kind}:${since}:${query}`}
+              requiredKey={selected?.id}
+              estimateSize={104}
+              className="social-history-continuous-list"
+              hasMore={
+                !socialLocked &&
+                !!remotePage &&
+                remotePage.offset + remotePage.limit < remotePage.total
+              }
+              loading={loadingMore}
+              error={remotePage ? loadError : undefined}
+              onLoadMore={remotePage ? onLoadMore : undefined}
+              renderItem={(job) => {
+                const account = snapshot.accounts.find((item) => item.id === job.accountId);
+                const campaign = campaigns.find((item) => item.id === job.campaignId);
+                const contact = contacts.find((item) => item.id === job.contactId);
+                const title =
+                  campaign?.name || contact?.name || job.payload.recipientId || jobKinds[job.kind];
+                return (
+                  <article
+                    key={job.id}
+                    className="social-history-record min-w-0"
+                    data-status={job.status}
                   >
-                    <span className="line-clamp-1 min-w-0 text-ui-secondary font-medium">
-                      {title}
-                    </span>
-                    <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-caption text-(--ui-text-secondary)">
-                      {job.payload.text || jobKinds[job.kind]}
-                    </span>
-                    <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-micro text-(--ui-text-secondary)">
-                      <span className="min-w-0 truncate">
-                        {account?.name ?? t("Account removed")}
-                        {account ? ` · ${names[account.platform]}` : ""}
+                    <Button
+                      variant="item"
+                      layout="stacked"
+                      selected={selected?.id === job.id}
+                      aria-current={selected?.id === job.id ? "true" : undefined}
+                      tooltip={title}
+                      tooltipWhen="overflow"
+                      tooltipDetails={
+                        job.payload.text && title !== jobKinds[job.kind]
+                          ? [jobKinds[job.kind]]
+                          : undefined
+                      }
+                      onClick={() => setSelectedId(job.id)}
+                      className="w-full min-w-0"
+                    >
+                      <span className="line-clamp-1 min-w-0 text-ui-secondary font-medium">
+                        {title}
                       </span>
-                      <time dateTime={new Date(job.createdAt).toISOString()}>
-                        {t("Created {p0}", { p0: time(job.createdAt) })}
-                      </time>
-                    </span>
-                    <JobState job={job} />
-                    {job.status === "review" || job.delivery?.status === "failed" ? (
-                      <span className="text-ui-caption text-(--ui-tone-warning-fg)">
-                        {socialJobExplanation(job)}
+                      <span className="line-clamp-2 min-w-0 wrap-anywhere text-ui-caption text-(--ui-text-secondary)">
+                        {job.payload.text || jobKinds[job.kind]}
                       </span>
-                    ) : null}
-                  </Button>
-                </article>
-              );
-            })}
+                      <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-micro text-(--ui-text-secondary)">
+                        <span className="min-w-0 truncate">
+                          {account?.name ?? t("Account removed")}
+                          {account ? ` · ${names[account.platform]}` : ""}
+                        </span>
+                        <time dateTime={new Date(job.createdAt).toISOString()}>
+                          {t("Created {p0}", { p0: time(job.createdAt) })}
+                        </time>
+                      </span>
+                      <JobState job={job} />
+                      {job.status === "review" || job.delivery?.status === "failed" ? (
+                        <span className="text-ui-caption text-(--ui-tone-warning-fg)">
+                          {socialJobExplanation(job)}
+                        </span>
+                      ) : null}
+                    </Button>
+                  </article>
+                );
+              }}
+            />
           </div>
           {selected ? (
             <JobDetail
@@ -501,29 +524,6 @@ export function JobHistory({
           ) : null}
         </Empty>
       )}
-      {!onFilterChange && filtered.length > PAGE_SIZE ? (
-        <div className="social-pagination">
-          <Button
-            variant="secondary"
-            type="button"
-            disabled={socialLocked || currentPage === 0}
-            onClick={() => setPage(currentPage - 1)}
-          >
-            {t("Previous")}
-          </Button>
-          <span>
-            {currentPage + 1} / {Math.ceil(filtered.length / PAGE_SIZE)}
-          </span>
-          <Button
-            variant="secondary"
-            type="button"
-            disabled={socialLocked || (currentPage + 1) * PAGE_SIZE >= filtered.length}
-            onClick={() => setPage(currentPage + 1)}
-          >
-            {t("Next")}
-          </Button>
-        </div>
-      ) : null}
     </div>
   );
 }

@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { HostStore } from "../store";
 import { HostCrews } from "./crews";
-import { initializeCrewSchedulerProjection } from "./crew-scheduler-projection";
+import {
+  initializeCrewSchedulerProjection,
+  readCrewState,
+  writeCrewState,
+} from "./crew-scheduler-projection";
 import type { HostTasks } from "../tasks/tasks";
 import type { HostEngine } from "../engine";
 import { defaultCrewPolicy, type CrewRun } from "../../src/features/crews/model/crew";
@@ -29,6 +33,8 @@ function run(id: string, status: CrewRun["status"] = "active"): CrewRun {
   };
 }
 const state = (...runs: CrewRun[]) => JSON.stringify({ definitions: [], runs });
+// Fixture ingestion is not scheduler decoding; spies below measure reads only.
+const decodeFixture = JSON.parse;
 async function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "crew-scheduler-cache-"));
   const path = join(directory, "host.db");
@@ -38,10 +44,15 @@ async function fixture() {
   await writer.ready;
   let now = 1000;
   const tasks = { ready: Promise.resolve(), list: vi.fn(async () => []), tick: vi.fn() };
-  const engine = { command: vi.fn<(command: unknown) => Promise<void>>().mockResolvedValue(undefined), updateSession: vi.fn() };
+  const engine = {
+    command: vi.fn<(command: unknown) => Promise<void>>().mockResolvedValue(undefined),
+    updateSession: vi.fn(),
+  };
   const session = vi
     .spyOn(store, "session")
-    .mockResolvedValue({ projectId: "project", status: "running" } as Awaited<ReturnType<HostStore["session"]>>);
+    .mockResolvedValue({ projectId: "project", status: "running" } as Awaited<
+      ReturnType<HostStore["session"]>
+    >);
   const create = () =>
     new HostCrews(
       store,
@@ -70,11 +81,7 @@ async function fixture() {
       now += delta;
     },
     write: async (raw: string, owner = writer) => {
-      await owner.db
-        .prepare(
-          "INSERT INTO metadata(key,value) VALUES('crews.v1',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        )
-        .run(raw);
+      await owner.transaction(() => writeCrewState(owner, decodeFixture(raw)));
     },
     restart: async () => {
       await service.close();
@@ -101,9 +108,7 @@ it("reads only projected active payloads on every tick without parsing canonical
     await f.service.tick();
   }
   expect(parse.mock.calls.filter(([value]) => value === raw)).toHaveLength(0);
-  expect(
-    prepare.mock.calls.filter(([sql]) => sql.includes("FROM crew_scheduler_source_v1 source")),
-  ).toHaveLength(6);
+  expect(prepare.mock.calls.filter(([sql]) => sql.includes("FROM crew_runs_v2"))).toHaveLength(6);
   expect(f.session).toHaveBeenCalledTimes(6);
 });
 
@@ -120,7 +125,7 @@ it("observes cross-writer activation after idle, replacement, removal, ABA and r
   f.session.mockClear();
   await f.service.tick();
   expect(f.session).not.toHaveBeenCalled();
-  await f.writer.db.prepare("DELETE FROM metadata WHERE key='crews.v1'").run();
+  await f.write(state());
   await f.service.tick();
   await f.write(raw);
   await f.service.tick();
@@ -148,9 +153,7 @@ it("returns fresh mutable active snapshots without exposing persisted projection
   expect(second[0]).not.toBe(first[0]);
   await f.service.tick();
   expect(f.session).toHaveBeenCalledExactlyOnceWith("session-live");
-  expect(
-    (await f.store.db.prepare("SELECT value FROM metadata WHERE key='crews.v1'").get())!.value,
-  ).toBe(raw);
+  expect(await readCrewState(f.store)).toEqual(JSON.parse(raw));
 });
 
 it("does not publish uncommitted decoded state and rereads identical bytes after rollback", async () => {
@@ -202,93 +205,126 @@ it("does not transfer or decode oversized settled history on scheduler reads", a
   expect(parse.mock.calls.filter(([value]) => value === raw)).toHaveLength(0);
 });
 
-
 it("keeps changing delivery ticks off canonical history while retaining all saved data", async () => {
   const f = await fixture();
-  f.session.mockResolvedValue({ projectId: "project", status: "idle" } as Awaited<ReturnType<HostStore["session"]>>);
-  const history = Array.from({ length: 40 }, (_, index) => run(`settled-history-${index}`, "finished"));
+  f.session.mockResolvedValue({ projectId: "project", status: "idle" } as Awaited<
+    ReturnType<HostStore["session"]>
+  >);
+  const history = Array.from({ length: 40 }, (_, index) =>
+    run(`settled-history-${index}`, "finished"),
+  );
   const parse = vi.spyOn(JSON, "parse");
   const prepare = vi.spyOn(f.store.db, "prepare");
   for (let index = 0; index < 3; index++) {
     const live = run("live");
-    live.messages = [{ id: `notice-${index}`, from: "owner", text: "Changed notice", createdAt: index + 1 }];
+    live.messages = [
+      { id: `notice-${index}`, from: "owner", text: "Changed notice", createdAt: index + 1 },
+    ];
     await f.write(state(...history, live));
     f.advance(1500);
     await f.service.tick();
   }
   expect(f.engine.command).toHaveBeenCalledTimes(3);
-  expect(prepare.mock.calls.filter(([sql]) => sql === "SELECT value FROM metadata WHERE key=?")).toHaveLength(0);
-  expect(parse.mock.calls.filter(([value]) => typeof value === "string" && value.includes("settled-history-"))).toHaveLength(0);
+  expect(
+    prepare.mock.calls.filter(
+      ([sql]) => sql === "SELECT payload FROM crew_runs_v2 ORDER BY ordinal",
+    ),
+  ).toHaveLength(0);
+  expect(
+    parse.mock.calls.filter(
+      ([value]) => typeof value === "string" && value.includes("settled-history-"),
+    ),
+  ).toHaveLength(0);
   parse.mockRestore();
-  const row = await f.writer.db.prepare("SELECT value FROM metadata WHERE key='crews.v1'").get();
-  const saved = JSON.parse(String(row!.value));
+  const saved = await readCrewState(f.writer);
   expect(saved.runs.slice(0, 40)).toEqual(history);
   expect(saved.runs[40].pendingDelivery).toBeUndefined();
   expect(saved.runs[40].notifications["request:notice-2"]).toBe("sent");
 });
 
-it("fails closed on malformed source and repairs projection atomically on restart", async () => {
+it("fails closed on malformed canonical state and retains run rows across restart", async () => {
   const f = await fixture();
-  await f.write("{invalid");
-  await expect(f.service.tick()).rejects.toThrow("Crew scheduler source is invalid");
+  await f.write(state(run("recovered")));
+  await f.writer.db
+    .prepare("UPDATE metadata SET value=? WHERE key='crews.v2.state'")
+    .run("{invalid");
+  await expect(f.service.tick()).rejects.toThrow("Crew storage is invalid or unavailable");
   await f.restart();
-  await expect(f.service.tick()).rejects.toThrow("Crew scheduler source is invalid");
+  await expect(f.service.tick()).rejects.toThrow("Crew storage is invalid or unavailable");
   await f.write(state(run("recovered")));
   await f.service.tick();
   expect(f.session).toHaveBeenLastCalledWith("session-recovered");
-  await f.writer.db.prepare("DELETE FROM crew_scheduler_active_v1").run();
   await f.restart();
   f.session.mockClear();
   await f.service.tick();
   expect(f.session).toHaveBeenCalledExactlyOnceWith("session-recovered");
 });
 
-it("legacy replace and key moves update the same authoritative projection", async () => {
+it("legacy replace and key moves cannot change migrated canonical authority", async () => {
   const f = await fixture();
-  await f.writer.db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('crews.v1',?)").run(state(run("replace")));
+  await f.write(state(run("canonical")));
+  await f.writer.db
+    .prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('crews.v1',?)")
+    .run(state(run("replace")));
   await f.service.tick();
-  expect(f.session).toHaveBeenLastCalledWith("session-replace");
+  expect(f.session).toHaveBeenLastCalledWith("session-canonical");
   await f.writer.db.prepare("UPDATE metadata SET key='crews.moved' WHERE key='crews.v1'").run();
   f.session.mockClear();
   await f.service.tick();
-  expect(f.session).not.toHaveBeenCalled();
+  expect(f.session).toHaveBeenCalledExactlyOnceWith("session-canonical");
   await f.writer.db.prepare("UPDATE metadata SET key='crews.v1' WHERE key='crews.moved'").run();
   await f.service.tick();
-  expect(f.session).toHaveBeenCalledExactlyOnceWith("session-replace");
+  expect(f.session).toHaveBeenCalledTimes(2);
+  expect(f.session).toHaveBeenLastCalledWith("session-canonical");
 });
 
 it("late delivery cannot overwrite another coordinator or another pending command", async () => {
   const f = await fixture();
   const original = run("live");
-  original.pendingDelivery = { commandId: "original", text: "Original notice", notifications: { original: "sent" } };
+  original.pendingDelivery = {
+    commandId: "original",
+    text: "Original notice",
+    notifications: { original: "sent" },
+  };
   const writer = f.service as unknown as {
-    updateDelivery(run: CrewRun, requireActive: boolean, settledCommandId?: string): Promise<boolean>;
+    updateDelivery(
+      run: CrewRun,
+      requireActive: boolean,
+      settledCommandId?: string,
+    ): Promise<boolean>;
   };
   const replacement = { ...original, coordinatorSessionId: "new-coordinator" };
   await f.write(state(replacement));
   expect(await writer.updateDelivery(original, true)).toBe(false);
-  const different = { ...original, pendingDelivery: { ...original.pendingDelivery, commandId: "new-command" } };
+  const different = {
+    ...original,
+    pendingDelivery: { ...original.pendingDelivery, commandId: "new-command" },
+  };
   await f.write(state(different));
   const settled = { ...original, pendingDelivery: undefined, notifications: { original: "sent" } };
   expect(await writer.updateDelivery(settled, false, "original")).toBe(false);
-  const saved = await f.writer.db.prepare("SELECT value FROM metadata WHERE key='crews.v1'").get();
-  expect(JSON.parse(String(saved!.value)).runs[0]).toEqual(different);
+  expect((await readCrewState(f.writer)).runs[0]).toEqual(different);
 });
 
-
-it("invalid run arrays cannot masquerade as an empty active projection", async () => {
+it("invalid run arrays cannot overwrite canonical active rows", async () => {
   const f = await fixture();
-  for (const raw of [state(null as unknown as CrewRun), '{"runs":{}}', '{"runs":[{"status":"active","coordinatorSessionId":false}]}']) {
-    await f.write(raw);
-    await expect(f.service.tick()).rejects.toThrow("Crew scheduler source is invalid");
+  await f.write(state(run("retained")));
+  for (const raw of [
+    state(null as unknown as CrewRun),
+    '{"runs":{}}',
+    '{"runs":[{"status":"active","coordinatorSessionId":false}]}',
+  ]) {
+    await expect(f.write(raw)).rejects.toThrow();
+    expect((await readCrewState(f.writer)).runs).toEqual([run("retained")]);
   }
   expect(f.session).not.toHaveBeenCalled();
 });
 
-
 it("retains the exact persisted delivery across uncertain send failure and restart", async () => {
   const f = await fixture();
-  f.session.mockResolvedValue({ projectId: "project", status: "idle" } as Awaited<ReturnType<HostStore["session"]>>);
+  f.session.mockResolvedValue({ projectId: "project", status: "idle" } as Awaited<
+    ReturnType<HostStore["session"]>
+  >);
   const live = run("live");
   live.messages = [{ id: "request", from: "owner", text: "Notice", createdAt: 1 }];
   await f.write(state(run("history", "finished"), live));
@@ -299,26 +335,33 @@ it("retains the exact persisted delivery across uncertain send failure and resta
   await f.service.tick();
   expect(f.engine.command).toHaveBeenCalledTimes(2);
   expect(f.engine.command.mock.calls[1][0]).toEqual(original);
-  const row = await f.writer.db.prepare("SELECT value FROM metadata WHERE key='crews.v1'").get();
-  const saved = JSON.parse(String(row!.value));
+  const saved = await readCrewState(f.writer);
   expect(saved.runs[0]).toEqual(run("history", "finished"));
   expect(saved.runs[1].pendingDelivery).toBeUndefined();
 });
 
-
-it("legacy conflict clauses cannot retain an old invalid marker or stale active rows", async () => {
+it("legacy conflict clauses cannot replace migrated active rows or poison canonical state", async () => {
   const f = await fixture();
-  await f.write("invalid");
-  await f.writer.db.prepare("UPDATE OR IGNORE metadata SET value=? WHERE key='crews.v1'").run(state(run("ignore")));
+  await f.write(state(run("canonical")));
+  await f.writer.db
+    .prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('crews.v1',?)")
+    .run("invalid");
+  await f.writer.db
+    .prepare("UPDATE OR IGNORE metadata SET value=? WHERE key='crews.v1'")
+    .run(state(run("ignore")));
   await f.service.tick();
-  expect(f.session).toHaveBeenLastCalledWith("session-ignore");
-  await f.writer.db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('crews.v1',?)").run("invalid again");
-  await expect(f.service.tick()).rejects.toThrow("Crew scheduler source is invalid");
-  await f.writer.db.prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('crews.v1',?)").run(state(run("replace-recovered")));
+  expect(f.session).toHaveBeenLastCalledWith("session-canonical");
+  await f.writer.db
+    .prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('crews.v1',?)")
+    .run("invalid again");
   await f.service.tick();
-  expect(f.session).toHaveBeenLastCalledWith("session-replace-recovered");
+  expect(f.session).toHaveBeenLastCalledWith("session-canonical");
+  await f.writer.db
+    .prepare("INSERT OR REPLACE INTO metadata(key,value) VALUES('crews.v1',?)")
+    .run(state(run("replace-recovered")));
+  await f.service.tick();
+  expect(f.session).toHaveBeenLastCalledWith("session-canonical");
 });
-
 
 it("rolls back interrupted startup backfill without publishing partial schema or altering history", async () => {
   const store = new HostStore(":memory:");
@@ -329,16 +372,22 @@ it("rolls back interrupted startup backfill without publishing partial schema or
   const exec = store.db.exec.bind(store.db);
   const fault = vi.spyOn(store.db, "exec").mockImplementation(async (sql) => {
     await exec(sql);
-    if (sql.includes("CREATE TABLE IF NOT EXISTS crew_scheduler_source_v1"))
+    if (sql.includes("CREATE TABLE IF NOT EXISTS crew_runs_v2"))
       throw new Error("interrupted backfill");
   });
   await expect(initializeCrewSchedulerProjection(store)).rejects.toThrow("interrupted backfill");
   fault.mockRestore();
-  const schema = await store.db.prepare("SELECT name FROM sqlite_master WHERE name LIKE 'crew_scheduler_%'").all();
+  const schema = await store.db
+    .prepare(
+      "SELECT name FROM sqlite_master WHERE name LIKE 'crew_runs_v2%' OR name='crew_finish_sequence'",
+    )
+    .all();
   expect(schema).toEqual([]);
   const saved = await store.db.prepare("SELECT value FROM metadata WHERE key='crews.v1'").get();
   expect(saved!.value).toBe(raw);
   await initializeCrewSchedulerProjection(store);
-  const projected = await store.db.prepare("SELECT payload FROM crew_scheduler_active_v1").all();
+  const projected = await store.db
+    .prepare("SELECT payload FROM crew_runs_v2 WHERE status='active'")
+    .all();
   expect(projected.map((row) => JSON.parse(String(row.payload)))).toEqual([run("live")]);
 });

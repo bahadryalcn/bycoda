@@ -69,7 +69,11 @@ export interface SessionReadPorts<
     catchUp(sessionId: string, signal?: AbortSignal): Promise<void>;
   };
   nativeProjection: {
-    watch(sessionId: string, fresh?: boolean, signal?: AbortSignal): Promise<DesktopReadWatch | undefined>;
+    watch(
+      sessionId: string,
+      fresh?: boolean,
+      signal?: AbortSignal,
+    ): Promise<DesktopReadWatch | undefined>;
     view(sessionId: string, projectId?: string, signal?: AbortSignal): Promise<View | undefined>;
     sync(view: View, revision?: number): ReadSync<View, Delta, View["session"]["blocks"][number]>;
     recheckMs(sessionId: string): Promise<number>;
@@ -140,13 +144,18 @@ export function createSessionReadService<
     return read(context, async () => {
       const id = String(params.sessionId ?? "");
       const epoch = await ports.sourceEpoch?.(id);
-      const revision = (!epoch || params.sourceEpoch === epoch) && Number.isSafeInteger(params.revision)
-        ? Number(params.revision) : undefined;
+      const revision =
+        (!epoch || params.sourceEpoch === epoch) && Number.isSafeInteger(params.revision)
+          ? Number(params.revision)
+          : undefined;
       if (revision !== undefined && Number.isFinite(params.waitMs) && Number(params.waitMs) > 0) {
         await ports.revisionWaits.wait(
           async () =>
-            (await (context.signal ? ports.nativeProjection.watch(id, true, context.signal) : ports.nativeProjection.watch(id, true)))?.revision ??
-            (await ports.repository.session(id)).revision,
+            (
+              await (context.signal
+                ? ports.nativeProjection.watch(id, true, context.signal)
+                : ports.nativeProjection.watch(id, true))
+            )?.revision ?? (await ports.repository.session(id)).revision,
           revision,
           Number(params.waitMs),
           async () =>
@@ -157,23 +166,36 @@ export function createSessionReadService<
         );
         await assertSessionAuthority(context);
       }
-      const watch = await (context.signal ? ports.nativeProjection.watch(id, false, context.signal) : ports.nativeProjection.watch(id));
+      const watch = await (context.signal
+        ? ports.nativeProjection.watch(id, false, context.signal)
+        : ports.nativeProjection.watch(id));
       let current: View;
       let sync: Sync;
       if (watch && revision === watch.revision) {
-        if (epoch && epoch !== await ports.sourceEpoch?.(id)) throw new Error("Session read owner changed; retry");
+        if (epoch && epoch !== (await ports.sourceEpoch?.(id)))
+          throw new Error("Session read owner changed; retry");
         return { kind: "unchanged" as const, revision, ...(epoch ? { sourceEpoch: epoch } : {}) };
       }
-      const view = watch && (await (context.signal ? ports.nativeProjection.view(id, watch.projectId, context.signal) : ports.nativeProjection.view(id, watch.projectId)));
+      const view =
+        watch &&
+        (await (context.signal
+          ? ports.nativeProjection.view(id, watch.projectId, context.signal)
+          : ports.nativeProjection.view(id, watch.projectId)));
       if (view) {
         current = view;
         sync = ports.nativeProjection.sync(view, revision);
       } else {
         context.signal?.throwIfAborted();
-        await (context.signal ? ports.repository.catchUp(id, context.signal) : ports.repository.catchUp(id));
+        await (context.signal
+          ? ports.repository.catchUp(id, context.signal)
+          : ports.repository.catchUp(id));
         context.signal?.throwIfAborted();
-        current = await (context.signal ? ports.repository.session(id, context.signal) : ports.repository.session(id));
-        sync = await (context.signal ? ports.repository.sync(id, revision, context.signal) : ports.repository.sync(id, revision));
+        current = await (context.signal
+          ? ports.repository.session(id, context.signal)
+          : ports.repository.session(id));
+        sync = await (context.signal
+          ? ports.repository.sync(id, revision, context.signal)
+          : ports.repository.sync(id, revision));
       }
       if (params.partial === true && (!epoch || params.sourceEpoch === epoch)) {
         const ids = params.loadedBlockIds ?? [];
@@ -239,10 +261,12 @@ export function createSessionReadService<
               sync.value.status === "running" ? (watch ? "desktop" : "host") : undefined,
           },
         };
-      if (epoch && epoch !== await ports.sourceEpoch?.(id)) throw new Error("Session read owner changed; retry");
+      if (epoch && epoch !== (await ports.sourceEpoch?.(id)))
+        throw new Error("Session read owner changed; retry");
       if (!epoch) return sync;
       if (sync.kind === "unchanged") return { ...sync, sourceEpoch: epoch };
-      if (sync.kind === "snapshot") return { ...sync, value: { ...sync.value, sourceEpoch: epoch } };
+      if (sync.kind === "snapshot")
+        return { ...sync, value: { ...sync.value, sourceEpoch: epoch } };
       return { ...sync, value: { ...sync.value, sourceEpoch: epoch } };
     });
   };
@@ -260,7 +284,10 @@ export function createSessionReadService<
     page(params: LegacyParams, context: SessionDomainContext) {
       return read(context, async () => {
         const id = String(params.sessionId ?? "");
-        const watch = await (context.signal ? ports.nativeProjection.watch(id, false, context.signal) : ports.nativeProjection.watch(id));
+        const epoch = await ports.sourceEpoch?.(id);
+        const watch = await (context.signal
+          ? ports.nativeProjection.watch(id, false, context.signal)
+          : ports.nativeProjection.watch(id));
         const { value, ...page } = await ports.transcript.page(
           () => load(id, watch),
           id,
@@ -269,12 +296,15 @@ export function createSessionReadService<
           params.preview === true,
           params.digests === true,
         );
+        if (epoch && epoch !== (await ports.sourceEpoch?.(id)))
+          throw new Error("Session read owner changed; retry");
         return {
           ...page,
           sync: ports.transfers.respond(id, {
             kind: "snapshot",
             value: {
               ...value,
+              ...(epoch ? { sourceEpoch: epoch } : {}),
               executionOwner: value.status === "running" ? (watch ? "desktop" : "host") : undefined,
             },
           }),

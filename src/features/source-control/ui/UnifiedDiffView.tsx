@@ -24,18 +24,19 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
 import { formatInteger } from "../../../shared/lib/numbers";
-import type { ColorScheme } from "../../settings/model/appearance";
+import type { ColorScheme, DiffLayout } from "../../settings";
 import { basename } from "../../../platform/tauri/fs";
-import { highlightDiffFile, type SyntaxToken } from "../../files/editor/syntaxTokens";
+import { highlightDiffFile, type SyntaxToken } from "../../files/public/syntaxTokens";
+
 import { useDiffZoom } from "../hooks/useDiffZoom";
 import { useFocusFollow } from "../hooks/useFocusFollow";
 import { DiffCommentComposer } from "./DiffCommentComposer";
 import "./UnifiedDiffView.css";
-import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
+import { SurfaceSelection } from "../../sessions/public/SurfaceSelection";
 import {
   DiffOverviewContext,
   DiffOverviewRegistry,
@@ -43,7 +44,6 @@ import {
   useDiffOverviewSource,
 } from "./DiffOverviewRuler";
 import { DiffLayoutToggle, useResponsiveDiffLayout } from "./DiffLayoutToggle";
-import type { DiffLayout } from "../../settings/model/settings";
 import { splitRowMarks, unifiedRowMarks } from "../model/diffOverview";
 import { buildSplitRows, type SplitRow } from "../model/splitRows";
 import {
@@ -738,8 +738,7 @@ function VirtualRows({
         };
         if (hover.current?.key === next?.key && hover.current?.side === next?.side) {
           // A comment draft may have closed since the last pointer movement.
-          for (const node of markedHoverNodes.current)
-            syncActions(node);
+          for (const node of markedHoverNodes.current) syncActions(node);
           return;
         }
         hover.current = next;
@@ -789,7 +788,8 @@ function VirtualRows({
     const nodes = new Map<string, HTMLElement[]>();
     const actions = new Map<HTMLElement, HTMLElement[]>();
     const marked: HTMLElement[] = [];
-    for (const node of bodyRef.current?.querySelectorAll<HTMLElement>("[data-diff-hover-key]") ?? []) {
+    for (const node of bodyRef.current?.querySelectorAll<HTMLElement>("[data-diff-hover-key]") ??
+      []) {
       const key = node.dataset.diffHoverKey!;
       const group = nodes.get(key) ?? [];
       group.push(node);
@@ -1232,7 +1232,10 @@ function FoldBar({
 }) {
   useLocale();
   return (
-    <div className="flex items-center gap-1 bg-[var(--ui-workspace-reading-muted)] px-2" style={FOLD_HEIGHT}>
+    <div
+      className="flex items-center gap-1 bg-[var(--ui-workspace-reading-muted)] px-2"
+      style={FOLD_HEIGHT}
+    >
       <Button
         size="sm"
         inset
@@ -1310,7 +1313,10 @@ const DiffLineRow = memo(function DiffLineRow({
   useLocale();
   if (line.kind === "hunk") {
     return (
-      <div className="flex items-center bg-[var(--ui-workspace-canvas-surface)]" style={HUNK_HEIGHT}>
+      <div
+        className="flex items-center bg-[var(--ui-workspace-canvas-surface)]"
+        style={HUNK_HEIGHT}
+      >
         {lane === "code" ? (
           <span className="px-3 font-mono diff-meta-text leading-none text-[var(--ui-text-muted)]">
             {line.text}

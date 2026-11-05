@@ -18,12 +18,36 @@ import { assertNativeDeliveryEffect } from "../native-delivery/native-delivery-e
 export interface NativeServicesAdapters {
   browserPanel?(input: Record<string, unknown>): Promise<unknown>;
   observationsIngest?(input: Record<string, unknown>): Promise<unknown>;
-  delegation?(action: "publicKey" | "origin" | "nativeChallenge" | "attest" | "issue" | "issue.status" | "challenge" | "call" | "revoke", input: Record<string, unknown>, authorized: () => Promise<boolean>): Promise<unknown>;
+  delegation?(
+    action:
+      | "publicKey"
+      | "origin"
+      | "nativeChallenge"
+      | "attest"
+      | "issue"
+      | "issue.status"
+      | "challenge"
+      | "call"
+      | "revoke",
+    input: Record<string, unknown>,
+    authorized: () => Promise<boolean>,
+  ): Promise<unknown>;
   visibilityEpoch?(): Promise<{ epoch: number }>;
   visibilityRevoke?(): Promise<{ epoch: number }>;
-  visibilityReopen?(input: Record<string, unknown>, authorized: () => Promise<boolean>): Promise<{ epoch: number }>;
-  authorizeAssistantNotification?(input: { threadId: string; notificationId: string; operationHash: string }): Promise<boolean>;
-  authorizeAssistantWorkspace?(input: { threadId: string; requestId: string; operationHash: string }): Promise<boolean>;
+  visibilityReopen?(
+    input: Record<string, unknown>,
+    authorized: () => Promise<boolean>,
+  ): Promise<{ epoch: number }>;
+  authorizeAssistantNotification?(input: {
+    threadId: string;
+    notificationId: string;
+    operationHash: string;
+  }): Promise<boolean>;
+  authorizeAssistantWorkspace?(input: {
+    threadId: string;
+    requestId: string;
+    operationHash: string;
+  }): Promise<boolean>;
   store: HostStore;
   social: SocialService;
   peers: SocialPeers;
@@ -80,32 +104,42 @@ export function bindNativeServicesOwner(
     // These callbacks never acquire the SQL owner: revoke must drain effects
     // which may themselves be waiting on that owner.
     visibilityEpoch: async () => {
-      if (!(await authorized()) || !adapters.visibilityEpoch) throw new HostDomainAuthorizationError();
+      if (!(await authorized()) || !adapters.visibilityEpoch)
+        throw new HostDomainAuthorizationError();
       return adapters.visibilityEpoch();
     },
     visibilityRevoke: async () => {
-      if (!(await authorized()) || !adapters.visibilityRevoke) throw new HostDomainAuthorizationError();
+      if (!(await authorized()) || !adapters.visibilityRevoke)
+        throw new HostDomainAuthorizationError();
       return adapters.visibilityRevoke();
     },
     visibilityReopen: async (input) => {
-      if (!(await authorized()) || !adapters.visibilityReopen) throw new HostDomainAuthorizationError();
+      if (!(await authorized()) || !adapters.visibilityReopen)
+        throw new HostDomainAuthorizationError();
       return adapters.visibilityReopen(input, authorized);
     },
     authorizeAssistantNotification: async (input) => {
-      if (!(await authorized()) || !adapters.authorizeAssistantNotification) throw new HostDomainAuthorizationError();
-      return { authorized: await adapters.authorizeAssistantNotification(input) && await authorized() };
+      if (!(await authorized()) || !adapters.authorizeAssistantNotification)
+        throw new HostDomainAuthorizationError();
+      return {
+        authorized: (await adapters.authorizeAssistantNotification(input)) && (await authorized()),
+      };
     },
-    browserPanel: async input => {
-      if (!adapters.browserPanel) throw new Error("Room browser panel requires a scoped native response transport.");
+    browserPanel: async (input) => {
+      if (!adapters.browserPanel)
+        throw new Error("Room browser panel requires a scoped native response transport.");
       return guarded(() => adapters.browserPanel!(input));
     },
-    observationsIngest: async input => {
+    observationsIngest: async (input) => {
       if (!adapters.observationsIngest) throw new Error("Native observation owner is unavailable.");
       return guarded(() => adapters.observationsIngest!(input));
     },
     authorizeAssistantWorkspace: async (input) => {
-      if (!(await authorized()) || !adapters.authorizeAssistantWorkspace) throw new HostDomainAuthorizationError();
-      return { authorized: await adapters.authorizeAssistantWorkspace(input) && await authorized() };
+      if (!(await authorized()) || !adapters.authorizeAssistantWorkspace)
+        throw new HostDomainAuthorizationError();
+      return {
+        authorized: (await adapters.authorizeAssistantWorkspace(input)) && (await authorized()),
+      };
     },
     assistantPresence: () => guarded(presence),
     setAssistantPresence: (state) =>

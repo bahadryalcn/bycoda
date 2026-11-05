@@ -11,7 +11,9 @@ describe("Room visibility admission", () => {
     fence.register(source, 1, [target], fence.currentEpoch());
     const permit = fence.acquire(source, target);
     let acknowledged = false;
-    const revoked = fence.revoke(source, 2).then(() => { acknowledged = true; });
+    const revoked = fence.revoke(source, 2).then(() => {
+      acknowledged = true;
+    });
     expect(permit.valid()).toBe(false);
     expect(() => fence.acquire(source, target)).toThrow();
     expect(() => fence.register(source, 3, [target], fence.currentEpoch())).toThrow();
@@ -36,7 +38,8 @@ describe("Room visibility admission", () => {
       { ...source, issuer: "replacement" },
       { ...source, environmentId: "other-host" },
       { ...source, threadId: "other-room" },
-    ]) expect(() => fence.acquire(other, target)).toThrow();
+    ])
+      expect(() => fence.acquire(other, target)).toThrow();
     expect(() => fence.acquire(source, { ...target, projectId: "other" })).toThrow();
     expect(() => fence.acquire(source, { ...target, cwd: "/other" })).toThrow();
   });

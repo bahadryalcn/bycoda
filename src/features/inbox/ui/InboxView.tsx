@@ -1,6 +1,9 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { ActionHost } from "../../../shared/ui/ActionHost";
 import { BadgeList } from "../../../shared/ui/BadgeList";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
+import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
 import "./InboxView.css";
 import { FilterTrigger } from "../../../shared/ui/FilterTrigger";
@@ -95,7 +98,6 @@ import {
 } from "../model/inboxFilters";
 import { projectKey, projectName } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
-import { useRetainedScroll } from "../../../shared/hooks/useRetainedScroll";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { type RecentProject } from "../../projects/model/recents";
 import { type LinkedWorkItem } from "../../sessions/model/session";
@@ -113,7 +115,6 @@ import {
   useInboxItemUnseen,
   useInboxSeenTick,
 } from "../model/inboxSeen";
-import { LIST_PAGE_SIZE, listWindowSize } from "../../../shared/lib/listWindow";
 import { saveHiddenLinearTeamIds } from "../model/linear";
 import { saveHiddenJiraProjectIds } from "../model/jira";
 import {
@@ -229,7 +230,6 @@ export function InboxView({
   const viewStateKey = `inbox:${pullRequestsOnly ? "pull-requests" : "all"}:${projectKey(cwd)}`;
   const listLock = useLockOverscroll<HTMLDivElement>();
   const listScrollRef = useRef<HTMLDivElement>(null);
-  const loadMoreRef = useRef<HTMLLIElement>(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const logos = useTabGroupLogos();
@@ -343,13 +343,6 @@ export function InboxView({
     [filters, projects],
   );
   const listScope = `${viewStateKey}:${JSON.stringify([source, activeFilters, jiraScope, linearScope])}`;
-  const [listLimit, setListLimit] = useRetainedState(`${listScope}:list-limit`, LIST_PAGE_SIZE);
-  const previousListSearch = useRef(searchInput);
-  useEffect(() => {
-    if (previousListSearch.current === searchInput) return;
-    previousListSearch.current = searchInput;
-    setListLimit(LIST_PAGE_SIZE);
-  }, [searchInput, setListLimit]);
   const filtersActive =
     codeScopes.hidden.length > 0 ||
     hasActiveInboxFilters(activeFilters, source, linearHiddenTeamIds, jiraHiddenProjectIds);
@@ -573,33 +566,13 @@ export function InboxView({
     },
     [updateItem, patchTargetItem],
   );
-  const shownItemCount = listWindowSize(visibleItems.length, listLimit);
-  const shownItems = visibleItems.slice(0, shownItemCount);
-  const hasMoreItems = shownItemCount < visibleItems.length;
-  const retainedListScroll = useRetainedScroll<HTMLDivElement>(listScope, { ready: !loading });
   const setListScrollRef = useCallback(
     (element: HTMLDivElement | null) => {
       listLock(element);
-      retainedListScroll(element);
       listScrollRef.current = element;
     },
-    [listLock, retainedListScroll],
+    [listLock],
   );
-  useEffect(() => {
-    if (!hasMoreItems) return;
-    const sentinel = loadMoreRef.current;
-    const root = listScrollRef.current;
-    if (!sentinel || !root) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry?.isIntersecting) return;
-        setListLimit((current) => current + LIST_PAGE_SIZE);
-      },
-      { root, rootMargin: "240px" },
-    );
-    observer.observe(sentinel);
-    return () => observer.disconnect();
-  }, [hasMoreItems, shownItemCount]);
 
   const onFiltersChange = (next: InboxFilters) => {
     const pruned = pruneInboxFilters(
@@ -713,7 +686,7 @@ export function InboxView({
   const list = (
     <div
       ref={resize.setPaneRef}
-      className="inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-(--ui-workspace-panel)"
+      className="inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-transparent"
     >
       {sourceRow}
       {viewRow}
@@ -874,7 +847,7 @@ export function InboxView({
           <span className="whitespace-pre-wrap wrap-anywhere">{sourceError}</span>
         </Alert>
       ) : null}
-      <div ref={setListScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-none">
+      <div ref={setListScrollRef} className="min-h-0 flex-1 overflow-hidden flex flex-col">
         {noSourcesConnected ? (
           <EmptyState
             icon={<Inbox aria-hidden="true" />}
@@ -945,13 +918,21 @@ export function InboxView({
             />
           )
         ) : (
-          <ul className="flex flex-col gap-0.5 p-1.5">
-            {shownItems.map((item) => {
+          <ContinuousList
+            fill
+            className="p-1.5 overscroll-none"
+            label={t("Inbox")}
+            items={visibleItems}
+            stateKey={`inbox:${listScope}`}
+            itemKey={inboxItemKey}
+            requiredKey={selected ? inboxItemKey(selected) : null}
+            estimateSize={96}
+            renderItem={(item) => {
               const key = inboxItemKey(item);
               const projectId = projectKey(item.projectPath);
               const relatedSessionCount = sessionCounts.get(key) ?? 0;
               return (
-                <li key={key}>
+                <div role="listitem">
                   <InboxCard
                     item={item}
                     active={selected != null && key === inboxItemKey(selected)}
@@ -966,20 +947,10 @@ export function InboxView({
                     relatedSessionCount={relatedSessionCount}
                     onSelect={selectItem}
                   />
-                </li>
+                </div>
               );
-            })}
-            {hasMoreItems ? (
-              <li ref={loadMoreRef} className="list-none">
-                <Button
-                  fullWidth
-                  onClick={() => setListLimit((current) => current + LIST_PAGE_SIZE)}
-                >
-                  {t("Load more items")}
-                </Button>
-              </li>
-            ) : null}
-          </ul>
+            }}
+          />
         )}
       </div>
       {noSourcesConnected || visibleItems.length === 0 ? null : (
@@ -990,7 +961,6 @@ export function InboxView({
         >
           <span title={t("{p0} loaded", { p0: visibleItems.length })}>
             {t("{p0} loaded", { p0: visibleItems.length })}
-            {hasMoreItems ? ` · ${t("{p0} shown", { p0: shownItems.length })}` : ""}
             {sourceLimited ? (
               <span
                 data-inbox-list-limit
@@ -1081,7 +1051,7 @@ export function InboxView({
 
       {source === "jira" && jiraView === "board" ? (
         <>
-          <div className="inbox-board-band flex shrink-0 flex-wrap items-center bg-(--ui-workspace-panel)">
+          <div className="inbox-board-band flex shrink-0 flex-wrap items-center bg-transparent">
             <div className="min-w-0 max-w-sm flex-1 basis-72">{sourceRow}</div>
             {viewRow}
           </div>
@@ -1325,13 +1295,18 @@ export function LinkedWorkItemPanel({
               {error}
             </Alert>
             {openError ? <InlineError>{openError}</InlineError> : null}
-            <Button variant="secondary" type="button" onClick={() => {
-              setOpenError("");
-              const url = target.url;
-              openUrlSafely(url, () => {
-                if (targetUrlRef.current === url) setOpenError(t("Could not open the link. Try again."));
-              });
-            }}>
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => {
+                setOpenError("");
+                const url = target.url;
+                openUrlSafely(url, () => {
+                  if (targetUrlRef.current === url)
+                    setOpenError(t("Could not open the link. Try again."));
+                });
+              }}
+            >
               <ExternalLink className="icon-sm" strokeWidth={1.75} />
               {t("Open on GitHub")}
             </Button>
@@ -1502,7 +1477,13 @@ const InboxCard = memo(function InboxCard({
           </span>
           <span className="flex min-w-0 items-center gap-2">
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
-              <status.Icon className={`icon-xs shrink-0 ${status.className}`} strokeWidth={1.75} />
+              <Badge
+                size="xs"
+                tone={status.tone}
+                appearance="subtle"
+                icon={<status.Icon strokeWidth={1.75} />}
+                aria-hidden="true"
+              />
               <span className="min-w-0 truncate text-ui-micro text-(--ui-text-secondary)">
                 {t(kindLabel)} {inboxItemRef(item)} · {tracker ? item.state : t(status.label)}
                 {attentionLabel ? ` · ${attentionLabel}` : ""}
@@ -1511,29 +1492,25 @@ const InboxCard = memo(function InboxCard({
             {relatedSessionCount > 0 || time || unseen ? (
               <span className="flex shrink-0 items-center gap-1.5">
                 {relatedSessionCount > 0 ? (
-                  <span
+                  <Badge
+                    variant="count"
+                    size="xs"
+                    icon={<MessageMultiple className="icon-xs" strokeWidth={1.75} />}
                     title={t(
                       relatedSessionCount === 1 ? "{p0} related thread" : "{p0} related threads",
                       { p0: relatedSessionCount },
                     )}
-                    className="inline-flex items-center gap-0.5 text-ui-micro tabular-nums text-(--ui-tone-accent-fg)"
+                    className="shrink-0"
                   >
-                    <MessageMultiple className="icon-xs" strokeWidth={1.75} />
                     {relatedSessionCount}
-                  </span>
+                  </Badge>
                 ) : null}
                 {time ? (
                   <span className="text-ui-micro tabular-nums text-(--ui-text-secondary)">
                     {time}
                   </span>
                 ) : null}
-                {unseen ? (
-                  <span
-                    data-inbox-unread
-                    aria-hidden
-                    className="size-1.5 rounded-full bg-(--ui-tone-accent-fg)"
-                  />
-                ) : null}
+                {unseen ? <StatusDot data-inbox-unread tone="accent" label={t("Unread")} /> : null}
               </span>
             ) : null}
           </span>

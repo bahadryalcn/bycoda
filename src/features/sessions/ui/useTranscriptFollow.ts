@@ -190,9 +190,7 @@ export function useTranscriptFollow({
         now > readerInput.current.until &&
         !!latestFollow &&
         now - latestFollow.at < READER_INPUT_MS &&
-        followedTops.current.some(
-          (entry) => entry.top <= el.scrollTop + 1,
-        );
+        followedTops.current.some((entry) => entry.top <= el.scrollTop + 1);
       if (staleFollowOffset) {
         pinToBottom(el);
         distanceFromBottom.current = 0;

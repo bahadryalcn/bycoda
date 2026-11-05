@@ -2,7 +2,7 @@ import { listDir, listProjectFiles, statFiles, type ProjectFile } from "../../..
 import { dirBelongsToRoot, subscribeDirsChanged } from "./fileTree";
 import { prepareFuzzyQuery, scorePath, type FuzzyHit } from "../../../shared/lib/fuzzy";
 import { resolveWorkspacePath, slash } from "../../../shared/lib/paths";
-import { looksLikeProject } from "../../projects/model/recents";
+import { looksLikeProject } from "../../projects/public/recents";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 import { normalizeEditorPath, type FileOpenOptions } from "../../search/model/search";
 

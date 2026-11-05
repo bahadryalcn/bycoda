@@ -20,7 +20,7 @@ import {
 import { displayPath, parentPath, rebasePath } from "../../../shared/lib/paths";
 import { t } from "../../../shared/i18n/technical";
 import { confirmInApp } from "../../../shared/model/appConfirm";
-import { requestGitFileInspect } from "../../source-control/ui/GitFileInspector";
+import { requestGitFileInspect } from "../../source-control/public/GitFileInspector";
 import type { OpenFileFn } from "../../search/model/search";
 import { topLevelTreePaths, type TreeSelectionModifiers } from "../model/treeSelection";
 import {

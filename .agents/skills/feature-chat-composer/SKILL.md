@@ -47,6 +47,6 @@ Code paths below are repository-root relative.
 
 - Choose focused Composer keys/IME/draftOwnership/queueHeld, composerDraftStore and QuickComposer command suites from the surface map; add submit/queue/attachment tests only for the changed behavior.
 - Use the project UI matrix for changed surfaces. Send/lease/stop changes also need isolated Host/native execution; a layout fixture cannot establish real-provider delivery.
-- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
+- [Surface map](references/surfaces.md) and [decision provenance](references/decisions.md) for affected owners; re-search callers before broad changes.
 - [Handoff and attachment behavior](../../../docs/guides/chat-artifacts-and-connected-files.md)
 - [Workspace authority](../../../docs/reference/managed-workspaces.md)

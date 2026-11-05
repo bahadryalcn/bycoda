@@ -1,9 +1,8 @@
+import { QuestionFields, updateCustomAnswer, nextSelection } from "./QuestionFields";
+import { useQuestionFormDraft } from "./useQuestionFormDraft";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Button } from "../../../shared/ui/Button";
-import { RadioGroup } from "../../../shared/ui/RadioGroup";
-import { Checkbox } from "../../../shared/ui/Checkbox";
 import styles from "./QuestionForm.module.css";
-import { TextareaField } from "../../../shared/ui/TextareaField";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { AttachmentChip } from "./AttachmentChip";
 import { useComposerFileDrop } from "./useComposerFileDrop";
@@ -17,18 +16,9 @@ import {
 } from "../model/attachments";
 import { prepareQuestionAttachments } from "../model/questionAttachments";
 import type { Attachment } from "../model/session";
-import { t, useT } from "../../../shared/i18n";
+import { useT } from "../../../shared/i18n";
 import { usePresentationVisible } from "./presentationVisibility";
-import {
-  useEffect,
-  useLayoutEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type KeyboardEvent as ReactKeyboardEvent,
-} from "react";
+import { useEffect, useLayoutEffect, useId, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
   ChevronLeft,
@@ -43,26 +33,13 @@ import {
   RefreshCw,
   X,
 } from "../../../shared/ui/icons";
+import { questionDraftKey, type QuestionDraft } from "../model/questionDrafts";
 import {
-  questionDraftKey,
-  readQuestionDraft,
-  reserveQuestionDraft,
-  subscribeQuestionDraftCapacity,
-  getQuestionDraftCapacitySnapshot,
-  type QuestionDraft,
-  type QuestionDraftFailure,
-  type QuestionDraftReservation,
-} from "../model/questionDrafts";
-import {
-  CUSTOM_OPTION_ID,
   buildQuestionReply,
-  isOtherOption,
   questionIsComplete,
-  type UserQuestion,
   type UserQuestionPrompt,
   type UserQuestionReply,
 } from "../model/userQuestion";
-import { useParentInputClosure, useParentInputsClosed } from "../data/parentInputClosure";
 
 type Props = {
   prompt: UserQuestionPrompt;
@@ -96,119 +73,31 @@ function QuestionFormContent({
   onInteraction,
 }: Props) {
   const t = useT();
-  const parentScope = parentSessionId ? undefined : "profile";
-  const parentClosed = useParentInputsClosed(parentSessionId, parentScope);
-  const capacityEpoch = useSyncExternalStore(
-    subscribeQuestionDraftCapacity,
-    getQuestionDraftCapacitySnapshot,
-    getQuestionDraftCapacitySnapshot,
-  );
-  const reservation = useRef<QuestionDraftReservation | undefined>(undefined);
-  const privateMountOwner = useRef({});
-  const everReserved = useRef(false);
-  const mounted = useRef(false);
-  const [reserved, setReserved] = useState(false);
-  const [capacityIssue, setCapacityIssue] = useState<QuestionDraftFailure | undefined>(undefined);
-  const statusId = useId();
-  const [draft, setDraft] = useState<QuestionDraft>(
-    () =>
-      readQuestionDraft(draftScope, prompt) ?? {
-        step: 0,
-        answers: {},
-        custom: {},
-      },
-  );
+  const {
+    draft,
+    draftRef,
+    setDraft,
+    submitted,
+    submitting,
+    setSubmitting,
+    localUnknown,
+    setLocalUnknown,
+    form,
+    parentClosed,
+    parentChanged,
+    reserved,
+    reservation,
+    mounted,
+    capacityIssue,
+    updateDraft,
+  } = useQuestionFormDraft(prompt, draftScope, parentSessionId);
   const { step, answers, custom } = draft;
-  const draftRef = useRef(draft);
-  useLayoutEffect(() => {
-    draftRef.current = draft;
-  }, [draft]);
-  const submitted = useRef(!!draft.delivery);
-  const [submitting, setSubmitting] = useState(draft.delivery === "sending");
-  const [localUnknown, setLocalUnknown] = useState(draft.delivery === "unknown");
+  const statusId = useId();
   const [now, setNow] = useState(Date.now);
   const visible = usePresentationVisible();
-  const form = useRef<HTMLFormElement>(null);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const [readingAttachments, setReadingAttachments] = useState(false);
   const attachmentFlight = useRef(false);
-  const parentChanged = useParentInputClosure(
-    {
-      kind: "question-draft",
-      sessionId: parentSessionId,
-      scope: parentScope,
-      snapshot: () => ({
-        source: "mounted-question-form",
-        draftScope,
-        questionKey: questionDraftKey(draftScope, prompt),
-        prompt,
-        draft: draftRef.current,
-        submitted: submitted.current,
-        submitting,
-        localUnknown,
-        customInputs: Array.from(
-          form.current?.querySelectorAll("textarea") ?? [],
-          (field) => field.value,
-        ),
-        optionInputs: Array.from(
-          form.current?.querySelectorAll<HTMLInputElement>("input") ?? [],
-          (field) => ({ value: field.value, checked: field.checked }),
-        ),
-      }),
-    },
-    form,
-  );
-  useLayoutEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      reservation.current?.release();
-      reservation.current = undefined;
-      everReserved.current = false;
-    };
-  }, []);
-  useLayoutEffect(() => {
-    const current = reservation.current;
-    if (current) {
-      if (!current.current()) {
-        setReserved(false);
-        setCapacityIssue("retired");
-        return;
-      }
-      const refreshed = current.refresh(prompt);
-      if (!refreshed.ok) {
-        setReserved(false);
-        setCapacityIssue(refreshed.reason);
-        return;
-      }
-      setReserved(true);
-      return;
-    }
-    if (everReserved.current) return;
-    const result = reserveQuestionDraft(
-      draftScope,
-      prompt,
-      parentSessionId,
-      privateMountOwner.current,
-    );
-    if (!result.ok) {
-      setReserved(false);
-      setCapacityIssue(result.reason);
-      return;
-    }
-    reservation.current = result.value;
-    everReserved.current = true;
-    const retained = result.value.read();
-    if (retained) {
-      draftRef.current = retained;
-      setDraft(retained);
-      submitted.current = !!retained.delivery;
-      setSubmitting(retained.delivery === "sending");
-      setLocalUnknown(retained.delivery === "unknown");
-    }
-    setReserved(true);
-    setCapacityIssue(undefined);
-  }, [draftScope, prompt, parentSessionId, capacityEpoch]);
   const sending = submitting || prompt.delivery === "sending";
   const transportHeld =
     parentClosed ||
@@ -217,42 +106,6 @@ function QuestionFormContent({
     prompt.delivery === "unknown" ||
     prompt.delivery === "queued";
   const held = transportHeld || !reserved || readingAttachments;
-
-  const persistDraft = (next: QuestionDraft, external = false) => {
-    const result = reservation.current?.write(next, external);
-    if (!result?.ok) {
-      if (mounted.current) setCapacityIssue(result?.reason ?? "retired");
-      return false;
-    }
-    draftRef.current = result.value;
-    if (mounted.current) {
-      setDraft(result.value);
-      setCapacityIssue(undefined);
-      parentChanged();
-    }
-    return true;
-  };
-  const updateDraft = (update: (current: QuestionDraft) => QuestionDraft) => {
-    if (!mounted.current || !reservation.current?.current() || !parentChanged.canMutate())
-      return false;
-    return persistDraft(update(draftRef.current));
-  };
-
-  useEffect(() => {
-    if (prompt.delivery === "failed") {
-      const current = draftRef.current;
-      if (
-        current.delivery &&
-        !persistDraft({ ...current, delivery: undefined, pendingAction: undefined }, true)
-      )
-        return;
-      submitted.current = false;
-      setSubmitting(false);
-      setLocalUnknown(false);
-    } else if (prompt.delivery === "unknown" || prompt.delivery === "queued") {
-      setSubmitting(false);
-    }
-  }, [prompt, reserved]);
 
   useEffect(() => {
     if (prompt.autoResolveAt == null || !visible) return;
@@ -386,7 +239,13 @@ function QuestionFormContent({
     pendingAction: QuestionDraft["pendingAction"] = "answer",
   ) =>
     send(
-      buildQuestionReply(questions, nextAnswers, nextCustom, draftRef.current.attachments),
+      buildQuestionReply(
+        questions,
+        nextAnswers,
+        nextCustom,
+        draftRef.current.attachments,
+        draftRef.current.notes,
+      ),
       pendingAction,
     );
 
@@ -410,10 +269,13 @@ function QuestionFormContent({
     delete nextAttachments[question.id];
     delete nextAnswers[question.id];
     delete nextCustom[question.id];
+    const nextNotes = { ...draftRef.current.notes };
+    delete nextNotes[question.id];
     if (last) {
       if (
         !updateDraft((current) => ({
           ...current,
+          notes: nextNotes,
           answers: nextAnswers,
           custom: nextCustom,
           attachments: nextAttachments,
@@ -424,6 +286,7 @@ function QuestionFormContent({
       return;
     }
     updateDraft(() => ({
+      notes: nextNotes,
       answers: nextAnswers,
       custom: nextCustom,
       attachments: nextAttachments,
@@ -571,6 +434,13 @@ function QuestionFormContent({
             question={question}
             selected={answers[question.id] ?? []}
             custom={custom[question.id] ?? ""}
+            note={draft.notes?.[question.id] ?? ""}
+            onNote={(value) =>
+              updateDraft((current) => ({
+                ...current,
+                notes: { ...current.notes, [question.id]: value },
+              }))
+            }
             locked={held}
             onSelect={(optionId) =>
               updateDraft((current) => ({
@@ -585,30 +455,9 @@ function QuestionFormContent({
                 },
               }))
             }
-            onCustom={(value) => {
-              return updateDraft((current) => {
-                const selected = current.answers[question.id] ?? [];
-                if (question.multiSelect) {
-                  const without = selected.filter((id) => !isCustomId(question, id));
-                  return {
-                    ...current,
-                    custom: { ...current.custom, [question.id]: value },
-                    answers: {
-                      ...current.answers,
-                      [question.id]: [...without, customOptionId(question)],
-                    },
-                  };
-                }
-                return {
-                  ...current,
-                  custom: { ...current.custom, [question.id]: value },
-                  answers: {
-                    ...current.answers,
-                    [question.id]: [customOptionId(question)],
-                  },
-                };
-              });
-            }}
+            onCustom={(value) =>
+              updateDraft((current) => updateCustomAnswer(current, question, value))
+            }
             onRejectedInput={() => {
               if (mounted.current) parentChanged();
             }}
@@ -735,215 +584,4 @@ function QuestionFormContent({
       </form>
     </div>
   );
-}
-
-function QuestionFields({
-  question,
-  selected,
-  custom,
-  onSelect,
-  onCustom,
-  onRejectedInput,
-  locked = false,
-}: {
-  question: UserQuestion;
-  selected: string[];
-  custom: string;
-  onSelect: (optionId: string) => void;
-  onCustom: (value: string) => boolean;
-  onRejectedInput: () => void;
-  locked?: boolean;
-}) {
-  const t = useT();
-  const options = displayOptions(question);
-  const customSelected = selected.some((id) => isCustomId(question, id));
-  const [highlighted, setHighlighted] = useState(() => {
-    const selectedIndex = options.findIndex((option) => selected.includes(option.id));
-    return selectedIndex >= 0 ? selectedIndex : 0;
-  });
-  const fields = useRef<HTMLFieldSetElement | null>(null);
-  const optionInputs = () =>
-    Array.from(
-      fields.current?.querySelectorAll<HTMLInputElement>(
-        'input[type="radio"], input[type="checkbox"]',
-      ) ?? [],
-    );
-  const customInput = useRef<HTMLTextAreaElement | null>(null);
-
-  useEffect(() => {
-    if (!customSelected || locked) return;
-    customInput.current?.focus({ preventScroll: true });
-    // Some engines (Linux WebKit) finish a label click by focusing its radio after the change
-    // handlers ran; hand focus back once, but only from this question's own option inputs.
-    const timer = window.setTimeout(() => {
-      const active = document.activeElement;
-      if (active instanceof HTMLInputElement && fields.current?.contains(active))
-        customInput.current?.focus({ preventScroll: true });
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [customSelected, locked]);
-
-  const highlight = (index: number) => {
-    setHighlighted(index);
-    optionInputs()[index]?.focus();
-  };
-
-  const onOptionKeyDown = (event: ReactKeyboardEvent<HTMLFieldSetElement>, index: number) => {
-    if (locked) return;
-    if (event.altKey || event.ctrlKey || event.metaKey) return;
-
-    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-      event.preventDefault();
-      const offset = event.key === "ArrowDown" ? 1 : -1;
-      const next = (index + offset + options.length) % options.length;
-      highlight(next);
-      if (!question.multiSelect) onSelect(options[next].id);
-      return;
-    }
-    if (event.key === "Home" || event.key === "End") {
-      event.preventDefault();
-      const next = event.key === "Home" ? 0 : options.length - 1;
-      highlight(next);
-      if (!question.multiSelect) onSelect(options[next].id);
-      return;
-    }
-    if (event.key === "Enter" || event.key === " ") {
-      event.preventDefault();
-      onSelect(options[index].id);
-      return;
-    }
-
-    const shortcut = Number(event.key);
-    if (Number.isInteger(shortcut) && shortcut >= 1 && shortcut <= Math.min(options.length, 9)) {
-      event.preventDefault();
-      const shortcutIndex = shortcut - 1;
-      highlight(shortcutIndex);
-      onSelect(options[shortcutIndex].id);
-    }
-  };
-
-  return (
-    <fieldset
-      className={styles.fields}
-      ref={fields}
-      onKeyDownCapture={(event) => {
-        const index = optionInputs().indexOf(event.target as HTMLInputElement);
-        if (index >= 0) onOptionKeyDown(event, index);
-      }}
-    >
-      {question.multiSelect || options.length === 0 ? <legend>{question.prompt}</legend> : null}
-      {question.multiSelect ? (
-        <p className="[margin-block-start:0.5rem] text-ui-caption text-(--ui-text-secondary)">
-          {t("Select all that apply")}
-        </p>
-      ) : null}
-      {options.length === 0 && question.allowCustom ? (
-        <TextareaField
-          hideLabel
-          label={t("Type your answer")}
-          value={custom}
-          rows={3}
-          readOnly={locked}
-          onChange={(event) => {
-            if (!onCustom(event.currentTarget.value)) {
-              event.currentTarget.value = custom;
-              onRejectedInput();
-            }
-          }}
-          placeholder={t("Type your answer")}
-          fieldClassName={styles.answer}
-        />
-      ) : (
-        <div className={styles.options} role="group" aria-label={question.prompt}>
-          {!question.multiSelect ? (
-            <RadioGroup
-              compact
-              className={styles.radio}
-              label={question.prompt}
-              name={question.id}
-              value={selected[0] ?? ""}
-              disabled={locked}
-              options={options.map((option) => ({
-                value: option.id,
-                label: option.label,
-                description: option.description,
-              }))}
-              onValueChange={onSelect}
-            />
-          ) : (
-            options.map((option, optionIndex) => (
-              <label key={option.id} className={styles.option}>
-                <Checkbox
-                  disabled={locked}
-                  checked={selected.includes(option.id)}
-                  aria-keyshortcuts={optionIndex < 9 ? String(optionIndex + 1) : undefined}
-                  tabIndex={highlighted === optionIndex ? 0 : -1}
-                  onFocus={() => setHighlighted(optionIndex)}
-                  onChange={() => onSelect(option.id)}
-                />
-                <span className={styles.copy}>
-                  <span>{option.label}</span>
-                  {option.description ? <small>{option.description}</small> : null}
-                </span>
-              </label>
-            ))
-          )}
-        </div>
-      )}
-      {options.length > 0 && customSelected ? (
-        <TextareaField
-          hideLabel
-          label={t("Type your answer")}
-          ref={customInput}
-          value={custom}
-          rows={3}
-          readOnly={locked}
-          onChange={(event) => {
-            if (!onCustom(event.currentTarget.value)) {
-              event.currentTarget.value = custom;
-              onRejectedInput();
-            }
-          }}
-          aria-label={t("Type your answer")}
-          placeholder={t("Type your answer")}
-          fieldClassName={styles.answer}
-        />
-      ) : null}
-    </fieldset>
-  );
-}
-
-function displayOptions(question: UserQuestion): UserQuestion["options"] {
-  if (question.options.length === 0) return question.options;
-  if (question.options.some(isOtherOption) || !question.allowCustom) {
-    return question.options;
-  }
-  return [
-    ...question.options,
-    {
-      id: CUSTOM_OPTION_ID,
-      get label() {
-        return t("Other");
-      },
-    },
-  ];
-}
-
-function customOptionId(question: UserQuestion): string {
-  return question.options.find(isOtherOption)?.id ?? CUSTOM_OPTION_ID;
-}
-
-function isCustomId(question: UserQuestion, optionId: string): boolean {
-  return optionId === CUSTOM_OPTION_ID || optionId === customOptionId(question);
-}
-
-function nextSelection(question: UserQuestion, current: string[], optionId: string): string[] {
-  if (!question.multiSelect) return [optionId];
-  if (current.includes(optionId)) {
-    return current.filter((id) => id !== optionId);
-  }
-  if (isCustomId(question, optionId)) {
-    return [...current.filter((id) => !isCustomId(question, id)), optionId];
-  }
-  return [...current, optionId];
 }

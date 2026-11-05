@@ -236,8 +236,7 @@ export async function resolveProvider(provider: RemoteProvider): Promise<string>
   if (known && performance.now() - known.at < RESOLVE_TTL_MS) {
     try {
       const info = await stat(known.path, { bigint: true });
-      if (info.isFile() && launcherSignature(info) === known.signature)
-        return known.path;
+      if (info.isFile() && launcherSignature(info) === known.signature) return known.path;
     } catch {
       /* moved or removed: scan again */
     }
@@ -249,7 +248,10 @@ export async function resolveProvider(provider: RemoteProvider): Promise<string>
   const scan = scanProvider(provider).then(({ path, name, signature }) => {
     // FX identity uses this launcher alone. Cursor/Pi may depend on a different
     // package/target, so they still inspect that identity on every resolution.
-    if (generation === resolutionGeneration && (provider === "fx" || !needsIdentityCheck(provider, name))) {
+    if (
+      generation === resolutionGeneration &&
+      (provider === "fx" || !needsIdentityCheck(provider, name))
+    ) {
       resolved.delete(key);
       while (resolved.size >= MAX_RESOLVED) resolved.delete(resolved.keys().next().value!);
       resolved.set(key, { at: performance.now(), path, signature });
@@ -264,7 +266,9 @@ export async function resolveProvider(provider: RemoteProvider): Promise<string>
   return scan;
 }
 
-async function scanProvider(provider: RemoteProvider): Promise<{ path: string; name: string; signature: string }> {
+async function scanProvider(
+  provider: RemoteProvider,
+): Promise<{ path: string; name: string; signature: string }> {
   const windows = process.platform === "win32";
   const directories = providerDirectories(provider).filter(Boolean);
   const names = binaryNames[provider];
@@ -317,7 +321,11 @@ const SHIM_LAUNCH = new RegExp(
 
 /** pnpm may link a package outside the shim directory. Accept only the package's
  * declared bin for this exact command, and keep its target inside that package. */
-async function declaredShimEntry(root: string, target: string, command: string): Promise<string | undefined> {
+async function declaredShimEntry(
+  root: string,
+  target: string,
+  command: string,
+): Promise<string | undefined> {
   const inside = relative(root, target);
   if (!inside || inside.startsWith("..") || isAbsolute(inside)) return;
   const parts = inside.split(/[\\/]+/);
@@ -328,15 +336,19 @@ async function declaredShimEntry(root: string, target: string, command: string):
   const packageRoot = join(root, ...parts.slice(0, marker + count + 1));
   try {
     const metadata = JSON.parse(await readFile(join(packageRoot, "package.json"), "utf8")) as {
-      name?: unknown; bin?: unknown;
+      name?: unknown;
+      bin?: unknown;
     };
     if (typeof metadata.name !== "string") return;
     const commandName = basename(command, extname(command)).toLowerCase();
-    const bin = typeof metadata.bin === "string"
-      ? (metadata.name.split("/").at(-1)?.toLowerCase() === commandName ? metadata.bin : undefined)
-      : metadata.bin && typeof metadata.bin === "object"
-        ? (metadata.bin as Record<string, unknown>)[commandName]
-        : undefined;
+    const bin =
+      typeof metadata.bin === "string"
+        ? metadata.name.split("/").at(-1)?.toLowerCase() === commandName
+          ? metadata.bin
+          : undefined
+        : metadata.bin && typeof metadata.bin === "object"
+          ? (metadata.bin as Record<string, unknown>)[commandName]
+          : undefined;
     if (typeof bin !== "string" || resolve(packageRoot, bin) !== resolve(target)) return;
     return await containedFile(packageRoot, target);
   } catch {
@@ -356,7 +368,8 @@ async function npmShimLaunch(
   const root = dirname(command);
   const local = (path: string) => resolve(root, path.replace(/\\/g, "/"));
   const target = local(match[3]);
-  const entry = await containedFile(root, target) ?? await declaredShimEntry(root, target, command);
+  const entry =
+    (await containedFile(root, target)) ?? (await declaredShimEntry(root, target, command));
   if (!entry || /\.(cmd|bat)$/i.test(entry)) return;
   if (match[2]) {
     // Installer shims that ship their own node.exe next to the script.

@@ -10,7 +10,9 @@ const queue = new MarkdownParseQueue(
 /** Large replies keep their last complete parse while a bounded worker catches up. */
 export function useParsedMarkdown(text: string, stream: string) {
   const [failed, setFailed] = useState(false);
-  const [parsed, setParsed] = useState<{ stream: string; source: string; blocks: string[] } | null>(null);
+  const [parsed, setParsed] = useState<{ stream: string; source: string; blocks: string[] } | null>(
+    null,
+  );
   const previous = useRef<typeof parsed>(null);
   const large = text.length > LARGE_MARKDOWN_CHARS;
   const background = !failed && large && typeof Worker !== "undefined";
@@ -30,10 +32,14 @@ export function useParsedMarkdown(text: string, stream: string) {
     if (background) queue.request(stream, text);
   }, [background, stream, text]);
   const fromWorker = parsed?.stream === stream && text.startsWith(parsed.source) ? parsed : null;
-  const fromPrevious = previous.current?.stream === stream && text.startsWith(previous.current.source)
-    ? previous.current : null;
-  const compatible = fromWorker && (!fromPrevious || fromWorker.source.length >= fromPrevious.source.length)
-    ? fromWorker : fromPrevious;
+  const fromPrevious =
+    previous.current?.stream === stream && text.startsWith(previous.current.source)
+      ? previous.current
+      : null;
+  const compatible =
+    fromWorker && (!fromPrevious || fromWorker.source.length >= fromPrevious.source.length)
+      ? fromWorker
+      : fromPrevious;
   return {
     blocks: synchronous ?? compatible?.blocks ?? [],
     pending: background && compatible?.source !== text,

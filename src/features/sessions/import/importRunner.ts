@@ -9,12 +9,12 @@ import {
   type ImportCandidate,
 } from "../../../platform/tauri/sessionImport";
 import { pathKey } from "../../../shared/lib/paths";
-import { proposeProjectGroups } from "../../projects/model/importGrouping";
+import { proposeProjectGroups } from "../../projects/public/importGrouping";
 import {
   assignProjectsToNamedGroup,
   loadProjectGroupAssignments,
   loadProjectGroups,
-} from "../../projects/model/projectGroups";
+} from "../../projects/public/projectGroups";
 import {
   isRemoteProjectPath,
   loadRecents,
@@ -22,7 +22,7 @@ import {
   normalizeProjectPath,
   rememberImportedProjects,
   sameProjectPath,
-} from "../../projects/model/recents";
+} from "../../projects/public/recents";
 import {
   importSessionRecord,
   importedSessionKeys,
@@ -400,17 +400,17 @@ export async function runSessionImport(input: {
       rememberImportedProjects(entries);
       summary.projects = entries.length;
       if (input.groupProjects) {
-      const real = [...folders.values()]
-        .filter(({ target }) => target.real)
-        .map(({ target }) => target.cwd);
-      const placeholders = [...folders.values()]
-        .filter(({ target }) => !target.real)
-        .map(({ target }) => target.cwd);
-      for (const group of planProjectGroups(real, placeholders)) {
-        if (assignProjectsToNamedGroup(group.name, group.paths)) {
-          summary.groups.push(group.name);
+        const real = [...folders.values()]
+          .filter(({ target }) => target.real)
+          .map(({ target }) => target.cwd);
+        const placeholders = [...folders.values()]
+          .filter(({ target }) => !target.real)
+          .map(({ target }) => target.cwd);
+        for (const group of planProjectGroups(real, placeholders)) {
+          if (assignProjectsToNamedGroup(group.name, group.paths)) {
+            summary.groups.push(group.name);
+          }
         }
-      }
       }
     });
   }

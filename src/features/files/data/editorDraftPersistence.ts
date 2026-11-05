@@ -6,7 +6,7 @@ import {
   type PersistenceDrainRegistry,
   type PersistenceProducer,
   type PersistenceWork,
-} from "../../sessions/data/persistenceDrain";
+} from "../../sessions/public/persistenceDrain";
 
 export type EditorDraftEol = "lf" | "crlf" | "cr";
 /** CodeMirror Text is immutable; callers must retain the actual document value. */

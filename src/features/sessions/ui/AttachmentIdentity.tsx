@@ -1,5 +1,5 @@
 import { AudioLines, Play, ImagePlus } from "../../../shared/ui/icons";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { attachmentPresentation } from "../model/attachmentPresentation";
 import type { Attachment } from "../model/session";
 

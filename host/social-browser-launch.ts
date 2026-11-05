@@ -5,16 +5,24 @@ import { prepareProviderGuardian, type PreparedGuardian } from "./provider-guard
 import type { NativeGuardianChild } from "./provider-guardian";
 
 const owners = new Map<string, SocialBrowserLaunch>();
-const held = () => new Error("Original browser cleanup is unconfirmed. Its profile remains reserved; review the original browser before retrying.");
+const held = () =>
+  new Error(
+    "Original browser cleanup is unconfirmed. Its profile remains reserved; review the original browser before retrying.",
+  );
 
 async function observe<T>(work: Promise<T>, ms = 20_000): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    return await Promise.race([work, new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(held()), ms);
-      timer.unref?.();
-    })]);
-  } finally { clearTimeout(timer); }
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(held()), ms);
+        timer.unref?.();
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export type SocialBrowserLaunchPorts = {
@@ -42,11 +50,19 @@ export class SocialBrowserLaunch {
   exited = false;
   failed = false;
 
-  private constructor(readonly profile: string, private readonly ports: SocialBrowserLaunchPorts) {
-    this.exit = new Promise<void>((resolve) => { this.finishExit = resolve; });
+  private constructor(
+    readonly profile: string,
+    private readonly ports: SocialBrowserLaunchPorts,
+  ) {
+    this.exit = new Promise<void>((resolve) => {
+      this.finishExit = resolve;
+    });
   }
 
-  static async reserve(profile: string, ports: SocialBrowserLaunchPorts): Promise<SocialBrowserLaunch> {
+  static async reserve(
+    profile: string,
+    ports: SocialBrowserLaunchPorts,
+  ): Promise<SocialBrowserLaunch> {
     await mkdir(profile, { recursive: true });
     const canonical = await realpath(profile);
     const key = process.platform === "win32" ? canonical.toLowerCase() : canonical;
@@ -60,8 +76,13 @@ export class SocialBrowserLaunch {
     owners.set(key, original);
     try {
       if (await ports.inUse(canonical)) throw new Error("The browser profile is still in use.");
-      original.prepared = await (ports.prepare ?? (async () => process.platform === "win32"
-        ? prepareProviderGuardian(fileURLToPath(new URL("./", import.meta.url))) : undefined))();
+      original.prepared = await (
+        ports.prepare ??
+        (async () =>
+          process.platform === "win32"
+            ? prepareProviderGuardian(fileURLToPath(new URL("./", import.meta.url)))
+            : undefined)
+      )();
       await original.assertOriginal();
       return original;
     } catch (error) {
@@ -76,7 +97,11 @@ export class SocialBrowserLaunch {
   }
 
   private async assertOriginal(): Promise<void> {
-    if (owners.get(this.key()) !== this || await realpath(this.profile) !== this.profile || await this.ports.inUse(this.profile))
+    if (
+      owners.get(this.key()) !== this ||
+      (await realpath(this.profile)) !== this.profile ||
+      (await this.ports.inUse(this.profile))
+    )
       throw new Error("Browser profile ownership changed before startup.");
   }
 
@@ -86,14 +111,25 @@ export class SocialBrowserLaunch {
     try {
       this.attempted = true;
       this.child = prepared
-        ? this.guardian = prepared.spawn({ command: executable, args, cwd: this.profile, env: { ...process.env } },
-            () => this.assertOriginal(), () => { if (owners.get(this.key()) !== this) throw held(); })
-        : (this.ports.spawn ?? spawn)(executable, args, { stdio: "ignore", windowsHide: false, shell: false });
+        ? (this.guardian = prepared.spawn(
+            { command: executable, args, cwd: this.profile, env: { ...process.env } },
+            () => this.assertOriginal(),
+            () => {
+              if (owners.get(this.key()) !== this) throw held();
+            },
+          ))
+        : (this.ports.spawn ?? spawn)(executable, args, {
+            stdio: "ignore",
+            windowsHide: false,
+            shell: false,
+          });
       this.guardian?.stdout.resume();
       this.guardian?.stderr.resume();
       const childEvents = this.child as { once(event: string, callback: () => void): unknown };
       let spawned = false;
-      childEvents.once("spawn", () => { spawned = true; });
+      childEvents.once("spawn", () => {
+        spawned = true;
+      });
       childEvents.once(this.guardian ? "close" : "exit", () => {
         this.exited = true;
         this.finishExit();
@@ -113,19 +149,27 @@ export class SocialBrowserLaunch {
   }
 
   markEstablished(): void {
-    if (owners.get(this.key()) !== this || (this.guardian && (this.exited || this.guardian.retirementVerified))) throw held();
+    if (
+      owners.get(this.key()) !== this ||
+      (this.guardian && (this.exited || this.guardian.retirementVerified))
+    )
+      throw held();
     this.established = true;
   }
 
   private waitForRelease(): Promise<void> {
-    return this.observedRelease ??= observe(this.release!);
+    return (this.observedRelease ??= observe(this.release!));
   }
 
   private retireOriginal(): Promise<void> {
     if (this.retirement) return this.retirement;
     const guardian = this.guardian;
     this.retirement = (async () => {
-      if (!this.attempted || this.notStarted) { this.exited = true; this.finishExit(); return; }
+      if (!this.attempted || this.notStarted) {
+        this.exited = true;
+        this.finishExit();
+        return;
+      }
       if (!guardian) {
         // Original handle only: best effort, never a handed-off tree receipt.
         if (!this.exited) this.child?.kill();
@@ -162,7 +206,11 @@ export class SocialBrowserLaunch {
 
   async startupFailed(unlocked: () => Promise<void>): Promise<void> {
     this.releaseProfile(unlocked, true);
-    try { await this.waitForRelease(); }
-    finally { await this.prepared?.dispose(); this.prepared = undefined; }
+    try {
+      await this.waitForRelease();
+    } finally {
+      await this.prepared?.dispose();
+      this.prepared = undefined;
+    }
   }
 }

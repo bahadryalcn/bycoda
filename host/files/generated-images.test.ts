@@ -45,7 +45,8 @@ it("rejects malformed base64 and non PNG data", async () => {
 });
 
 it.each([-1, 0, 1])("uses the remote attachment boundary end to end (%i bytes)", async (delta) => {
-  const { MAX_REMOTE_ATTACHMENT_BYTES, readAttachmentChunk } = await import("../attachments/attachments");
+  const { MAX_REMOTE_ATTACHMENT_BYTES, readAttachmentChunk } =
+    await import("../attachments/attachments");
   const { HostStore } = await import("../store");
   const directory = await mkdtemp(join(tmpdir(), "host-image-limit-"));
   directories.push(directory);

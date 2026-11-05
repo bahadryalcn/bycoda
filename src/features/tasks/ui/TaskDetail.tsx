@@ -1,4 +1,5 @@
 import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 import { Alert } from "../../../shared/ui/Alert";
@@ -131,6 +132,11 @@ export function TaskDetail({
           <Badge
             data-task-status={status.kind}
             tone={status.tone}
+            icon={
+              status.tone === "accent" ? (
+                <StatusDot tone="accent" label={status.label} />
+              ) : undefined
+            }
             title={
               status.label === t(STATUS_LABELS[task.status])
                 ? undefined

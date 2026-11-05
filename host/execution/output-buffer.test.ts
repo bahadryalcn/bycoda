@@ -5,12 +5,25 @@ it("matches retained string tails and ranged reads across page/ring boundaries",
   for (const capacity of [1, 5, 4096, 4101, 8192]) {
     const output = new OutputBuffer(capacity);
     let expected = "";
-    for (const chunk of ["", "\u001b[31m", "中文🚀", "x".repeat(4100), "z", "y".repeat(9000), "\r\nend"]) {
+    for (const chunk of [
+      "",
+      "\u001b[31m",
+      "中文🚀",
+      "x".repeat(4100),
+      "z",
+      "y".repeat(9000),
+      "\r\nend",
+    ]) {
       output.append(chunk);
       expected = (expected + chunk).slice(-capacity);
       expect(output.length).toBe(expected.length);
       expect(output.slice()).toBe(expected);
-      for (const [start, end] of [[0, 3], [2, 4098], [-4, -1], [5, 2]])
+      for (const [start, end] of [
+        [0, 3],
+        [2, 4098],
+        [-4, -1],
+        [5, 2],
+      ])
         expect(output.slice(start, end)).toBe(expected.slice(start, end));
     }
   }

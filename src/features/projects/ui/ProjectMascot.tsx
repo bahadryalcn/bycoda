@@ -1,6 +1,6 @@
 import { memo, useId, type CSSProperties } from "react";
 import { MASCOT_GRID, projectMascot } from "../model/projectMascots";
-import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
+import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 import { identityClassName, type IdentitySize } from "../../../shared/ui/identity/identitySize";
 
 type Props = {

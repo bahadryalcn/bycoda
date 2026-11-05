@@ -20,14 +20,25 @@ it("binds global desktop relay to its real thread and rechecks authority", async
   const relay = new ConversationDesktopRelay("host-one");
   await relay.take("native");
   let authorized = true;
-  const pending = relay.callAssistantThread("preferences.read", {}, { threadId: "thread", environmentId: "host-one" }, async () => authorized);
+  const pending = relay.callAssistantThread(
+    "preferences.read",
+    {},
+    { threadId: "thread", environmentId: "host-one" },
+    async () => authorized,
+  );
   const [request] = await relay.take("native");
-  expect(request).toMatchObject({ threadId: "thread", environmentId: "host-one", action: "preferences.read" });
+  expect(request).toMatchObject({
+    threadId: "thread",
+    environmentId: "host-one",
+    action: "preferences.read",
+  });
   expect(request).not.toHaveProperty("sessionId");
   expect(request).not.toHaveProperty("cwd");
   expect(request).not.toHaveProperty("projectId");
   authorized = false;
-  expect(await relay.authorize(String(request.id), "preferences.read", "native")).toEqual({ authorized: false });
+  expect(await relay.authorize(String(request.id), "preferences.read", "native")).toEqual({
+    authorized: false,
+  });
   await relay.finish(String(request.id), {}, undefined, "native");
   await expect(pending).rejects.toThrow("authority revoked");
   relay.close();
@@ -37,11 +48,25 @@ it("records the real claimed device with a private project scope capture", async
   const relay = new ConversationDesktopRelay("host-one");
   const owner = "d".repeat(64);
   await relay.take(owner);
-  const pending = relay.callAssistantThread("privacy.scope.capture", { action: "tasks.list", requestId: "request", operationHash: "a".repeat(64) }, { threadId: "room", environmentId: "host-one", projectId: "project", targetProjectCwd: "/project" }, async () => true);
+  const pending = relay.callAssistantThread(
+    "privacy.scope.capture",
+    { action: "tasks.list", requestId: "request", operationHash: "a".repeat(64) },
+    {
+      threadId: "room",
+      environmentId: "host-one",
+      projectId: "project",
+      targetProjectCwd: "/project",
+    },
+    async () => true,
+  );
   const [request] = await relay.take(owner);
   await expect(relay.finish(String(request.id), {}, undefined, "other")).rejects.toThrow();
   await relay.finish(String(request.id), { signed: "fixture" }, undefined, owner);
-  expect(await pending).toEqual({ relayId: request.id, envelope: { signed: "fixture" }, deviceHash: owner });
+  expect(await pending).toEqual({
+    relayId: request.id,
+    envelope: { signed: "fixture" },
+    deviceHash: owner,
+  });
   relay.close();
 });
 
@@ -50,14 +75,25 @@ it("pins a private voice retirement relay to the exact native owner and action",
   const device = "d".repeat(64);
   await relay.take(device);
   const input = { generationKey: "generation", requestId: "retire", operationHash: "a".repeat(64) };
-  const pending = relay.callAssistantThread("voice.generation.retire", input, { threadId: "room", environmentId: "host-one", targetDeviceHash: device }, async () => true);
+  const pending = relay.callAssistantThread(
+    "voice.generation.retire",
+    input,
+    { threadId: "room", environmentId: "host-one", targetDeviceHash: device },
+    async () => true,
+  );
   expect(await relay.take("other")).toEqual([]);
   const [request] = await relay.take(device);
   expect(request).toMatchObject({ threadId: "room", action: "voice.generation.retire", input });
   expect(request).not.toHaveProperty("sessionId");
-  expect(await relay.authorize(String(request.id), "voice.generation.retire", "other")).toEqual({ authorized: false });
-  expect(await relay.authorize(String(request.id), "voice.generation.other", device)).toEqual({ authorized: false });
-  expect(await relay.authorize(String(request.id), "voice.generation.retire", device)).toEqual({ authorized: true });
+  expect(await relay.authorize(String(request.id), "voice.generation.retire", "other")).toEqual({
+    authorized: false,
+  });
+  expect(await relay.authorize(String(request.id), "voice.generation.other", device)).toEqual({
+    authorized: false,
+  });
+  expect(await relay.authorize(String(request.id), "voice.generation.retire", device)).toEqual({
+    authorized: true,
+  });
   await relay.finish(String(request.id), { signed: "fixture" }, undefined, device);
   expect(await pending).toEqual({ relayId: request.id, envelope: { signed: "fixture" } });
   relay.close();
@@ -68,13 +104,45 @@ it("pins workspace ownership transfer to its original project and device", async
   const device = "d".repeat(64);
   await relay.take(device);
   const input = { operationJson: "[]", operationHash: "a".repeat(64), requestId: "request" };
-  expect(() => relay.callAssistantThread("workspace.operation.execute", input, { threadId: "room", environmentId: "host-one", projectId: "project", targetProjectCwd: "/project" }, async () => true)).toThrow("Invalid native Room source or target.");
-  const pending = relay.callAssistantThread("workspace.operation.execute", input, { threadId: "room", environmentId: "host-one", projectId: "project", targetProjectCwd: "/project", targetDeviceHash: device }, async () => true);
+  expect(() =>
+    relay.callAssistantThread(
+      "workspace.operation.execute",
+      input,
+      {
+        threadId: "room",
+        environmentId: "host-one",
+        projectId: "project",
+        targetProjectCwd: "/project",
+      },
+      async () => true,
+    ),
+  ).toThrow("Invalid native Room source or target.");
+  const pending = relay.callAssistantThread(
+    "workspace.operation.execute",
+    input,
+    {
+      threadId: "room",
+      environmentId: "host-one",
+      projectId: "project",
+      targetProjectCwd: "/project",
+      targetDeviceHash: device,
+    },
+    async () => true,
+  );
   expect(await relay.take("other")).toEqual([]);
   const [request] = await relay.take(device);
-  expect(request).toMatchObject({ action: "workspace.operation.execute", threadId: "room", projectId: "project", targetProjectCwd: "/project" });
-  expect(await relay.authorize(String(request.id), "workspace.operation.execute", "other")).toEqual({ authorized: false });
-  expect(await relay.authorize(String(request.id), "workspace.operation.execute", device)).toEqual({ authorized: true });
+  expect(request).toMatchObject({
+    action: "workspace.operation.execute",
+    threadId: "room",
+    projectId: "project",
+    targetProjectCwd: "/project",
+  });
+  expect(await relay.authorize(String(request.id), "workspace.operation.execute", "other")).toEqual(
+    { authorized: false },
+  );
+  expect(await relay.authorize(String(request.id), "workspace.operation.execute", device)).toEqual({
+    authorized: true,
+  });
   await relay.finish(String(request.id), { signed: "fixture" }, undefined, device);
   expect(await pending).toEqual({ relayId: request.id, envelope: { signed: "fixture" } });
   relay.close();
@@ -83,14 +151,41 @@ it("routes a Room browser panel only to the exact qualified project device", asy
   const relay = new ConversationDesktopRelay("host-one");
   const device = "d".repeat(64);
   await relay.take(device);
-  const source = { threadId: "room", environmentId: "host-one", projectId: "project", targetProjectCwd: "/project", targetDeviceHash: device };
-  expect(() => relay.callAssistantThread("ui.tools.open", {}, { ...source, targetDeviceHash: undefined }, async () => true)).toThrow("Invalid Room browser panel source or target");
-  const pending = relay.callAssistantThread("ui.tools.open", { tab: "browser", projectHost: true }, source, async () => true);
+  const source = {
+    threadId: "room",
+    environmentId: "host-one",
+    projectId: "project",
+    targetProjectCwd: "/project",
+    targetDeviceHash: device,
+  };
+  expect(() =>
+    relay.callAssistantThread(
+      "ui.tools.open",
+      {},
+      { ...source, targetDeviceHash: undefined },
+      async () => true,
+    ),
+  ).toThrow("Invalid Room browser panel source or target");
+  const pending = relay.callAssistantThread(
+    "ui.tools.open",
+    { tab: "browser", projectHost: true },
+    source,
+    async () => true,
+  );
   expect(await relay.take("other")).toEqual([]);
   const [request] = await relay.take(device);
-  expect(request).toMatchObject({ action: "ui.tools.open", threadId: "room", projectId: "project", targetProjectCwd: "/project" });
-  expect(await relay.authorize(String(request.id), "ui.tools.open", "other")).toEqual({ authorized: false });
-  expect(await relay.authorize(String(request.id), "ui.tools.open", device)).toEqual({ authorized: true });
+  expect(request).toMatchObject({
+    action: "ui.tools.open",
+    threadId: "room",
+    projectId: "project",
+    targetProjectCwd: "/project",
+  });
+  expect(await relay.authorize(String(request.id), "ui.tools.open", "other")).toEqual({
+    authorized: false,
+  });
+  expect(await relay.authorize(String(request.id), "ui.tools.open", device)).toEqual({
+    authorized: true,
+  });
   await relay.finish(String(request.id), { mounted: true }, undefined, device);
   expect(await pending).toEqual({ mounted: true });
   relay.close();
@@ -517,51 +612,89 @@ describe("Conversation Tools boundary", () => {
     }
   });
   it("reports invalid schema-read arguments and accepts a corrected MCP retry", async () => {
-    const input = new PassThrough(), output = new PassThrough();
+    const input = new PassThrough(),
+      output = new PassThrough();
     let raw = "";
-    output.on("data", (chunk) => { raw += String(chunk); });
+    output.on("data", (chunk) => {
+      raw += String(chunk);
+    });
     const call = vi.fn(async () => ({ schema: true }));
     const run = runConversationMcp(input, output, call);
     for (const [id, args] of [
       [1, { ids: ["conversation:crews.schema"], maxChars: 16000 }],
       [2, { ids: ["conversation:crews.schema"] }],
     ] as const) {
-      input.write(JSON.stringify({ id, method: "tools/call", params: {
-        name: "conversation_tools_describe", arguments: args,
-      } }) + "\n");
+      input.write(
+        JSON.stringify({
+          id,
+          method: "tools/call",
+          params: {
+            name: "conversation_tools_describe",
+            arguments: args,
+          },
+        }) + "\n",
+      );
     }
     input.end();
     await run;
-    const responses = raw.trim().split("\n").map((line) => JSON.parse(line));
+    const responses = raw
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
     expect(responses[0].result).toMatchObject({ isError: true });
     expect(responses[0].result.content[0].text).toBe(
       "Invalid numeric field tools.describe.maxChars. Expected a safe integer from 256 to 12000. Omit maxChars to use the default (10000); follow nextCursor for remaining content.",
     );
     expect(responses[1].result.isError).toBeUndefined();
-    expect(call).toHaveBeenCalledExactlyOnceWith("tools.describe", { ids: ["conversation:crews.schema"] });
+    expect(call).toHaveBeenCalledExactlyOnceWith("tools.describe", {
+      ids: ["conversation:crews.schema"],
+    });
   });
   it("keeps numeric bounds strict and identifies fields without echoing input", () => {
     for (const maxChars of [200, 255, 12001, "12000", null, NaN, Infinity, 256.5]) {
-      expect(() => validateConversationTool("tools.describe", {
-        ids: ["conversation:crews.schema"], maxChars,
-      })).toThrow("tools.describe.maxChars. Expected a safe integer from 256 to 12000.");
+      expect(() =>
+        validateConversationTool("tools.describe", {
+          ids: ["conversation:crews.schema"],
+          maxChars,
+        }),
+      ).toThrow("tools.describe.maxChars. Expected a safe integer from 256 to 12000.");
     }
     for (const maxChars of [undefined, 256, 12000]) {
-      expect(() => validateConversationTool("tools.describe", {
-        ids: ["conversation:crews.schema"], ...(maxChars === undefined ? {} : { maxChars }),
-      })).not.toThrow();
+      expect(() =>
+        validateConversationTool("tools.describe", {
+          ids: ["conversation:crews.schema"],
+          ...(maxChars === undefined ? {} : { maxChars }),
+        }),
+      ).not.toThrow();
     }
-    expect(() => validateConversationTool("logs.read", { limit: 501 }))
-      .toThrow("Invalid numeric field logs.read.limit. Expected a safe integer from 1 to 500.");
+    expect(() => validateConversationTool("logs.read", { limit: 501 })).toThrow(
+      "Invalid numeric field logs.read.limit. Expected a safe integer from 1 to 500.",
+    );
   });
   it("rejects forged identities, permissions, invalid nested device actions and invalid numeric fields", () => {
     for (const [action, input] of [
       ["tasks.list", { projectId: "foreign" }],
       ["devices.list", { endpoint: "https://evil" }],
-      ["devices.action", { deviceId: "ios", leaseId: "lease", requestId: "request", action: { type: "home", command: "evil" } }],
+      [
+        "devices.action",
+        {
+          deviceId: "ios",
+          leaseId: "lease",
+          requestId: "request",
+          action: { type: "home", command: "evil" },
+        },
+      ],
       ["tasks.update", { taskId: "task", autoMerge: true }],
       ["logs.read", { limit: 501 }],
-      ["devices.action", { deviceId: "ios", leaseId: "lease", requestId: "request", action: { type: "press", x: NaN, y: 1 } }],
+      [
+        "devices.action",
+        {
+          deviceId: "ios",
+          leaseId: "lease",
+          requestId: "request",
+          action: { type: "press", x: NaN, y: 1 },
+        },
+      ],
       ["tasks.delete", {}],
       ["devices.setup", { agentAccess: true }],
     ] as const)

@@ -92,10 +92,17 @@ beforeEach(() => {
 
 it("waits for the local cancellation owner and reports an unaccepted Room stop", async () => {
   let release!: () => void;
-  cancel.mockImplementationOnce(() => new Promise<void>(resolve => { release = resolve; }));
+  cancel.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
   const stopping = stopRoom(current().id);
   let finished = false;
-  void stopping.then(() => { finished = true; });
+  void stopping.then(() => {
+    finished = true;
+  });
   await vi.waitFor(() => expect(cancel).toHaveBeenCalled());
   expect(finished).toBe(false);
   release();
@@ -106,7 +113,12 @@ it("waits for the local cancellation owner and reports an unaccepted Room stop",
 });
 it("holds the turn retirement fence until cancellation settles", async () => {
   let release!: () => void;
-  cancel.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+  cancel.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
   const stopping = stopRoom(current().id);
   await vi.waitFor(() => expect(cancel).toHaveBeenCalled());
   expect(deps.retiringTurns.current.has(current().id)).toBe(true);

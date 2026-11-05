@@ -8,6 +8,7 @@ import { TaskStatusText } from "./TaskStatusLine";
 
 const ALERT_TONE: Record<TaskStatusTone, AlertTone> = {
   neutral: "info",
+  accent: "info",
   info: "info",
   success: "success",
   warning: "warning",

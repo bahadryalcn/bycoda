@@ -206,32 +206,61 @@ it("refuses a retained web approval button after its authenticated connection ch
   expect(runInContext("uncertain", page.context)).toBeUndefined();
 });
 
-
 function browserPage() {
   const elements = new Map<string, any>();
   const element = (id: string) => {
-    if (!elements.has(id)) elements.set(id, {
-      value: "", textContent: "", src: "", get currentSrc() { return this.src; }, naturalWidth: 1600, naturalHeight: 900,
-      replaceChildren() {}, removeAttribute(name: string) { this[name] = ""; },
-      getBoundingClientRect: () => ({ left: 10, top: 20, width: 400, height: 300 }),
-    });
+    if (!elements.has(id))
+      elements.set(id, {
+        value: "",
+        textContent: "",
+        src: "",
+        get currentSrc() {
+          return this.src;
+        },
+        naturalWidth: 1600,
+        naturalHeight: 900,
+        replaceChildren() {},
+        removeAttribute(name: string) {
+          this[name] = "";
+        },
+        getBoundingClientRect: () => ({ left: 10, top: 20, width: 400, height: 300 }),
+      });
     return elements.get(id);
   };
   const requests: { method: string; params: Record<string, unknown> }[] = [];
   let frameResult: unknown = {
-    open: true, url: "https://example.test", width: 800, height: 600,
-    data: "frame-one", mimeType: "image/jpeg", documentId: "document-one", navigationId: "view-one",
+    open: true,
+    url: "https://example.test",
+    width: 800,
+    height: 600,
+    data: "frame-one",
+    mimeType: "image/jpeg",
+    documentId: "document-one",
+    navigationId: "view-one",
   };
   const context = createContext({
-    document: { getElementById: element }, addEventListener() {}, clearTimeout, setTimeout,
+    document: { getElementById: element },
+    addEventListener() {},
+    clearTimeout,
+    setTimeout,
     rpcFixture: async (method: string, params: Record<string, unknown>) => {
       requests.push({ method, params });
       return method === "browser.frame" ? await frameResult : { open: true };
     },
   });
   runInContext(CONTROL_SCRIPT, context);
-  runInContext("token='credential';environment={environmentId:'original'};leaseId='lease';rpc=rpcFixture", context);
-  return { context, element, requests, nextFrame: (result: unknown) => { frameResult = result; } };
+  runInContext(
+    "token='credential';environment={environmentId:'original'};leaseId='lease';rpc=rpcFixture",
+    context,
+  );
+  return {
+    context,
+    element,
+    requests,
+    nextFrame: (result: unknown) => {
+      frameResult = result;
+    },
+  };
 }
 
 it("scales clicks using the loaded original frame viewport and sends its document/view identity", async () => {
@@ -240,7 +269,12 @@ it("scales clicks using the loaded original frame viewport and sends its documen
   f.element("frame").onload();
   await f.element("frame").onclick({ target: f.element("frame"), clientX: 210, clientY: 170 });
   expect(f.requests.find((request) => request.method === "browser.input")?.params).toMatchObject({
-    kind: "click", x: 400, y: 300, documentId: "document-one", navigationId: "view-one", leaseId: "lease",
+    kind: "click",
+    x: 400,
+    y: 300,
+    documentId: "document-one",
+    navigationId: "view-one",
+    leaseId: "lease",
   });
 });
 
@@ -251,10 +285,21 @@ it("never clicks an undecoded or old-connection frame and discards late capture 
   expect(f.requests.some((request) => request.method === "browser.input")).toBe(false);
   f.element("frame").onload();
   let release!: (value: unknown) => void;
-  f.nextFrame(new Promise((resolve) => { release = resolve; }));
+  f.nextFrame(
+    new Promise((resolve) => {
+      release = resolve;
+    }),
+  );
   const pending = runInContext("frame()", f.context);
   runInContext("disconnect()", f.context);
-  release({ width: 1600, height: 900, data: "late", mimeType: "image/jpeg", documentId: "late", navigationId: "late" });
+  release({
+    width: 1600,
+    height: 900,
+    data: "late",
+    mimeType: "image/jpeg",
+    documentId: "late",
+    navigationId: "late",
+  });
   await expect(pending).rejects.toThrow("connection or control changed");
   expect(f.element("frame").src).toBe("");
   expect(f.requests.some((request) => request.method === "browser.input")).toBe(false);

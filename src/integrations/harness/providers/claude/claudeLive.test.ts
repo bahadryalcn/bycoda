@@ -441,11 +441,17 @@ describe("claude streamed tool inputs", () => {
     await first.turn;
     const users = () => parse().filter((message) => message.type === "user").length;
     const before = users();
-    const send = () => sendClaudeTurn({
-      sessionId: "s1", cwd: "/repo", model: "claude:claude-sonnet-5",
-      modelSettings: {}, runtimeMode: "supervised", text: "next", attachments: [],
-      onEvent: () => undefined,
-    });
+    const send = () =>
+      sendClaudeTurn({
+        sessionId: "s1",
+        cwd: "/repo",
+        model: "claude:claude-sonnet-5",
+        modelSettings: {},
+        runtimeMode: "supervised",
+        text: "next",
+        attachments: [],
+        onEvent: () => undefined,
+      });
     await expect(send()).rejects.toThrow("still settling");
     expect(users()).toBe(before);
     emit({ type: "result", subtype: "success", session_id: "sess_1" });

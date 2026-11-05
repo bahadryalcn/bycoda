@@ -54,7 +54,7 @@ export function AssistantMemoryPanel(props: Props) {
       )}
       {props.searchError}
       {!props.searching && !props.entries.length && (
-        <Surface variant="inset" padding="lg" className={styles.empty}>
+        <Surface variant="outline" padding="lg" className={styles.empty}>
           <p>{t(props.query.trim() ? "No results" : "Nothing saved here yet")}</p>
         </Surface>
       )}

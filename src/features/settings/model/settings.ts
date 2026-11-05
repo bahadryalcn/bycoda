@@ -5,7 +5,7 @@ import {
 } from "../../../shared/lib/storedSetting";
 import { t, sourceMessages } from "../../../shared/i18n/core";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
-import { HARNESSES, HARNESS_TITLE } from "../../sessions/model/session";
+import { HARNESSES, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
 import {
   ALT,
   FULLSCREEN_SHORTCUT,
@@ -951,12 +951,41 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Workspace background");
     },
-    keywords: "gradient gradyan geçiş colors presets linear radial mesh soft blend angle strength background",
+    keywords:
+      "gradient gradyan geçiş colors presets linear radial mesh soft blend angle strength background",
   },
-  { id: "workspace-gradient-style", section: "appearance", get label() { return t("Gradient style"); }, keywords: "gradient gradyan geçiş linear radial mesh soft blend" },
-  { id: "workspace-gradient-colors", section: "appearance", get label() { return t("Gradient colors"); }, keywords: "gradient gradyan geçiş colors colours renk" },
-  { id: "workspace-gradient-angle", section: "appearance", get label() { return t("Gradient angle"); }, keywords: "gradient gradyan geçiş angle açı direction" },
-  { id: "workspace-gradient-strength", section: "appearance", get label() { return t("Background strength"); }, keywords: "gradient gradyan geçiş strength intensity opacity yoğunluk" },
+  {
+    id: "workspace-gradient-style",
+    section: "appearance",
+    get label() {
+      return t("Gradient style");
+    },
+    keywords: "gradient gradyan geçiş linear radial mesh soft blend",
+  },
+  {
+    id: "workspace-gradient-colors",
+    section: "appearance",
+    get label() {
+      return t("Gradient colors");
+    },
+    keywords: "gradient gradyan geçiş colors colours renk",
+  },
+  {
+    id: "workspace-gradient-angle",
+    section: "appearance",
+    get label() {
+      return t("Gradient angle");
+    },
+    keywords: "gradient gradyan geçiş angle açı direction",
+  },
+  {
+    id: "workspace-gradient-strength",
+    section: "appearance",
+    get label() {
+      return t("Background strength");
+    },
+    keywords: "gradient gradyan geçiş strength intensity opacity yoğunluk",
+  },
   {
     id: "chat-background",
     section: "appearance",
@@ -980,7 +1009,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
     get label() {
       return t("Default title model");
     },
-    keywords: "conversation title regenerate rename model provider account haiku terra flash başlık isim yeniden oluştur varsayılan",
+    keywords:
+      "conversation title regenerate rename model provider account haiku terra flash başlık isim yeniden oluştur varsayılan",
   },
   {
     id: "translation-model-default",

@@ -1,7 +1,6 @@
-import type { LiveAgent } from "../../sessions/model/liveAgents";
-import type { LiveSessionInfo } from "../../sessions/model/recentSessions";
-import { sessionDisplayTitle } from "../../sessions/model/session";
-import { sameProjectPath } from "../../projects/model/recents";
+import type { LiveAgent, LiveSessionInfo } from "../../sessions";
+import { sessionDisplayTitle } from "../../sessions/public/session";
+import { sameProjectPath } from "../../projects/public/recents";
 import type { HostSessionSummary } from "./protocol";
 import type { RemoteCreateIntent } from "./remoteCreateIntent";
 

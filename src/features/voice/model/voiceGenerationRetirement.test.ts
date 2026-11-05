@@ -19,16 +19,28 @@ const input = (generationKey: string) => ({
   operationHash: "a".repeat(64),
 });
 it("requires a bound live source before output readiness and rejects pending closure", async () => {
-  native.invoke.mockImplementation((name: string) => Promise.resolve(name === "voice_runtime_birth" ? "source-birth" : undefined));
+  native.invoke.mockImplementation((name: string) =>
+    Promise.resolve(name === "voice_runtime_birth" ? "source-birth" : undefined),
+  );
   const runtime = {};
   const generation = "preconnect-source";
-  registerVoiceGenerationRetirement(generation, () => source, async () => {}, () => false);
+  registerVoiceGenerationRetirement(
+    generation,
+    () => source,
+    async () => {},
+    () => false,
+  );
   associateVoiceGeneration(runtime, generation);
   expect(() => voiceGenerationSource(input(generation), source)).toThrow("unavailable");
   await beginVoiceRuntime(runtime, "openai");
   await bindVoiceGeneration(generation, source);
-  expect(voiceGenerationSource(input(generation), source)).toEqual({ generationKey: generation, active: true });
-  expect(() => voiceGenerationSource(input(generation), { ...source, threadId: "other" })).toThrow("unavailable");
+  expect(voiceGenerationSource(input(generation), source)).toEqual({
+    generationKey: generation,
+    active: true,
+  });
+  expect(() => voiceGenerationSource(input(generation), { ...source, threadId: "other" })).toThrow(
+    "unavailable",
+  );
   const closure = Promise.withResolvers<void>();
   recordVoiceGenerationClosure(generation, closure.promise);
   expect(() => voiceGenerationSource(input(generation), source)).toThrow("unavailable");
@@ -36,38 +48,76 @@ it("requires a bound live source before output readiness and rejects pending clo
 });
 it("binds a live narration generation to its Native runtime before any owner utterance", async () => {
   native.invoke.mockReset();
-  native.invoke.mockImplementation(async (name: string) => name === "voice_runtime_birth" ? "narration-birth" : undefined);
+  native.invoke.mockImplementation(async (name: string) =>
+    name === "voice_runtime_birth" ? "narration-birth" : undefined,
+  );
   const runtime = {};
   const generation = "narration-before-utterance";
   let ready = true;
   const closed = Promise.withResolvers<void>();
   await beginVoiceRuntime(runtime, "openai");
-  registerVoiceGenerationRetirement(generation, () => source, async () => { await closed.promise; }, () => ready);
+  registerVoiceGenerationRetirement(
+    generation,
+    () => source,
+    async () => {
+      await closed.promise;
+    },
+    () => ready,
+  );
   associateVoiceGeneration(runtime, generation);
   await bindVoiceGeneration(generation, source);
   expect(native.invoke).toHaveBeenCalledWith("voice_runtime_birth", { provider: "openai" });
-  expect(native.invoke).toHaveBeenCalledWith("voice_generation_bind", { birth: "narration-birth", generation, environment: "host", thread: "room" });
-  expect(voiceGenerationStatus(input(generation), source)).toEqual({ generationKey: generation, active: true });
-  expect(() => voiceGenerationStatus(input(generation), { ...source, threadId: "other" })).toThrow("unavailable");
+  expect(native.invoke).toHaveBeenCalledWith("voice_generation_bind", {
+    birth: "narration-birth",
+    generation,
+    environment: "host",
+    thread: "room",
+  });
+  expect(voiceGenerationStatus(input(generation), source)).toEqual({
+    generationKey: generation,
+    active: true,
+  });
+  expect(() => voiceGenerationStatus(input(generation), { ...source, threadId: "other" })).toThrow(
+    "unavailable",
+  );
   closeVoiceRuntimeEvidence(runtime, closed.promise);
   recordVoiceGenerationClosure(generation, closed.promise);
   ready = false;
   expect(() => voiceGenerationStatus(input(generation), source)).toThrow("unavailable");
   expect(native.invoke).not.toHaveBeenCalledWith("voice_runtime_closed", expect.anything());
   closed.resolve();
-  await vi.waitFor(() => expect(native.invoke).toHaveBeenCalledWith("voice_runtime_closed", { birth: "narration-birth" }));
-  expect(await retireVoiceGeneration(input(generation), source)).toEqual({ retired: true, generationKey: generation });
+  await vi.waitFor(() =>
+    expect(native.invoke).toHaveBeenCalledWith("voice_runtime_closed", {
+      birth: "narration-birth",
+    }),
+  );
+  expect(await retireVoiceGeneration(input(generation), source)).toEqual({
+    retired: true,
+    generationKey: generation,
+  });
   expect(() => associateVoiceGeneration({}, generation)).toThrow("runtime changed");
 });
 it("does not report a successful Native binding when the runtime was never registered", async () => {
   associateVoiceGeneration({}, "missing-birth");
-  await expect(bindVoiceGeneration("missing-birth", source)).rejects.toThrow("registration unavailable");
+  await expect(bindVoiceGeneration("missing-birth", source)).rejects.toThrow(
+    "registration unavailable",
+  );
 });
 it("reports only current output readiness for the exact Room generation", () => {
   let ready = true;
-  registerVoiceGenerationRetirement("status-generation", () => source, async () => {}, () => ready);
-  expect(voiceGenerationStatus(input("status-generation"), source)).toEqual({ generationKey: "status-generation", active: true });
-  expect(() => voiceGenerationStatus(input("status-generation"), { ...source, threadId: "other" })).toThrow("unavailable");
+  registerVoiceGenerationRetirement(
+    "status-generation",
+    () => source,
+    async () => {},
+    () => ready,
+  );
+  expect(voiceGenerationStatus(input("status-generation"), source)).toEqual({
+    generationKey: "status-generation",
+    active: true,
+  });
+  expect(() =>
+    voiceGenerationStatus(input("status-generation"), { ...source, threadId: "other" }),
+  ).toThrow("unavailable");
   ready = false;
   expect(() => voiceGenerationStatus(input("status-generation"), source)).toThrow("unavailable");
 });
@@ -83,14 +133,18 @@ it("persists closure only after both actual runtime settlement and registration"
   await beginVoiceRuntime(runtime, "openai");
   associateVoiceGeneration(runtime, "bound-generation");
   const associated = bindVoiceGeneration("bound-generation", source);
-  await vi.waitFor(() => expect(native.invoke).toHaveBeenCalledWith("voice_generation_bind", expect.anything()));
+  await vi.waitFor(() =>
+    expect(native.invoke).toHaveBeenCalledWith("voice_generation_bind", expect.anything()),
+  );
   closeVoiceRuntimeEvidence(runtime, closure.promise);
   closure.resolve();
   await Promise.resolve();
   expect(native.invoke).not.toHaveBeenCalledWith("voice_runtime_closed", expect.anything());
   binding.resolve();
   await associated;
-  await vi.waitFor(() => expect(native.invoke).toHaveBeenCalledWith("voice_runtime_closed", { birth: "birth" }));
+  await vi.waitFor(() =>
+    expect(native.invoke).toHaveBeenCalledWith("voice_runtime_closed", { birth: "birth" }),
+  );
 });
 it("reconciles a normal closed generation without restarting runtime cleanup", async () => {
   const retire = vi.fn(async () => {});

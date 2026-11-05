@@ -1,5 +1,4 @@
 import { useT } from "../../../shared/i18n";
-import { Alert } from "../../../shared/ui/Alert";
 import { hostBufferReportKey } from "../../../features/files/data/hostBufferRecovery";
 import { useHostBufferRecovery } from "../files/useHostBufferRecovery";
 import { BufferReportRecoveryView } from "./BufferReportRecoveryView";
@@ -13,6 +12,13 @@ export function HostBufferRecoverySection({
 }: LegacyBufferRecoverySectionProps) {
   const t = useT();
   const recovery = useHostBufferRecovery({ enabled: true, canInspect, getPrivacySnapshot });
+  const viewRecovery = {
+    ...recovery,
+    partial:
+      recovery.unavailable || recovery.incomplete || recovery.duplicatesPossible
+        ? t("This Host result may be incomplete. Inspect available reports or refresh to retry.")
+        : null,
+  };
   return (
     <>
       {recovery.visible && recovery.available ? (
@@ -20,18 +26,12 @@ export function HostBufferRecoverySection({
           <p className="text-ui-caption text-(--ui-text-secondary)">
             {t("Reports retained by this desktop profile's Host.")}
           </p>
-          {recovery.unavailable || recovery.incomplete ? (
-            <Alert tone="warning" role="status">
-              {t(
-                "Some Host reports are unavailable. You can inspect the available reports or refresh to retry.",
-              )}
-            </Alert>
-          ) : null}
         </div>
       ) : null}
       <BufferReportRecoveryView
-        recovery={recovery}
+        recovery={viewRecovery}
         reportKey={hostBufferReportKey}
+        scopeKey="host"
         onShowCopies={onShowCopies}
         sourceControl={sourceControl}
       />

@@ -129,7 +129,11 @@ export const SessionsListResultSchema = z.union([
   z.strictObject({ etag: z.string(), sessions: z.array(SessionSummarySchema) }),
 ]);
 export const SessionSyncSchema = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("unchanged"), revision: SafeCounterSchema, sourceEpoch: IdentifierSchema.optional() }),
+  z.strictObject({
+    kind: z.literal("unchanged"),
+    revision: SafeCounterSchema,
+    sourceEpoch: IdentifierSchema.optional(),
+  }),
   z.strictObject({ kind: z.literal("snapshot"), value: SessionViewSchema }),
   z.strictObject({
     kind: z.literal("delta"),

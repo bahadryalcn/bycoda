@@ -3,7 +3,7 @@ import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
 import { readBinaryFile } from "../../../platform/tauri/fs";
-import { formatFileSize, sniffImageMime } from "../../files/model/filePreview";
+import { formatFileSize, sniffImageMime } from "../../files/public/filePreviewMetadata";
 import { ImageLightbox } from "../../../shared/ui/ImageLightbox";
 import type { GeneratedImageMeta } from "../model/session";
 import { useNearViewport } from "./useNearViewport";

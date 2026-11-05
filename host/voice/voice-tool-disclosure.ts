@@ -5,7 +5,10 @@ import {
   type AssistantVoiceDisclosure,
 } from "../../src/shared/model/assistantVoiceContext";
 import type { VoiceToolFamily } from "./voice-tools";
-import { mergeNativeLibraryProofs, type NativeLibraryProof } from "../../src/shared/model/nativeLibraryProof";
+import {
+  mergeNativeLibraryProofs,
+  type NativeLibraryProof,
+} from "../../src/shared/model/nativeLibraryProof";
 export type VoiceDisclosureSource = {
   threadId?: string;
   projectId?: string;
@@ -65,13 +68,21 @@ export class HostVoiceToolDisclosure {
     this.source.accountProofs = structuredClone(proofs);
   }
   bindProjectProofs(proofs: { projectId: string; cwd: string }[]) {
-    if (!this.source || this.complete || !this.source.projectId || !proofs.some(proof => proof.projectId === this.source!.projectId)) throw new Error("Voice project source is unavailable.");
+    if (
+      !this.source ||
+      this.complete ||
+      !this.source.projectId ||
+      !proofs.some((proof) => proof.projectId === this.source!.projectId)
+    )
+      throw new Error("Voice project source is unavailable.");
     this.source.projectProofs = structuredClone(proofs);
   }
   bindNativeProofs(proofs: NativeLibraryProof[]) {
-    if (!this.source?.nativeLibrary || this.complete || !proofs.length) throw new Error("Voice Native library source is unavailable.");
+    if (!this.source?.nativeLibrary || this.complete || !proofs.length)
+      throw new Error("Voice Native library source is unavailable.");
     const verified = mergeNativeLibraryProofs(proofs);
-    if (verified.some(proof => proof.threadId !== this.source!.threadId)) throw new Error("Voice Native library source changed.");
+    if (verified.some((proof) => proof.threadId !== this.source!.threadId))
+      throw new Error("Voice Native library source changed.");
     this.source.nativeProofs = verified;
   }
   async body(value: unknown): Promise<string> {
@@ -81,7 +92,8 @@ export class HostVoiceToolDisclosure {
     const original = inline ?? JSON.stringify(value ?? null);
     if (this.complete || !this.source?.threadId)
       throw new Error("Voice disclosure is not bound to a current result.");
-    if (this.source.nativeLibrary && !this.source.nativeProofs?.length) throw new Error("Voice Native library provenance is unavailable.");
+    if (this.source.nativeLibrary && !this.source.nativeProofs?.length)
+      throw new Error("Voice Native library provenance is unavailable.");
     await this.check();
     const proof = await this.ports.finish(this.ticket.id, {
       ...this.source,

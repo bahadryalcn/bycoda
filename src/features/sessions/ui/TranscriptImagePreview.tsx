@@ -14,16 +14,18 @@ import { copyText } from "../../../platform/tauri/clipboard";
 import { basename, readBinaryFile, revealPath } from "../../../platform/tauri/fs";
 import { localExplorerPath } from "../../../shared/lib/remoteExplorerPaths";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
-import { resolveFileOpenRequest } from "../../files/model/fileIndex";
-import { sniffDocumentImageMime } from "../../files/model/filePreview";
-import { mediaKind } from "../../files/model/mediaPreview";
-import { REVEAL_LABEL } from "../../files/ui/explorerMenuItems";
+import { resolveFileOpenRequest } from "../../files/public/fileIndex";
+import { sniffDocumentImageMime } from "../../files/public/filePreviewMetadata";
+import { mediaKind } from "../../files/public/mediaPreview";
+import { REVEAL_LABEL } from "../../files/public/explorerMenuItems";
 
 /** Image formats a transcript file click previews in a dialog before any tab opens. */
 const PREVIEW_IMAGE = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp)$/i;
 
 const MediaView = lazySurface(
-  async () => ({ default: (await import("../../files/ui/MediaView")).MediaView }),
+  async () => ({
+    default: (await import("../../files").then((entry) => entry.loadMediaView())).MediaView,
+  }),
   { fallback: <SurfaceLoading /> },
 );
 

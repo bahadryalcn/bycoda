@@ -365,7 +365,12 @@ export function AssistantSetup({
                 <AssistantProfileFields section="autonomy" value={patch} onChange={update} />
               )}
               {step === 7 && (
-                <AssistantProfileFields section="presence" value={patch} onChange={update} observationTasksAvailable={snapshot?.capabilities.observationTasks === true} />
+                <AssistantProfileFields
+                  section="presence"
+                  value={patch}
+                  onChange={update}
+                  observationTasksAvailable={snapshot?.capabilities.observationTasks === true}
+                />
               )}
               {step === 7 && (
                 <AssistantKeepAwakeStatus

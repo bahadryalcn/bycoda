@@ -12,7 +12,10 @@ export class MarkdownParseQueue {
   private sequence = 0;
   private failed = false;
   private deadline?: ReturnType<typeof setTimeout>;
-  constructor(private readonly create: () => Port, private readonly timeoutMs = 15_000) {}
+  constructor(
+    private readonly create: () => Port,
+    private readonly timeoutMs = 15_000,
+  ) {}
 
   subscribe(stream: string, listener: Listener) {
     this.listeners.set(stream, listener);
@@ -56,7 +59,12 @@ export class MarkdownParseQueue {
           this.deadline = undefined;
           const desired = this.latest.get(completed.stream);
           const listener = this.listeners.get(completed.stream);
-          if (event.data.failed || !Array.isArray(event.data.blocks) || event.data.blocks.some((block) => typeof block !== "string")) listener?.error();
+          if (
+            event.data.failed ||
+            !Array.isArray(event.data.blocks) ||
+            event.data.blocks.some((block) => typeof block !== "string")
+          )
+            listener?.error();
           else if (desired?.startsWith(completed.text))
             listener?.result(completed.text, event.data.blocks);
           this.pump();

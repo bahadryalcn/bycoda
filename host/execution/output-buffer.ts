@@ -31,9 +31,9 @@ export class OutputBuffer {
     while (offset < text.length) {
       const pageIndex = Math.floor(this.position / PAGE_UNITS);
       const within = this.position % PAGE_UNITS;
-      const page = this.pages[pageIndex] ??= new Uint16Array(
+      const page = (this.pages[pageIndex] ??= new Uint16Array(
         Math.min(PAGE_UNITS, this.capacity - pageIndex * PAGE_UNITS),
-      );
+      ));
       const count = Math.min(page.length - within, text.length - offset);
       for (let index = 0; index < count; index++)
         page[within + index] = text.charCodeAt(offset + index);
@@ -46,9 +46,8 @@ export class OutputBuffer {
   slice(start = 0, end = this.retained): string {
     // Match String.slice for the integer ranges used by output readers, including
     // negative tail offsets. No Unicode normalization or boundary repair.
-    const relative = (value: number) => value < 0
-      ? Math.max(this.retained + value, 0)
-      : Math.min(value, this.retained);
+    const relative = (value: number) =>
+      value < 0 ? Math.max(this.retained + value, 0) : Math.min(value, this.retained);
     const from = relative(start);
     let remaining = Math.max(0, relative(end) - from);
     let position = (this.position - this.retained + from + this.capacity) % this.capacity;

@@ -61,26 +61,46 @@ it("marks added and removed lines with a glyph, not only color", async () => {
 });
 
 it("reuses committed row/action membership across pointer movement and clears hover on leave", async () => {
-  const bounds = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect")
+  const bounds = vi
+    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
     .mockReturnValue(new DOMRect(0, 0, 600, 600));
   const diff = buildUnifiedFile("alpha\nbeta\n", "alpha\nBETA\n");
   try {
-    await act(async () => root.render(createElement(UnifiedDiffView, {
-      files: [{ id: "hover.ts", path: "hover.ts", label: "hover.ts",
-        additions: diff.additions, deletions: diff.deletions, blocks: diff.blocks }],
-    })));
+    await act(async () =>
+      root.render(
+        createElement(UnifiedDiffView, {
+          files: [
+            {
+              id: "hover.ts",
+              path: "hover.ts",
+              label: "hover.ts",
+              additions: diff.additions,
+              deletions: diff.deletions,
+              blocks: diff.blocks,
+            },
+          ],
+        }),
+      ),
+    );
     const body = container.querySelector<HTMLElement>("[data-diff-body]")!;
     expect(body.querySelector("[data-diff-hover-key]")).not.toBeNull();
     const scan = vi.spyOn(body, "querySelectorAll");
     try {
       await act(async () => {
-        for (let x = 300; x < 330; x++) body.dispatchEvent(new MouseEvent("mousemove", {
-          bubbles: true, clientX: x, clientY: 10,
-        }));
+        for (let x = 300; x < 330; x++)
+          body.dispatchEvent(
+            new MouseEvent("mousemove", {
+              bubbles: true,
+              clientX: x,
+              clientY: 10,
+            }),
+          );
       });
       expect(scan).not.toHaveBeenCalled();
       expect(body.querySelector('[data-pointer-row="true"]')).not.toBeNull();
-      await act(async () => { body.dispatchEvent(new MouseEvent("mouseout", { bubbles: true })); });
+      await act(async () => {
+        body.dispatchEvent(new MouseEvent("mouseout", { bubbles: true }));
+      });
       expect(body.querySelector('[data-pointer-row="true"]')).toBeNull();
     } finally {
       scan.mockRestore();

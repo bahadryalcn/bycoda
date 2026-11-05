@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
-import { appendReadyHandoff, buildDeterministicHandoff } from "../../sessions/model/handoff";
+import { appendReadyHandoff, buildDeterministicHandoff } from "../../sessions/public/handoff";
+import { newSession, sessionWorkCwd } from "../../sessions/public/session";
+import { type Session } from "../../sessions";
 import {
   invokeWorkspace,
   notifyGitChanged,
@@ -7,8 +9,7 @@ import {
 } from "../../../platform/tauri/fs";
 import { isFilesystemTab, type FilePaneTab } from "../../workspace/model/layout";
 import { isEqualOrInside, pathKey, parentPath } from "../../../shared/lib/paths";
-import { isBlankSession } from "../../projects/model/projectReturn";
-import { newSession, sessionWorkCwd, type Session } from "../../sessions/model/session";
+import { isBlankSession } from "../../projects/public/projectReturn";
 
 export type Worktree = {
   path: string;

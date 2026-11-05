@@ -363,17 +363,53 @@ describe("voice tool client", () => {
 
 it("binds account-scoped social results to their exact unverified source", async () => {
   rpc.mockReset();
-  globalHost.mockResolvedValue({ machine: { id: "local-host", environmentId: "host" }, request: rpc });
+  globalHost.mockResolvedValue({
+    machine: { id: "local-host", environmentId: "host" },
+    request: rpc,
+  });
   const receive = vi.fn();
-  const target = { cwd: "", threadId: "room", causalContext: { id: "context", environmentId: "host", receive } };
-  const call = { family: "social" as const, action: "thread.read", accountId: "account-a", input: { id: "thread" }, requestId: "read" };
-  const source = { environmentId: "host", threadId: "room", accountId: "account-a", family: "social" as const, action: "thread.read" };
-  const disclosure = { id: "proof", contextId: "context", requestId: "read", verified: false, source };
-  rpc.mockResolvedValue({ value: { id: "thread" }, voiceContext: { status: "unknown" }, voiceDisclosure: disclosure });
+  const target = {
+    cwd: "",
+    threadId: "room",
+    causalContext: { id: "context", environmentId: "host", receive },
+  };
+  const call = {
+    family: "social" as const,
+    action: "thread.read",
+    accountId: "account-a",
+    input: { id: "thread" },
+    requestId: "read",
+  };
+  const source = {
+    environmentId: "host",
+    threadId: "room",
+    accountId: "account-a",
+    family: "social" as const,
+    action: "thread.read",
+  };
+  const disclosure = {
+    id: "proof",
+    contextId: "context",
+    requestId: "read",
+    verified: false,
+    source,
+  };
+  rpc.mockResolvedValue({
+    value: { id: "thread" },
+    voiceContext: { status: "unknown" },
+    voiceDisclosure: disclosure,
+  });
   expect(await callVoiceTool(target, call)).toEqual({ id: "thread" });
-  expect(rpc).toHaveBeenCalledWith("voice.tools.call", expect.objectContaining({ accountId: "account-a", threadId: "room" }));
+  expect(rpc).toHaveBeenCalledWith(
+    "voice.tools.call",
+    expect.objectContaining({ accountId: "account-a", threadId: "room" }),
+  );
   expect(receive).toHaveBeenCalledWith({ status: "unknown" }, disclosure, "read", source);
-  rpc.mockResolvedValue({ value: {}, voiceContext: {}, voiceDisclosure: { ...disclosure, source: { ...source, accountId: "account-b" } } });
+  rpc.mockResolvedValue({
+    value: {},
+    voiceContext: {},
+    voiceDisclosure: { ...disclosure, source: { ...source, accountId: "account-b" } },
+  });
   await expect(callVoiceTool(target, call)).rejects.toThrow("could not be verified");
   await expect(callVoiceTool({ cwd: "/a", threadId: "room" }, call)).rejects.toThrow("invalid");
 });

@@ -119,7 +119,6 @@ it("ends quietly when cancelled", async () => {
   expect(chunk).not.toHaveBeenCalled();
 });
 
-
 it("slow continuing PCM still obeys speech-sized total budget and aborts actual stream", async () => {
   vi.useFakeTimers();
   let writer!: ReadableStreamDefaultController<Uint8Array>;
@@ -127,9 +126,19 @@ it("slow continuing PCM still obeys speech-sized total budget and aborts actual 
   let signal!: AbortSignal;
   const request = vi.fn(async (_url: unknown, init?: RequestInit) => {
     signal = init!.signal!;
-    return new Response(new ReadableStream({ start(value) { writer = value; }, cancel }));
+    return new Response(
+      new ReadableStream({
+        start(value) {
+          writer = value;
+        },
+        cancel,
+      }),
+    );
   });
-  const pending = streamElevenLabs({ key: "private-key", text: "Hi", signal: new AbortController().signal, request }, () => {});
+  const pending = streamElevenLabs(
+    { key: "private-key", text: "Hi", signal: new AbortController().signal, request },
+    () => {},
+  );
   const failed = expect(pending).rejects.toThrow("stopped while speaking");
   try {
     await vi.advanceTimersByTimeAsync(0);
@@ -143,7 +152,9 @@ it("slow continuing PCM still obeys speech-sized total budget and aborts actual 
     await failed;
     expect(signal.aborted).toBe(true);
     expect(cancel).toHaveBeenCalledOnce();
-  } finally { vi.useRealTimers(); }
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 it("explicit cancel during a large PCM chunk prevents later chunks from being published", async () => {
@@ -157,13 +168,16 @@ it("explicit cancel during a large PCM chunk prevents later chunks from being pu
   expect(chunks).toHaveLength(1);
 });
 
-
 it("cancels unread provider error bodies without exposing private error content", async () => {
   const cancel = vi.fn();
   const request = vi.fn(async () => new Response(new ReadableStream({ cancel }), { status: 429 }));
   const chunk = vi.fn();
-  await expect(streamElevenLabs({ key: "private-key", text: "Hi", signal: new AbortController().signal, request }, chunk))
-    .rejects.toThrow("busy or over its limit");
+  await expect(
+    streamElevenLabs(
+      { key: "private-key", text: "Hi", signal: new AbortController().signal, request },
+      chunk,
+    ),
+  ).rejects.toThrow("busy or over its limit");
   expect(cancel).toHaveBeenCalledOnce();
   expect(chunk).not.toHaveBeenCalled();
 });

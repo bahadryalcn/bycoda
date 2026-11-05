@@ -241,7 +241,10 @@ it("sets up dictation on GPU without loading the saved natural speech engine", a
   });
   await vi.waitFor(() => expect(service.status().state).toBe("ready"));
   expect(preparePython).not.toHaveBeenCalled();
-  expect(inspect).toHaveBeenNthCalledWith(1, expect.objectContaining({ python: "selected-python" }));
+  expect(inspect).toHaveBeenNthCalledWith(
+    1,
+    expect.objectContaining({ python: "selected-python" }),
+  );
   expect(inspect).toHaveBeenCalledWith(expect.objectContaining({ whisperPath: "selected-asr" }));
   expect(torchInstalls(run)).toHaveLength(0);
   const pip = run.mock.calls.find(([, args]) => args.includes("pip"))!;

@@ -56,12 +56,21 @@ it("restores temporarily and permanently through Settings without the rail icon"
   expect(container.querySelector("#group-lock-groups")?.textContent).not.toContain(
     "My secret project group",
   );
-  await act(async () => { button("Show temporarily").click(); await Promise.resolve(); });
+  await act(async () => {
+    button("Show temporarily").click();
+    await Promise.resolve();
+  });
   expect(isProjectLocked("/private")).toBe(false);
   expect(button("Hide again")).toBeDefined();
-  await act(async () => { button("Hide again").click(); await Promise.resolve(); });
+  await act(async () => {
+    button("Hide again").click();
+    await Promise.resolve();
+  });
   expect(isProjectLocked("/private")).toBe(true);
-  await act(async () => { button("Make visible").click(); await Promise.resolve(); });
+  await act(async () => {
+    button("Make visible").click();
+    await Promise.resolve();
+  });
   expect(isProjectLocked("/private")).toBe(false);
   expect(container.querySelector("#hidden-project-groups")?.textContent).toContain(
     "No hidden groups",

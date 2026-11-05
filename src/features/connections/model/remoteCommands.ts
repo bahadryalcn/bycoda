@@ -3,7 +3,7 @@ import {
   setRemoteCommandRunner,
   type FolderListing,
 } from "../../../platform/tauri/fs";
-import { notifyDirsChanged } from "../../files/model/fileTree";
+import { notifyDirsChanged } from "../../files/public/fileTree";
 import { remoteMachineFor, remoteRequest } from "./connections";
 import { subscribeRemoteRecovered } from "./remoteHealth";
 import { parseRemotePath, remotePath } from "./remoteProjects";

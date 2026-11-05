@@ -133,7 +133,10 @@ function requireCurrent(current: () => boolean): void {
   if (!current()) throw new Error("SYNC_STOPPED");
 }
 
-export async function autoAddRemoteProjects(now: number = Date.now(), current: () => boolean = () => true): Promise<string[]> {
+export async function autoAddRemoteProjects(
+  now: number = Date.now(),
+  current: () => boolean = () => true,
+): Promise<string[]> {
   requireCurrent(current);
   persistDismissed();
   if (openTargets.length === 0) return [];

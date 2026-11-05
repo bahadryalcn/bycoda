@@ -16,7 +16,8 @@ import { lstat, readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import { runGitText } from "../../src/shared/lib/processExecution.node";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
-import { HostTasks } from "./tasks";
+import type { TaskContext } from "./context";
+import { workspaceFingerprint } from "./fingerprint";
 
 vi.mock("../../src/shared/lib/processExecution.node", async (original) => ({
   ...(await original<typeof import("../../src/shared/lib/processExecution.node")>()),
@@ -28,11 +29,8 @@ vi.mock("node:fs/promises", async (original) => {
 });
 
 type FingerprintHost = { store: { project(id: string): { cwd: string } } };
-const fingerprint = (
-  HostTasks.prototype as unknown as {
-    workspaceFingerprint(this: FingerprintHost, task: HostTask): Promise<string | undefined>;
-  }
-).workspaceFingerprint;
+const fingerprint = (context: FingerprintHost, task: HostTask) =>
+  workspaceFingerprint(context as unknown as TaskContext, task);
 const task = { projectId: "fixture" } as HostTask;
 const git = async (_cwd: string, args: string[]) => (await runGitText(args, { cwd: _cwd })).trim();
 
@@ -109,7 +107,7 @@ function gitFixture(names: string[]) {
 }
 async function matchesLegacy() {
   const expected = await legacyFingerprint.call(host, task);
-  expect(await fingerprint.call(host, task)).toBe(expected);
+  expect(await fingerprint(host, task)).toBe(expected);
   return expected;
 }
 
@@ -146,7 +144,7 @@ describe("workspace fingerprint asynchronous I/O", () => {
     writeFileSync(join(cwd, "a"), Buffer.alloc(8 * 1024 * 1024));
     writeFileSync(join(cwd, "b"), Buffer.alloc(8 * 1024 * 1024 + 1));
     writeFileSync(join(cwd, "c"), "later");
-    expect(await fingerprint.call(host, task)).toBeUndefined();
+    expect(await fingerprint(host, task)).toBeUndefined();
     expect(vi.mocked(readFile).mock.calls.map(([path]) => path)).toEqual([join(cwd, "a")]);
   });
 
@@ -173,7 +171,7 @@ describe("workspace fingerprint asynchronous I/O", () => {
     });
     const expected = createHash("sha256").update("tree").update("binary diff").update(names[0]);
     for (const name of names) expected.update(name).update("content");
-    expect(await fingerprint.call(host, task)).toBe(expected.digest("hex"));
+    expect(await fingerprint(host, task)).toBe(expected.digest("hex"));
     expect(peak).toBe(8);
     expect(active).toBe(0);
   });
@@ -196,7 +194,7 @@ describe("workspace fingerprint asynchronous I/O", () => {
     writeFileSync(join(cwd, "a"), "content");
     gitFixture(["a"]);
     vi.mocked(readFile).mockRejectedValueOnce(new Error("Transient read failure"));
-    expect(await fingerprint.call(host, task)).toBe(
+    expect(await fingerprint(host, task)).toBe(
       createHash("sha256")
         .update("tree")
         .update("binary diff")
@@ -222,7 +220,7 @@ describe("workspace fingerprint asynchronous I/O", () => {
       .update("a")
       .digest("hex");
     expect(await matchesLegacy()).toBe(expected);
-    expect(await fingerprint.call(host, task)).toBe(expected);
+    expect(await fingerprint(host, task)).toBe(expected);
   });
 
   it("preserves Git tree, trimmed diff, sorted untracked names and binary bytes", async () => {
@@ -283,6 +281,6 @@ describe("workspace fingerprint asynchronous I/O", () => {
   it("hashes an empty folder and returns undefined for an unavailable folder", async () => {
     expect(await matchesLegacy()).toBe(createHash("sha256").digest("hex"));
     const missing = { store: { project: () => ({ cwd: join(cwd, "missing") }) } };
-    expect(await fingerprint.call(missing, task)).toBeUndefined();
+    expect(await fingerprint(missing, task)).toBeUndefined();
   });
 });

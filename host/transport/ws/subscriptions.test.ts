@@ -559,7 +559,6 @@ it("does not cache a canceled snapshot while its final authorization check is pe
   expect(snapshots(first.events)).toHaveLength(0);
 });
 
-
 it("encodes one data snapshot across consumers and keeps legacy consumer mutations isolated", async () => {
   const payload = "雪".repeat(1000);
   const f = fixture({ load: async () => ({ revision: 1, data: { payload } }) });
@@ -586,9 +585,14 @@ it("encodes one data snapshot across consumers and keeps legacy consumer mutatio
     await settle();
     expect(encoded).toHaveLength(1);
     expect(JSON.parse(encoded[0]).params.data).toEqual({ payload });
-    expect(stringify.mock.calls.filter(([value]) =>
-      value && typeof value === "object" && (value as Record<string, unknown>).payload === payload,
-    )).toHaveLength(1);
+    expect(
+      stringify.mock.calls.filter(
+        ([value]) =>
+          value &&
+          typeof value === "object" &&
+          (value as Record<string, unknown>).payload === payload,
+      ),
+    ).toHaveLength(1);
   } finally {
     stringify.mockRestore();
   }

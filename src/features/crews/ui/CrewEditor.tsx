@@ -1256,7 +1256,7 @@ function MemberPage({
       />
       <section
         aria-label={t("Member library")}
-        className="flex min-w-0 flex-wrap items-center gap-2 rounded-(--ui-radius-card) bg-(--ui-surface-panel) p-3"
+        className="flex min-w-0 flex-wrap items-center gap-2 rounded-(--ui-radius-card) bg-transparent p-3"
       >
         <span className="min-w-0 flex-1 text-ui-body">
           <span className="block font-medium">{t("Member library")}</span>

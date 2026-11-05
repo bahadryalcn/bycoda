@@ -33,11 +33,11 @@ import {
   notifyGitChanged,
   type GitHistoryCommit,
 } from "../../../platform/tauri/fs";
-import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
-import { isRemoteProjectPath } from "../../projects/model/recents";
-import { GIT_ACTIONS, useRemoteSupports } from "../../connections/model/remoteCapabilities";
-import { reportRemoteLoad, useRemoteLoadFailure } from "../../connections/model/remoteHealth";
-import { RemoteLoadError } from "../../connections/ui/RemoteLoadError";
+import { ExplorerMenu } from "../../files/public/ExplorerMenu";
+import { isRemoteProjectPath } from "../../projects/public/recents";
+import { GIT_ACTIONS, useRemoteSupports } from "../../connections/public/remoteCapabilities";
+import { reportRemoteLoad, useRemoteLoadFailure } from "../../connections/public/remoteHealth";
+import { RemoteLoadError } from "../../connections/public/RemoteLoadError";
 import { commitMenuItems, filterHistory, githubCommitUrl } from "../model/commitActions";
 import { layoutGitGraph } from "../model/gitGraph";
 import { GitGraphDialog } from "./GitGraphDialog";

@@ -5,7 +5,7 @@ import { t, useLocale } from "../../../shared/i18n/technical";
 import { ContextMenu, type ContextMenuItem } from "../../../shared/ui/ContextMenu";
 import { formatShortcutLabel, usePlatform } from "../../../shared/ui/shortcut";
 import { editorCodeSelection, formatEditorSelectionReference } from "../model/editorSelection";
-import { requestAddToChat } from "../../sessions/model/quoteDraft";
+import { requestAddToChat } from "../../sessions/public/quoteDraft";
 import {
   sharedRedo,
   sharedRedoDepth,

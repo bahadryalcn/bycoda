@@ -13,7 +13,7 @@ import { LoadingText } from "../../../shared/ui/LoadingText";
 import {
   loadRemoteAutoReconnect,
   subscribeRemoteAutoReconnect,
-} from "../../settings/model/settings";
+} from "../../settings/public/settings";
 
 /** One compact, inline explanation of why a remote project's data could not be
  * loaded, with what the user can do about it. `stale` says older data is still

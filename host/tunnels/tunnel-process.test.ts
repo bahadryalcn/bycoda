@@ -219,7 +219,8 @@ describe("simulated provider process integration (no external tunnel)", () => {
     cleanup.push(() => rm(directory, { recursive: true, force: true }));
     const entry = buildSync({
       stdin: {
-        contents: 'import {runTunnelWorker} from "./host/tunnel-process";runTunnelWorker();',
+        contents:
+          'import {runTunnelWorker} from "./host/tunnels/tunnel-process";runTunnelWorker();',
         resolveDir: resolve("."),
       },
       bundle: true,

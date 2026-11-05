@@ -21,33 +21,11 @@ import {
 } from "./models";
 import { loadProjectProviderSettings } from "./projectProviders";
 import { applySessionDefaults, providerSessionDefaults } from "./providerSessionDefaults";
+import { HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
+import type { HarnessId } from "../../../shared/model/harnessIdentity";
 
-export type HarnessId =
-  | "claude"
-  | "codex"
-  | "cursor"
-  | "grok"
-  | "opencode"
-  | "pi"
-  | "omp"
-  | "fx"
-  | "hermes"
-  | "antigravity"
-  | "acp";
-
-export const HARNESSES: HarnessId[] = [
-  "claude",
-  "codex",
-  "cursor",
-  "grok",
-  "opencode",
-  "pi",
-  "omp",
-  "fx",
-  "hermes",
-  "antigravity",
-  "acp",
-];
+export { HARNESSES, HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
+export type { HarnessId } from "../../../shared/model/harnessIdentity";
 
 export type BlockRole =
   | "user"
@@ -534,7 +512,7 @@ export type Session = {
   /** Host-owned relationship to a durable assistant job; never inferred from a title. */
   managedBy?: AssistantSessionManagement;
   /** Explicit execution owner, independent of cwd, worktree and legacy mirrors. */
-  hostBinding?: import("../../connections/model/sessionExecutionBinding").HostSessionBinding;
+  hostBinding?: import("../../connections").HostSessionBinding;
   /** Incomplete remote view. Sending may proceed; authoritative persistence may not. */
   historyPartial?: boolean;
   /** Only a tail page is available; sending/editing/persistence must wait. */
@@ -676,34 +654,6 @@ export type PendingHarnessSwitch = {
   fromProviderAccountId?: string;
   /** The harness being left had hit its usage limit; never ask it for a recap. */
   fromUsageLimited?: boolean;
-};
-
-export const HARNESS_LABEL: Record<HarnessId, string> = {
-  claude: "claude",
-  codex: "codex",
-  cursor: "cursor",
-  grok: "grok",
-  opencode: "opencode",
-  pi: "pi",
-  omp: "omp",
-  fx: "fx",
-  hermes: "hermes",
-  antigravity: "antigravity",
-  acp: "acp",
-};
-
-export const HARNESS_TITLE: Record<HarnessId, string> = {
-  claude: "Claude Code",
-  codex: "Codex",
-  cursor: "Cursor",
-  grok: "Grok Build",
-  opencode: "OpenCode",
-  pi: "Pi",
-  omp: "omp",
-  fx: "fx",
-  hermes: "Hermes Agent",
-  antigravity: "Antigravity",
-  acp: "ACP Agent",
 };
 
 /** fx ACP rejects attachment prompt blocks. */

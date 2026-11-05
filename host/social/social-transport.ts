@@ -19,7 +19,8 @@ export class SocialTransport {
   }
   async rpc(p: SocialPrincipal, method: string, params: Record<string, unknown>): Promise<unknown> {
     if (method === "social.tools.call") {
-      if (p.kind !== "session" && p.kind !== "assistant-thread") throw new Error("Use a host-issued session or Assistant tool credential.");
+      if (p.kind !== "session" && p.kind !== "assistant-thread")
+        throw new Error("Use a host-issued session or Assistant tool credential.");
       const action = String(params.action ?? "");
       if (!this.service.isTool(action)) throw new Error("Unsupported social tool.");
       return this.service.call(

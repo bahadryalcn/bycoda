@@ -20,15 +20,23 @@ import type { HostProvider } from "../providers/providers";
 import { HostEngine } from "../engine";
 import { HostStore } from "../store";
 import { reserveShellOwnership } from "../execution/shell-ownership";
-import { HostTasks, MAX_RUNNING_TASKS, MAX_REPAIR_ATTEMPTS } from "./tasks";
+import { HostTasks, MAX_RUNNING_TASKS, MAX_REPAIR_ATTEMPTS } from "./service";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 it("keeps the original failed verification owner fenced across retry and board restart", async () => {
   const f = await setup();
   await f.tasks.save(f.input());
   const task = await f.task();
   const project = await f.store.project(task.projectId);
-  await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.status','blocked') WHERE id=?").run(task.id);
-  const original = await reserveShellOwnership(f.store, project.cwd, "task", task.id, "original verification");
+  await f.store.db
+    .prepare("UPDATE tasks SET value=json_set(value,'$.status','blocked') WHERE id=?")
+    .run(task.id);
+  const original = await reserveShellOwnership(
+    f.store,
+    project.cwd,
+    "task",
+    task.id,
+    "original verification",
+  );
   await original.observe({ pid: 42, hostPid: 84, spawnObservedAt: 123 });
   await original.unknown("taskkill failed");
   await expect(f.tasks.move(task.id, "queued")).rejects.toThrow("not proven stopped");
@@ -38,8 +46,14 @@ it("keeps the original failed verification owner fenced across retry and board r
   await expect(restarted.startTask(task.id)).rejects.toThrow("not proven stopped");
   await expect(restarted.move(task.id, "queued")).rejects.toThrow("not proven stopped");
   await expect(restarted.delete(task.id, true)).rejects.toThrow("not proven stopped");
-  const row = await f.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(`shell-physical-owner.v1:${original.id}`);
-  expect(JSON.parse(String(row!.value))).toMatchObject({ id: original.id, command: "original verification", physicalIdentity: { pid: 42 } });
+  const row = await f.store.db
+    .prepare("SELECT value FROM metadata WHERE key=?")
+    .get(`shell-physical-owner.v1:${original.id}`);
+  expect(JSON.parse(String(row!.value))).toMatchObject({
+    id: original.id,
+    command: "original verification",
+    physicalIdentity: { pid: 42 },
+  });
 });
 it("refreshes read-only assistant follow-up metadata and board ETags without rewriting a task or launching work", async () => {
   const f = await setup();

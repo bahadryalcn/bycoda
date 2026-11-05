@@ -25,7 +25,8 @@ import { useCallback } from "react";
 import { useGitResource } from "../hooks/useGitResource";
 import { deleteLocalBranch } from "../model/deleteBranch";
 import { confirmNative } from "../model/gitConfirmation";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
+import { ExplorerMenu, type ExplorerMenuItem } from "../../files/public/ExplorerMenu";
+
 import { RefNameDialog } from "./RefNameDialog";
 
 export type GraphRun = (label: string, action: () => Promise<unknown>) => Promise<boolean>;

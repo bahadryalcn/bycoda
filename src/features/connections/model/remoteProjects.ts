@@ -1,4 +1,5 @@
-import { isRemoteProjectPath, REMOTE_PROJECT_PREFIX } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../../shared/lib/paths";
+import { REMOTE_PATH_PREFIX as REMOTE_PROJECT_PREFIX } from "../../../shared/lib/remotePaths";
 import type { HostProject } from "./protocol";
 
 /** A rail project whose folder lives on another machine. */

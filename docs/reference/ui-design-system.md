@@ -39,9 +39,10 @@ each rule.
   foundation imports or copied design systems.
 - Use shared semantic color tokens directly in CSS, Tailwind and inline styles. No
   literal hex/RGB/HSL/OKLCH/named colors, arbitrary color utilities, or local
-  color-mix/opacity/gradient recipes. Standard panel/card surfaces use
-  `var(--ui-surface)`; use existing raised, hover, pressed, selected, text, border and
-  status roles. Define genuinely new roles once in their owning shared theme under
+  color-mix/opacity/gradient recipes. Ordinary panels, lists, sidebars and settings
+  groups share the canvas (DESIGN.md "Canvas first"); `var(--ui-surface)` is only for
+  floating surfaces, the composer, code/terminal viewers and inputs. Use existing
+  raised, hover, pressed, selected, text, border and status roles. Define genuinely new roles once in their owning shared theme under
   `src/styles/` (palette.css, index.css, bycoda.css or arc.css), supporting light/dark/
   custom themes. Keep mixing there and preserve neutral surface hues.
 - Keep headers/actions compact. Collection filters and advanced options go in
@@ -296,6 +297,15 @@ announces progress and prevents click, keyboard and form activation duplicates.
 Features continue to own asynchronous operations; no new implicit persistence.
 
 ### Quiet, complete operation feedback
+
+`src/shared/ui/CapabilityStatus.tsx` presents three independent observations as a
+wrapping definition list. Supply `permission` (`enabled`, `disabled`, `unknown`),
+`readiness` (`ready`, `unavailable`, `checking`, `unknown`) and `activity`
+(`running`, `idle`, `unknown`). Domain owners provide evidence, invalidate stale
+runtime observations after failed reads, and retain saved permission separately.
+Inventory, picker visibility and credentials alone never prove readiness or
+activity. The component has no callbacks or activation effects. See ControlSpecimen
+for the real reference consumer.
 
 Every asynchronous action exposes pending state on its initiating Button (`loading`)
 or on the affected row/card. Track the actual action and target, not a shared busy
@@ -649,7 +659,7 @@ consumed by name. Do not copy a value into feature CSS.
   it) and controls inside keep their own steps.
 - Pure and Tinted background (Appearance -> Themes -> Background tone, `html[data-canvas-background]`):
   Pure is the default and paints the shared canvas pure black or white for every palette. Derived
-  layers still mix from `--ui-tint-base`. Tokens and components must read well on both; do not
+  layers still mix from `--ui-tint-base`. Pure paints `--color-background-base` and `--ui-chat-canvas` from `--palette-canvasPureDark` / `--palette-canvasPureLight`; the Pure composer writing area uses `--ui-composer-surface` (one step above that ground). Tokens and components must read well on both; do not
   hard-code a canvas colour or test only one background.
 
 ## Type, density and layout

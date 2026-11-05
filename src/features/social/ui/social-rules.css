@@ -127,7 +127,7 @@
   gap: 0.625rem;
   padding: 0.875rem 1rem;
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface-panel);
+  background: transparent;
   min-inline-size: 0;
 }
 .social-rule-proposal[data-state="rejected"] {

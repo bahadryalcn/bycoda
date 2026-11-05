@@ -31,9 +31,14 @@ export function useProjectState({ toolWindow, windowTransfer, resumed }: Project
   useEffect(() => {
     if (!resumed?.projectCwd || !looksLikeProject(resumed.projectCwd)) return;
     let active = true;
-    void rememberProject(resumed.projectCwd).then((next) => { if (active) setRecents(next); })
+    void rememberProject(resumed.projectCwd)
+      .then((next) => {
+        if (active) setRecents(next);
+      })
       .catch((error: unknown) => console.error("Could not remember project", error));
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [resumed?.projectCwd]);
   // What is not behind a locked group. The rail itself gets the full list, so
   // it can keep the saved order and pins of projects that are hidden.

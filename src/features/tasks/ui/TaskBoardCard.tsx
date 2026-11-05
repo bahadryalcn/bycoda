@@ -3,6 +3,7 @@ import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Modal } from "../../../shared/ui/Modal";
 import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
@@ -40,7 +41,7 @@ import {
   Undo2,
   X,
 } from "../../../shared/ui/icons";
-import { taskStatusLine, type TaskStatusKind } from "../model/taskStatusLine";
+import { taskStatusLine, QUIET_TASK_STATUS } from "../model/taskStatusLine";
 import { AssistantTaskBadge } from "./AssistantTaskBadge";
 import { TaskStatusText } from "./TaskStatusLine";
 import { unreadReviewNotes } from "../model/taskReviewNotes";
@@ -48,15 +49,6 @@ import { ExpandingButtonGroup } from "../../../shared/ui/ExpandingButtonGroup";
 import { resolveModel } from "../../sessions/model/models";
 import { taskInstructionsSummary } from "../model/taskInstructions";
 import { isStewardProposal } from "../model/stewardClient";
-
-const QUIET_STATUS: ReadonlySet<TaskStatusKind> = new Set([
-  "todo",
-  "queued",
-  "running",
-  "finished",
-  "done",
-  "blocked",
-]);
 
 export const TaskCard = memo(function TaskCard({
   task,
@@ -139,7 +131,7 @@ function TaskCardBody({
   );
   // The column already names plain states; the line names everything else.
   const showStatus =
-    !QUIET_STATUS.has(status.kind) || (status.kind === "blocked" && hasFailureDetails);
+    !QUIET_TASK_STATUS.has(status.kind) || (status.kind === "blocked" && hasFailureDetails);
   const statusBadges =
     task.source === "steward" || task.autoMerged ? (
       <>
@@ -169,7 +161,7 @@ function TaskCardBody({
       onKeyDown={(event) => {
         if (event.target === event.currentTarget && event.key === "Enter") onOpen();
       }}
-      className="task-board-card cursor-pointer rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-(--ui-surface) px-2.5 py-2"
+      className="task-board-card cursor-pointer rounded-(--ui-radius-card) border border-(--ui-tone-neutral-border) bg-transparent px-2.5 py-2"
     >
       {goal ? (
         <p
@@ -189,6 +181,9 @@ function TaskCardBody({
           <Spinner size="xs" label={t("Loading…")} className="mr-1 inline-block" />
         ) : null}
         <GripVertical aria-hidden="true" className="task-drag-grip icon-xs" strokeWidth={1.75} />
+        {status.tone === "accent" ? (
+          <StatusDot tone="accent" label={status.label} className="me-1 inline-block" />
+        ) : null}
         {task.title}
       </h3>
       {planning ? <p className="task-planning-caption">{planning}</p> : null}

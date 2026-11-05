@@ -127,7 +127,8 @@ async function completeNativeSyncCycle(machineId: string, operationId: string): 
       return;
     } catch (error) {
       const message = String(error);
-      if (!message.includes("SYNC_OWNER_HELD") && !message.includes("NATIVE_CONTROL_WINDOW_BUSY")) throw error;
+      if (!message.includes("SYNC_OWNER_HELD") && !message.includes("NATIVE_CONTROL_WINDOW_BUSY"))
+        throw error;
       await new Promise<void>((resolve) => setTimeout(resolve, 250));
     }
   }
@@ -183,7 +184,9 @@ export function startAppSync(): () => void {
       .then((value) => {
         if (!stopped) machines = value;
       })
-      .catch(() => { auxiliaryUncertain = true; })
+      .catch(() => {
+        auxiliaryUncertain = true;
+      })
       .finally(() => {
         refreshing = undefined;
       });
@@ -192,11 +195,14 @@ export function startAppSync(): () => void {
   const ownership = createSyncWindowOwner(() => wake());
   const loop = startSyncLoop(
     () => collectSyncMachineIds(machines),
-    (machineId, cycleId) => (method, params) => remoteRequest(machineId, method, params, false, false, undefined, cycleId),
+    (machineId, cycleId) => (method, params) =>
+      remoteRequest(machineId, method, params, false, false, undefined, cycleId),
     (machineId) => machines.find((machine) => machine.id === machineId)?.environmentId,
     ownership.isOwner,
     refreshMachines,
-    isTauri() ? (machineId, operationId) => invoke<void>("sync_cycle_begin", { machineId, operationId }) : undefined,
+    isTauri()
+      ? (machineId, operationId) => invoke<void>("sync_cycle_begin", { machineId, operationId })
+      : undefined,
     isTauri() ? completeNativeSyncCycle : undefined,
   );
   // A host that was not up yet at launch is linked on a later refresh.
@@ -208,8 +214,12 @@ export function startAppSync(): () => void {
       .then((machine) => {
         if (machine) localLinked = true;
       })
-      .catch(() => { auxiliaryUncertain = true; })
-      .finally(() => { connecting = undefined; });
+      .catch(() => {
+        auxiliaryUncertain = true;
+      })
+      .finally(() => {
+        connecting = undefined;
+      });
     return connecting;
   };
   const nudger = createDebouncer(() => loop.nudge(), NUDGE_DEBOUNCE_MS);
@@ -262,8 +272,14 @@ export function startAppSync(): () => void {
   return () => {
     started = false;
     stopped = true;
-    const drain = Promise.all([loop.stop(), refreshing ?? Promise.resolve(), connecting ?? Promise.resolve()])
-      .then(([settled]) => settled && !auxiliaryUncertain, () => false);
+    const drain = Promise.all([
+      loop.stop(),
+      refreshing ?? Promise.resolve(),
+      connecting ?? Promise.resolve(),
+    ]).then(
+      ([settled]) => settled && !auxiliaryUncertain,
+      () => false,
+    );
     ownership.stop(drain);
     channel?.close();
     nudger.cancel();

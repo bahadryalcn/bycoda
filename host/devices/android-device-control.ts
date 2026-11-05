@@ -129,12 +129,15 @@ export async function androidDeviceControl(
     const ms = remaining();
     if (ms <= 0) throw timeout();
     const work = command(adbPath, ["-s", serial, "shell", ...args], {
-        env: options.env,
-        timeoutMs: ms,
-      });
+      env: options.env,
+      timeoutMs: ms,
+    });
     if (args[0] === "uiautomator" && args[1] === "dump") snapshotStarted = true;
     physical.add(work);
-    void work.then(() => physical.delete(work), () => physical.delete(work));
+    void work.then(
+      () => physical.delete(work),
+      () => physical.delete(work),
+    );
     const output = await bounded(options.track ? options.track(work) : work);
     if (inspectErrors) successful(output);
     return output;
@@ -204,7 +207,8 @@ export async function androidDeviceControl(
           throw new Error("Invalid owned Android snapshot path.");
         // Revocation must not strand the exact temporary file this operation
         // already created. Cleanup cannot issue input or choose another path.
-        if (snapshotStarted && remaining() > 0 && physical.size === 0) await run(["rm", "-f", path], true, true);
+        if (snapshotStarted && remaining() > 0 && physical.size === 0)
+          await run(["rm", "-f", path], true, true);
         else if (snapshotStarted) {
           // A timed-out observer may leave adb running. Wait for this exact
           // snapshot's physical work before deleting its exact temporary file.

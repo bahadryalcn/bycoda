@@ -395,7 +395,7 @@ it("starts in the open project's backlog and creates in the explicitly selected 
     return original(command, args);
   });
   await render(undefined, "backlog");
-  const list = () => container.querySelector('[aria-label="Tasks"].task-management-list');
+  const list = () => container.querySelector('[role="list"][aria-label="Tasks"]');
   expect(list()?.textContent).toContain("Project A work");
   expect(list()?.textContent).not.toContain("Project B work");
   await allProjects();

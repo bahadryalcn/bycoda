@@ -1,12 +1,16 @@
 "use client";
 
 import { collator as cachedCollator } from "../../../lib/intl";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import {
+  COLLECTION_WINDOW_THRESHOLD,
+  useCollectionVirtualizer,
+} from "../../../hooks/useCollectionVirtualizer";
+import { useCollectionScroll } from "../../../hooks/useCollectionScroll";
 
 import { useT } from "../../../i18n";
 
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { KeyboardEvent, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
+import type { KeyboardEvent, MouseEvent as ReactMouseEvent, RefObject } from "react";
 import { ArrowUp } from "lucide-react";
 import {
   AnimatePresence,
@@ -20,38 +24,8 @@ import {
 import { motionTokens } from "../lib/motion-tokens";
 import styles from "./sortable-data-table.module.css";
 
-export type SortDirection = "asc" | "desc";
-export type SortState = { key: string; direction: SortDirection };
-
-export type DataColumn<T> = {
-  key: string;
-  label: string;
-  sortable?: boolean;
-  render?: (value: unknown, row: T) => ReactNode;
-  /** Right-aligns the column with tabular numerals. Detected when every value is a number. */
-  numeric?: boolean;
-  /** Fixed width such as 120 or "20%". Other columns are measured once and held, so sorting never reflows them. */
-  width?: number | string;
-};
-
-export type SortableDataTableProps<T extends Record<string, unknown>> = {
-  locale?: string;
-  rows: T[];
-  columns: DataColumn<T>[];
-  rowKey: keyof T | ((row: T) => string);
-  caption?: string;
-  emptyMessage?: string;
-  /** Sort applied on the first render. */
-  defaultSort?: SortState;
-  onSortChange?: (sort: SortState) => void;
-  /** Adds a checkbox column, row click selection, and a count line with a clear action. */
-  selectable?: boolean;
-  selectedKeys?: string[];
-  defaultSelectedKeys?: string[];
-  onSelectionChange?: (keys: string[]) => void;
-  /** Noun for the count line, as in "6 projects". */
-  itemName?: { one: string; other: string };
-};
+import type { SortState, SortableDataTableProps, DataColumn } from "./table-types";
+export type { SortDirection, SortState, DataColumn, SortableDataTableProps } from "./table-types";
 
 const isEmpty = (value: unknown) => value == null || value === "";
 const comparable = (value: unknown) => (value instanceof Date ? value.getTime() : value);
@@ -255,8 +229,10 @@ export function SortableDataTable<T extends Record<string, unknown>>({
   columns,
   rowKey,
   caption = "Data table",
+  scrollKey = `table:${caption}`,
   emptyMessage = "No rows to show",
   defaultSort,
+  sortState,
   onSortChange,
   selectable = false,
   selectedKeys,
@@ -273,7 +249,8 @@ export function SortableDataTable<T extends Record<string, unknown>>({
   const tableRef = useRef<HTMLTableElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const anchor = useRef<string | null>(null);
-  const [sort, setSort] = useState<SortState | null>(defaultSort ?? null);
+  const [internalSort, setSort] = useState<SortState | null>(defaultSort ?? null);
+  const sort = sortState ?? internalSort;
   const [announcement, setAnnouncement] = useState("");
   const [internalSelection, setInternalSelection] = useState<string[]>(defaultSelectedKeys ?? []);
   const selection = useMemo(
@@ -317,14 +294,13 @@ export function SortableDataTable<T extends Record<string, unknown>>({
     [columns, rows],
   );
   const getRowKey = (row: T) => String(typeof rowKey === "function" ? rowKey(row) : row[rowKey]);
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  const virtual = sortedRows.length > 200;
-  const virtualizer = useVirtualizer({
+  const { scrollerRef, scrollRef } = useCollectionScroll(scrollKey, rows.length > 0);
+  const virtual = sortedRows.length > COLLECTION_WINDOW_THRESHOLD;
+  const virtualizer = useCollectionVirtualizer({
     count: sortedRows.length,
     enabled: virtual,
     getScrollElement: () => scrollerRef.current,
     estimateSize: () => 44,
-    overscan: 6,
     getItemKey: (index) => getRowKey(sortedRows[index]),
   });
   const windows = virtualizer.getVirtualItems();
@@ -336,7 +312,6 @@ export function SortableDataTable<T extends Record<string, unknown>>({
   const selectedCount = keys.filter((key) => selection.has(key)).length;
   const allSelected = keys.length > 0 && selectedCount === keys.length;
 
-  // Measure the natural column widths once, then hold them with a fixed layout so nothing reflows while rows move.
   const signature = [selectable ? "select" : "", ...columns.map((column) => column.key)].join(
     "\u0000",
   );
@@ -556,7 +531,7 @@ export function SortableDataTable<T extends Record<string, unknown>>({
 
   return (
     <div className={styles.wrapper} onKeyDown={onKeyDown}>
-      <div ref={scrollerRef} className={styles.scroller} data-virtual={virtual || undefined}>
+      <div ref={scrollRef} className={styles.scroller} data-virtual={virtual || undefined}>
         {band ? (
           <span
             className={styles.band}

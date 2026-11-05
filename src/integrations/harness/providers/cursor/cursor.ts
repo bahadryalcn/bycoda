@@ -85,6 +85,7 @@ import {
 } from "./cursorStore";
 import { cursorAgentLabel, cursorSubagentEvents, kindFromCursorToolName } from "./cursorSubagents";
 import { stopCursorTitleGeneration } from "./cursorTitle";
+import { cursorAskQuestionResponse } from "./cursorQuestionReply";
 import type {
   ApprovalDecision,
   HarnessEvent,
@@ -92,10 +93,8 @@ import type {
   SteerTurnInput,
 } from "../../core/types";
 import {
-  CUSTOM_OPTION_ID,
   questionPromptTitle,
   questionsFromUnknown,
-  type UserQuestion,
   type UserQuestionReply,
 } from "../../../../features/sessions/model/userQuestion";
 import {
@@ -908,26 +907,6 @@ async function handleAskQuestion(live: Live, id: number, params: unknown) {
     },
     { additionalInput: true },
   );
-}
-
-function cursorAskQuestionResponse(
-  reply: UserQuestionReply,
-  questions: UserQuestion[],
-): Record<string, unknown> {
-  if (reply.kind !== "answered") {
-    return { outcome: { outcome: "skipped", reason: "User skipped" } };
-  }
-  return {
-    outcome: {
-      outcome: "answered",
-      answers: questions.map((question) => ({
-        questionId: question.id,
-        selectedOptionIds: (reply.answers[question.id] ?? []).filter(
-          (optionId) => optionId !== CUSTOM_OPTION_ID,
-        ),
-      })),
-    },
-  };
 }
 
 async function handlePermission(live: Live, id: number, params: unknown) {

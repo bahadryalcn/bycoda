@@ -96,7 +96,10 @@ export function useWorkspaceDirectoryActions({
     (sessionId: string, cwd: string, token?: PrivacyMutationToken) => {
       const remember = (path: string) => {
         if (token) setRecents(rememberProjectInMutation(path, token));
-        else void rememberProject(path).then(setRecents).catch((error: unknown) => console.error("Could not remember project", error));
+        else
+          void rememberProject(path)
+            .then(setRecents)
+            .catch((error: unknown) => console.error("Could not remember project", error));
       };
       const normalized = normalizeProjectPath(cwd);
       const current = sessionsRef.current.find((s) => s.id === sessionId);

@@ -222,11 +222,7 @@ export function VoiceVisualizer({
                 </g>
               ))}
             </g>
-            <path
-              fill="currentColor"
-              stroke="none"
-              d={brandGeometry.code}
-            />
+            <path fill="currentColor" stroke="none" d={brandGeometry.code} />
           </g>
         )}
         {visual === "wave" && (

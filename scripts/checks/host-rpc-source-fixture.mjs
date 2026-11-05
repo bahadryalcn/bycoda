@@ -1,6 +1,16 @@
-/** Pure source inspection for contract tests; never routes or authorizes RPCs. */
+/** Source inspection for contract tests; never routes or authorizes RPCs. */
 import assert from "node:assert/strict";
+import { readdirSync, readFileSync } from "node:fs";
 import ts from "@typescript/typescript6";
+
+export function hostServerDispatchSource() {
+  const directory = new URL("../../host/server/", import.meta.url);
+  return readdirSync(directory)
+    .filter((name) => name.endsWith(".ts") && !name.endsWith(".test.ts"))
+    .sort()
+    .map((name) => readFileSync(new URL(name, directory), "utf8"))
+    .join("\n");
+}
 
 const method = /^[a-zA-Z][a-zA-Z0-9]*(?:[._][a-zA-Z0-9]+)+$/;
 // Consecutive candidate/transport reads share one AST, never an unbounded cache.
@@ -25,8 +35,11 @@ function literal(node) {
 function inputMethod(node) {
   return (
     ts.isPropertyAccessExpression(node) &&
-    ts.isIdentifier(node.expression) &&
-    node.expression.text === "input" &&
+    ((ts.isIdentifier(node.expression) && node.expression.text === "input") ||
+      (ts.isPropertyAccessExpression(node.expression) &&
+        ts.isIdentifier(node.expression.expression) &&
+        node.expression.expression.text === "request" &&
+        node.expression.name.text === "input")) &&
     node.name.text === "method"
   );
 }

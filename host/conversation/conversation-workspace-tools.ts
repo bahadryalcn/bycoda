@@ -3,7 +3,10 @@ import type { HostStore } from "../store";
 import type { HostNotesAccess } from "../host-notes-async";
 import type { HostAutomations } from "../automations/automations";
 import type { ProviderInboxBridge } from "../providers/provider-inbox";
-import type { RuntimeLogPrincipal, RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
+import type {
+  RuntimeLogPrincipal,
+  RuntimeLogSubjectPrincipal,
+} from "../execution/runtime-log-tools";
 import type { Session } from "../../src/features/sessions/model/session";
 import {
   inboxOperationWrites,

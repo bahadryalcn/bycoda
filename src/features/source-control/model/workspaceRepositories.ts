@@ -1,5 +1,6 @@
 import { pathKey } from "../../../shared/lib/paths";
-import { projectGroupWorkspaceRoot, type ProjectGroup } from "../../projects/model/projectGroups";
+import { projectGroupWorkspaceRoot, type ProjectGroup } from "../../projects/public/projectGroups";
+
 import { isProjectLockedIn, type LockSnapshot } from "../../group-lock/model/lockState";
 import type { GitFileDiffKind, GitHistoryCommit } from "../../../platform/tauri/fs";
 

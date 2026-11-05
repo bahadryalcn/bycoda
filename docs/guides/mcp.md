@@ -1,5 +1,15 @@
 # MCP connections
 
+The connection list scrolls continuously, retaining search and provider/scope
+filters during refresh. Refresh failures appear after the last loaded row and
+keep that result available with Retry.
+
+Each connection shows permission, verified readiness and activity separately.
+Configured or signed in does not mean verified ready. Current successful connection
+health can confirm readiness; a failed refresh clears the old health observation.
+Activity stays unknown where the provider does not expose a live operation feed.
+Opening this page only reads configuration and status; it does not enable a server.
+
 Open Settings > MCP for the selected local project. Each row belongs to a specific
 provider and scope, shown as a tag next to its name: **Global** applies to every
 project for that provider, **Project** is saved in the selected project's provider
@@ -16,8 +26,10 @@ Signed in, the row's action menu offers **Sign in again**. If the provider's CLI
 not installed, the page says so instead of starting a sign-in.
 
 **Configured** means the configuration was found. It does not confirm a connection
-or a successful login. Claude Code rows show **Checking…** until the Claude CLI
-reports health; that check can take more than 30 seconds, and servers it did not
+or a successful login. Opening settings reads configuration only. Choose **Refresh**
+to run provider health checks; these may start configured MCP helpers. Claude Code
+rows show **Checking** until the Claude CLI reports health; that check can take
+more than 30 seconds, and servers it did not
 reach in time stay Configured. Claude CLI health is matched by name and is not verified
 independently for duplicate names in different scopes. Codex rows show **Signed in**
 or **Needs authentication** from Codex's own sign-in state. Cursor and OpenCode can remain

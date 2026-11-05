@@ -53,7 +53,9 @@ afterEach(() => {
 describe("fetchGitIndex", () => {
   it("re-reads evicted checkout snapshots but preserves original pending owners", async () => {
     const gate = deferred<unknown>();
-    api.files.mockImplementation((cwd: string) => cwd === "/held" ? gate.promise : Promise.resolve(index(cwd)));
+    api.files.mockImplementation((cwd: string) =>
+      cwd === "/held" ? gate.promise : Promise.resolve(index(cwd)),
+    );
     const original = fetchGitIndex("/held");
     await fetchGitIndex("/idle");
     for (let i = 0; i <= CHECKOUT_CACHE_ENTRIES; i++) await fetchGitIndex(`/other-${i}`);
@@ -66,8 +68,11 @@ describe("fetchGitIndex", () => {
     await original;
   });
   it("keeps superseded original flights owned across invalidation and cache pressure", async () => {
-    const old = deferred<unknown>(), current = deferred<unknown>();
-    api.files.mockImplementation((cwd: string) => cwd === "/held" ? old.promise : Promise.resolve(index(cwd)));
+    const old = deferred<unknown>(),
+      current = deferred<unknown>();
+    api.files.mockImplementation((cwd: string) =>
+      cwd === "/held" ? old.promise : Promise.resolve(index(cwd)),
+    );
     api.full.mockReturnValue(current.promise);
     const first = fetchGitIndex("/held");
     invalidateGitIndex("/held");

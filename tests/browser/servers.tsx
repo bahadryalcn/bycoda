@@ -54,8 +54,12 @@ const forwardStatuses = new Map<string, Record<string, unknown>>();
 if (params.get("forwardState") === "stopping" || params.get("forwardState") === "unknown") {
   const state = params.get("forwardState");
   forwardStatuses.set("ssh-duplicate:proxy-route", {
-    id: "ssh-duplicate:proxy-route", connectionId: "ssh-duplicate", state,
-    ...(state === "unknown" ? { error: "Forward stop could not be confirmed. Retry stop before starting again." } : {}),
+    id: "ssh-duplicate:proxy-route",
+    connectionId: "ssh-duplicate",
+    state,
+    ...(state === "unknown"
+      ? { error: "Forward stop could not be confirmed. Retry stop before starting again." }
+      : {}),
   });
 }
 let workspaceSnapshot: unknown = params.has("serverRestoreFixture")

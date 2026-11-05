@@ -7,7 +7,7 @@ import { Alert } from "../../../shared/ui/Alert";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { IS_MAC, IS_WIN } from "../../../platform/tauri/platform";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 
 import {
   useCallback,
@@ -27,7 +27,7 @@ import {
   type EditorDraftDocument,
   type NativeCaptureState,
 } from "../data/editorDraftPersistence";
-import { MarkdownViewShell, useMarkdownMode } from "../../sessions/ui/MarkdownModeToggle";
+import { MarkdownViewShell, useMarkdownMode } from "../../sessions/public/MarkdownModeToggle";
 
 import {
   basename,
@@ -45,7 +45,7 @@ import {
 import { syncWatchedMtime, watchFile } from "../model/fileWatch";
 import { displayPath } from "../../../shared/lib/paths";
 import type { EditorNavigation, OpenFileFn } from "../../search/model/search";
-import { MarkdownDocumentPreview } from "../../sessions/ui/MarkdownDocumentPreview";
+import { MarkdownDocumentPreview } from "../../sessions/public/MarkdownDocumentPreview";
 
 import {
   detectLineEnding,

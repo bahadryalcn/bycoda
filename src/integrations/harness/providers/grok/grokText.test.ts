@@ -17,8 +17,10 @@ vi.mock("../../core/child", () =>
   processConstructions.mock({
     resolveGrokBinary,
     execChild,
-    prepareUtilitySessionCleanup: async (_handle: unknown, command: string, args: string[], cwd: string, provider: string) =>
-      () => execChild(command, args, cwd, provider),
+    prepareUtilitySessionCleanup:
+      async (_handle: unknown, command: string, args: string[], cwd: string, provider: string) =>
+      () =>
+        execChild(command, args, cwd, provider),
     spawnChild: async () => undefined,
     killChild,
     unwatchChild: () => undefined,
@@ -127,16 +129,32 @@ it.each([{ chunks: ["ha", "ha"] }, { chunks: ["-", "--"] }, { chunks: ["\n", "\n
   "preserves exact Grok utility delta chunks $chunks",
   async ({ chunks }) => {
     const events: HarnessEvent[] = [];
-    const result = runGrokTextPrompt({ cwd: "/repo", prompt: "Exact text", onEvent: (event) => events.push(event) });
+    const result = runGrokTextPrompt({
+      cwd: "/repo",
+      prompt: "Exact text",
+      onEvent: (event) => events.push(event),
+    });
     await openTextSession();
     await waitFor(() => !!outbound("session/prompt"), "exact prompt");
     for (const content of chunks)
-      onLine?.(JSON.stringify({ jsonrpc: "2.0", method: "session/update", params: {
-        sessionId: "550e8400-e29b-41d4-a716-446655440000", update: { sessionUpdate: "agent_message_chunk", content },
-      } }));
+      onLine?.(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          method: "session/update",
+          params: {
+            sessionId: "550e8400-e29b-41d4-a716-446655440000",
+            update: { sessionUpdate: "agent_message_chunk", content },
+          },
+        }),
+      );
     reply("session/prompt", {});
     await expect(result).resolves.toBe(chunks.join(""));
-    expect(events.filter((event) => event.type === "message.delta").map((event) => event.text).join("")).toBe(chunks.join(""));
+    expect(
+      events
+        .filter((event) => event.type === "message.delta")
+        .map((event) => event.text)
+        .join(""),
+    ).toBe(chunks.join(""));
   },
 );
 it("forwards Grok text deltas without duplicating snapshots", async () => {

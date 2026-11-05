@@ -35,5 +35,7 @@ Use for Settings shell, section/search metadata, shared Settings composition, Po
 
 ## Read when needed
 
+- [Decision provenance](references/decisions.md): owner decisions for Settings groups and the three-state permission rule.
+
 - For specialist page routing, Policies/Connections source paths and test entry points, read [surfaces](references/surfaces.md).
 - For product-wide presentation, use [DESIGN](../../../docs/reference/DESIGN.md) and the [component catalog](../../../docs/reference/ui-component-catalog.md).

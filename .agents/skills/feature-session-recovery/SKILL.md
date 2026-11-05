@@ -5,47 +5,46 @@ description: "Change recovered conversations, previous chat layout, verification
 
 # Session recovery
 
-Only interrupted work enters recovery. Opening recovery entries is navigation, not a submitted turn. Conversation-journal maintenance is separate from native file-copy recovery and from history deletion. Host/native source owners retain durability and recovery authority.
+Own interrupted-conversation recovery, previous chat splits, attention/verification, selection and journal maintenance across workspace UI, session models, Host/native storage. File-copy recovery has separate source authority; opening recovered entries navigates without submitting a turn or deleting history.
 
-## Source entry points
+## Source starts
 
-Code paths below are repository-root relative.
-
-- `src/app/workspace/layout/WorkspaceRecoveryDialog.tsx`
-- `src/app/workspace/sessions/useSessionRecoveryActions.ts`
-- `docs/guides/search-and-recovery.md`
+- Dialog composition and file-copy sections: `src/app/workspace/layout/`; rail entry: `src/app/shell/`.
+- Conversation actions/journal: `src/app/workspace/sessions/`; boot/retirement: `src/app/model/`; session state: `src/features/sessions/`.
+- File-copy actions: `src/app/workspace/files/`, `src/features/files/`; Host storage: `host/sessions/`; native storage: `src-tauri/src/session_store/`.
 
 ## Workflow
 
-1. Locate the existing recovery dialog/panel, action hooks, journal and current status verification. Separate conversation entries from native file copies before changing scope.
-2. Calculate eligible/all, selected/shown and hidden selections deliberately. Revalidate project locks, identity and membership during async preparation and tab insertion.
-3. Keep successful opens while reporting remaining failures and journal-save/acknowledgement errors separately; retries must not duplicate already opened tabs or repeat unknown writes.
-4. Exercise restore, already-open, unavailable/read-error/stale-remote, partial success, close/save failure and independent file-copy search/open/retry.
+1. Trace dialog, action hooks, journal and status verification; separate conversation entries from native copies.
+2. Compute eligible/all, selected/shown and hidden populations; recheck locks, identity and membership across preparation and tab insertion.
+3. Retain successful opens while reporting remaining failures and journal-save/ack errors separately; retry without duplicate tabs or unknown writes.
+4. Exercise restore, already-open, unavailable/read-error/stale-remote, partial success, close/save failure and independent copy search/open/retry.
 
 ## Preserve
 
-- Scope: boot captures only sessions named by the in-flight list (`interrupted` in `src/app/model/appLifecycle.ts`), minus inbox asks, orchestration leads and unsent remote chats. Remote chats keep running on their Host and enter only when listed in flight. Never re-add "every open chat with a user message".
-- Native in-flight ownership aggregates contributions by exact page and window; clearing one contribution cannot clear another. The canonical aggregate remains visible to Host and worktree consumers. Prior-process recovery requires an unlocked kernel lease; same-process recovery requires confirmed retirement of the exact page. Live, pending and unknown owners remain protected, and late confirmed retirements enter the journal without automatic continuation. A native receipt binds exact recovered occurrences to the saved journal; acknowledge only covered, still-retired rows in the same transaction. Remote Host activity is not inferred from local page retirement.
-- Closing an SSE reader does not prove its provider turn ended. A page with unproven external-stream retirement remains unknown; never turn transport teardown into local interruption or automatic continuation.
-- `useRecoveryAutoResolve` resolves entries confirmed Done/Idle (references only, never history or running work), skips loading/unreadable/unverified/unavailable ones, and opens the dialog after boot only when attention work remains. The rail count is then the attention count.
-- Dialog density: tabs exist only for non-empty content (no strip for conversations alone; reports ride with file copies because they can only be counted after a manual listing); the Needs attention/All filter shows only while it separates rows and defaults to All otherwise; search only above 8 rows; the list menu only above one row and lists only applicable actions; scope/consequence text lives in the `InfoPopover`, not a footer paragraph.
-- Recovered/dismissed/resolved IDs remain held from automatic continuation; list cleanup does not stop work or erase conversation history.
-- Explicit owner Stop is terminal idle for recovery, even when older history uses `notice: "interrupt"`. Never auto-continue that stop or remove its history note; retain actual app/Host interruptions and unknown/unverified read handling.
-- Attention includes non-Done/non-Idle states, including unknown/unavailable. A failed read is not a confirmed missing session.
-- Open all/Restore includes eligible filter-hidden rows; selected actions intersect selected IDs with shown rows while retaining hidden selections.
-- Restore concerns saved chat splits, preserving unrelated new work; do not silently recreate stale editor/terminal panes or promise the entire workbench.
-- Preserve alias/existing-tab dedup, exact remote cwd/session identity, authored titles and provider context without restarting. A missing local session must not become a fabricated shell.
-- Explicit conversation deletion is durable across restart. Native and Host deletion markers reject late saves/adoption; boot removes confirmed deleted IDs from saved layouts, in-flight references and recovery entries before claiming them. A failed deletion lookup remains unknown and retains the restore retry. Never expire renderer deletion guards on a timer.
-- Stale in-flight references cannot override owner Stop. An existing adjacent Stop + exact app-quit notice also remains stopped without erasing history; native summaries and recovery/list classifiers must agree. Unsent-draft disposal retains its guarded same-ID editing flow.
-- Retain serialized journal writes/rollback, pending duplicate guards and lock/privacy rechecks. Conversation maintenance cannot clear original file copies; unknown file-open/save outcomes retain their original identity.
-- Native editor copies may carry exact `serializedText` for mixed line endings. Validate its normalized text, digest and byte charge through capture, recovery and checkpoint proof; missing legacy values retain their original uniform-EOL interpretation. Existing record limits still apply, and rejected captures cannot claim durable recovery or a completed save.
+- Boot captures only eligible in-flight interruptions, excluding inbox asks, orchestration leads and unsent remote chats; remote Host work remains running.
+- Native contributions bind exact page/window and durable journal receipts. Recovery requires proven process/page retirement; live, pending and unknown owners stay protected.
+- SSE teardown does not prove provider retirement or authorize local interruption/continuation; remote Host activity is independent of local page retirement.
+- Auto-resolution removes only references confirmed Done/Idle. Loading, unreadable, unverified and unavailable remain unresolved; boot opens only for attention work.
+- Recovered, dismissed and resolved IDs remain held from automatic continuation. Cleanup neither stops work nor deletes history.
+- Owner Stop is terminal idle, including legacy interrupt notices and adjacent quit markers; retain transcript bytes and consistent native/list/recovery classification.
+- Attention includes unknown/unavailable. Failed reads never prove absence; keep retry available.
+- Open all/Restore includes eligible filter-hidden rows; selected actions intersect shown rows while retaining hidden selections.
+- Restore saved chat splits without replacing unrelated work or recreating stale editor/terminal panes. Deduplicate aliases/tabs and retain exact remote identity, authored titles and provider context.
+- Durable deletion fences late saves/adoption and boot references across restart; unknown lookups retain retry and renderer guards never expire by timer.
+- Serialize journal writes with rollback, duplicate guards and lock/privacy rechecks. Conversation maintenance cannot clear file copies; unknown effects keep their original identity.
+- File-copy capture/recovery/checkpoint proof retains exact source, normalized text, digest and byte accounting; rejected capture cannot claim durable recovery or completed save.
 
-## Verification and references
+## Focused checks
 
-- Select existing recovery model/action/panel/journal tests, plus editor draft-recovery hooks when file-copy behavior changes.
-- Use the affected recovery UI matrix including partial/read/save error states. Actual Native persistence/Host status and restore need isolated integration evidence beyond fixtures.
-- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
-- Durable choice provenance: [owner decisions](references/decisions.md).
-- [Conversation recovery](../../../docs/guides/search-and-recovery.md)
-- [Editor draft recovery](../../../docs/guides/editor-draft-recovery.md)
-- [Source authority](../../../docs/reference/host-runtime.md)
+Select recovery model/action/panel/journal tests in `src/app/model/`, `src/app/workspace/sessions/`, `src/app/shell/` and `src/features/sessions/model/`. File-copy changes also need `src/app/workspace/files/` and `src/features/files/` suites; UI fixture: `tests/browser/session-recovery.spec.ts`. Follow the testing order and cover partial/read/save failures. Native persistence, live Host verification and restore need isolated integration evidence beyond fixtures.
+
+## References
+
+- [Source owners](references/surfaces.md): UI, journal, Host/native and test seams.
+- [Recovery contracts](references/contracts.md): retirement receipts, eligibility, exact source and selection details.
+- [Owner decisions](references/decisions.md): durable choice provenance.
+- [Conversation recovery](../../../docs/guides/search-and-recovery.md): user-visible actions.
+- [Editor draft recovery](../../../docs/guides/editor-draft-recovery.md): independent file copies.
+- [Host runtime](../../../docs/reference/host-runtime.md): source authority.
+- [Testing order](../../../docs/reference/testing.md): focused checks and evidence.

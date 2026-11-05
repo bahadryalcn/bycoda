@@ -1,3 +1,5 @@
+import { Badge } from "../../../shared/ui/Badge";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
 import { useT } from "../../../shared/i18n";
 import { useId, useState } from "react";
@@ -15,9 +17,9 @@ import {
 } from "../../workspace/model/tabGroups";
 import { Check, ChevronDown, ChevronUp, CircleAlert, Internet } from "../../../shared/ui/icons";
 import { RailSectionHeader } from "../../../app/shell/useRailSections";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import { HarnessIcon } from "./HarnessIcon";
-import { ProjectMascot } from "../../projects/ui/ProjectMascot";
+import { ProjectMascot } from "../../projects/public/ProjectMascot";
 import { useSharedNow } from "./AgentClock";
 import { SessionWorkingStatus } from "./SessionWorkingStatus";
 
@@ -122,7 +124,7 @@ export function LiveAgentsPreview({
       <Check aria-hidden className="icon-sm shrink-0 text-(--ui-tone-success-fg)" strokeWidth={2} />
     ) : (
       <span aria-hidden className="grid icon-sm shrink-0 place-items-center">
-        <span className="size-1.5 rounded-full bg-(--color-active)" />
+        <StatusDot label={t("Working")} aria-hidden />
       </span>
     );
   const attentionNote =
@@ -134,19 +136,28 @@ export function LiveAgentsPreview({
           · {tail.join(" · ")}
         </span>
         {summary.headline !== "attention" && summary.attention > 0 ? (
-          <span
+          <Badge
+            variant="count"
+            tone="warning"
+            size="xs"
             title={tail[0] ?? undefined}
-            className="hidden items-center gap-0.5 ps-1 font-normal text-(--ui-tone-warning-fg) @max-[220px]/rail:inline-flex"
+            icon={<CircleAlert aria-hidden className="icon-xs" strokeWidth={1.75} />}
+            className="hidden ms-1 @max-[220px]/rail:inline-flex"
           >
-            <CircleAlert aria-hidden className="icon-xs shrink-0" strokeWidth={1.75} />
             {summary.attention}
-          </span>
+          </Badge>
         ) : null}
       </>
     ) : null;
   const countText = (
     <span className="whitespace-nowrap">
-      {headlineCount}
+      <Badge
+        variant="count"
+        size="xs"
+        tone={summary.headline === "attention" ? "warning" : "accent"}
+      >
+        {headlineCount}
+      </Badge>
       {attentionNote}
     </span>
   );
@@ -214,9 +225,7 @@ export function LiveAgentsPreview({
             <span className="min-w-0 flex-1 truncate text-ui-caption font-semibold text-(--ui-text-secondary)">
               {title}
             </span>
-            <span className="rounded-md bg-(--ui-tone-accent-subtle) px-1.5 text-ui-micro font-medium tabular-nums text-(--ui-text-secondary)">
-              {countText}
-            </span>
+            <span className="shrink-0">{countText}</span>
           </div>
         )}
         <div id={listId} hidden={collapsed} className={collapsible ? "px-1 pb-1" : undefined}>
@@ -338,13 +347,13 @@ function LiveAgentCard({
   const flagged = agent.issue || agent.needsApproval || agent.done;
   const tone = agent.issue
     ? agent.issue === "failed"
-      ? "text-(--ui-tone-danger-fg)"
-      : "text-(--ui-tone-warning-fg)"
+      ? "danger"
+      : "warning"
     : agent.needsApproval
-      ? "text-(--ui-tone-warning-fg)"
+      ? "warning"
       : agent.done
-        ? "text-(--ui-tone-success-fg)"
-        : "text-(--ui-text-secondary)";
+        ? "success"
+        : "accent";
   return (
     <Button
       // shrink-0: the explicit min height lets flex squeeze a row below its two lines; the list scrolls instead.
@@ -399,8 +408,11 @@ function LiveAgentCard({
         <span className="min-w-0 flex-1 truncate @max-[220px]/rail:sr-only" data-live-agent-project>
           {project}
         </span>
-        <span
-          className={`flex min-w-0 max-w-[60%] shrink-0 items-center gap-1 @max-[220px]/rail:max-w-full @max-[220px]/rail:flex-1 ${tone}`}
+        <Badge
+          size="xs"
+          appearance="subtle"
+          tone={tone}
+          className="min-w-0 max-w-[60%] shrink-0 @max-[220px]/rail:max-w-full @max-[220px]/rail:flex-1"
           data-live-agent-status
         >
           {agent.issue || agent.needsApproval ? (
@@ -411,7 +423,7 @@ function LiveAgentCard({
             <SessionWorkingStatus startedAt={agent.startedAt} showElapsed={false} />
           )}
           {flagged ? <span className="min-w-0 truncate">{activity}</span> : null}
-        </span>
+        </Badge>
       </span>
     </Button>
   );

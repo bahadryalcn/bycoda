@@ -10,7 +10,7 @@ import {
   saveDiffLayoutPreference,
   subscribeDiffLayoutPreference,
 } from "../model/diffLayout";
-import type { DiffLayout } from "../../settings/model/settings";
+import type { DiffLayout } from "../../settings";
 
 /** The diff layout preference, shared by every diff surface. */
 export function useDiffLayout(): DiffLayout {

@@ -22,7 +22,10 @@ import { GradientBlurBackground } from "./GradientBlurBackground";
 import { LiveBackgroundPicker } from "./LiveBackgroundPicker";
 import { SessionListSettings } from "./SessionListSettings";
 import { GradientBackgroundCard } from "./GradientBackgroundCard";
-import { loadWorkspaceBackground, subscribeWorkspaceBackground } from "../model/workspaceBackground";
+import {
+  loadWorkspaceBackground,
+  subscribeWorkspaceBackground,
+} from "../model/workspaceBackground";
 import { COLLAPSED_PROJECT_RAIL_MODE_DEFAULT } from "../model/settings";
 
 import { useColorScheme } from "../../../shared/hooks/useColorScheme";
@@ -103,22 +106,28 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
   const percent = Math.round(appearance.opacity * 100);
   const mainPercent = Math.round(appearance.mainOpacity * 100);
   const light = useColorScheme() === "light";
-  const workspaceBackground = useSyncExternalStore(subscribeWorkspaceBackground, loadWorkspaceBackground);
+  const workspaceBackground = useSyncExternalStore(
+    subscribeWorkspaceBackground,
+    loadWorkspaceBackground,
+  );
   const nativeGlassError = useSyncExternalStore(subscribeNativeGlassStatus, readNativeGlassError);
   const nativeGlassPending = useSyncExternalStore(
     subscribeNativeGlassStatus,
     readNativeGlassPending,
   );
   // Off on Windows/macOS means an opaque window: the translucency values do not apply.
-  const translucencyOff = light || workspaceBackground.enabled || (!IS_LINUX && !appearance.windowGlass);
+  const translucencyOff =
+    light || workspaceBackground.enabled || (!IS_LINUX && !appearance.windowGlass);
   const accentIsDefault = isDefaultAccent(appearance.accentColor);
 
   // Dependent translucency rows are indented sub-rows of Window glass; Linux has no such switch,
   // so there they are plain rows that only the light-mode policy disables. Reasons are tooltips.
   const lightReason = t("Light mode always uses an opaque window.");
-  const windowReason = light ? lightReason : workspaceBackground.enabled
-    ? t("The workspace background covers the desktop. Turn it off to use transparency.")
-    : t("Turn on Window glass first");
+  const windowReason = light
+    ? lightReason
+    : workspaceBackground.enabled
+      ? t("The workspace background covers the desktop. Turn it off to use transparency.")
+      : t("Turn on Window glass first");
   const dependent = (active: boolean, reason: string) =>
     IS_LINUX
       ? { disabled: !active, disabledReason: reason }
@@ -296,7 +305,11 @@ export function AppearancePage({ appearance }: { appearance: AppearanceSettings 
             <Row
               id="window-glass"
               label={t("Window glass")}
-              description={workspaceBackground.enabled ? t("Your window glass setting applies when the workspace background is off.") : t("Let the desktop show through in dark mode.")}
+              description={
+                workspaceBackground.enabled
+                  ? t("Your window glass setting applies when the workspace background is off.")
+                  : t("Let the desktop show through in dark mode.")
+              }
               info={
                 <InfoPopover className="shrink-0">
                   <p>{t("Off draws an opaque window, which is lighter on the GPU.")}</p>

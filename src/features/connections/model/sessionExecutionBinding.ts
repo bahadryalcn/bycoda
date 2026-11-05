@@ -1,4 +1,4 @@
-import type { Session } from "../../sessions/model/session";
+import type { Session } from "../../sessions";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { RemoteProject } from "./remoteProjects";
 import {
@@ -34,14 +34,19 @@ let migrationOperationId: string | undefined;
 const MIGRATION_SCOPE = "host-session-bindings-migration.v1";
 const MIGRATION_KEY = "legacy-import";
 
-async function bindingEpoch(): Promise<{ active: boolean; claim?: { pageToken: string; operationId: string } }> {
+async function bindingEpoch(): Promise<{
+  active: boolean;
+  claim?: { pageToken: string; operationId: string };
+}> {
   if (!isTauri()) return { active: false };
   // Missing or failed readiness is unknown, never an authorization to cut over.
   const ready = await invoke<boolean>("canonical_store_session_guard_ready");
-  if (ready !== true && ready !== false) throw new Error("Session ownership guard readiness is unknown.");
+  if (ready !== true && ready !== false)
+    throw new Error("Session ownership guard readiness is unknown.");
   if (!ready) return { active: false };
   const marker = await invoke<{ version: number; value: unknown } | null>("canonical_store_get", {
-    scope: MIGRATION_SCOPE, key: MIGRATION_KEY,
+    scope: MIGRATION_SCOPE,
+    key: MIGRATION_KEY,
   });
   if (marker?.value === true) {
     skipImportedNativeBindingLegacy();
@@ -49,31 +54,55 @@ async function bindingEpoch(): Promise<{ active: boolean; claim?: { pageToken: s
   }
   if (marker) throw new Error("Invalid session owner migration marker.");
   const pageToken = await invoke<string>("canonical_store_page_token");
-  const operationId = migrationOperationId ??= crypto.randomUUID();
+  const operationId = (migrationOperationId ??= crypto.randomUUID());
   let acquired = await invoke<{ owned: boolean; operationId: string }>("canonical_store_claim", {
-    scope: MIGRATION_SCOPE, key: MIGRATION_KEY, operationId, pageToken,
+    scope: MIGRATION_SCOPE,
+    key: MIGRATION_KEY,
+    operationId,
+    pageToken,
   });
   if (!acquired.owned) {
     const recovered = await invoke<boolean>("canonical_store_recover", {
-      scope: MIGRATION_SCOPE, key: MIGRATION_KEY, operationId: acquired.operationId, pageToken,
+      scope: MIGRATION_SCOPE,
+      key: MIGRATION_KEY,
+      operationId: acquired.operationId,
+      pageToken,
     });
-    if (recovered) acquired = await invoke("canonical_store_claim", {
-      scope: MIGRATION_SCOPE, key: MIGRATION_KEY, operationId, pageToken,
-    });
+    if (recovered)
+      acquired = await invoke("canonical_store_claim", {
+        scope: MIGRATION_SCOPE,
+        key: MIGRATION_KEY,
+        operationId,
+        pageToken,
+      });
   }
-  if (!acquired.owned) throw new Error("Session owner migration is already in progress. Retry loading.");
+  if (!acquired.owned)
+    throw new Error("Session owner migration is already in progress. Retry loading.");
   return { active: true, claim: { pageToken, operationId } };
 }
 
-async function finishBindingEpoch(claim: { pageToken: string; operationId: string }): Promise<void> {
+async function finishBindingEpoch(claim: {
+  pageToken: string;
+  operationId: string;
+}): Promise<void> {
   const result = await invoke<{ applied: boolean }>("canonical_store_transaction", {
-    scope: MIGRATION_SCOPE, pageToken: claim.pageToken, operationId: crypto.randomUUID(),
-    checks: [{ key: MIGRATION_KEY, version: null }], writes: [{ key: MIGRATION_KEY, value: true }],
-    legacy: [], expectedRevision: null,
+    scope: MIGRATION_SCOPE,
+    pageToken: claim.pageToken,
+    operationId: crypto.randomUUID(),
+    checks: [{ key: MIGRATION_KEY, version: null }],
+    writes: [{ key: MIGRATION_KEY, value: true }],
+    legacy: [],
+    expectedRevision: null,
     claim: { key: MIGRATION_KEY, operationId: claim.operationId, mode: "require" },
   });
   if (!result.applied) throw new Error("Session owner migration was not confirmed.");
-  if (!await invoke<boolean>("canonical_store_settle", { scope: MIGRATION_SCOPE, key: MIGRATION_KEY, ...claim }))
+  if (
+    !(await invoke<boolean>("canonical_store_settle", {
+      scope: MIGRATION_SCOPE,
+      key: MIGRATION_KEY,
+      ...claim,
+    }))
+  )
     throw new Error("Session owner migration settlement is unknown.");
   skipImportedNativeBindingLegacy();
 }
@@ -105,12 +134,14 @@ export function hydrateHostSessionBindings(): Promise<void> {
       if (raw === null) continue;
       if (loaded.has(shellId)) {
         await preserveBindingSource(shellId, raw);
-        if (localStorage.getItem(key) !== raw) throw new Error("Session owner migration source changed.");
+        if (localStorage.getItem(key) !== raw)
+          throw new Error("Session owner migration source changed.");
         continue;
       }
       const row = { shellId, raw, legacyRaw: raw };
       await writeBindingEvidence(undefined, row);
-      if (localStorage.getItem(key) !== raw) throw new Error("Session owner migration source changed.");
+      if (localStorage.getItem(key) !== raw)
+        throw new Error("Session owner migration source changed.");
       loaded.set(shellId, row);
     }
     if (epoch.claim) await finishBindingEpoch(epoch.claim);

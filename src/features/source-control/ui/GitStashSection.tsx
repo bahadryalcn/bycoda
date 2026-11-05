@@ -15,7 +15,7 @@ import {
   type GitHistoryCommit,
   type GitStashEntry,
 } from "../../../platform/tauri/fs";
-import { GIT_ACTIONS, useRemoteSupports } from "../../connections/model/remoteCapabilities";
+import { GIT_ACTIONS, useRemoteSupports } from "../../connections/public/remoteCapabilities";
 import { useGitResource } from "../hooks/useGitResource";
 import { GitFeedback } from "./GitFeedback";
 import {

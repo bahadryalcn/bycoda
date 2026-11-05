@@ -1023,16 +1023,15 @@ export function inspectNativeOutputDelivery(sessionId: string) {
             nativeLastSequence: stream.terminal?.lastSequence ?? null,
             pendingBatches: stream.pending.size,
             outcomes: Object.freeze(
-              [...(runtime.outcomesByStream.get(stream) ?? [])]
-                .map((item) =>
-                  Object.freeze({
-                    sequence: item.batch.sequence,
-                    itemIndex: item.comparison.itemIndex,
-                    outcome: item.outcome,
-                    reason: item.outcomeReason,
-                    unavailableReason: stream.unavailable,
-                  }),
-                ),
+              [...(runtime.outcomesByStream.get(stream) ?? [])].map((item) =>
+                Object.freeze({
+                  sequence: item.batch.sequence,
+                  itemIndex: item.comparison.itemIndex,
+                  outcome: item.outcome,
+                  reason: item.outcomeReason,
+                  unavailableReason: stream.unavailable,
+                }),
+              ),
             ),
             diagnosticsTruncated: stream.diagnosticsTruncated === true,
             unavailableReason: stream.unavailable,

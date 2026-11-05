@@ -24,7 +24,7 @@ import {
   formatMetricTick,
   formatUsagePercent,
   metricNames,
-  PagedUsageTable,
+  ContinuousUsageTable,
 } from "./UsageCharts";
 
 type Colors = ReadonlyMap<string, string>;
@@ -148,7 +148,7 @@ export function UsageTrend({
       )}
       <details>
         <summary>{t("Show as table")}</summary>
-        <PagedUsageTable
+        <ContinuousUsageTable
           caption={t("Usage over time")}
           rows={buckets.map((b) => ({ ...b, label: formatBucket(b.start, resolution) }))}
           metric={metric}

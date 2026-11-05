@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Attachment } from "../../sessions/model/session";
+import type { Attachment } from "../../sessions";
 import type { RemoteAttachment } from "./protocol";
 import { remoteRequest as requestHost } from "./connections";
 import {
@@ -56,11 +56,14 @@ export async function uploadRemoteAttachments(
       const owner = options.ownership
         ? { ownerId: options.ownership.ownerId, claimId: options.ownership.claimId(file.id) }
         : {};
-      const question = options.questionSessionId === undefined ? {} : {
-        questionSessionId: options.questionSessionId,
-        questionRequestId: options.questionRequestId,
-        questionRunId: options.questionRunId,
-      };
+      const question =
+        options.questionSessionId === undefined
+          ? {}
+          : {
+              questionSessionId: options.questionSessionId,
+              questionRequestId: options.questionRequestId,
+              questionRunId: options.questionRunId,
+            };
       if (file.hostEnvironmentId && file.hostEnvironmentId === options.environmentId) {
         const { id, name, mimeType, kind, size, browserAnnotation } = file;
         uploaded[indexInBatch] = {

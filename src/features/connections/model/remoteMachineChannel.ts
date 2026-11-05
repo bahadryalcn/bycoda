@@ -251,7 +251,8 @@ function mergedDemand(channel: Channel): MachineChangesRequest {
     }
     inlineSync ||= demand.inlineSync === true;
     for (const session of demand.sessions ?? []) {
-      if (!sessionEpochs.has(session.sessionId)) sessionEpochs.set(session.sessionId, session.sourceEpoch);
+      if (!sessionEpochs.has(session.sessionId))
+        sessionEpochs.set(session.sessionId, session.sourceEpoch);
       else if (sessionEpochs.get(session.sessionId) !== session.sourceEpoch)
         sessionEpochs.set(session.sessionId, undefined);
       if (demand.inlineSync === true) inlineSessionIds.add(session.sessionId);
@@ -476,13 +477,16 @@ function transportDemand(machineId: string, channel: Channel): MachineChangesReq
                       const session = current.sessions?.find((session) => session.sessionId === id);
                       if (!session) continue;
                       const value = update.value;
-                      const epochChanged = subscriber.streamEpochs.get(id) !== input.cursor.epoch ||
-                        (!!update.value.sourceEpoch && update.value.sourceEpoch !== session.sourceEpoch);
+                      const epochChanged =
+                        subscriber.streamEpochs.get(id) !== input.cursor.epoch ||
+                        (!!update.value.sourceEpoch &&
+                          update.value.sourceEpoch !== session.sourceEpoch);
                       if (epochChanged && update.kind !== "snapshot")
                         throw new Error("Host stream epoch requires a snapshot");
                       const committed = subscriber.committedRevisions.get(id);
-                      const base =
-                        epochChanged ? 0 : committed !== undefined && committed >= session.revision
+                      const base = epochChanged
+                        ? 0
+                        : committed !== undefined && committed >= session.revision
                           ? committed
                           : session.revision;
                       if (

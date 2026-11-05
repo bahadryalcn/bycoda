@@ -237,22 +237,41 @@ it("passes the reviewed snapshot into execution admission and valid complete goa
 });
 
 it("uses a distinct delegated principal and rejects stale target revisions", async () => {
-  const f=fixture();
-  const principal={kind:"delegated-assistant-thread" as const,originEnvironmentId:"origin",targetEnvironmentId:"target",threadId:"thread",projectId:"p",grantId:"grant"};
-  const service=f.service();
-  expect(await service.callDelegated("tasks.create",input,principal,f.authorized)).toMatchObject({projectId:"p",expectedAbsent:true});
-  await expect(service.callDelegated("tasks.update",{taskId:"task",title:"changed",expectedUpdatedAt:1},principal,f.authorized)).rejects.toThrow("Work changed");
+  const f = fixture();
+  const principal = {
+    kind: "delegated-assistant-thread" as const,
+    originEnvironmentId: "origin",
+    targetEnvironmentId: "target",
+    threadId: "thread",
+    projectId: "p",
+    grantId: "grant",
+  };
+  const service = f.service();
+  expect(await service.callDelegated("tasks.create", input, principal, f.authorized)).toMatchObject(
+    { projectId: "p", expectedAbsent: true },
+  );
+  await expect(
+    service.callDelegated(
+      "tasks.update",
+      { taskId: "task", title: "changed", expectedUpdatedAt: 1 },
+      principal,
+      f.authorized,
+    ),
+  ).rejects.toThrow("Work changed");
   expect(f.tasks.save).toHaveBeenCalledOnce();
 });
 
 it("qualifies project state before review and checks scope again before the effect", async () => {
   const f = fixture();
   let captures = 0;
-  const result = await f.service().call("tasks.create", input, f.principal, f.authorized, "scope-test", async effect => {
-    captures++;
-    if (captures === 2) throw new Error("Project became private");
-    return effect();
-  }).catch(error => error);
+  const result = await f
+    .service()
+    .call("tasks.create", input, f.principal, f.authorized, "scope-test", async (effect) => {
+      captures++;
+      if (captures === 2) throw new Error("Project became private");
+      return effect();
+    })
+    .catch((error) => error);
   expect(result).toBeInstanceOf(Error);
   expect(result.message).toContain("Project became private");
   expect(f.approve).toHaveBeenCalledOnce();

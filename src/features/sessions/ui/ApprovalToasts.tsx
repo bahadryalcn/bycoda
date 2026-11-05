@@ -1,3 +1,4 @@
+import { NotificationRequestCount } from "./NotificationRequestCount";
 import { isoTimestamp } from "../../../shared/lib/time/timestamps";
 import { Alert } from "../../../shared/ui/Alert";
 import { Badge } from "../../../shared/ui/Badge";
@@ -51,7 +52,7 @@ import "./notification-sheet.css";
 import {
   LocalHostDownNotice,
   useLocalHostDownNotice,
-} from "../../connections/ui/LocalHostDownNotice";
+} from "../../connections/public/LocalHostDownNotice";
 
 type Notice = PendingApprovalNotice & { session: Session };
 type Props = {
@@ -278,11 +279,7 @@ export function ApprovalToasts({
           ) : (
             <BellOff className="icon-md" />
           )}
-          {count > 0 ? (
-            <span id={`${panelId}-count`} className="notification-trigger-count">
-              {count}
-            </span>
-          ) : null}
+          {count > 0 ? <NotificationRequestCount id={`${panelId}-count`} count={count} /> : null}
         </span>
       </Button>
       {expanded ? (

@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
 
 for (const dark of [false, true]) {
-  test(`prompt preview stays compact without duplicate tooltip, ${dark ? "dark" : "light"}`, async ({ page }) => {
+  test(`prompt preview stays compact without duplicate tooltip, ${dark ? "dark" : "light"}`, async ({
+    page,
+  }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.goto(`/tests/browser/chat-chrome.html?count=10&preview${dark ? "&dark" : ""}`);
@@ -10,16 +12,27 @@ for (const dark of [false, true]) {
     const card = page.getByLabel("Prompt preview", { exact: true });
     await first.hover();
     await expect(card).toBeVisible();
-    await expect(card).toContainText("Failed to authenticate: OAuth session expired and could not be refreshed");
+    await expect(card).toContainText(
+      "Failed to authenticate: OAuth session expired and could not be refreshed",
+    );
     await expect(card.locator("p")).toHaveCount(2);
-    await expect.poll(() => card.locator("p").first().evaluate((el) => {
-      const style = getComputedStyle(el);
-      return el.scrollWidth > el.clientWidth && style.textOverflow === "ellipsis";
-    })).toBe(true);
+    await expect
+      .poll(() =>
+        card
+          .locator("p")
+          .first()
+          .evaluate((el) => {
+            const style = getComputedStyle(el);
+            return el.scrollWidth > el.clientWidth && style.textOverflow === "ellipsis";
+          }),
+      )
+      .toBe(true);
     // Shared tooltips wait before opening; keep hovering beyond that delay.
     await page.waitForTimeout(1000);
     await expect(page.getByRole("tooltip")).toHaveCount(0);
-    await page.screenshot({ path: `temp/verification/2026-11-05-prompt-outline/${dark ? "dark" : "light"}-1280.png` });
+    await page.screenshot({
+      path: `temp/verification/2026-11-05-prompt-outline/${dark ? "dark" : "light"}-1280.png`,
+    });
     await page.mouse.move(500, 700);
     await expect(card).toBeHidden();
     await first.focus();
@@ -29,11 +42,15 @@ for (const dark of [false, true]) {
     await page.keyboard.press("Escape");
     await expect(card).toBeHidden();
     await first.click();
-    await expect.poll(() => page.locator(".agent-transcript").evaluate((el) => el.scrollTop)).toBe(0);
+    await expect
+      .poll(() => page.locator(".agent-transcript").evaluate((el) => el.scrollTop))
+      .toBe(0);
     await page.setViewportSize({ width: 800, height: 800 });
     await expect(rail).toBeHidden();
     await expect(card).toBeHidden();
-    await page.screenshot({ path: `temp/verification/2026-11-05-prompt-outline/${dark ? "dark" : "light"}-800.png` });
+    await page.screenshot({
+      path: `temp/verification/2026-11-05-prompt-outline/${dark ? "dark" : "light"}-800.png`,
+    });
   });
 
   test(`chat ruler fits dense and resized panes, ${dark ? "dark" : "light"}`, async ({ page }) => {

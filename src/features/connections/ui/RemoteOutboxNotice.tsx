@@ -27,25 +27,45 @@ export function RemoteOutboxNotice({
   if (issue.unavailable)
     return (
       <Alert tone="warning">
-        <p>{issue.loading
-          ? t("Checking saved requests…")
-          : issue.oversized
-            ? t("A saved request is too large to read safely. Its original bytes are preserved and sending is held.")
-            : t("Saved requests cannot be read. Sending is held until storage is available.")}</p>
-        {issue.oversizedRecord && <>
-          <p>{t("Export the stored request record for review. It may contain conversation data.")}</p>
-          <Button type="button" loading={saving} onClick={() => {
-            const record = issue.oversizedRecord!;
-            setSaving(true);
-            setError(null);
-            void exportOversizedOutboxRecord(record).then((result) => {
-              if (!result.cancelled) setExportedFor(`${record.key}:${record.version}`);
-            }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
-              .finally(() => setSaving(false));
-          }}>{t("Export saved request")}</Button>
-          {exportedFor === `${issue.oversizedRecord.key}:${issue.oversizedRecord.version}` && <p>{t("Saved request exported.")}</p>}
-          {error && <p>{error}</p>}
-        </>}
+        <p>
+          {issue.loading
+            ? t("Checking saved requests…")
+            : issue.oversized
+              ? t(
+                  "A saved request is too large to read safely. Its original bytes are preserved and sending is held.",
+                )
+              : t("Saved requests cannot be read. Sending is held until storage is available.")}
+        </p>
+        {issue.oversizedRecord && (
+          <>
+            <p>
+              {t("Export the stored request record for review. It may contain conversation data.")}
+            </p>
+            <Button
+              type="button"
+              loading={saving}
+              onClick={() => {
+                const record = issue.oversizedRecord!;
+                setSaving(true);
+                setError(null);
+                void exportOversizedOutboxRecord(record)
+                  .then((result) => {
+                    if (!result.cancelled) setExportedFor(`${record.key}:${record.version}`);
+                  })
+                  .catch((cause: unknown) =>
+                    setError(cause instanceof Error ? cause.message : String(cause)),
+                  )
+                  .finally(() => setSaving(false));
+              }}
+            >
+              {t("Export saved request")}
+            </Button>
+            {exportedFor === `${issue.oversizedRecord.key}:${issue.oversizedRecord.version}` && (
+              <p>{t("Saved request exported.")}</p>
+            )}
+            {error && <p>{error}</p>}
+          </>
+        )}
       </Alert>
     );
   return (

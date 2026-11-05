@@ -1,5 +1,9 @@
 import type { HostStore } from "../store";
-import { confirmedRunElapsed, confirmedRunProgress, finishedRunProgress } from "../execution/run-duration";
+import {
+  confirmedRunElapsed,
+  confirmedRunProgress,
+  finishedRunProgress,
+} from "../execution/run-duration";
 import { sessionBudgetTokens } from "../../src/features/usage/model/usageBudgets";
 import { monotonicNow } from "../../src/shared/lib/time/timestamps";
 import type {

@@ -332,9 +332,9 @@ it.each(["pause", "coordinator change", "finish"])(
     } else
       await f.store.db
         .prepare(
-          "UPDATE metadata SET value=json_set(value,'$.runs[0].coordinatorSessionId',?) WHERE key='crews.v1'",
+          "UPDATE crew_runs_v2 SET payload=json_set(payload,'$.coordinatorSessionId',?), coordinator_session_id=? WHERE run_id='native-run'",
         )
-        .run("replacement-coordinator");
+        .run("replacement-coordinator", "replacement-coordinator");
     release();
     await rejected;
     expect(effects).not.toHaveBeenCalled();

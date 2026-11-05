@@ -25,9 +25,18 @@ type Flight = {
   gen: number;
   startedAt: number;
 };
-type Entry = { gen: number; request: number; result: Result | null; flight: Flight | null; pendingReads: number };
+type Entry = {
+  gen: number;
+  request: number;
+  result: Result | null;
+  flight: Flight | null;
+  pendingReads: number;
+};
 
-const entries = new CheckoutCache<string, Entry>((entry) => entry.pendingReads > 0, (entry) => entry.result);
+const entries = new CheckoutCache<string, Entry>(
+  (entry) => entry.pendingReads > 0,
+  (entry) => entry.result,
+);
 
 function entryFor(cwd: string): Entry {
   let entry = entries.get(cwd);

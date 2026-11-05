@@ -2,7 +2,7 @@ import { sessionIssue } from "./sessionIssue";
 import { wasTurnInterrupted } from "./inFlight";
 import { sessionActivityAt } from "./sessionActivity";
 import { pathKey } from "../../../shared/lib/paths";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import { sessionDisplayTitle, sessionNeedsInput, type HarnessId, type Session } from "./session";
 
 /** Minimal shape of a stored session row; `SessionSummary` satisfies it. */

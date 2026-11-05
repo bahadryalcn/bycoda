@@ -90,11 +90,20 @@ it("keeps an accepted Host run independent from the released Room request permit
   const created = await f.call("sessions.create", create);
   const session = await f.store.session(created.sessionId);
   const providerGate = Promise.withResolvers<void>();
-  f.engine.beforeProviderTurn = async () => { await providerGate.promise; };
+  f.engine.beforeProviderTurn = async () => {
+    await providerGate.promise;
+  };
   let permit = true;
-  const receipt = await f.store.db.withAuthorization(async () => permit, () => f.call("sessions.submit", {
-    requestId: "delayed-provider", sessionId: created.sessionId, expectedRevision: session.revision, text: "Accepted background work",
-  }));
+  const receipt = await f.store.db.withAuthorization(
+    async () => permit,
+    () =>
+      f.call("sessions.submit", {
+        requestId: "delayed-provider",
+        sessionId: created.sessionId,
+        expectedRevision: session.revision,
+        text: "Accepted background work",
+      }),
+  );
   permit = false;
   providerGate.resolve();
   const input = await f.started.promise;
@@ -104,7 +113,9 @@ it("keeps an accepted Host run independent from the released Room request permit
   await f.engine.waitForRun(created.sessionId, receipt.runId);
   const settled = await f.store.session(created.sessionId);
   expect(settled.status).toBe("idle");
-  expect(settled.session.blocks.some(block => block.text === "Finished after Room permit ended.")).toBe(true);
+  expect(
+    settled.session.blocks.some((block) => block.text === "Finished after Room permit ended."),
+  ).toBe(true);
 });
 it("creates unsent Host sessions and transfers one reviewed submit to the exact canonical run", async () => {
   const f = await fixture();

@@ -1,7 +1,7 @@
 import { isHexColor } from "../../../shared/lib/colorUtils";
 import { compareSessionSummaries } from "./compareSessionSummaries";
 import type { SessionSummary } from "../data/sessionStore";
-import { normalizeProjectPath } from "../../projects/model/recents";
+import { normalizeProjectPath } from "../../projects/public/recents";
 import { orderByIds } from "../../../shared/lib/reorder";
 import { TAB_GROUP_COLORS } from "../../workspace/model/tabGroups";
 

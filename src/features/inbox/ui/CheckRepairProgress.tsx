@@ -1,3 +1,4 @@
+import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { Surface } from "../../../shared/ui/Surface";
@@ -139,13 +140,13 @@ export function useCheckRepairs(
   return [...groups.values()];
 }
 
-const neutral = "text-(--ui-text-secondary)";
-const positive = "text-(--ui-tone-success-fg)";
-const negative = "text-(--ui-tone-danger-fg)";
-const active = "text-(--ui-tone-warning-fg)";
+const neutral = "neutral";
+const positive = "success";
+const negative = "danger";
+const active = "accent";
 const states: Record<
   RepairState,
-  { label: string; summary: string; Icon: IconComponent | "spinner"; color: string }
+  { label: string; summary: string; Icon: IconComponent | "spinner"; color: BadgeTone }
 > = {
   repairing: {
     get label() {
@@ -255,23 +256,32 @@ const states: Record<
 function StatusIcon({ state }: { state: RepairState }) {
   useLocale();
   const { Icon, color } = states[state];
-  if (Icon === "spinner") return <Spinner size="sm" className={`shrink-0 ${color}`} />;
-  return <Icon aria-hidden="true" strokeWidth={1.75} className={`icon-sm shrink-0 ${color}`} />;
+  return (
+    <Badge
+      appearance="subtle"
+      size="xs"
+      tone={color}
+      aria-hidden="true"
+      icon={Icon === "spinner" ? <Spinner size="sm" /> : <Icon strokeWidth={1.75} />}
+    />
+  );
 }
 
 export function CheckRepairStatus({ item }: { item: RepairItem }) {
   useLocale();
   const status = states[item.state];
   return (
-    <span
+    <Badge
+      size="xs"
+      tone={status.color}
+      appearance="subtle"
+      icon={status.Icon === "spinner" ? <Spinner size="sm" /> : <status.Icon strokeWidth={1.75} />}
       data-repair-status
       role="status"
       title={t(status.summary)}
-      className={`inline-flex shrink-0 items-center gap-1.5 text-ui-micro font-medium ${status.color}`}
     >
-      <StatusIcon state={item.state} />
       {status.label}
-    </span>
+    </Badge>
   );
 }
 
@@ -335,7 +345,7 @@ function RepairCard({
               className="flex flex-wrap gap-x-3 gap-y-0.5 text-ui-caption font-medium"
             >
               {[...counts].map(([state, count]) => (
-                <span key={state} className={states[state].color}>
+                <Badge key={state} tone={states[state].color} size="xs" appearance="subtle">
                   {["pass", "fail", "pending", "cancel", "skipping", "unknown"].includes(state)
                     ? single
                       ? states[state].label
@@ -343,7 +353,7 @@ function RepairCard({
                     : counts.size === 1
                       ? t(states[state].summary)
                       : `${count} ${states[state].label.toLowerCase()}`}
-                </span>
+                </Badge>
               ))}
             </span>
             <span

@@ -402,18 +402,28 @@ it("reuses immutable uncertain transfer payload, ignores readonly sampling drift
 
 it("retains original visible dock when provisional detached registration gets no mounted acknowledgment", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  const container = document.createElement("div"); const root = createRoot(container);
+  const container = document.createElement("div");
+  const root = createRoot(container);
   const context = { cwd: "/pending-visible", sessionId: "pending-visible", title: "Pending" };
   try {
-    await act(async () => root.render(createElement(ToolsWorkspace, { activeConversation: context }, "Workspace")));
+    await act(async () =>
+      root.render(createElement(ToolsWorkspace, { activeConversation: context }, "Workspace")),
+    );
     await act(async () => dockHostTools(context));
-    nativeProtocol.native = true; nativeProtocol.loseAck = true;
-    await act(async () => { await expect(openHostToolsWindow(context)).rejects.toThrow("Original workspace retained"); });
+    nativeProtocol.native = true;
+    nativeProtocol.loseAck = true;
+    await act(async () => {
+      await expect(openHostToolsWindow(context)).rejects.toThrow("Original workspace retained");
+    });
     expect(container.querySelector(".tools-workspace")?.getAttribute("data-open")).toBe("true");
-    expect(container.querySelector(".tools-workspace-pane")?.getAttribute("aria-hidden")).toBe("false");
-  } finally { nativeProtocol.native = false; await act(async () => root.unmount()); }
+    expect(container.querySelector(".tools-workspace-pane")?.getAttribute("aria-hidden")).toBe(
+      "false",
+    );
+  } finally {
+    nativeProtocol.native = false;
+    await act(async () => root.unmount());
+  }
 });
-
 
 it("creates native hub through configured Rust command before sending its acknowledged transfer", async () => {
   nativeProtocol.native = true;
@@ -422,9 +432,19 @@ it("creates native hub through configured Rust command before sending its acknow
   expect(created).not.toHaveBeenCalled();
   expect(nativeProtocol.invoke).toHaveBeenCalledWith("open_host_tools_window", {
     title: "Conversation tools",
-    payload: expect.objectContaining({ sessionId: "native-create", composerWindow: "main", transferRequestId: expect.any(String) }),
+    payload: expect.objectContaining({
+      sessionId: "native-create",
+      composerWindow: "main",
+      transferRequestId: expect.any(String),
+    }),
   });
-  expect(nativeProtocol.send).toHaveBeenCalledWith("tools-hub", expect.objectContaining({ kind: "transfer", pane: expect.objectContaining({ sessionId: "native-create" }) }));
+  expect(nativeProtocol.send).toHaveBeenCalledWith(
+    "tools-hub",
+    expect.objectContaining({
+      kind: "transfer",
+      pane: expect.objectContaining({ sessionId: "native-create" }),
+    }),
+  );
 });
 
 it("transfers to native hub reused during creation race without waiting for another boot", async () => {
@@ -433,5 +453,8 @@ it("transfers to native hub reused during creation race without waiting for anot
   nativeProtocol.invoke.mockResolvedValue(false);
   await openHostToolsWindow({ cwd: "/native-race", sessionId: "native-race" });
   expect(nativeProtocol.send).toHaveBeenCalledTimes(1);
-  expect(nativeProtocol.send).toHaveBeenCalledWith("tools-hub", expect.objectContaining({ kind: "transfer" }));
+  expect(nativeProtocol.send).toHaveBeenCalledWith(
+    "tools-hub",
+    expect.objectContaining({ kind: "transfer" }),
+  );
 });

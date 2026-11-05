@@ -14,9 +14,9 @@ import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { Popover } from "../../../shared/ui/Popover";
 import { CircleHelp, RefreshCw, ListFilter, RotateCcw } from "../../../shared/ui/icons";
 import { copyText } from "../../../platform/tauri/clipboard";
-import { remoteRequest } from "../../connections/model/connections";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
-import type { HostProject, RemoteMachine } from "../../connections/model/protocol";
+import { remoteRequest } from "../../connections/public/connections";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import type { HostProject, RemoteMachine } from "../../connections";
 import { Select } from "./settingsControls";
 import styles from "./ExternalMcpAccess.module.css";
 

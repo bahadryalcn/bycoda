@@ -190,8 +190,12 @@ export async function runClaudeTextPrompt(input: TextPromptInput): Promise<strin
 
 async function promptOnLive(input: TextPromptInput): Promise<string> {
   input.signal?.throwIfAborted();
-  if (isTauri() && !input.operationContext?.nativeControlTurn && !input.operationContext?.hostRun &&
-      (input.ephemeral === false || input.threadId || input.compactBefore))
+  if (
+    isTauri() &&
+    !input.operationContext?.nativeControlTurn &&
+    !input.operationContext?.hostRun &&
+    (input.ephemeral === false || input.threadId || input.compactBefore)
+  )
     throw new Error("Standalone text generation requires a new ephemeral thread.");
   if (input.compactBefore && (input.ephemeral !== false || !input.threadId || !input.onCompacted))
     throw new Error("Claude compaction requires its exact persistent utility thread and receipt.");
@@ -369,7 +373,11 @@ async function startLive(
   context?: Pick<TextPromptInput, "ephemeral" | "threadId" | "onThreadId">,
 ): Promise<LiveText> {
   const previous = captureDrop();
-  const child = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn, operationContext?.nativeControlTurn ? undefined : "utility");
+  const child = createChildProcessHandle(
+    TEXT_CHILD_ID,
+    operationContext?.nativeControlTurn,
+    operationContext?.nativeControlTurn ? undefined : "utility",
+  );
   prepareTextProcess(child, operationContext, true);
   retirements.admitPending(child);
   const session: LiveText = {

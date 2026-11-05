@@ -1,4 +1,7 @@
-import type { HostProject, HostProjectDirectory } from "../../src/features/connections/model/protocol";
+import type {
+  HostProject,
+  HostProjectDirectory,
+} from "../../src/features/connections/model/protocol";
 import { normalizeProjectPath } from "../desktop/desktopSessions";
 
 /** Display metadata never changes registration, execution cwd or authority. */

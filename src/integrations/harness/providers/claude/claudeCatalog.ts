@@ -269,7 +269,10 @@ async function discoverViaListModels(
   const cwd = workingDirectory ?? (await homeDir());
   const sessionId = crypto.randomUUID();
   const probeId = `${PROBE_ID}-${sessionId}`;
-  const child = retirements.admit(createChildProcessHandle(probeId, undefined, "management"), "claude.catalog");
+  const child = retirements.admit(
+    createChildProcessHandle(probeId, undefined, "management"),
+    "claude.catalog",
+  );
 
   let listed: ((models: AgentModel[]) => void) | null = null;
   let failed: ((error: Error) => void) | null = null;

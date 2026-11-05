@@ -6,7 +6,7 @@ import {
 } from "../../../shared/ui/FloatingButtonGroup";
 import { Check, Copy, FilePlusCorner, RotateCcw } from "../../../shared/ui/icons";
 import { copyMessage } from "../../../platform/tauri/clipboard";
-import { playCue } from "../../settings/model/sounds";
+import { playCue } from "../../settings/public/sounds";
 
 /** How long a confirmed result stays on the action that produced it. */
 export const MESSAGE_ACTION_CONFIRM_MS = 2000;

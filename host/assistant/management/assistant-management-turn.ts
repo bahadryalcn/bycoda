@@ -1,5 +1,8 @@
 import { createHash } from "node:crypto";
-import { mergeNativeLibraryProofs, type NativeLibraryProof } from "../native/assistant-native-library-proof";
+import {
+  mergeNativeLibraryProofs,
+  type NativeLibraryProof,
+} from "../native/assistant-native-library-proof";
 import { z } from "zod";
 import { voiceToolCatalog } from "../../voice/voice-tools";
 import { assistantTextLimits, AssistantTextPreflightError } from "../core/assistant-text-budget";
@@ -164,7 +167,12 @@ export async function runRoomManagementTurn(
       projectProofs: RoomProjectProof[],
       nativeProofs: NativeLibraryProof[],
     ): Promise<{ text: string; tokens?: number }>;
-    delivered?(observations: unknown[], accountProofs: RoomAccountProof[], projectProofs: { projectId: string; cwd: string }[], nativeProofs: NativeLibraryProof[]): Promise<void>;
+    delivered?(
+      observations: unknown[],
+      accountProofs: RoomAccountProof[],
+      projectProofs: { projectId: string; cwd: string }[],
+      nativeProofs: NativeLibraryProof[],
+    ): Promise<void>;
     tool(
       call: RoomManagementCall,
       admission: RoomManagementAdmission,
@@ -190,14 +198,26 @@ export async function runRoomManagementTurn(
   const projectProofs = new Map<string, string>();
   let nativeProofs = mergeNativeLibraryProofs(input.contextNativeProofs ?? []);
   const addNative = (proofs: NativeLibraryProof[]) => {
-    for (const proof of proofs) if (proof.threadId !== input.threadId || proof.environmentId !== input.admission.environmentId) throw new Error("Native library source changed.");
+    for (const proof of proofs)
+      if (
+        proof.threadId !== input.threadId ||
+        proof.environmentId !== input.admission.environmentId
+      )
+        throw new Error("Native library source changed.");
     nativeProofs = mergeNativeLibraryProofs(nativeProofs, proofs);
   };
   const addProjects = (proofs: RoomProjectProof[]) => {
     if (proofs.length > 1000) throw new Error("Room project contributor scope is invalid.");
     for (const proof of proofs) {
-      if (!proof?.projectId || proof.projectId.length > 200 || !proof.cwd || proof.cwd.length > 4096) throw new Error("Room project contributor scope is invalid.");
-      if (projectProofs.has(proof.projectId) && projectProofs.get(proof.projectId) !== proof.cwd) throw new Error("Room project source changed.");
+      if (
+        !proof?.projectId ||
+        proof.projectId.length > 200 ||
+        !proof.cwd ||
+        proof.cwd.length > 4096
+      )
+        throw new Error("Room project contributor scope is invalid.");
+      if (projectProofs.has(proof.projectId) && projectProofs.get(proof.projectId) !== proof.cwd)
+        throw new Error("Room project source changed.");
       projectProofs.set(proof.projectId, proof.cwd);
     }
   };
@@ -205,7 +225,13 @@ export async function runRoomManagementTurn(
   const addAccounts = (proofs: RoomAccountProof[]) => {
     if (proofs.length > 100) throw new Error("Room account contributor scope is invalid.");
     for (const proof of proofs) {
-      if (!proof || !proof.accountId || proof.accountId.length > 200 || !proof.version || proof.version.length > 200)
+      if (
+        !proof ||
+        !proof.accountId ||
+        proof.accountId.length > 200 ||
+        !proof.version ||
+        proof.version.length > 200
+      )
         throw new Error("Room account contributor scope is invalid.");
       const prior = accounts.get(proof.accountId);
       if (prior && prior !== proof.version) throw new Error("Room account access changed.");
@@ -233,14 +259,19 @@ export async function runRoomManagementTurn(
     if (!(await admission.authorized())) throw new Error("Room management authority revoked.");
     if (projectProofs.size) {
       const proofs = [...projectProofs].map(([projectId, cwd]) => ({ projectId, cwd }));
-      if (!input.validateProjects || !(await input.validateProjects(proofs))) throw new Error("Room project source became unavailable or changed.");
+      if (!input.validateProjects || !(await input.validateProjects(proofs)))
+        throw new Error("Room project source became unavailable or changed.");
     }
     if (accounts.size) {
       const proofs = [...accounts].map(([accountId, version]) => ({ accountId, version }));
       if (!input.validateAccounts || !(await input.validateAccounts(proofs)))
         throw new Error("Room account access became unavailable or changed.");
     }
-    if (nativeProofs.length && (!input.validateNativeProofs || !(await input.validateNativeProofs(nativeProofs)))) throw new Error("Native library source became unavailable or changed.");
+    if (
+      nativeProofs.length &&
+      (!input.validateNativeProofs || !(await input.validateNativeProofs(nativeProofs)))
+    )
+      throw new Error("Native library source became unavailable or changed.");
     if (input.validateContext && !(await input.validateContext([...visible])))
       throw new Error("Room management context became private or changed.");
     input.signal.throwIfAborted();
@@ -253,12 +284,29 @@ export async function runRoomManagementTurn(
       throw new Error("The captured Room management turn changed.");
     for (const call of previous.calls) {
       if (call.call.projectId) visible.add(call.call.projectId);
-      if (call.call.projectId && call.status === "completed" && !call.contributorProjects?.some(proof => proof.projectId === call.call.projectId)) throw new Error("Room project provenance is unavailable.");
+      if (
+        call.call.projectId &&
+        call.status === "completed" &&
+        !call.contributorProjects?.some((proof) => proof.projectId === call.call.projectId)
+      )
+        throw new Error("Room project provenance is unavailable.");
       addProjects(call.contributorProjects ?? []);
       addAccounts(call.contributorAccounts ?? []);
-      if (call.call.input.nativeLibrary === true && call.status === "completed" && !call.contributorNativeProofs?.length) throw new Error("Native library provenance is unavailable.");
+      if (
+        call.call.input.nativeLibrary === true &&
+        call.status === "completed" &&
+        !call.contributorNativeProofs?.length
+      )
+        throw new Error("Native library provenance is unavailable.");
       addNative(call.contributorNativeProofs ?? []);
-      if ((call.call.family === "social" && !call.call.projectId || call.call.family === "conversation" && call.call.action.startsWith("observations.") && !!call.call.accountId) && call.status === "completed" && !call.contributorAccounts)
+      if (
+        ((call.call.family === "social" && !call.call.projectId) ||
+          (call.call.family === "conversation" &&
+            call.call.action.startsWith("observations.") &&
+            !!call.call.accountId)) &&
+        call.status === "completed" &&
+        !call.contributorAccounts
+      )
         throw new Error("Room account provenance is unavailable.");
     }
     addAccounts(previous.result?.contributorAccounts ?? []);
@@ -268,7 +316,18 @@ export async function runRoomManagementTurn(
     await check();
     if (previous.phase === "settled" && previous.result) {
       for (const call of previous.calls) {
-        if (call.call.input.nativeLibrary === true && call.status === "completed" && (!call.contributorNativeProofs?.length || call.contributorNativeProofs.some(proof => !previous.result!.contributorNativeProofs?.some(item => JSON.stringify(item) === JSON.stringify(proof))))) throw new Error("Native library result provenance is unavailable.");
+        if (
+          call.call.input.nativeLibrary === true &&
+          call.status === "completed" &&
+          (!call.contributorNativeProofs?.length ||
+            call.contributorNativeProofs.some(
+              (proof) =>
+                !previous.result!.contributorNativeProofs?.some(
+                  (item) => JSON.stringify(item) === JSON.stringify(proof),
+                ),
+            ))
+        )
+          throw new Error("Native library result provenance is unavailable.");
       }
       return previous.result;
     }
@@ -322,7 +381,15 @@ export async function runRoomManagementTurn(
       await ports.save(state);
       await check();
       const answer = await bounded(
-        ports.model(prompt, remaining, admission.signal!, [...visible], [...accounts].map(([accountId, version]) => ({ accountId, version })), [...projectProofs].map(([projectId, cwd]) => ({ projectId, cwd })), nativeProofs),
+        ports.model(
+          prompt,
+          remaining,
+          admission.signal!,
+          [...visible],
+          [...accounts].map(([accountId, version]) => ({ accountId, version })),
+          [...projectProofs].map(([projectId, cwd]) => ({ projectId, cwd })),
+          nativeProofs,
+        ),
         [input.signal, input.admission.signal],
         95_000,
         "Room model outcome is uncertain after its deadline.",
@@ -337,8 +404,15 @@ export async function runRoomManagementTurn(
       if (state.tokens > input.tokenCap)
         throw new Error("Room management aggregate token allowance exhausted.");
       await check();
-      const newlyDelivered = observations.slice(-2).filter(observation => !deliveredObservations.has(observation));
-      await ports.delivered?.(newlyDelivered, [...accounts].map(([accountId, version]) => ({ accountId, version })), [...projectProofs].map(([projectId, cwd]) => ({ projectId, cwd })), nativeProofs);
+      const newlyDelivered = observations
+        .slice(-2)
+        .filter((observation) => !deliveredObservations.has(observation));
+      await ports.delivered?.(
+        newlyDelivered,
+        [...accounts].map(([accountId, version]) => ({ accountId, version })),
+        [...projectProofs].map(([projectId, cwd]) => ({ projectId, cwd })),
+        nativeProofs,
+      );
       for (const observation of newlyDelivered) deliveredObservations.add(observation);
       const decision = decisionSchema.parse(JSON.parse(answer.text));
       if (decision.type === "final") {
@@ -346,8 +420,22 @@ export async function runRoomManagementTurn(
           text: decision.text,
           ...(measured ? { tokens: state.tokens } : {}),
           ...(complete ? { contributorProjectIds: [...contributors].sort() } : {}),
-          ...(accounts.size ? { contributorAccounts: [...accounts].map(([accountId, version]) => ({ accountId, version })) } : {}),
-          ...(projectProofs.size ? { contributorProjects: [...projectProofs].map(([projectId, cwd]) => ({ projectId, cwd })) } : {}),
+          ...(accounts.size
+            ? {
+                contributorAccounts: [...accounts].map(([accountId, version]) => ({
+                  accountId,
+                  version,
+                })),
+              }
+            : {}),
+          ...(projectProofs.size
+            ? {
+                contributorProjects: [...projectProofs].map(([projectId, cwd]) => ({
+                  projectId,
+                  cwd,
+                })),
+              }
+            : {}),
           ...(nativeProofs.length ? { contributorNativeProofs: nativeProofs } : {}),
           visibilityProjectIds: [...visible].sort(),
         };
@@ -365,8 +453,21 @@ export async function runRoomManagementTurn(
         throw new Error("Unknown Room management tool. Discover supported tools first.");
       if (input.projectId && decision.projectId && decision.projectId !== input.projectId)
         throw new Error("The Room management tool target is outside this conversation's project.");
-      if (decision.accountId && (!(decision.family === "social" || (decision.family === "conversation" && ["observations.read", "observations.ack", "observations.resnapshot"].includes(decision.action))) || decision.projectId || input.projectId))
-        throw new Error("Account targets require a project-independent social or observation tool.");
+      if (
+        decision.accountId &&
+        (!(
+          decision.family === "social" ||
+          (decision.family === "conversation" &&
+            ["observations.read", "observations.ack", "observations.resnapshot"].includes(
+              decision.action,
+            ))
+        ) ||
+          decision.projectId ||
+          input.projectId)
+      )
+        throw new Error(
+          "Account targets require a project-independent social or observation tool.",
+        );
       const requestId = `room-${digest([input.operationId, input.ownerMessageId, step])}`;
       const call: RoomManagementCall = {
         threadId: input.threadId,
@@ -379,7 +480,8 @@ export async function runRoomManagementTurn(
         input: roomManagementInput(decision.family, decision.action, decision.input, requestId),
         requestId,
       };
-      if (call.action === "observations.read") call.input.limit = Math.min(Number(call.input.limit ?? 3), 3);
+      if (call.action === "observations.read")
+        call.input.limit = Math.min(Number(call.input.limit ?? 3), 3);
       if (call.action === "tools.search")
         call.input.limit = Math.min(Number(call.input.limit ?? 3), 3);
       if (call.action === "tools.describe") call.input.maxChars ??= 3000;
@@ -412,14 +514,24 @@ export async function runRoomManagementTurn(
         result.source.action !== call.action
       )
         throw new Error("Room management result source changed.");
-      const receiptRead = call.family === "conversation" && (call.action.endsWith(".result") || call.action.endsWith(".status"));
+      const receiptRead =
+        call.family === "conversation" &&
+        (call.action.endsWith(".result") || call.action.endsWith(".status"));
       if (uncertain(result.value) && !receiptRead)
         throw new Error(
           "Room management operation outcome is unknown. Inspect its original receipt.",
         );
-      if (call.family === "social" && !call.projectId || call.family === "conversation" && call.action.startsWith("observations.") && !!call.accountId) {
+      if (
+        (call.family === "social" && !call.projectId) ||
+        (call.family === "conversation" &&
+          call.action.startsWith("observations.") &&
+          !!call.accountId)
+      ) {
         if (!result.contributorAccounts) throw new Error("Room account provenance is unavailable.");
-        if (call.accountId && !result.contributorAccounts.some((proof) => proof.accountId === call.accountId))
+        if (
+          call.accountId &&
+          !result.contributorAccounts.some((proof) => proof.accountId === call.accountId)
+        )
           throw new Error("Room account contributor scope changed.");
       }
       if (result.contributorAccounts) {
@@ -432,10 +544,24 @@ export async function runRoomManagementTurn(
         addProjects([proof]);
         record.contributorProjects = [proof];
       }
-      if (result.contributorProjects) { addProjects(result.contributorProjects); record.contributorProjects = [...(record.contributorProjects ?? []), ...result.contributorProjects]; }
-      if (call.input.nativeLibrary === true && (!result.source.nativeLibrary || !result.contributorNativeProofs?.length)) throw new Error("Native library provenance is unavailable.");
-      if (result.contributorNativeProofs?.length) { addNative(result.contributorNativeProofs); record.contributorNativeProofs = result.contributorNativeProofs; }
-      if (result.contributorProjectIds?.some(id => !projectProofs.has(id))) throw new Error("Room project contributor provenance is unavailable.");
+      if (result.contributorProjects) {
+        addProjects(result.contributorProjects);
+        record.contributorProjects = [
+          ...(record.contributorProjects ?? []),
+          ...result.contributorProjects,
+        ];
+      }
+      if (
+        call.input.nativeLibrary === true &&
+        (!result.source.nativeLibrary || !result.contributorNativeProofs?.length)
+      )
+        throw new Error("Native library provenance is unavailable.");
+      if (result.contributorNativeProofs?.length) {
+        addNative(result.contributorNativeProofs);
+        record.contributorNativeProofs = result.contributorNativeProofs;
+      }
+      if (result.contributorProjectIds?.some((id) => !projectProofs.has(id)))
+        throw new Error("Room project contributor provenance is unavailable.");
       record.status = "completed";
       await ports.save(state);
       if (result.contributorProjectIds === undefined) complete = false;
@@ -459,7 +585,10 @@ export async function runRoomManagementTurn(
           serialized.length <= 6000
             ? result.value
             : call.action.startsWith("observations.")
-              ? { truncated: true, error: "Observation result exceeded the response budget; no cursor is disclosed." }
+              ? {
+                  truncated: true,
+                  error: "Observation result exceeded the response budget; no cursor is disclosed.",
+                }
               : { truncated: true, preview: truncateGraphemes(serialized, 6000) },
       });
       state.phase = "model-pending";

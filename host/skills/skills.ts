@@ -379,11 +379,17 @@ export function claudePluginRoots(
 }
 
 type DiscoveryBudget = { remaining: number; truncated: boolean; stamps: Map<string, string> };
-const discoveryStamp = (value: Awaited<ReturnType<typeof lstat>>) => `${value.dev}:${value.ino}:${value.mode}:${value.size}:${value.mtimeMs}:${value.ctimeMs}`;
+const discoveryStamp = (value: Awaited<ReturnType<typeof lstat>>) =>
+  `${value.dev}:${value.ino}:${value.mode}:${value.size}:${value.mtimeMs}:${value.ctimeMs}`;
 async function discoveryStat(path: string, budget: DiscoveryBudget) {
   try {
     const value = await lstat(path);
-    budget.stamps.set(path, value.isSymbolicLink() ? `${discoveryStamp(value)}:target:${discoveryStamp(await stat(path))}` : discoveryStamp(value));
+    budget.stamps.set(
+      path,
+      value.isSymbolicLink()
+        ? `${discoveryStamp(value)}:target:${discoveryStamp(await stat(path))}`
+        : discoveryStamp(value),
+    );
     return value;
   } catch (error) {
     budget.stamps.set(path, `error:${(error as NodeJS.ErrnoException).code}`);
@@ -391,15 +397,21 @@ async function discoveryStat(path: string, budget: DiscoveryBudget) {
   }
 }
 
-
 /** Async, lazy metadata discovery for execution paths; no bodies or policy cached. */
-export async function listHostSkillCandidatesAsync(project: string | null, home = homedir(), provider?: string) {
+export async function listHostSkillCandidatesAsync(
+  project: string | null,
+  home = homedir(),
+  provider?: string,
+) {
   const budget: DiscoveryBudget = { remaining: 10_000, truncated: false, stamps: new Map() };
   const names = new Set<string>();
   const skills: HostSkillCandidate[] = [];
   for await (const skill of listSkillRootsInOrderAsync(project, home, budget)) {
     if (!skillMatchesProvider(skill, provider)) continue;
-    if (skills.length >= MAX_CANDIDATES) { budget.truncated = true; break; }
+    if (skills.length >= MAX_CANDIDATES) {
+      budget.truncated = true;
+      break;
+    }
     const active = !names.has(skill.name) && names.size < MAX_SKILLS;
     if (active) names.add(skill.name);
     skills.push({ ...skill, active });
@@ -407,8 +419,15 @@ export async function listHostSkillCandidatesAsync(project: string | null, home 
   // No installation discovered during an await may silently broaden a prepared
   // operation. Changed directory/marker/frontmatter identity requires a fresh try.
   for (const [path, expected] of budget.stamps) {
-    const value = await lstat(path).then(async (info) => info.isSymbolicLink() ? `${discoveryStamp(info)}:target:${discoveryStamp(await stat(path))}` : discoveryStamp(info), (error: NodeJS.ErrnoException) => `error:${error.code}`);
-    if (value !== expected) throw new Error("Skill inventory changed during discovery; retry preparation.");
+    const value = await lstat(path).then(
+      async (info) =>
+        info.isSymbolicLink()
+          ? `${discoveryStamp(info)}:target:${discoveryStamp(await stat(path))}`
+          : discoveryStamp(info),
+      (error: NodeJS.ErrnoException) => `error:${error.code}`,
+    );
+    if (value !== expected)
+      throw new Error("Skill inventory changed during discovery; retry preparation.");
   }
   return { skills, truncated: budget.truncated };
 }
@@ -419,10 +438,15 @@ async function readPrefixAsync(path: string, max: number): Promise<string> {
     const buffer = Buffer.alloc(max);
     const { bytesRead } = await file.read(buffer, 0, max, 0);
     return buffer.subarray(0, bytesRead).toString("utf8");
-  } finally { await file.close(); }
+  } finally {
+    await file.close();
+  }
 }
 
-async function installedProviderAsync(dir: string, budget: DiscoveryBudget): Promise<string | undefined | null> {
+async function installedProviderAsync(
+  dir: string,
+  budget: DiscoveryBudget,
+): Promise<string | undefined | null> {
   const marker = join(dir, ".bycoda-install.json");
   try {
     const info = await discoveryStat(marker, budget);
@@ -457,10 +481,17 @@ async function installedProviderAsync(dir: string, budget: DiscoveryBudget): Pro
 }
 
 /** Highest priority first; the same real root is scanned once. */
-async function* listSkillRootsInOrderAsync(project: string | null, home: string, budget: DiscoveryBudget) {
+async function* listSkillRootsInOrderAsync(
+  project: string | null,
+  home: string,
+  budget: DiscoveryBudget,
+) {
   const seen = new Set<string>();
   async function* add(root: string, scope: string, source: string, namespace?: string) {
-    if (budget.remaining <= 0) { budget.truncated = true; return; }
+    if (budget.remaining <= 0) {
+      budget.truncated = true;
+      return;
+    }
     let key = root;
     try {
       key = await realpath(root);
@@ -488,14 +519,25 @@ async function* listSkillRootsInOrderAsync(project: string | null, home: string,
   if (project) yield* add(join(project, ".gemini/antigravity/skills"), "project", "antigravity");
   const antigravity = join(home, ".gemini/antigravity/skills");
   yield* add(antigravity, "user", "antigravity");
-  if (budget.remaining <= 0) { budget.truncated = true; return; }
+  if (budget.remaining <= 0) {
+    budget.truncated = true;
+    return;
+  }
   for (const plugin of await claudePluginRootsAsync(home, project, budget)) {
-    if (budget.remaining <= 0) { budget.truncated = true; return; }
+    if (budget.remaining <= 0) {
+      budget.truncated = true;
+      return;
+    }
     yield* add(plugin.root, plugin.scope, "claude", plugin.namespace);
   }
 }
 
-async function* scanRootAsync(root: string, scope: string, source: string, budget: DiscoveryBudget): AsyncGenerator<DiscoveredSkill> {
+async function* scanRootAsync(
+  root: string,
+  scope: string,
+  source: string,
+  budget: DiscoveryBudget,
+): AsyncGenerator<DiscoveredSkill> {
   let entries: string[];
   try {
     entries = await readdir(root);
@@ -504,7 +546,10 @@ async function* scanRootAsync(root: string, scope: string, source: string, budge
   }
   for (const folder of entries) {
     if (folder.startsWith(".") || folder === "skills-cursor") continue;
-    if (budget.remaining-- <= 0) { budget.truncated = true; return; }
+    if (budget.remaining-- <= 0) {
+      budget.truncated = true;
+      return;
+    }
     const dir = join(root, folder);
     const entry = await discoveryStat(dir, budget);
     if (!entry || !(await stat(dir).catch(() => undefined))?.isDirectory()) continue;
@@ -513,7 +558,10 @@ async function* scanRootAsync(root: string, scope: string, source: string, budge
     let file: string | undefined;
     for (const candidate of [join(dir, "SKILL.md"), join(dir, "skill.md")])
       if (await discoveryStat(candidate, budget)) {
-        if ((await stat(candidate).catch(() => undefined))?.isFile()) { file = candidate; break; }
+        if ((await stat(candidate).catch(() => undefined))?.isFile()) {
+          file = candidate;
+          break;
+        }
       }
     if (!file) continue;
     const fallback = slugName(folder);
@@ -547,9 +595,7 @@ async function claudePluginRootsAsync(
   try {
     const registryPath = join(home, ".claude/plugins/installed_plugins.json");
     await discoveryStat(registryPath, budget);
-    registry = JSON.parse(
-      await readFile(registryPath, "utf8"),
-    );
+    registry = JSON.parse(await readFile(registryPath, "utf8"));
   } catch {
     return [];
   }
@@ -583,7 +629,10 @@ async function claudePluginRootsAsync(
           : join(home, raw);
   const roots: { root: string; scope: string; namespace: string }[] = [];
   for (const [id, installed] of Object.entries(plugins)) {
-    if (budget.remaining-- <= 0) { budget.truncated = true; break; }
+    if (budget.remaining-- <= 0) {
+      budget.truncated = true;
+      break;
+    }
     if (!(await enabled(id))) continue;
     const namespace = id.includes("@") ? id.slice(0, id.lastIndexOf("@")) : id;
     if (!validName(namespace)) continue;

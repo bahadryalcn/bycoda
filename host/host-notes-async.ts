@@ -1,3 +1,4 @@
+import { URL as NodeURL } from "node:url";
 import { Worker } from "node:worker_threads";
 import { AsyncResource } from "node:async_hooks";
 import {
@@ -76,7 +77,7 @@ export class AsyncHostNotes implements HostNotesAccess {
   private readonly admission: HostNotesAdmission;
   constructor(
     private readonly paths: () => string[] = desktopDatabasePaths,
-    private readonly workerUrl = new URL("./host-notes-worker.mjs", import.meta.url),
+    private readonly workerUrl = new NodeURL("./host-notes-worker.mjs", import.meta.url),
     options: HostNotesAdmissionOptions = {},
   ) {
     this.admission = new HostNotesAdmission(options);

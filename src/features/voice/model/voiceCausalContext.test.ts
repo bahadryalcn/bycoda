@@ -15,14 +15,36 @@ it("registers the exact seed before connecting and rejects revoked pending regis
   const ack = Promise.withResolvers<{ ok: boolean }>();
   const request = vi.fn(() => ack.promise);
   const binding = {
-    request, remote: false, current: () => current,
+    request,
+    remote: false,
+    current: () => current,
     open: async () => ({ thread: { id: "thread" }, messages: [], request }),
     environmentId: async () => "host",
-    scope: async () => ({ complete: true, projectIds: [], current: () => current, liveProjectIds: () => new Set<string>() }),
+    scope: async () => ({
+      complete: true,
+      projectIds: [],
+      current: () => current,
+      liveProjectIds: () => new Set<string>(),
+    }),
   } as unknown as VoiceHistoryBinding;
-  const generation = new VoiceCausalGeneration(["seed"], true, () => current, vi.fn(), () => "generation", "proof");
+  const generation = new VoiceCausalGeneration(
+    ["seed"],
+    true,
+    () => current,
+    vi.fn(),
+    () => "generation",
+    "proof",
+  );
   const work = generation.bindRuntimeIdentity(binding);
-  await vi.waitFor(() => expect(request).toHaveBeenCalledWith({ op: "voice.runtime.register", threadId: "thread", generationKey: "generation", seedMessageIds: ["seed"], summaryProofId: "proof" }));
+  await vi.waitFor(() =>
+    expect(request).toHaveBeenCalledWith({
+      op: "voice.runtime.register",
+      threadId: "thread",
+      generationKey: "generation",
+      seedMessageIds: ["seed"],
+      summaryProofId: "proof",
+    }),
+  );
   current = false;
   ack.resolve({ ok: true });
   await expect(work).rejects.toThrow("not confirmed");

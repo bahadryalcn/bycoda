@@ -330,7 +330,6 @@ it.each(["guard", "body"])(
   },
 );
 
-
 it("retains exact normalized bytes for bulk hash/chunks and rechecks original lease", () => {
   const { pool } = fixture();
   const capture = normalizeJsonWire({ text: "雪😀".repeat(100) });

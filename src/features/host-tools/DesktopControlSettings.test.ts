@@ -69,7 +69,9 @@ it("distinguishes a verified helper from the saved permission and an ongoing ope
   await render();
   expect(container.textContent).toContain("Verified");
   expect(container.textContent).toContain("Disabled");
-  expect(container.textContent).toContain("No desktop operation is running.");
+  expect(
+    container.querySelector('[data-capability-axis="activity"]')?.getAttribute("data-state"),
+  ).toBe("idle");
   expect(container.textContent).not.toContain("Desktop operation in progress");
   mock.request.mockResolvedValueOnce({
     ...state,
@@ -77,12 +79,14 @@ it("distinguishes a verified helper from the saved permission and an ongoing ope
   });
   await click("Refresh");
   expect(container.textContent).toContain("Enabled");
-  expect(container.textContent).toContain("Desktop operation in progress");
+  expect(
+    container.querySelector('[data-capability-axis="activity"]')?.getAttribute("data-state"),
+  ).toBe("running");
 });
 it("clears stale status after a failed refresh", async () => {
   mock.request.mockResolvedValueOnce({
     ...state,
-    status: { ...state.status, installed: true, verified: true, enabled: true },
+    status: { ...state.status, installed: true, verified: true, enabled: true, active: true },
   });
   await render();
   expect(container.textContent).toContain("Verified");
@@ -96,6 +100,10 @@ it("clears stale status after a failed refresh", async () => {
   ).toBe(false);
   expect(container.textContent).toContain("Unavailable");
   expect(container.textContent).toContain("Status failed");
+  for (const axis of ["permission", "readiness", "activity"])
+    expect(
+      container.querySelector(`[data-capability-axis="${axis}"]`)?.getAttribute("data-state"),
+    ).toBe("unknown");
 });
 it("reports unsaved options and pending saves to its parent", async () => {
   const report = vi.fn();

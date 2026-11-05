@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Attachment } from "../../sessions/model/session";
+import type { Attachment } from "../../sessions";
 import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
 import { loadRemoteCapabilities, remoteRequest } from "./connections";
 import { isLocalSyncMachine } from "./localSync";

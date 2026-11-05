@@ -9,7 +9,9 @@ vi.mock("@tauri-apps/api/core", async (importOriginal) => ({
   isTauri: nativeEnabled,
 }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }));
-vi.mock("@tauri-apps/api/webviewWindow", () => ({ getCurrentWebviewWindow: () => ({ label: "main" }) }));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+  getCurrentWebviewWindow: () => ({ label: "main" }),
+}));
 
 const socialBridgeMock = vi.hoisted(() =>
   vi.fn<(_sessionId: string) => Promise<{ command: string; args: string[] } | null>>(
@@ -101,8 +103,10 @@ describe("harness registry", () => {
       // Protocol fixture: explicitly model the canonical owner admission seam.
       if (command === "canonical_store_page_token") return "00000000-0000-4000-8000-000000000001";
       if (command === "canonical_store_session_guard_ready") return true;
-      if (command === "canonical_store_get") return (raw as { scope: string }).scope === "host-session-bindings-migration.v1"
-        ? { key: "legacy-import", version: 1, value: true } : null;
+      if (command === "canonical_store_get")
+        return (raw as { scope: string }).scope === "host-session-bindings-migration.v1"
+          ? { key: "legacy-import", version: 1, value: true }
+          : null;
       if (command === "canonical_store_list") return { entries: [], revision: 0 };
       if (command === "canonical_store_transaction") return { applied: true, entries: [] };
       if (command === "canonical_store_settle") return true;

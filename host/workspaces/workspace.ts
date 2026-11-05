@@ -24,7 +24,10 @@ import type { Stats } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 import type { GitChangedFile, GitDiffIndex, GitFileDiff } from "../../src/platform/tauri/fs";
 import { hostOperationState, hostUnmerged, unmergedMessage } from "../git/git-conflicts";
-import type { ProjectSearchMatch, ProjectSearchResult } from "../../src/features/search/model/search";
+import type {
+  ProjectSearchMatch,
+  ProjectSearchResult,
+} from "../../src/features/search/model/search";
 
 const MAX_FILE = 1024 * 1024;
 

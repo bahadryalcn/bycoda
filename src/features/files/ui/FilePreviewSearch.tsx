@@ -11,7 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { ChevronDown, ChevronUp, X } from "../../../shared/ui/icons";
-import { keybindingPressed } from "../../settings/model/settings";
+import { keybindingPressed } from "../../settings/public/settings";
 import { startPreviewSearch } from "./previewSearchTask";
 import { evaluatePreviewSearch } from "./previewSearchEvaluation";
 

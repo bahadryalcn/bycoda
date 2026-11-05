@@ -201,8 +201,12 @@ function MeasuredTranscriptRows({
       const element = root.current;
       const selection = element?.ownerDocument.getSelection();
       const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-      const wholeList = !!element && !!range && range.startContainer === element &&
-        range.startOffset === 0 && range.endContainer === element &&
+      const wholeList =
+        !!element &&
+        !!range &&
+        range.startContainer === element &&
+        range.startOffset === 0 &&
+        range.endContainer === element &&
         range.endOffset === element.childNodes.length;
       selected(true);
       // Inserting rows at the old end boundary leaves native Range.endOffset

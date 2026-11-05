@@ -2,35 +2,10 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
-import {
-  CheckCircle,
-  CircleAlert,
-  CircleDashed,
-  CircleDot,
-  CircleX,
-} from "../../../shared/ui/icons";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
 import type { HostTask, TaskOwnerNotice } from "../model/hostTasks";
-import {
-  finishedOwnerNotices,
-  type TaskStatusLine,
-  type TaskStatusTone,
-} from "../model/taskStatusLine";
-
-const TONE_TEXT: Record<TaskStatusTone, string> = {
-  neutral: "text-(--ui-text-secondary)",
-  info: "text-(--ui-tone-info-fg)",
-  success: "text-(--ui-tone-success-fg)",
-  warning: "text-(--ui-tone-warning-fg)",
-  danger: "text-(--ui-tone-danger-fg)",
-};
-const TONE_ICON = {
-  neutral: CircleDashed,
-  info: CircleDot,
-  success: CheckCircle,
-  warning: CircleAlert,
-  danger: CircleX,
-} as const;
+import { finishedOwnerNotices, type TaskStatusLine } from "../model/taskStatusLine";
 
 /** The task's one-line state: tone glyph, label and a clamped reason. With
  * `onOpen`, the whole line opens the full details. */
@@ -44,10 +19,9 @@ export function TaskStatusText({
   className?: string;
 }) {
   useLocale();
-  const Icon = TONE_ICON[status.tone];
   const content = (
     <>
-      <Icon aria-hidden="true" className="icon-xs me-1 inline-block shrink-0 align-[-0.125em]" />
+      <StatusDot tone={status.tone} label={status.label} className="me-1 inline-block" />
       <span className="font-medium">{status.label}</span>
       {status.detail ? (
         <span className="text-(--ui-text-secondary)">
@@ -57,7 +31,7 @@ export function TaskStatusText({
       ) : null}
     </>
   );
-  const shared = `line-clamp-2 break-words text-start text-ui-micro ${TONE_TEXT[status.tone]} ${className}`;
+  const shared = `line-clamp-2 break-words text-start text-ui-micro text-(--ui-text-secondary) ${className}`;
   return onOpen ? (
     <Button
       variant="link"

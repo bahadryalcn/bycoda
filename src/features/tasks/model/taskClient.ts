@@ -1,11 +1,11 @@
-import { remoteRequest as sendHostRequest } from "../../connections/model/connections";
-import { subscribeRemoteMachineChannel } from "../../connections/model/remoteMachineChannel";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
+import { remoteRequest as sendHostRequest } from "../../connections/public/connections";
+import { subscribeRemoteMachineChannel } from "../../connections/public/remoteMachineChannel";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
 import {
   isRemoteProvider,
   type HostProject,
   type RemoteMachine,
-} from "../../connections/model/protocol";
+} from "../../connections/public/protocol";
 import {
   backgroundMachineFor,
   backgroundMachines,
@@ -25,7 +25,7 @@ import {
   defaultProviderAccountId,
   supportsProviderAccounts,
 } from "../../providers/model/providerAccounts";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { HOST_TASK_WORKSPACES, type TaskWorkspace } from "./taskWorkspace";
 import { HOST_CREW_TASKS } from "../../crews/model/crew";
 import { TASK_RUN_BUDGET_CAPABILITY, type TaskRunBudget } from "./taskBudget";

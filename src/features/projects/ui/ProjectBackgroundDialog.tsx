@@ -21,7 +21,8 @@ import {
   NEW_THREAD_BACKGROUND_EFFECTS,
   type ChatBackgroundScope,
   type NewThreadBackgroundEffect,
-} from "../../settings/model/appearance";
+} from "../../settings/public/appearance";
+
 import {
   clearProjectChatBackground,
   pickAndSaveProjectChatBackground,
@@ -34,7 +35,7 @@ import {
   saveProjectChatBackgroundSettings,
 } from "../model/projectChatBackground";
 import { useProjectBackgroundEffect } from "./useProjectBackgroundEffect";
-import { GradientBlurBackground } from "../../settings/ui/GradientBlurBackground";
+import { GradientBlurBackground } from "../../settings/public/GradientBlurBackground";
 
 type Props = {
   project: string;

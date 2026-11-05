@@ -2,8 +2,15 @@ import { createHash, randomUUID } from "node:crypto";
 import { inspectBrowserElement, type ElementInspection } from "./browser-annotation";
 import type { BrowserAnnotationCapture } from "../../src/shared/lib/browserAnnotation";
 import { browserShadowMasks, type BrowserDomNode } from "./browser-shadow-masks";
-import type { RuntimeLogSource, RuntimeLogLevel } from "../../src/features/host-tools/runtimeLogTypes";
-import { runtimeLogDetails, runtimeLogPreview, type RuntimeLogsService } from "../execution/runtime-logs";
+import type {
+  RuntimeLogSource,
+  RuntimeLogLevel,
+} from "../../src/features/host-tools/runtimeLogTypes";
+import {
+  runtimeLogDetails,
+  runtimeLogPreview,
+  type RuntimeLogsService,
+} from "../execution/runtime-logs";
 
 type ConsoleMessage = {
   text(): string;
@@ -35,11 +42,37 @@ type BrowserCdpSession = {
     method: "DOM.getDocument",
     params: { depth: number; pierce: boolean },
   ): Promise<{ root: BrowserDomNode }>;
-  send(method: "DOM.getNodeForLocation", params: { x: number; y: number; includeUserAgentShadowDOM: boolean; ignorePointerEventsNone: boolean }): Promise<{ backendNodeId: number }>;
-  send(method: "DOM.resolveNode", params: { backendNodeId: number; objectGroup: string }): Promise<{ object: { objectId?: string } }>;
-  send(method: "Runtime.callFunctionOn", params: { objectId: string; functionDeclaration: string; arguments: { value: number }[]; objectGroup: string; silent: boolean }): Promise<{ result: { objectId?: string }; exceptionDetails?: unknown }>;
-  send(method: "Runtime.getProperties", params: { objectId: string; ownProperties: boolean; generatePreview: boolean }): Promise<{ result: { name: string; value?: { objectId?: string; value?: unknown } }[] }>;
-  send(method: "DOM.describeNode", params: { objectId: string; depth: number; pierce: boolean }): Promise<{ node: BrowserDomNode & { backendNodeId?: number } }>;
+  send(
+    method: "DOM.getNodeForLocation",
+    params: {
+      x: number;
+      y: number;
+      includeUserAgentShadowDOM: boolean;
+      ignorePointerEventsNone: boolean;
+    },
+  ): Promise<{ backendNodeId: number }>;
+  send(
+    method: "DOM.resolveNode",
+    params: { backendNodeId: number; objectGroup: string },
+  ): Promise<{ object: { objectId?: string } }>;
+  send(
+    method: "Runtime.callFunctionOn",
+    params: {
+      objectId: string;
+      functionDeclaration: string;
+      arguments: { value: number }[];
+      objectGroup: string;
+      silent: boolean;
+    },
+  ): Promise<{ result: { objectId?: string }; exceptionDetails?: unknown }>;
+  send(
+    method: "Runtime.getProperties",
+    params: { objectId: string; ownProperties: boolean; generatePreview: boolean },
+  ): Promise<{ result: { name: string; value?: { objectId?: string; value?: unknown } }[] }>;
+  send(
+    method: "DOM.describeNode",
+    params: { objectId: string; depth: number; pierce: boolean },
+  ): Promise<{ node: BrowserDomNode & { backendNodeId?: number } }>;
   send(method: "Runtime.releaseObjectGroup", params: { objectGroup: string }): Promise<unknown>;
   send(method: "DOM.enable"): Promise<unknown>;
   on?(event: string, listener: (payload: any) => void): unknown;
@@ -201,7 +234,12 @@ export class SharedBrowser {
     private readonly options: SharedBrowserOptions = {},
   ) {}
 
-  async dispatchForSession(method: string, params: Record<string, unknown>, credential: string, options: { takeover?: boolean } = {}) {
+  async dispatchForSession(
+    method: string,
+    params: Record<string, unknown>,
+    credential: string,
+    options: { takeover?: boolean } = {},
+  ) {
     const matches =
       this.logSource?.projectId === params.projectId &&
       this.logSource?.sessionId === params.sessionId &&
@@ -296,7 +334,9 @@ export class SharedBrowser {
         const assistantThreadId = this.logContext(params.threadId);
         if (
           this.page &&
-          (this.logSource?.projectId !== projectId || this.logSource?.sessionId !== sessionId || this.logSource?.assistantThreadId !== assistantThreadId)
+          (this.logSource?.projectId !== projectId ||
+            this.logSource?.sessionId !== sessionId ||
+            this.logSource?.assistantThreadId !== assistantThreadId)
         ) {
           // A new context prevents old-document network/console events from being
           // attributed to a different conversation while navigation is pending.
@@ -330,10 +370,16 @@ export class SharedBrowser {
       }
       if (method === "browser.frame") {
         if (!this.page) throw new Error("Open a shared browser first");
-        const page = this.page, documentId = this.documentId, navigationId = this.navigationId;
+        const page = this.page,
+          documentId = this.documentId,
+          navigationId = this.navigationId;
         const viewport = { ...this.viewport };
         const frame = await page.screenshot({ type: "jpeg", quality: 65, timeout: 5_000 });
-        if (page !== this.page || documentId !== this.documentId || navigationId !== this.navigationId)
+        if (
+          page !== this.page ||
+          documentId !== this.documentId ||
+          navigationId !== this.navigationId
+        )
           throw new Error("Browser document changed during capture. Refresh the frame.");
         if (frame.byteLength > 2 * 1024 * 1024)
           throw new Error("Browser frame exceeds transfer budget");
@@ -636,12 +682,20 @@ export class SharedBrowser {
     this.hoverObjects = held;
     try {
       const hit = await session.send("DOM.getNodeForLocation", {
-        x: Math.floor(x), y: Math.floor(y), includeUserAgentShadowDOM: false, ignorePointerEventsNone: false,
+        x: Math.floor(x),
+        y: Math.floor(y),
+        includeUserAgentShadowDOM: false,
+        ignorePointerEventsNone: false,
       });
-      const object = await session.send("DOM.resolveNode", { backendNodeId: hit.backendNodeId, objectGroup: held.group });
+      const object = await session.send("DOM.resolveNode", {
+        backendNodeId: hit.backendNodeId,
+        objectGroup: held.group,
+      });
       if (!object.object.objectId) return;
       const ancestry = await session.send("Runtime.callFunctionOn", {
-        objectId: object.object.objectId, objectGroup: held.group, silent: true,
+        objectId: object.object.objectId,
+        objectGroup: held.group,
+        silent: true,
         arguments: [{ value: x }, { value: y }],
         functionDeclaration: `function(x,y) {
           if (window !== window.top || this !== document.elementFromPoint(x,y)) return null;
@@ -655,20 +709,32 @@ export class SharedBrowser {
       });
       if (ancestry.exceptionDetails || !ancestry.result.objectId) return;
       const properties = await session.send("Runtime.getProperties", {
-        objectId: ancestry.result.objectId, ownProperties: true, generatePreview: false,
+        objectId: ancestry.result.objectId,
+        ownProperties: true,
+        generatePreview: false,
       });
       const count = properties.result.find((item) => item.name === "length")?.value?.value;
       if (typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > 64) return;
       const nodes: number[] = [];
       for (let index = 0; index < count; index++) {
-        const objectId = properties.result.find((item) => item.name === String(index))?.value?.objectId;
+        const objectId = properties.result.find((item) => item.name === String(index))?.value
+          ?.objectId;
         if (!objectId) return;
-        const { node } = await session.send("DOM.describeNode", { objectId, depth: 0, pierce: false });
-        if (!Number.isSafeInteger(node.backendNodeId) || node.nodeType !== 1 ||
-            node.shadowRoots?.some((root) => root.shadowRootType !== "user-agent")) return;
+        const { node } = await session.send("DOM.describeNode", {
+          objectId,
+          depth: 0,
+          pierce: false,
+        });
+        if (
+          !Number.isSafeInteger(node.backendNodeId) ||
+          node.nodeType !== 1 ||
+          node.shadowRoots?.some((root) => root.shadowRootType !== "user-agent")
+        )
+          return;
         nodes.push(node.backendNodeId!);
       }
-      if (page !== this.page || session !== this.maskSession) throw new Error("Browser changed during inspection.");
+      if (page !== this.page || session !== this.maskSession)
+        throw new Error("Browser changed during inspection.");
       return JSON.stringify(nodes);
     } finally {
       // A failed release retains one exact group; retry it before allocating more.
@@ -821,10 +887,13 @@ export class SharedBrowser {
     if (full && !traverse && replaceCaptureId === undefined) annotation.selection = undefined;
     const boundary = full ? undefined : await this.hoverBoundary(page, x, y);
     this.annotationScope(params, owner);
-    if (!full && !boundary) return {
-      ...this.status(owner), hover: undefined,
-      limitation: "Hover target is opaque or cannot be safely verified. Select an accessible main-page element.",
-    };
+    if (!full && !boundary)
+      return {
+        ...this.status(owner),
+        hover: undefined,
+        limitation:
+          "Hover target is opaque or cannot be safely verified. Select an accessible main-page element.",
+      };
     const inspection = await page.evaluate(inspectBrowserElement, {
       x,
       y,
@@ -834,7 +903,7 @@ export class SharedBrowser {
       opaqueHosts: full ? await this.shadowMasks(page, true) : [],
     });
     this.annotationScope(params, owner);
-    if (!full && boundary !== await this.hoverBoundary(page, x, y))
+    if (!full && boundary !== (await this.hoverBoundary(page, x, y)))
       throw new Error("Hover target changed during inspection. Try again.");
     this.annotationScope(params, owner);
     if (!inspection.element || !full)
@@ -1243,10 +1312,28 @@ export class SessionBrowserRegistry {
   }
   private browser(params: Record<string, unknown>, credential: string) {
     if (params.threadId !== undefined) {
-      if (params.sessionId !== undefined || params.ownerPresentationScope !== undefined ||
-        [params.environmentId, params.projectId, params.threadId].some(value => typeof value !== "string" || !value || value.length > 256 || value.includes("\0")) || typeof params.roomProjectCwd !== "string" || !params.roomProjectCwd || params.roomProjectCwd.length > 4096 || params.roomProjectCwd.includes("\0"))
+      if (
+        params.sessionId !== undefined ||
+        params.ownerPresentationScope !== undefined ||
+        [params.environmentId, params.projectId, params.threadId].some(
+          (value) =>
+            typeof value !== "string" || !value || value.length > 256 || value.includes("\0"),
+        ) ||
+        typeof params.roomProjectCwd !== "string" ||
+        !params.roomProjectCwd ||
+        params.roomProjectCwd.length > 4096 ||
+        params.roomProjectCwd.includes("\0")
+      )
         throw new Error("A real Room, Host and project are required for scoped browser access.");
-      return this.browserForKey(JSON.stringify(["assistant-thread", params.environmentId, params.projectId, params.roomProjectCwd, params.threadId]));
+      return this.browserForKey(
+        JSON.stringify([
+          "assistant-thread",
+          params.environmentId,
+          params.projectId,
+          params.roomProjectCwd,
+          params.threadId,
+        ]),
+      );
     }
     if (params.ownerPresentationScope !== undefined) {
       if (
@@ -1315,13 +1402,33 @@ export class SessionBrowserRegistry {
       throw new Error("Owner browser presentation scopes are unavailable to agents.");
     return this.browser(params, credential).dispatchForSession(method, params, credential);
   }
-  async dispatchForRoom(method: string, params: Record<string, unknown>, credential: string, options: { takeover?: boolean } = {}) {
-    if (!params.threadId || params.sessionId !== undefined || params.ownerPresentationScope !== undefined || method.startsWith("browser.annotation."))
-      throw new Error("A real Room browser source is required; session annotations have a separate owner.");
+  async dispatchForRoom(
+    method: string,
+    params: Record<string, unknown>,
+    credential: string,
+    options: { takeover?: boolean } = {},
+  ) {
+    if (
+      !params.threadId ||
+      params.sessionId !== undefined ||
+      params.ownerPresentationScope !== undefined ||
+      method.startsWith("browser.annotation.")
+    )
+      throw new Error(
+        "A real Room browser source is required; session annotations have a separate owner.",
+      );
     const browser = this.browser(params, credential);
     const result = await browser.dispatchForSession(method, params, credential, options);
     if (method === "browser.close")
-      this.browsers.delete(JSON.stringify(["assistant-thread", params.environmentId, params.projectId, params.roomProjectCwd, params.threadId]));
+      this.browsers.delete(
+        JSON.stringify([
+          "assistant-thread",
+          params.environmentId,
+          params.projectId,
+          params.roomProjectCwd,
+          params.threadId,
+        ]),
+      );
     return result;
   }
   revoke(credential: string) {

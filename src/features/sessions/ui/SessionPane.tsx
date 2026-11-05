@@ -9,7 +9,7 @@ import { BadgeList } from "../../../shared/ui/BadgeList";
 import { useLocale, useT } from "../../../shared/i18n";
 import { ChevronDown, GripVertical, StickyNote, X } from "../../../shared/ui/icons";
 import { sessionPerformanceTrace } from "../../../shared/lib/performanceTrace";
-import { useDecorativeMotionEnabled } from "../../settings/model/decorativeMotion";
+import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
 import { useCitedTurnHistory } from "./useCitedTurnHistory";
 import {
   memo,
@@ -36,16 +36,16 @@ import {
 } from "../data/parentInputClosure";
 import type { NewSessionOptions } from "../model/newSessionCommand";
 import "./session-notes-layout.css";
-import { ProjectQuickActions } from "../../projects/ui/ProjectQuickActions";
+import { ProjectQuickActions } from "../../projects/public/ProjectQuickActions";
 import type { ExpandingButtonGroupItem } from "../../../shared/ui/ExpandingButtonGroup";
-import type { ProjectAction } from "../../projects/model/projectActions";
+import type { ProjectAction } from "../../projects";
 import type { OpenFileFn } from "../../search/model/search";
 import {
   sessionProviderAccountId,
   supportsProviderAccounts,
   type ProviderAccountProvider,
 } from "../../providers/model/providerAccounts";
-import type { Worktree } from "../../source-control/model/worktrees";
+import type { Worktree } from "../../source-control";
 import {
   orchestrationCheckoutCwd,
   orchestrator,
@@ -63,7 +63,11 @@ import {
   type ApprovalDecision,
   type UserQuestionReply,
 } from "../../../integrations/harness";
-import { looksLikeProject, type RecentProject } from "../../projects/model/recents";
+import {
+  looksLikeProject,
+  isRemoteProjectPath,
+  type RecentProject,
+} from "../../projects/public/recents";
 import {
   HARNESS_TITLE,
   sessionDisplayTitle,
@@ -104,7 +108,7 @@ import { EditFromHereDialog } from "./EditFromHereDialog";
 import { useEditingLastTurn } from "./useEditingLastTurn";
 import { useMessageRewind } from "./useMessageRewind";
 import { useQuoteRequests } from "./useQuoteRequests";
-import { useKeybindingShortcut } from "../../settings/model/useKeybindingShortcut";
+import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import { Button } from "../../../shared/ui/Button";
 import { PooledTranscript, type TranscriptPool } from "./TranscriptPool";
 import { TranscriptFind } from "./TranscriptFind";
@@ -126,7 +130,7 @@ import {
   toggleNotesPanel,
 } from "../../notes/notesPanel";
 import { SessionNotesPanel } from "../../notes/ui/SessionNotesPanel";
-import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/model/settings";
+import { loadNotesEnabled, subscribeNotesEnabled } from "../../settings/public/settings";
 import { getComposerDraft, setComposerDraft } from "../model/draftCache";
 import { BycodaWelcome } from "./BycodaWelcome";
 import { projectKey } from "../../../shared/lib/paths";
@@ -143,35 +147,32 @@ import {
   projectChatBackgroundImageRevision,
   projectChatBackgroundRevision,
   subscribeProjectChatBackground,
-} from "../../projects/model/projectChatBackground";
-import { useProjectBackgroundEffect } from "../../projects/ui/useProjectBackgroundEffect";
-import { GradientBlurBackground } from "../../settings/ui/GradientBlurBackground";
-import { LiveBackgroundLayer } from "../../settings/ui/LiveBackgroundCanvas";
+} from "../../projects/public/projectChatBackground";
+import { useProjectBackgroundEffect } from "../../projects/public/useProjectBackgroundEffect";
+import { GradientBlurBackground } from "../../settings/public/GradientBlurBackground";
+import { LiveBackgroundLayer } from "../../settings/public/LiveBackgroundCanvas";
 import {
   loadChatBackgroundPath,
   loadNewThreadBackgroundEffect,
   subscribeChatBackgroundPath,
-} from "../../settings/model/appearance";
+} from "../../settings/public/appearance";
 import type { SessionFolderTarget } from "../model/sessionFolders";
 import type { SessionOrganizationResult } from "../model/sessionOrganizationStore";
 import { markLinkedSessionUpdateSeen } from "../../inbox/model/linkedSessionSeen";
-import { RemoteSession } from "../../connections/ui/RemoteSession";
-import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+import { RemoteSession } from "../../connections/public/RemoteSession";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import {
   getSessions,
   selectSessionById,
   usePaneSession,
   usePaneSessionBlocks,
 } from "../model/sessionsStore";
-import { isRemoteProjectPath } from "../../projects/model/recents";
-import type { HostSession } from "../../connections/model/protocol";
+import type { HostSession, RefreshAdoptedSession } from "../../connections";
 import {
   AdoptedSessionNotice,
   BackgroundSessionIndicator,
-} from "../../connections/ui/AdoptedSessionNotice";
-import { SharedQueueRecoveryNotice } from "../../connections/ui/SharedQueueRecoveryNotice";
-import type { RefreshAdoptedSession } from "../../connections/model/useAdoptedSessions";
-
+} from "../../connections/public/AdoptedSessionNotice";
+import { SharedQueueRecoveryNotice } from "../../connections/public/SharedQueueRecoveryNotice";
 export type SessionPaneProps = {
   session: Session;
   workspaceSwitchingSessionId?: string;
@@ -211,7 +212,10 @@ export type SessionPaneProps = {
   onNewSession?: (sessionId: string, options?: NewSessionOptions) => void;
   /** Open the picker of conversations Claude Code stored for this project. */
   onResumeProviderSession?: (sessionId: string) => void;
-  onPlaceSessionInFolder: (sessionId: string, target: SessionFolderTarget) => void | Promise<void | SessionOrganizationResult>;
+  onPlaceSessionInFolder: (
+    sessionId: string,
+    target: SessionFolderTarget,
+  ) => void | Promise<void | SessionOrganizationResult>;
   onDeleteQueuedMessage: (sessionId: string, messageId: string) => void;
   onEditQueuedMessage: (
     sessionId: string,
@@ -273,7 +277,6 @@ export type SessionPaneProps = {
   ) => void;
   onNewTerminal: (sessionId: string) => void;
   onRunProjectAction?: (sessionId: string, action: ProjectAction) => void;
-
   onPaneDragStart?: (event: ReactPointerEvent<HTMLElement>) => void;
   /** Keeps this transcript mounted after the pane closes. */
   transcriptPool?: TranscriptPool;

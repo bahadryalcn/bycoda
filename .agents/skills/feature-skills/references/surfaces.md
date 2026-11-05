@@ -9,7 +9,7 @@ All source paths are repository-relative. Canonical policy semantics live in `do
 | Catalog/policy                | `src/features/skills/model/skills.ts`, `skillPreferences.ts`, `machineSkills.ts`, `cliCommands.ts`, `cliCommandCatalog.ts`; follow current imports instead of assuming a separate skillCatalog implementation module |
 | Transfer/create/delete        | `src/features/skills/model/transferSkill.ts`, `createSkill.ts`, `deleteSkill.ts`; remote-command client                                                                                                              |
 | Native/IPC policy             | `src/platform/tauri/fs.ts`; `src/integrations/harness/core/skillPolicy.ts`; `src-tauri/src/skills.rs`, `remote.rs`, `lib.rs`                                                                                         |
-| Host/tool/provider boundaries | `host/skills/skills.ts`, `skill-policy.ts`, `app-skills.ts`, `harness-skills.ts`, `prompt-skills.ts`, `workspace-commands.ts`, `conversation-tools.ts`                                                                      |
+| Host/tool/provider boundaries | `host/skills/skills.ts`, `skill-policy.ts`, `app-skills.ts`, `harness-skills.ts`, `prompt-skills.ts`, `workspace-commands.ts`, `conversation-tools.ts`                                                               |
 | Composer integration          | `src/features/sessions/model/sessionSkills.ts`; provider discovery and structured skill input consumers                                                                                                              |
 
 ## Operations and data

@@ -258,7 +258,10 @@ export async function attachmentsFromPaths(paths: string[]): Promise<Attachment[
   return out;
 }
 
-export async function attachmentsFromFiles(files: File[], options?: { persistBlobs?: boolean }): Promise<Attachment[]> {
+export async function attachmentsFromFiles(
+  files: File[],
+  options?: { persistBlobs?: boolean },
+): Promise<Attachment[]> {
   const out: Attachment[] = [];
   const pathFiles: string[] = [];
   const blobs: File[] = [];
@@ -333,7 +336,8 @@ async function attachmentFromBlob(file: File, persist = true): Promise<Attachmen
   }
   // Notes owns each temporary write and its partial-success cleanup. Other
   // attachment callers keep the durable saved-path default.
-  if (!persist) return { id: crypto.randomUUID(), name, mimeType, kind, size: file.size, data, previewUrl };
+  if (!persist)
+    return { id: crypto.randomUUID(), name, mimeType, kind, size: file.size, data, previewUrl };
   try {
     const path = await invoke<string>("write_attachment", { name, data });
     if (!path?.trim()) throw new Error("Attachment storage returned no file path");

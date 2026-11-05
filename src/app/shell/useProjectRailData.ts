@@ -83,7 +83,8 @@ if (typeof window !== "undefined") {
       event.key === null ||
       event.key.startsWith("bycoda.project") ||
       event.key.startsWith("bycoda:tab-group:")
-    ) invalidate();
+    )
+      invalidate();
   });
 }
 

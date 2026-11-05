@@ -4,7 +4,7 @@ import {
   loadDiffLayout,
   saveDiffLayout,
   type DiffLayout,
-} from "../../settings/model/settings";
+} from "../../settings/public/settings";
 
 const DIFF_LAYOUT_KEY = "bycoda.diffLayout";
 

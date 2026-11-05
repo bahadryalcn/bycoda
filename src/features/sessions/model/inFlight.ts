@@ -1,12 +1,11 @@
 import { t } from "../../../shared/i18n/core";
-import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import { leafIds, newTab, type WorkspaceTab } from "../../workspace/model/layout";
-import type { DockSide, ProjectTerminalDock } from "../../projects/model/projectTerminal";
+import type { DockSide, ProjectTerminalDock, ProjectReturnMemory } from "../../projects";
 import { isRemoteProjectPath } from "../../../shared/lib/paths";
 import { sessionNeedsInput, type Session } from "./session";
 import { isOwnerStoppedTurn, isTurnInterruptionNotice } from "./turnInterruption";
 import { stopStreaming } from "../../../integrations/harness/core/apply";
-import type { ProjectReturnMemory } from "../../projects/model/projectReturn";
 
 export const INTERRUPT_MESSAGE = "Turn interrupted when bycoda quit.";
 

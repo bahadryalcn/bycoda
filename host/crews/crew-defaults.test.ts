@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HostStore } from "../store";
 import { HostCrews } from "./crews";
+import {
+  initializeCrewSchedulerProjection,
+  readCrewState,
+  writeCrewState,
+} from "./crew-scheduler-projection";
 import { LEGACY_DEFAULT_INSTRUCTION_HASHES } from "./crew-defaults";
 import { createHash } from "node:crypto";
 import legacyInstructions from "../fixtures/crew-default-instructions.v1.json";
@@ -79,11 +84,9 @@ function legacySeed() {
 }
 
 async function persistLegacy(store: HostStore, state: unknown) {
-  await store.db
-    .prepare(
-      "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-    )
-    .run("crews.v1", JSON.stringify(state));
+  await initializeCrewSchedulerProjection(store);
+  const snapshot = state as Awaited<ReturnType<typeof readCrewState>>;
+  await store.transaction(() => writeCrewState(store, { ...snapshot, runs: snapshot.runs ?? [] }));
 }
 
 describe("editable bycoda defaults", () => {
@@ -293,11 +296,7 @@ describe("editable bycoda defaults", () => {
       expect(member.instructions).toBe(profile.instructions);
       expect(member.source).toEqual({ id: profile.id, updatedAt: profile.updatedAt });
     }
-    const stored = JSON.parse(
-      String(
-        (await f.store.db.prepare("SELECT value FROM metadata WHERE key=?").get("crews.v1"))!.value,
-      ),
-    );
+    const stored = await readCrewState(f.store);
     expect(stored.runs).toEqual([oldRun]);
     expect(stored.defaultsRevision).toBe(DEFAULT_CREW_REVISION);
     const calls = f.models.mock.calls.length;

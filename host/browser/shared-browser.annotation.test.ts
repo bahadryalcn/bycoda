@@ -22,17 +22,24 @@ function targetedReply(method: string, params: Record<string, unknown> = {}) {
   if (method === "DOM.getNodeForLocation") return { backendNodeId: 7 };
   if (method === "DOM.resolveNode") return { object: { objectId: "hit" } };
   if (method === "Runtime.callFunctionOn") return { result: { objectId: "ancestors" } };
-  if (method === "Runtime.getProperties") return { result: [
-    { name: "length", value: { value: 1 } }, { name: "0", value: { objectId: "element" } },
-  ] };
-  if (method === "DOM.describeNode") return { node: { nodeType: 1, backendNodeId: params.objectId === "parent" ? 8 : 7 } };
+  if (method === "Runtime.getProperties")
+    return {
+      result: [
+        { name: "length", value: { value: 1 } },
+        { name: "0", value: { objectId: "element" } },
+      ],
+    };
+  if (method === "DOM.describeNode")
+    return { node: { nodeType: 1, backendNodeId: params.objectId === "parent" ? 8 : 7 } };
   return { root: { nodeType: 9, children: [{ nodeType: 1, localName: "html", nodeId: 2 }] } };
 }
 async function fixture(sessionScoped = false) {
   let now = 1000;
   let navigation = (_frame: { parentFrame(): unknown }) => {};
   const cdpListeners = new Map<string, (payload: unknown) => void>();
-  const cdpSend = vi.fn(async (method: string, params: Record<string, unknown> = {}) => targetedReply(method, params));
+  const cdpSend = vi.fn(async (method: string, params: Record<string, unknown> = {}) =>
+    targetedReply(method, params),
+  );
   const page = {
     goto: vi.fn(),
     url: () => "https://example.test/",
@@ -401,25 +408,37 @@ it("releases exact capture IDs and replaces current capture only after success",
   }
 });
 
-
 it("rejects a frame whose original document changes during screenshot", async () => {
   const f = await fixture();
   try {
-    f.page.screenshot.mockImplementationOnce(async () => { f.navigate(); return Buffer.from("old pixels"); });
-    await expect(f.browser.dispatch("browser.frame", {}, "owner")).rejects.toThrow("changed during capture");
-  } finally { await f.browser.close(); }
+    f.page.screenshot.mockImplementationOnce(async () => {
+      f.navigate();
+      return Buffer.from("old pixels");
+    });
+    await expect(f.browser.dispatch("browser.frame", {}, "owner")).rejects.toThrow(
+      "changed during capture",
+    );
+  } finally {
+    await f.browser.close();
+  }
 });
 
 it("hover refuses closed-shadow ancestry without evaluating metadata or dumping the DOM", async () => {
   const f = await fixture();
   try {
     f.cdpSend.mockImplementation(async (method, params = {}) => {
-      if (method === "Runtime.getProperties") return { result: [
-        { name: "length", value: { value: 2 } }, { name: "0", value: { objectId: "element" } },
-        { name: "1", value: { objectId: "parent" } },
-      ] };
+      if (method === "Runtime.getProperties")
+        return {
+          result: [
+            { name: "length", value: { value: 2 } },
+            { name: "0", value: { objectId: "element" } },
+            { name: "1", value: { objectId: "parent" } },
+          ],
+        };
       if (method === "DOM.describeNode" && params.objectId === "parent")
-        return { node: { nodeType: 1, backendNodeId: 8, shadowRoots: [{ shadowRootType: "closed" }] } };
+        return {
+          node: { nodeType: 1, backendNodeId: 8, shadowRoots: [{ shadowRootType: "closed" }] },
+        };
       return targetedReply(method, params);
     });
     f.page.evaluate.mockClear();
@@ -429,7 +448,9 @@ it("hover refuses closed-shadow ancestry without evaluating metadata or dumping 
     expect(f.page.evaluate).not.toHaveBeenCalled();
     expect(f.cdpSend.mock.calls.some(([method]) => method === "DOM.getDocument")).toBe(false);
     expect(f.page.screenshot).not.toHaveBeenCalled();
-  } finally { await f.browser.close(); }
+  } finally {
+    await f.browser.close();
+  }
 });
 
 it("unconfirmed hover object cleanup retains one group and refuses new allocations", async () => {
@@ -437,42 +458,61 @@ it("unconfirmed hover object cleanup retains one group and refuses new allocatio
   let releaseFails = true;
   try {
     f.cdpSend.mockImplementation(async (method, params = {}) => {
-      if (method === "Runtime.releaseObjectGroup" && releaseFails) throw new Error("release unknown");
+      if (method === "Runtime.releaseObjectGroup" && releaseFails)
+        throw new Error("release unknown");
       return targetedReply(method, params);
     });
-    await expect(f.browser.dispatch("browser.annotation.hover", f.params, "owner")).rejects.toThrow("release unknown");
-    const allocations = () => f.cdpSend.mock.calls.filter(([method]) => method === "DOM.resolveNode").length;
+    await expect(f.browser.dispatch("browser.annotation.hover", f.params, "owner")).rejects.toThrow(
+      "release unknown",
+    );
+    const allocations = () =>
+      f.cdpSend.mock.calls.filter(([method]) => method === "DOM.resolveNode").length;
     expect(allocations()).toBe(1);
-    await expect(f.browser.dispatch("browser.annotation.hover", f.params, "owner")).rejects.toThrow("release unknown");
+    await expect(f.browser.dispatch("browser.annotation.hover", f.params, "owner")).rejects.toThrow(
+      "release unknown",
+    );
     expect(allocations()).toBe(1);
     releaseFails = false;
-    expect((await f.browser.dispatch("browser.annotation.hover", f.params, "owner")).hover).toEqual(inspection.element);
+    expect((await f.browser.dispatch("browser.annotation.hover", f.params, "owner")).hover).toEqual(
+      inspection.element,
+    );
     expect(allocations()).toBe(3);
-  } finally { await f.browser.close(); }
+  } finally {
+    await f.browser.close();
+  }
 });
-
 
 it("refuses hover metadata when the exact hit ancestry changes before disclosure", async () => {
   const f = await fixture();
   let descriptions = 0;
   try {
     f.cdpSend.mockImplementation(async (method, params = {}) => {
-      if (method === "DOM.describeNode") return { node: { nodeType: 1, backendNodeId: ++descriptions === 1 ? 7 : 8 } };
+      if (method === "DOM.describeNode")
+        return { node: { nodeType: 1, backendNodeId: ++descriptions === 1 ? 7 : 8 } };
       return targetedReply(method, params);
     });
-    await expect(f.browser.dispatch("browser.annotation.hover", f.params, "owner")).rejects.toThrow("Hover target changed");
+    await expect(f.browser.dispatch("browser.annotation.hover", f.params, "owner")).rejects.toThrow(
+      "Hover target changed",
+    );
     expect(f.page.screenshot).not.toHaveBeenCalled();
     expect(f.cdpSend.mock.calls.some(([method]) => method === "DOM.getDocument")).toBe(false);
-  } finally { await f.browser.close(); }
+  } finally {
+    await f.browser.close();
+  }
 });
-
 
 it("ordinary hover uses targeted ancestry and never requests full DOM or screenshot", async () => {
   const f = await fixture();
   try {
-    expect((await f.browser.dispatch("browser.annotation.hover", f.params, "owner")).hover).toEqual(inspection.element);
-    expect(f.cdpSend.mock.calls.filter(([method]) => method === "DOM.describeNode")).toHaveLength(2);
+    expect((await f.browser.dispatch("browser.annotation.hover", f.params, "owner")).hover).toEqual(
+      inspection.element,
+    );
+    expect(f.cdpSend.mock.calls.filter(([method]) => method === "DOM.describeNode")).toHaveLength(
+      2,
+    );
     expect(f.cdpSend.mock.calls.some(([method]) => method === "DOM.getDocument")).toBe(false);
     expect(f.page.screenshot).not.toHaveBeenCalled();
-  } finally { await f.browser.close(); }
+  } finally {
+    await f.browser.close();
+  }
 });

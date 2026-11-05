@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { getShellSessions, subscribeShell } from "../../sessions/model/sessionsStore";
+import { getShellSessions, subscribeShell } from "../../sessions/public/sessionsStore";
 import {
   isLeaseHeld,
   leaseHeldText,

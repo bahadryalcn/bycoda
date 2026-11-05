@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HostEngine } from "../engine";
 import { HostStore } from "../store";
-import { HostTasks } from "./tasks";
+import { HostTasks } from "./service";
 
 const cleanups: Array<() => Promise<void> | void> = [];
 afterEach(async () => {

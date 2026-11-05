@@ -524,7 +524,7 @@
   z-index: 2;
   padding-block: 0.5rem 0.75rem;
   margin-block: 0 0.75rem;
-  background: var(--ui-surface-panel);
+  background: var(--color-background-base);
 }
 .social-batch-results {
   display: grid;
@@ -668,7 +668,7 @@
   max-inline-size: 40rem;
   padding: 0.75rem 1rem;
   border-radius: var(--ui-radius-card);
-  background: var(--ui-surface-panel);
+  background: transparent;
 }
 .social-reply-suggestion > fieldset {
   display: grid;

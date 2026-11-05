@@ -1,6 +1,10 @@
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
-import { SOCIAL_TOOLS, socialToolName, type SocialTool } from "../../src/features/social/model/social";
+import {
+  SOCIAL_TOOLS,
+  socialToolName,
+  type SocialTool,
+} from "../../src/features/social/model/social";
 import { HOST_PROTOCOL_VERSION } from "../../src/features/connections/model/protocol";
 
 /** Credential material is added only in the native/headless backend, after the
@@ -138,11 +142,22 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
   ),
   "campaigns.preview": byId(),
   "campaigns.schedule": byId(),
-  "campaigns.status": object({ id: string(), page: { type: "boolean" }, offset: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, maximum: 100 } }, ["id"]),
+  "campaigns.status": object(
+    {
+      id: string(),
+      page: { type: "boolean" },
+      offset: { type: "integer", minimum: 0 },
+      limit: { type: "integer", minimum: 1, maximum: 100 },
+    },
+    ["id"],
+  ),
   "inbox.list": object({}, []),
   "thread.read": byId(),
   "drafts.read": byId(),
-  "drafts.update": object({ id: string(), text: string(), factIds: strings(), expectedDraft: { type: "object" } }, ["id", "text", "expectedDraft"]),
+  "drafts.update": object(
+    { id: string(), text: string(), factIds: strings(), expectedDraft: { type: "object" } },
+    ["id", "text", "expectedDraft"],
+  ),
   "replies.draft": object({ threadId: string(), text: string(), factIds: strings() }, [
     "threadId",
     "text",
@@ -210,7 +225,15 @@ export const SOCIAL_TOOL_SCHEMAS: Record<SocialTool, Record<string, unknown>> = 
     ["name", "accountId", "mode", "trigger", "topics", "dailyLimit", "answers"],
   ),
   "automations.pause": byId(),
-  "jobs.status": object({ id: string(), page: { type: "boolean" }, offset: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, maximum: 100 } }, []),
+  "jobs.status": object(
+    {
+      id: string(),
+      page: { type: "boolean" },
+      offset: { type: "integer", minimum: 0 },
+      limit: { type: "integer", minimum: 1, maximum: 100 },
+    },
+    [],
+  ),
   "jobs.cancel": byId(),
 };
 function string() {

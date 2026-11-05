@@ -293,7 +293,7 @@ describe("encrypted mobile LAN access", () => {
     await disabled.close();
   });
 
-  it("retries a failed saved-state load and falls back when the saved port is busy", async () => {
+  it("retries a failed saved-state load and preserves the exact saved port when it is busy", async () => {
     const folder = await mkdtemp(join(tmpdir(), "bycoda-mobile-lan-"));
     folders.push(folder);
     const file = join(folder, "mobile-lan.json");
@@ -338,9 +338,14 @@ describe("encrypted mobile LAN access", () => {
       }),
     );
     await access.start();
-    expect(ports).toEqual([43210, 0]);
-    expect(await access.status()).toMatchObject({ endpoint: "http://192.168.1.20:50000" });
-    expect(JSON.parse(await readFile(file, "utf8")).port).toBe(50000);
+    expect(ports).toEqual([43210]);
+    const status = await access.status();
+    expect(status).toMatchObject({
+      state: "unavailable",
+      reason: "The saved mobile port is in use. Free it and retry.",
+    });
+    expect(status.endpoint).toBeUndefined();
+    expect(JSON.parse(await readFile(file, "utf8")).port).toBe(43210);
     await access.close();
   });
 });

@@ -25,6 +25,8 @@ import {
   SettingsFeedback,
   Toggle,
 } from "../../settings/ui/settingsControls";
+import { checkFailure, setupConfigKey, stageLabel, type Failure } from "./voiceSetupPresentation";
+import { VoiceCapabilityStatus } from "./VoiceCapabilityStatus";
 import { VoiceCloudKey } from "./VoiceCloudKey";
 import { MicrophonePermissionSettings } from "./MicrophonePermissionSettings";
 import { speakerEngine, speakerOptions } from "../model/voiceSpeakers";
@@ -32,7 +34,6 @@ import {
   localVoiceBackend,
   type VoiceDevice,
   type VoiceRuntimeStatus,
-  type VoiceRuntimeConfig,
   type VoiceSetupStatus,
 } from "../model/localVoiceClient";
 import {
@@ -51,47 +52,6 @@ import { loadVoiceMemory, saveVoiceMemory, useVoiceMemory } from "../model/voice
 import { useAssistantSnapshot, assistantIdentity } from "../../assistant/model/assistantClient";
 
 type PathKey = "python" | "whisperPath" | "ttsPath";
-type Failure = { message: string; detail: string };
-/** Compare the frozen request, including omitted defaults, without current preferences leaking in. */
-function setupConfigKey(config: VoiceRuntimeConfig) {
-  return JSON.stringify([
-    config.natural !== false,
-    config.natural === false ? "" : (config.engine ?? "supertonic"),
-    config.natural === false ? "" : (config.voiceId ?? ""),
-    config.device ?? "auto",
-    config.python?.trim() ?? "",
-    config.whisperPath?.trim() ?? "",
-    config.ttsPath?.trim() ?? "",
-  ]);
-}
-function checkFailure(cause: unknown): Failure {
-  const detail = cause instanceof Error ? cause.message : String(cause);
-  return {
-    message:
-      detail === "Disconnect voice before installing."
-        ? t("Disconnect voice before installing.")
-        : /not connected|timed? out|timeout/i.test(detail)
-          ? t("This computer is unavailable. Try again.")
-          : /Update bycoda Host/.test(detail)
-            ? t("Update bycoda to set up voice.")
-            : t("Couldn't check voice setup. Try again."),
-    detail,
-  };
-}
-function stageLabel(stage: VoiceSetupStatus["stage"]) {
-  switch (stage) {
-    case "packages":
-      return t("Installing voice support…");
-    case "gpu":
-      return t("Installing GPU support…");
-    case "models":
-      return t("Downloading voice files…");
-    case "checking":
-      return t("Finishing voice setup…");
-    default:
-      return t("Preparing voice setup…");
-  }
-}
 export function VoiceSettings() {
   const locale = useLocale();
   const { snapshot: assistantSnapshot } = useAssistantSnapshot();
@@ -287,7 +247,7 @@ export function VoiceSettings() {
     setLocating(false);
   };
   const checked = checkedKey === configKey;
-  const ready = checked && result?.ready && !installing;
+  const ready = checked && result?.ready && !installing && !error;
   const visibleError = installing || checked ? error : undefined;
   const setupFailed = job.state === "error";
   const pythonMissing = setupFailed && job.error === "python_missing";
@@ -358,6 +318,14 @@ export function VoiceSettings() {
   ) : null;
   return (
     <Group title={t("Voice and dictation")} layout="full">
+      <VoiceCapabilityStatus
+        enabled={speechEnabled}
+        checked={checked && (!settings.enabled || settings.mode === "local")}
+        busy={busy}
+        installing={installing}
+        ready={!!ready}
+        failed={!!visibleError || setupFailed}
+      />
       <Row
         id="dictation-enabled"
         label={t("Enable dictation")}
@@ -692,13 +660,22 @@ export function VoiceSettings() {
                   )}
                 </div>
               </Row>
-              {settings.mode === "openai" && <Row
-                id="voice-semantic-vad"
-                label={t("Experimental OpenAI turn detection")}
-                description={t("Sends live microphone audio to OpenAI continuously while listening. Automatic mode only; disconnect and reconnect voice to apply. Push to talk is unavailable in this mode.")}
-              >
-                <Toggle label={t("Experimental OpenAI turn detection")} on={settings.experimentalSemanticVad === true} disabled={settings.manualTurnEnd === true} onChange={(experimentalSemanticVad) => change({ experimentalSemanticVad })} />
-              </Row>}
+              {settings.mode === "openai" && (
+                <Row
+                  id="voice-semantic-vad"
+                  label={t("Experimental OpenAI turn detection")}
+                  description={t(
+                    "Sends live microphone audio to OpenAI continuously while listening. Automatic mode only; disconnect and reconnect voice to apply. Push to talk is unavailable in this mode.",
+                  )}
+                >
+                  <Toggle
+                    label={t("Experimental OpenAI turn detection")}
+                    on={settings.experimentalSemanticVad === true}
+                    disabled={settings.manualTurnEnd === true}
+                    onChange={(experimentalSemanticVad) => change({ experimentalSemanticVad })}
+                  />
+                </Row>
+              )}
               <Row
                 id="voice-turn-silence"
                 label={t("Wait before replying")}

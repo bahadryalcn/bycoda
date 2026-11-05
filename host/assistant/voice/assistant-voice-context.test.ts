@@ -103,12 +103,31 @@ it("keeps legacy verified content wire unchanged and refuses to launder failed c
   expect(missing.voiceDisclosure).not.toHaveProperty("source");
 });
 it("does not retain voice project provenance after project retarget", async () => {
-  const f = await fixture(), owner = await f.user(), context = await f.open(owner.id);
-  const ticket = await f.service.beginVoiceToolDisclosure({ contextId: context.id, requestId: "before-retarget" });
-  const receipt = await f.service.finishVoiceToolDisclosure(ticket.id, { threadId: f.thread.id, projectId: f.project.id, family: "conversation", action: "notes.read", result: { body: "old project" }, projectProofs: [{ projectId: f.project.id, cwd: f.project.cwd }] });
+  const f = await fixture(),
+    owner = await f.user(),
+    context = await f.open(owner.id);
+  const ticket = await f.service.beginVoiceToolDisclosure({
+    contextId: context.id,
+    requestId: "before-retarget",
+  });
+  const receipt = await f.service.finishVoiceToolDisclosure(ticket.id, {
+    threadId: f.thread.id,
+    projectId: f.project.id,
+    family: "conversation",
+    action: "notes.read",
+    result: { body: "old project" },
+    projectProofs: [{ projectId: f.project.id, cwd: f.project.cwd }],
+  });
   expect(receipt.voiceDisclosure.verified).toBe(true);
-  await f.store.withProjectIdentityWrite(() => f.store.db.prepare("UPDATE projects SET cwd=? WHERE id=?").run(`${f.project.cwd}-new`, f.project.id).then(() => undefined));
-  expect((await f.owner({ op: "voice.context.get", id: context.id })).voiceContext?.status).toBe("unknown");
+  await f.store.withProjectIdentityWrite(() =>
+    f.store.db
+      .prepare("UPDATE projects SET cwd=? WHERE id=?")
+      .run(`${f.project.cwd}-new`, f.project.id)
+      .then(() => undefined),
+  );
+  expect((await f.owner({ op: "voice.context.get", id: context.id })).voiceContext?.status).toBe(
+    "unknown",
+  );
 });
 it("does not attest an unscoped operation with a foreign thread, missing project or foreign session", async () => {
   const f = await fixture(),
@@ -182,7 +201,8 @@ async function fixture() {
     other = await store.addProject(join(folder, "other"), "Other project");
   const ports = {
     roomProjectProofsValid: async (proofs: { projectId: string; cwd: string }[]) => {
-      for (const proof of proofs) if ((await store.project(proof.projectId)).cwd !== proof.cwd) return false;
+      for (const proof of proofs)
+        if ((await store.project(proof.projectId)).cwd !== proof.cwd) return false;
       return true;
     },
     listProjects: async () =>
@@ -335,18 +355,35 @@ it("proves continuous tool-free voice from actual accepted source IDs, preservin
 });
 
 it("keeps global tool results without project attribution unverified", async () => {
-  const f = await fixture(), owner = await f.user(), context = await f.open(owner.id);
-  const ticket = await f.service.beginVoiceToolDisclosure({ contextId: context.id, requestId: "global-result" });
-  const receipt = await f.service.finishVoiceToolDisclosure(ticket.id, {
-    threadId: f.thread.id, family: "conversation", action: "preferences.read", result: { theme: "dark" },
+  const f = await fixture(),
+    owner = await f.user(),
+    context = await f.open(owner.id);
+  const ticket = await f.service.beginVoiceToolDisclosure({
+    contextId: context.id,
+    requestId: "global-result",
   });
-  expect(receipt.voiceDisclosure).toMatchObject({ verified: false, source: { threadId: f.thread.id, action: "preferences.read" } });
+  const receipt = await f.service.finishVoiceToolDisclosure(ticket.id, {
+    threadId: f.thread.id,
+    family: "conversation",
+    action: "preferences.read",
+    result: { theme: "dark" },
+  });
+  expect(receipt.voiceDisclosure).toMatchObject({
+    verified: false,
+    source: { threadId: f.thread.id, action: "preferences.read" },
+  });
   expect(receipt.voiceDisclosure.source).not.toHaveProperty("projectId");
   expect(receipt.voiceContext).toMatchObject({ status: "unknown", reason: "unverified-tool" });
   const next = await f.open((await f.user()).id, { generation: "fresh-global-discovery" });
-  const discovery = await f.service.beginVoiceToolDisclosure({ contextId: next.id, requestId: "global-discovery" });
+  const discovery = await f.service.beginVoiceToolDisclosure({
+    contextId: next.id,
+    requestId: "global-discovery",
+  });
   const result = await f.service.finishVoiceToolDisclosure(discovery.id, {
-    threadId: f.thread.id, family: "conversation", action: "tools.list", result: { tools: [] },
+    threadId: f.thread.id,
+    family: "conversation",
+    action: "tools.list",
+    result: { tools: [] },
   });
   expect(result.voiceDisclosure).toMatchObject({ verified: true, projectIds: [] });
 });
@@ -416,7 +453,10 @@ it("tracks parallel pending tools independently, adds all actual canonical parti
     family: "conversation",
     action: "tasks.get",
     result: { id: "actual-task", projectId: f.project.id, goalId: "actual-multiple-project-goal" },
-    projectProofs: [{ projectId: f.project.id, cwd: f.project.cwd }, { projectId: f.other.id, cwd: f.other.cwd }],
+    projectProofs: [
+      { projectId: f.project.id, cwd: f.project.cwd },
+      { projectId: f.other.id, cwd: f.other.cwd },
+    ],
   });
   expect(first.voiceContext.status).toBe("pending");
   expect(first.voiceContext.projectIds).toBeUndefined();
@@ -700,7 +740,10 @@ it("retains the complete stored assistant-job participants in an actual task dis
       family: "conversation",
       action: "tasks.get",
       result: { id: "actual-task", projectId: f.project.id, goalId },
-      projectProofs: [{ projectId: f.project.id, cwd: f.project.cwd }, { projectId: f.other.id, cwd: f.other.cwd }],
+      projectProofs: [
+        { projectId: f.project.id, cwd: f.project.cwd },
+        { projectId: f.other.id, cwd: f.other.cwd },
+      ],
     });
   expect(receipt.voiceDisclosure.projectIds).toEqual([f.project.id, f.other.id].sort());
   expect((await f.speech(context)).projectIds).toEqual([f.project.id, f.other.id].sort());
@@ -737,10 +780,29 @@ it("rejects malformed known metadata and unknown convenience arrays instead of i
 });
 
 it("keeps account-scoped social content unverified while binding its exact operation source", async () => {
-  const f = await fixture(), owner = await f.user(), context = await f.open(owner.id);
-  const ticket = await f.service.beginVoiceToolDisclosure({ contextId: context.id, requestId: "social-account" });
-  const proof = await f.service.finishVoiceToolDisclosure(ticket.id, { threadId: f.thread.id, accountId: "account-a", family: "social", action: "thread.read", result: { text: "private social data" } });
-  expect(proof.voiceDisclosure).toMatchObject({ verified: false, source: { accountId: "account-a", threadId: f.thread.id, family: "social", action: "thread.read" } });
+  const f = await fixture(),
+    owner = await f.user(),
+    context = await f.open(owner.id);
+  const ticket = await f.service.beginVoiceToolDisclosure({
+    contextId: context.id,
+    requestId: "social-account",
+  });
+  const proof = await f.service.finishVoiceToolDisclosure(ticket.id, {
+    threadId: f.thread.id,
+    accountId: "account-a",
+    family: "social",
+    action: "thread.read",
+    result: { text: "private social data" },
+  });
+  expect(proof.voiceDisclosure).toMatchObject({
+    verified: false,
+    source: {
+      accountId: "account-a",
+      threadId: f.thread.id,
+      family: "social",
+      action: "thread.read",
+    },
+  });
   expect(proof.voiceContext).toMatchObject({ status: "unknown", reason: "unverified-tool" });
   expect(proof.voiceContext.projectIds).toBeUndefined();
   expect((await f.speech(proof.voiceContext)).projectIds).toBeUndefined();
@@ -749,60 +811,163 @@ it("keeps account-scoped social content unverified while binding its exact opera
 it("retains Native disclosure provenance in actual voice history and hides it after source revoke", async () => {
   const f = await fixture();
   let valid = true;
-  (f.ports as typeof f.ports & { roomNativeProofsValid: () => Promise<boolean> }).roomNativeProofsValid = async () => valid;
-  (f.ports as typeof f.ports & { withRoomResponseDisclosure: (_scopes: unknown, _admission: unknown, effect: (valid: () => boolean) => Promise<unknown>) => Promise<unknown> }).withRoomResponseDisclosure = async (_scopes, _admission, effect) => {
+  (
+    f.ports as typeof f.ports & { roomNativeProofsValid: () => Promise<boolean> }
+  ).roomNativeProofsValid = async () => valid;
+  (
+    f.ports as typeof f.ports & {
+      withRoomResponseDisclosure: (
+        _scopes: unknown,
+        _admission: unknown,
+        effect: (valid: () => boolean) => Promise<unknown>,
+      ) => Promise<unknown>;
+    }
+  ).withRoomResponseDisclosure = async (_scopes, _admission, effect) => {
     if (!valid) throw new Error("Native source revoked");
     return effect(() => valid);
   };
-  const owner = await f.user(), context = await f.open(owner.id);
-  const proof = { environmentId: f.store.environmentId, threadId: f.thread.id, installationId: "installation", issuer: "issuer", registryRevision: "revision", visibilityEpoch: 1, policyGeneration: "policy" };
-  const ticket = await f.service.beginVoiceToolDisclosure({ contextId: context.id, requestId: "native-observation" });
-  const result = await f.service.finishVoiceToolDisclosure(ticket.id, { threadId: f.thread.id, family: "conversation", action: "observations.read", nativeLibrary: true, nativeProofs: [proof], result: { events: [] } });
+  const owner = await f.user(),
+    context = await f.open(owner.id);
+  const proof = {
+    environmentId: f.store.environmentId,
+    threadId: f.thread.id,
+    installationId: "installation",
+    issuer: "issuer",
+    registryRevision: "revision",
+    visibilityEpoch: 1,
+    policyGeneration: "policy",
+  };
+  const ticket = await f.service.beginVoiceToolDisclosure({
+    contextId: context.id,
+    requestId: "native-observation",
+  });
+  const result = await f.service.finishVoiceToolDisclosure(ticket.id, {
+    threadId: f.thread.id,
+    family: "conversation",
+    action: "observations.read",
+    nativeLibrary: true,
+    nativeProofs: [proof],
+    result: { events: [] },
+  });
   expect(result.voiceDisclosure).toMatchObject({ verified: true, source: { nativeLibrary: true } });
   const spoken = await f.speech(result.voiceContext, "Private Native observation");
   expect(spoken.text).toBe("Private Native observation");
   let registered = 0;
-  (f.ports as typeof f.ports & { withNativeVoiceRuntimeRegistration: (input: { nativeProofs: unknown[] }, admission: unknown, effect: (valid: () => boolean) => Promise<unknown>) => Promise<unknown> }).withNativeVoiceRuntimeRegistration = async (input, _admission, effect) => {
+  (
+    f.ports as typeof f.ports & {
+      withNativeVoiceRuntimeRegistration: (
+        input: { nativeProofs: unknown[] },
+        admission: unknown,
+        effect: (valid: () => boolean) => Promise<unknown>,
+      ) => Promise<unknown>;
+    }
+  ).withNativeVoiceRuntimeRegistration = async (input, _admission, effect) => {
     expect(input.nativeProofs).toEqual([proof]);
     registered++;
     return effect(() => valid);
   };
-  expect(await f.owner({ op: "voice.runtime.register", threadId: f.thread.id, generationKey: "preconnect-generation", seedMessageIds: [spoken.id] })).toMatchObject({ ok: true });
+  expect(
+    await f.owner({
+      op: "voice.runtime.register",
+      threadId: f.thread.id,
+      generationKey: "preconnect-generation",
+      seedMessageIds: [spoken.id],
+    }),
+  ).toMatchObject({ ok: true });
   expect(registered).toBe(1);
-  const original = await f.store.db.prepare("SELECT value FROM assistant_messages WHERE id=?").get(spoken.id);
-  (f.ports as typeof f.ports & { withNativeVoiceRuntimeRegistration: (input: unknown, admission: unknown, effect: (valid: () => boolean) => Promise<unknown>) => Promise<unknown> }).withNativeVoiceRuntimeRegistration = async (_input, _admission, effect) => {
-    await f.store.db.prepare("UPDATE assistant_messages SET value=json_set(value,'$.text','changed') WHERE id=?").run(spoken.id);
+  const original = await f.store.db
+    .prepare("SELECT value FROM assistant_messages WHERE id=?")
+    .get(spoken.id);
+  (
+    f.ports as typeof f.ports & {
+      withNativeVoiceRuntimeRegistration: (
+        input: unknown,
+        admission: unknown,
+        effect: (valid: () => boolean) => Promise<unknown>,
+      ) => Promise<unknown>;
+    }
+  ).withNativeVoiceRuntimeRegistration = async (_input, _admission, effect) => {
+    await f.store.db
+      .prepare("UPDATE assistant_messages SET value=json_set(value,'$.text','changed') WHERE id=?")
+      .run(spoken.id);
     return effect(() => true);
   };
-  await expect(f.owner({ op: "voice.runtime.register", threadId: f.thread.id, generationKey: "changed-generation", seedMessageIds: [spoken.id] })).rejects.toThrow("Voice runtime seed changed");
-  await f.store.db.prepare("UPDATE assistant_messages SET value=? WHERE id=?").run(original!.value, spoken.id);
+  await expect(
+    f.owner({
+      op: "voice.runtime.register",
+      threadId: f.thread.id,
+      generationKey: "changed-generation",
+      seedMessageIds: [spoken.id],
+    }),
+  ).rejects.toThrow("Voice runtime seed changed");
+  await f.store.db
+    .prepare("UPDATE assistant_messages SET value=? WHERE id=?")
+    .run(original!.value, spoken.id);
   await f.restart();
   valid = false;
-  await expect(f.owner({ op: "voice.context.get", id: result.voiceContext.id })).rejects.toThrow("Native source revoked");
+  await expect(f.owner({ op: "voice.context.get", id: result.voiceContext.id })).rejects.toThrow(
+    "Native source revoked",
+  );
   const nextOwner = await f.user("New owner turn");
-  await expect(f.open(nextOwner.id, { seed: [spoken.id], generation: "new-generation" })).rejects.toThrow("Native source revoked");
+  await expect(
+    f.open(nextOwner.id, { seed: [spoken.id], generation: "new-generation" }),
+  ).rejects.toThrow("Native source revoked");
   const history = await f.owner({ op: "threads.messages", threadId: f.thread.id, limit: 100 });
-  expect(history.messages?.find(message => message.id === spoken.id)?.text).toBe("This message is unavailable because its source access changed.");
+  expect(history.messages?.find((message) => message.id === spoken.id)?.text).toBe(
+    "This message is unavailable because its source access changed.",
+  );
 });
 
 it("fences a causal read when a Native disclosure changes its checked version", async () => {
-  const f = await fixture(), owner = await f.user(), context = await f.open(owner.id);
-  const internals = f.service as unknown as { voiceContexts: { historicalNativeProofs: (...args: [string, number, string, boolean?]) => Promise<unknown> } };
+  const f = await fixture(),
+    owner = await f.user(),
+    context = await f.open(owner.id);
+  const internals = f.service as unknown as {
+    voiceContexts: {
+      historicalNativeProofs: (...args: [string, number, string, boolean?]) => Promise<unknown>;
+    };
+  };
   const original = internals.voiceContexts.historicalNativeProofs.bind(internals.voiceContexts);
   let entered!: () => void, release!: () => void;
-  const reached = new Promise<void>(resolve => { entered = resolve; });
-  const wait = new Promise<void>(resolve => { release = resolve; });
-  vi.spyOn(internals.voiceContexts, "historicalNativeProofs").mockImplementationOnce(async (...args) => {
-    const before = await original(...args);
-    entered();
-    await wait;
-    return before;
+  const reached = new Promise<void>((resolve) => {
+    entered = resolve;
   });
+  const wait = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.spyOn(internals.voiceContexts, "historicalNativeProofs").mockImplementationOnce(
+    async (...args) => {
+      const before = await original(...args);
+      entered();
+      await wait;
+      return before;
+    },
+  );
   const pending = f.owner({ op: "voice.context.get", id: context.id });
   const rejection = expect(pending).rejects.toThrow("Voice Native context changed");
   await reached;
-  const ticket = await f.service.beginVoiceToolDisclosure({ contextId: context.id, requestId: "racing-native" });
-  await f.service.finishVoiceToolDisclosure(ticket.id, { threadId: f.thread.id, family: "conversation", action: "observations.read", nativeLibrary: true, nativeProofs: [{ environmentId: f.store.environmentId, threadId: f.thread.id, installationId: "installation", issuer: "issuer", registryRevision: "revision", visibilityEpoch: 1, policyGeneration: "policy" }], result: { events: [] } });
+  const ticket = await f.service.beginVoiceToolDisclosure({
+    contextId: context.id,
+    requestId: "racing-native",
+  });
+  await f.service.finishVoiceToolDisclosure(ticket.id, {
+    threadId: f.thread.id,
+    family: "conversation",
+    action: "observations.read",
+    nativeLibrary: true,
+    nativeProofs: [
+      {
+        environmentId: f.store.environmentId,
+        threadId: f.thread.id,
+        installationId: "installation",
+        issuer: "issuer",
+        registryRevision: "revision",
+        visibilityEpoch: 1,
+        policyGeneration: "policy",
+      },
+    ],
+    result: { events: [] },
+  });
   release();
   await rejection;
 });

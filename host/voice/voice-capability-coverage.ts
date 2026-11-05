@@ -28,7 +28,8 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
   },
   crews: {
     tools: ["crews.list", "crews.start"],
-    remaining: "Room writes require exact native review and current project revision; response and answer retain session-specific owner gates.",
+    remaining:
+      "Room writes require exact native review and current project revision; response and answer retain session-specific owner gates.",
   },
   desktop: {
     tools: ["desktop.status", "desktop.act"],
@@ -94,8 +95,17 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
       "Native upload/rewind/window lifecycle APIs are privileged internal protocols, not generic voice RPCs.",
   },
   notes: {
-    tools: ["notes.list", "notes.create", "notebook.list", "notebook.get", "notebook.create", "notebook.update", "notebook.delete"],
-    remaining: "Personal Room notebook has no project; project notes keep target scope. Revision, exact native review and delete recovery retained.",
+    tools: [
+      "notes.list",
+      "notes.create",
+      "notebook.list",
+      "notebook.get",
+      "notebook.create",
+      "notebook.update",
+      "notebook.delete",
+    ],
+    remaining:
+      "Personal Room notebook has no project; project notes keep target scope. Revision, exact native review and delete recovery retained.",
   },
   preferences: {
     tools: ["preferences.read", "preferences.patch"],
@@ -153,8 +163,17 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
       "Single-project scope; cross-host ingestion and goal context replication are internal.",
   },
   ssh: {
-    tools: ["servers.list", "servers.get", "servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel", "servers.ssh.save", "servers.ssh.remove"],
-    remaining: "Saved server identity, exact native confirmation and status recovery retained; Room inventory changes require current inventory revision.",
+    tools: [
+      "servers.list",
+      "servers.get",
+      "servers.ssh.execute",
+      "servers.ssh.status",
+      "servers.ssh.cancel",
+      "servers.ssh.save",
+      "servers.ssh.remove",
+    ],
+    remaining:
+      "Saved server identity, exact native confirmation and status recovery retained; Room inventory changes require current inventory revision.",
   },
   stewards: {
     tools: ["stewards.list", "stewards.runNow"],
@@ -186,8 +205,18 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
     remaining: "Native voice protocol owns opt-in capture and setup/install gates.",
   },
   workspace: {
-    tools: ["files.read", "git.status", "workspace.projects.select", "workspace.sessions.create", "workspace.sessions.open", "workspace.sessions.submit", "workspace.sessions.submit.status", "workspace.sessions.stop"],
-    remaining: "Finite Room navigation/session owner workflows only; source admission and native effect availability must be verified. Submit status retains the original appRequestId; absence is not proof of non-delivery.",
+    tools: [
+      "files.read",
+      "git.status",
+      "workspace.projects.select",
+      "workspace.sessions.create",
+      "workspace.sessions.open",
+      "workspace.sessions.submit",
+      "workspace.sessions.submit.status",
+      "workspace.sessions.stop",
+    ],
+    remaining:
+      "Finite Room navigation/session owner workflows only; source admission and native effect availability must be verified. Submit status retains the original appRequestId; absence is not proof of non-delivery.",
   },
   workspaces: {
     tools: [

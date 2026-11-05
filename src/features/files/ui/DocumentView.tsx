@@ -4,7 +4,7 @@ import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/technical";
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { ExternalLink } from "../../../shared/ui/icons";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import {
   basename,
   openPathWithDefaultApp,
@@ -23,7 +23,7 @@ import { DocumentMessage } from "./DocumentMessage";
 import { FileActionError } from "./FileActionError";
 import { formatFileSize } from "../model/filePreview";
 import { watchFile } from "../model/fileWatch";
-import { SurfaceSelection } from "../../sessions/ui/SurfaceSelection";
+import { SurfaceSelection } from "../../sessions/public/SurfaceSelection";
 
 // The parsers are big; each loads on first use so none reach the main bundle.
 const PdfViewer = lazy(() => import("./PdfViewer"));

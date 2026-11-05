@@ -276,7 +276,11 @@ async function startLive(
   const previous = captureDrop(flavor);
   let stopping = Promise.resolve();
   const childId = flavor.textChildId;
-  const textProcess = createChildProcessHandle(childId, operationContext?.nativeControlTurn, operationContext?.nativeControlTurn ? undefined : "utility");
+  const textProcess = createChildProcessHandle(
+    childId,
+    operationContext?.nativeControlTurn,
+    operationContext?.nativeControlTurn ? undefined : "utility",
+  );
   prepareTextProcess(textProcess, operationContext, true);
   const liveRef: { current: LiveText | null } = { current: null };
   let admitted = false;

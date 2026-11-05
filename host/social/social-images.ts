@@ -85,12 +85,22 @@ export function validateGeneratedImage(raw: Uint8Array): { width: number; height
   return { width, height };
 }
 const IMAGE_HTTP_TOTAL_MS = 180_000;
-async function imageHttpBytes(url: string, init: RequestInit, signal: AbortSignal, limit: number): Promise<Uint8Array> {
+async function imageHttpBytes(
+  url: string,
+  init: RequestInit,
+  signal: AbortSignal,
+  limit: number,
+): Promise<Uint8Array> {
   const scope = new HttpStreamScope(signal, {
-    firstMs: IMAGE_HTTP_TOTAL_MS, idleMs: 30_000, totalMs: IMAGE_HTTP_TOTAL_MS, label: "Image provider",
+    firstMs: IMAGE_HTTP_TOTAL_MS,
+    idleMs: 30_000,
+    totalMs: IMAGE_HTTP_TOTAL_MS,
+    label: "Image provider",
   });
   try {
-    const response = await scope.request((signal) => fetch(url, { ...init, signal, redirect: "error" }));
+    const response = await scope.request((signal) =>
+      fetch(url, { ...init, signal, redirect: "error" }),
+    );
     if (!response.ok)
       throw new ImageGenerationError(
         response.status === 429 || response.status >= 500 ? "transient" : "refused",
@@ -101,7 +111,10 @@ async function imageHttpBytes(url: string, init: RequestInit, signal: AbortSigna
     if (error instanceof ImageGenerationError) throw error;
     // Aborting a request/body does not prove that generation was not accepted.
     // Keep original checkpoints and require review; never route to a new provider.
-    throw new ImageGenerationError("uncertain", "Image provider response did not complete. Generation may have been accepted; reconcile before retry.");
+    throw new ImageGenerationError(
+      "uncertain",
+      "Image provider response did not complete. Generation may have been accepted; reconcile before retry.",
+    );
   } finally {
     scope.close();
   }
@@ -111,7 +124,10 @@ async function json(url: string, init: RequestInit, signal: AbortSignal): Promis
   try {
     return JSON.parse(new TextDecoder().decode(body));
   } catch {
-    throw new ImageGenerationError("uncertain", "Image provider response was unreadable. Generation may have been accepted; reconcile before retry.");
+    throw new ImageGenerationError(
+      "uncertain",
+      "Image provider response was unreadable. Generation may have been accepted; reconcile before retry.",
+    );
   }
 }
 async function wait(signal: AbortSignal) {
@@ -658,7 +674,9 @@ export function createSocialImageAdapters(
             if (file) {
               const bytes = await imageHttpBytes(
                 `${endpoint}/view?${new URLSearchParams({ filename: file.filename, subfolder: file.subfolder ?? "", type: file.type ?? "output" })}`,
-                {}, i.signal, 5 * 1024 * 1024,
+                {},
+                i.signal,
+                5 * 1024 * 1024,
               );
               return {
                 bytes,
@@ -668,9 +686,15 @@ export function createSocialImageAdapters(
             await wait(i.signal);
           }
         } catch (error) {
-          if (jobId && error instanceof ImageGenerationError &&
-              (error.kind === "transient" || error.kind === "unavailable"))
-            throw new ImageGenerationError("uncertain", "The accepted ComfyUI job is still unresolved. Resume its original provider job before retrying generation.");
+          if (
+            jobId &&
+            error instanceof ImageGenerationError &&
+            (error.kind === "transient" || error.kind === "unavailable")
+          )
+            throw new ImageGenerationError(
+              "uncertain",
+              "The accepted ComfyUI job is still unresolved. Resume its original provider job before retrying generation.",
+            );
           throw error;
         } finally {
           stopProgress();

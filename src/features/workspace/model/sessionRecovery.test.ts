@@ -62,7 +62,10 @@ describe("eligible recovery population", () => {
 import { saveWorkspaceSnapshot } from "../../sessions/data/sessionStore";
 import { invoke } from "@tauri-apps/api/core";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn().mockResolvedValue(undefined),
+  isTauri: () => false,
+}));
 // Workspace persistence belongs to the primary native window.
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ label: "main" }) }));
 const chat = (id: string) => ({

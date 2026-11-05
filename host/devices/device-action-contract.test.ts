@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { validateConversationTool, conversationToolCatalog } from "../conversation/conversation-tools";
+import {
+  validateConversationTool,
+  conversationToolCatalog,
+} from "../conversation/conversation-tools";
 import { deviceActionArgs } from "./device-host";
 import type { DeviceAction } from "../../src/features/devices/types";
 
@@ -43,7 +46,12 @@ describe("advertised device actions match executable arguments", () => {
   for (const [index, action] of accepted.entries()) {
     it(`accepts supported action ${index}: ${action.type}`, () => {
       expect(() =>
-        validateConversationTool("devices.action", { deviceId: "phone", leaseId: "lease", requestId: "request", action }),
+        validateConversationTool("devices.action", {
+          deviceId: "phone",
+          leaseId: "lease",
+          requestId: "request",
+          action,
+        }),
       ).not.toThrow();
       expect(() => deviceActionArgs(action)).not.toThrow();
     });
@@ -51,7 +59,12 @@ describe("advertised device actions match executable arguments", () => {
   for (const [index, action] of rejected.entries()) {
     it(`rejects unsupported action ${index}: ${action.type} before execution`, () => {
       expect(() =>
-        validateConversationTool("devices.action", { deviceId: "phone", leaseId: "lease", requestId: "request", action }),
+        validateConversationTool("devices.action", {
+          deviceId: "phone",
+          leaseId: "lease",
+          requestId: "request",
+          action,
+        }),
       ).toThrow("integer coordinates in 0..20000");
       expect(() => deviceActionArgs(action)).toThrow();
     });

@@ -12,8 +12,12 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: mocks.listen }));
 vi.mock("@tauri-apps/api/webviewWindow", () => ({
   getCurrentWebviewWindow: () => ({
-    label: (globalThis as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } } })
-      .__TAURI_INTERNALS__?.metadata?.currentWindow?.label ?? "main",
+    label:
+      (
+        globalThis as {
+          __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } };
+        }
+      ).__TAURI_INTERNALS__?.metadata?.currentWindow?.label ?? "main",
   }),
 }));
 
@@ -495,7 +499,9 @@ describe("child bridge", () => {
     installResolvedListeners();
     vi.stubGlobal("__TAURI_INTERNALS__", { metadata: { currentWindow: { label: "" } } });
     const child = await loadChild();
-    await expect(child.acquireHarnessBridge()).rejects.toThrow("Window event subscription requires a window identity");
+    await expect(child.acquireHarnessBridge()).rejects.toThrow(
+      "Window event subscription requires a window identity",
+    );
     expect(mocks.listen).not.toHaveBeenCalled();
   });
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
-import { remotePollDue } from "../../connections/model/remoteHealth";
+import { remotePollDue } from "../../connections/public/remoteHealth";
 import { notifyDirsChanged, subscribeDirsChanged } from "../model/fileTree";
 
 /** Keeps the root's directory listings fresh: resume refresh plus a focus-aware poll. */

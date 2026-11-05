@@ -43,7 +43,10 @@ export async function discoverHermesModels(workingDirectory?: string): Promise<A
   const { path } = await resolveHermesBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const probeProcess = retirements.admit(createChildProcessHandle(probeId, undefined, "management"), "hermes.catalog");
+  const probeProcess = retirements.admit(
+    createChildProcessHandle(probeId, undefined, "management"),
+    "hermes.catalog",
+  );
   const acp = new AcpClient(probeProcess, {
     onRequest: (id, method) => {
       void acp

@@ -59,25 +59,34 @@ function fixture() {
 }
 it("binds global Room preference changes to the real thread and rechecks authority", async () => {
   const f = fixture();
-  const context = { environmentId: "host", sourceThreadId: "room", valid: () => true, authorize: vi.fn(async () => false) };
-  const snapshot = await f.control(context, "preferences.read", {}) as DesktopPreferencesSnapshot;
+  const context = {
+    environmentId: "host",
+    sourceThreadId: "room",
+    valid: () => true,
+    authorize: vi.fn(async () => false),
+  };
+  const snapshot = (await f.control(context, "preferences.read", {})) as DesktopPreferencesSnapshot;
   expect(snapshot.sourceThreadId).toBe("room");
   expect(snapshot.sourceSessionId).toBeUndefined();
   const previous = loadThemePreference();
-  const result = await f.control(context, "preferences.patch", {
-    operationId: "room-op", expectedRevision: snapshot.revision,
+  const result = (await f.control(context, "preferences.patch", {
+    operationId: "room-op",
+    expectedRevision: snapshot.revision,
     change: { kind: "theme", value: previous === "dark" ? "light" : "dark" },
-  }) as DesktopPreferencesStatus;
+  })) as DesktopPreferencesStatus;
   expect(context.authorize).toHaveBeenCalledOnce();
   expect(result.state).toBe("failed");
   expect(loadThemePreference()).toBe(previous);
   const other = { ...context, sourceThreadId: "other" };
-  expect(await f.control(other, "preferences.status", { operationId: "room-op" })).toEqual({ state: "unknown" });
+  expect(await f.control(other, "preferences.status", { operationId: "room-op" })).toEqual({
+    state: "unknown",
+  });
   context.authorize.mockResolvedValue(true);
-  const applied = await f.control(context, "preferences.patch", {
-    operationId: "room-op-2", expectedRevision: snapshot.revision,
+  const applied = (await f.control(context, "preferences.patch", {
+    operationId: "room-op-2",
+    expectedRevision: snapshot.revision,
     change: { kind: "theme", value: previous === "dark" ? "light" : "dark" },
-  }) as DesktopPreferencesStatus;
+  })) as DesktopPreferencesStatus;
   expect(applied.state).toBe("applied");
   expect(loadThemePreference()).not.toBe(previous);
 });

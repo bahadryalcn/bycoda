@@ -216,7 +216,8 @@ duplicating a successful push or PR.
 
 RPC request/response types are frozen in
 [`host/workspaces/workspace-rpc-contracts.ts`](../../host/workspaces/workspace-rpc-contracts.ts).
-`host/server.ts` routes owner operations through the shared runtime; delivery and
+`host/server/rpc-workspaces.ts` and `host/server/rpc-sessions.ts` route owner
+operations through the shared runtime; delivery and
 publication require authenticated owner transport, not agent credentials.
 
 | RPC methods                                                         | Capability                     |

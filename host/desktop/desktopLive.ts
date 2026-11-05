@@ -63,7 +63,6 @@ type LiveSession = {
   fingerprint: string;
 };
 
-
 function directoryPathKey(path: string): string {
   const key = canonicalHostPath(path);
   return key.startsWith("//") ? key.toLowerCase() : key;
@@ -312,7 +311,9 @@ export class DesktopLive {
       next.set(entry.id, {
         clientId,
         sourceEpoch:
-          previous?.clientId === clientId && this.clientAlive(clientId) && previous.pageToken === pageToken &&
+          previous?.clientId === clientId &&
+          this.clientAlive(clientId) &&
+          previous.pageToken === pageToken &&
           previous.busy === (entry.busy === true)
             ? previous.sourceEpoch
             : randomUUID(),
@@ -364,7 +365,8 @@ export class DesktopLive {
         previous.fingerprint === "[[],{}]" &&
         next.get(id) === previous &&
         !heldSessions.has(id)
-      ) next.delete(id);
+      )
+        next.delete(id);
     }
     const changedIds = new Set<string>();
     const sourceChangedIds = new Set<string>();
@@ -596,7 +598,9 @@ export class DesktopLive {
   /** Live prompts laid over a stored session, and when they last changed. */
   overlay(
     id: string,
-  ): { pending: Block[]; patch: Partial<Session>; changedAt: number; sourceEpoch: string } | undefined {
+  ):
+    | { pending: Block[]; patch: Partial<Session>; changedAt: number; sourceEpoch: string }
+    | undefined {
     const session = this.sessions.get(id);
     return session && this.clientAlive(session.clientId) ? session : undefined;
   }

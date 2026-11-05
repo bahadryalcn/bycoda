@@ -17,10 +17,17 @@ type Registration = {
 };
 const registrations = new Map<string, Registration>();
 const sourceWaiters = new Map<string, Set<() => void>>();
-function notifySource(key: string) { sourceWaiters.get(key)?.forEach((notify) => notify()); }
+function notifySource(key: string) {
+  sourceWaiters.get(key)?.forEach((notify) => notify());
+}
 
 /** Wait for the actual native registration ACK for this exact Room and Host. */
-export function waitForAssistantControlSource(threadId: string, environmentId: string, current: () => boolean, timeoutMs = 12_000): Promise<void> {
+export function waitForAssistantControlSource(
+  threadId: string,
+  environmentId: string,
+  current: () => boolean,
+  timeoutMs = 12_000,
+): Promise<void> {
   const key = JSON.stringify([threadId, environmentId]);
   return new Promise((resolve, reject) => {
     const listeners = sourceWaiters.get(key) ?? new Set<() => void>();
@@ -29,35 +36,45 @@ export function waitForAssistantControlSource(threadId: string, environmentId: s
       clearTimeout(timer);
       listeners.delete(check);
       if (!listeners.size) sourceWaiters.delete(key);
-      if (error) reject(error); else resolve();
+      if (error) reject(error);
+      else resolve();
     };
     const check = () => {
       if (!current()) return finish(new Error("Assistant Room source changed."));
       const source = registrations.get(key);
       if (source?.users && source.status === "registered") finish();
-      else if (source?.status === "unavailable") finish(new Error("Assistant Room registration unavailable."));
+      else if (source?.status === "unavailable")
+        finish(new Error("Assistant Room registration unavailable."));
     };
-    const timer = setTimeout(() => finish(new Error("Assistant Room registration timed out.")), timeoutMs);
+    const timer = setTimeout(
+      () => finish(new Error("Assistant Room registration timed out.")),
+      timeoutMs,
+    );
     listeners.add(check);
     check();
   });
 }
 
-function register(source: Registration, active: boolean, role: "interactive" | "background" = "interactive") {
+function register(
+  source: Registration,
+  active: boolean,
+  role: "interactive" | "background" = "interactive",
+) {
   registrationWork = registrationWork
     .then(async () => {
       if (active && source.users === 0) return;
-      const send = async (command: string, desiredActive: boolean, withRole: boolean) => withTimeout(
-        invoke(command, {
-          threadId: source.threadId,
-          environmentId: source.environmentId,
-          active: desiredActive,
-          sequence: ++registrationSequence,
-          ...(withRole ? { role } : {}),
-        }),
-        10_000,
-        "Assistant Room registration",
-      );
+      const send = async (command: string, desiredActive: boolean, withRole: boolean) =>
+        withTimeout(
+          invoke(command, {
+            threadId: source.threadId,
+            environmentId: source.environmentId,
+            active: desiredActive,
+            sequence: ++registrationSequence,
+            ...(withRole ? { role } : {}),
+          }),
+          10_000,
+          "Assistant Room registration",
+        );
       if (source.legacyActive && (!active || role === "background")) {
         await send("control_assistant_source", false, false);
         source.legacyActive = false;
@@ -66,13 +83,18 @@ function register(source: Registration, active: boolean, role: "interactive" | "
       try {
         await send("control_assistant_source_v2", active, true);
       } catch (error) {
-        if (!active || role !== "interactive" || !/command.*control_assistant_source_v2.*not found/i.test(String(error))) throw error;
+        if (
+          !active ||
+          role !== "interactive" ||
+          !/command.*control_assistant_source_v2.*not found/i.test(String(error))
+        )
+          throw error;
         await send("control_assistant_source", true, false);
         source.legacyActive = true;
       }
       if (active && source.users > 0) {
         source.status = "registered";
-        source.listeners.forEach(listener => listener(source.status));
+        source.listeners.forEach((listener) => listener(source.status));
         notifySource(JSON.stringify([source.threadId, source.environmentId]));
       }
     })
@@ -80,7 +102,7 @@ function register(source: Registration, active: boolean, role: "interactive" | "
       // Failed registration grants no authority; the validated operation relay reports it.
       if (active && source.users > 0) {
         source.status = "unavailable";
-        source.listeners.forEach(listener => listener(source.status));
+        source.listeners.forEach((listener) => listener(source.status));
         notifySource(JSON.stringify([source.threadId, source.environmentId]));
       }
     });
@@ -92,19 +114,38 @@ export function useAssistantControlSource(
   environmentId: string | undefined,
   role: "interactive" | "background" = "interactive",
 ) {
-  const [state, setState] = useState<{ key: string; status: Registration["status"] }>({ key: "", status: "pending" });
+  const [state, setState] = useState<{ key: string; status: Registration["status"] }>({
+    key: "",
+    status: "pending",
+  });
   const selectedKey = threadId && environmentId ? JSON.stringify([threadId, environmentId]) : "";
   useEffect(() => {
     if (!threadId || !environmentId) return;
     const key = JSON.stringify([threadId, environmentId]);
     let source = registrations.get(key);
     if (!source) {
-      source = { threadId, environmentId, users: 0, interactive: 0, background: 0, legacyActive: false, status: "pending", listeners: new Set() };
+      source = {
+        threadId,
+        environmentId,
+        users: 0,
+        interactive: 0,
+        background: 0,
+        legacyActive: false,
+        status: "pending",
+        listeners: new Set(),
+      };
       const captured = source;
-      source.timer = setInterval(() => register(captured, true, captured.interactive ? "interactive" : "background"), 15_000);
+      source.timer = setInterval(
+        () => register(captured, true, captured.interactive ? "interactive" : "background"),
+        15_000,
+      );
       registrations.set(key, source);
     }
-    const previousRole = source.interactive ? "interactive" : source.background ? "background" : undefined;
+    const previousRole = source.interactive
+      ? "interactive"
+      : source.background
+        ? "background"
+        : undefined;
     source.users++;
     source[role]++;
     const listener = (status: Registration["status"]) => setState({ key, status });

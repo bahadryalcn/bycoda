@@ -6,7 +6,9 @@ import { TextField } from "../../../shared/ui/TextField";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
 import { Button } from "../../../shared/ui/Button";
+import { ContinuousList, CollectionFooter } from "../../../shared/ui/ContinuousList";
 import { Badge } from "../../../shared/ui/Badge";
+import { SkillCapabilityStatus } from "./SkillCapabilityStatus";
 import { NoteMarkdownEditor } from "../../notes/ui/NoteMarkdownEditor";
 import type { EditorView } from "@codemirror/view";
 import styles from "./SkillsPage.module.css";
@@ -55,7 +57,7 @@ import { isRemoteProjectPath } from "../../projects/model/recents";
 import { remoteProjectFor } from "../../connections/model/remoteProjects";
 import { knownRemoteMachine, useRemoteMachines } from "../../connections/model/connections";
 import { remoteProjectMachines } from "../../connections/model/localSync";
-import { classifyRemoteError } from "../../connections/model/remoteFailure";
+import { machineFailure } from "../model/skillMachineFailure";
 import { listMachineSkills } from "../model/machineSkills";
 import { canDeleteSkill } from "../model/deleteSkill";
 import { Segmented, Toggle } from "../../settings/ui/settingsControls";
@@ -71,19 +73,6 @@ import { runMachineCommand } from "../../connections/model/remoteCommands";
  * (a `remote://` path), or empty for its personal skills only. */
 type Machine = { environmentId: string; name: string; cwd: string };
 
-/** Why a machine's skills could not be listed, in words the user can act on. */
-function machineFailure(machine: Machine, error: unknown): string {
-  const failure = classifyRemoteError(error);
-  const outdated = `${machine.name}'s ${PRODUCT_IDENTITY.displayName} Host needs updating to list skills. Update it in Connections settings.`;
-  if (failure.kind === "outdated" || /needs updating/i.test(failure.message)) return outdated;
-  if (failure.kind === "unreachable") return `Couldn't reach ${machine.name}.`;
-  // A current host accepts an empty project; an older one rejects it as a path.
-  if (!machine.cwd && /Invalid workspace path|outside this machine/i.test(failure.message))
-    return outdated;
-  return failure.message;
-}
-
-/** Owner skill preferences apply to every bycoda provider on the selected machine. */
 export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode }): ReactNode {
   useLocale();
   const lockOverscroll = useLockOverscroll<HTMLDivElement>();
@@ -668,7 +657,8 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
   };
 
   const renderRow = (skill: DiscoveredSkill, machine: Machine | null = null) => {
-    const policy = policies[machine?.environmentId ?? "local"];
+    const machineId = machine?.environmentId ?? "local";
+    const policy = policies[machineId];
     const disabled = policy ? skillDisabled(policy, skill) : disabledPaths.includes(skill.path);
     const selected = previewSkill?.path === skill.path;
     const modified = drafts[skill.path] !== undefined;
@@ -677,7 +667,7 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
         key={skill.path}
         className={styles.row}
         data-selected={selected || undefined}
-        aria-busy={policyTarget === JSON.stringify([machine?.environmentId ?? "local", skill.path])}
+        aria-busy={policyTarget === JSON.stringify([machineId, skill.path])}
       >
         <div className={styles.rowTitle}>
           <Button
@@ -718,10 +708,13 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
               onChange={(enabled) => void onToggle(skill, enabled, machine)}
             />
           ) : null}
-          {policyTarget === JSON.stringify([machine?.environmentId ?? "local", skill.path]) ? (
+          {policyTarget === JSON.stringify([machineId, skill.path]) ? (
             <Spinner size="xs" label={t("Saving…")} />
           ) : null}
-          {!policy && disabled ? <Badge size="sm">{t("Disabled")}</Badge> : null}
+          <SkillCapabilityStatus
+            disabled={disabled}
+            policyKnown={!!policy && !policyErrors[machineId]}
+          />
         </div>
         <div className={styles.rowActions}>
           <Button
@@ -794,20 +787,6 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
     machine: Machine | null = null,
   ) => (
     <>
-      {failure ? (
-        <Alert
-          inline
-          tone="danger"
-          role="alert"
-          action={
-            <Button onClick={() => requestRefresh(machine?.environmentId ?? "local")}>
-              {t("Retry")}
-            </Button>
-          }
-        >
-          {failure}
-        </Alert>
-      ) : null}
       {all === null ? (
         !failure ? (
           <Alert inline tone="info" role="status">
@@ -832,8 +811,24 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
           </p>
         )
       ) : (
-        shown.map((skill) => renderRow(skill, machine))
+        <ContinuousList
+          className={styles.continuousSkills}
+          error={failure}
+          onRetry={() => requestRefresh(machine?.environmentId ?? "local")}
+          items={shown}
+          itemKey={(skill) => skill.path}
+          renderItem={(skill) => renderRow(skill, machine)}
+          stateKey={`skills:${pathKey(machine?.cwd ?? cwd)}:${machine?.environmentId ?? "local"}:${needle}`}
+          requiredKey={previewSkill?.path ?? null}
+          estimateSize={52}
+        />
       )}
+      {all === null || shown.length === 0 ? (
+        <CollectionFooter
+          error={failure}
+          onRetry={() => requestRefresh(machine?.environmentId ?? "local")}
+        />
+      ) : null}
     </>
   );
 

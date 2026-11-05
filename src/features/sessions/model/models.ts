@@ -1,6 +1,6 @@
-import type { HarnessId } from "./session";
+import type { HarnessId } from "../../../shared/model/harnessIdentity";
 import { withClaudeAdvisor } from "./claudeAdvisor";
-import { HARNESSES } from "./session";
+import { HARNESSES } from "../../../shared/model/harnessIdentity";
 import { loadProjectProviderSettings } from "./projectProviders";
 import {
   hasProbedHarnessAvailability,

@@ -1,7 +1,7 @@
 import {
   beginEditorInputClosure,
   captureEditorInputs,
-} from "../../files/data/mountedEditorClosure";
+} from "../../files/public/mountedEditorClosure";
 import { beginParentInputClosure, captureParentInputs } from "./parentInputClosure";
 import { beginNotesInputClosure, captureNotesInputs } from "../../notes/notesInputClosure";
 import type { NativeProducerInputs, NativeProducerLease } from "./nativeProducerCapture";

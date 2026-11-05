@@ -16,7 +16,7 @@ import { useRemoteConnection } from "../model/useRemoteConnection";
 import {
   loadRemoteAutoReconnect,
   subscribeRemoteAutoReconnect,
-} from "../../settings/model/settings";
+} from "../../settings/public/settings";
 import { RemoteLoadError } from "./RemoteLoadError";
 
 const TRANSIENT_NOTICE_DELAY_MS = 8_000;

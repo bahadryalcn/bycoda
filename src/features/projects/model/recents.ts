@@ -1,6 +1,21 @@
-import { requirePrivacyMutationToken, withRoomPrivacyMutation, type PrivacyMutationToken } from "../../group-lock/model/roomPrivacyProjection";
-import { isRemoteProjectPath, normalizeProjectPath, pathKey, prettyCwd, sameProjectPath, slash } from "../../../shared/lib/paths";
-export { isRemoteProjectPath, normalizeProjectPath, sameProjectPath } from "../../../shared/lib/paths";
+import {
+  requirePrivacyMutationToken,
+  withRoomPrivacyMutation,
+  type PrivacyMutationToken,
+} from "../../group-lock/model/roomPrivacyProjection";
+import {
+  isRemoteProjectPath,
+  normalizeProjectPath,
+  pathKey,
+  prettyCwd,
+  sameProjectPath,
+  slash,
+} from "../../../shared/lib/paths";
+export {
+  isRemoteProjectPath,
+  normalizeProjectPath,
+  sameProjectPath,
+} from "../../../shared/lib/paths";
 import { REMOTE_PATH_PREFIX } from "../../../shared/lib/remotePaths";
 
 const KEY = "bycoda.recentProjects";
@@ -57,7 +72,10 @@ function save(next: RecentProject[]) {
   }
 }
 
-export function rememberProjectInMutation(path: string, token: PrivacyMutationToken): RecentProject[] {
+export function rememberProjectInMutation(
+  path: string,
+  token: PrivacyMutationToken,
+): RecentProject[] {
   requirePrivacyMutationToken(token);
   return rememberProjectNow(path);
 }
@@ -75,7 +93,8 @@ function rememberProjectNow(path: string): RecentProject[] {
   const prev = loadRecents().filter((p) => !sameProjectPath(p.path, normalized));
   const next = [{ path: normalized, openedAt: Date.now() }, ...prev].slice(0, MAX);
   save(next);
-  if (localStorage.getItem(KEY) !== JSON.stringify(next)) throw new Error("Could not save recent projects.");
+  if (localStorage.getItem(KEY) !== JSON.stringify(next))
+    throw new Error("Could not save recent projects.");
   return next;
 }
 

@@ -6,7 +6,7 @@ import {
   type ImportCandidate,
 } from "../../../platform/tauri/sessionImport";
 import { importSessionRecord, importedSessionKeys } from "../data/sessionStore";
-import { sameProjectPath } from "../../projects/model/recents";
+import { sameProjectPath } from "../../projects/public/recents";
 import { isAlreadyImported, SESSION_HISTORY_IMPORTED_EVENT } from "./importModel";
 import {
   isUsableProjectFolder,

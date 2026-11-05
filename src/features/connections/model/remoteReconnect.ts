@@ -8,7 +8,7 @@ import {
 import {
   loadRemoteAutoReconnect,
   subscribeRemoteAutoReconnect,
-} from "../../settings/model/settings";
+} from "../../settings/public/settings";
 import {
   autoRetryDelay,
   blocksSending,

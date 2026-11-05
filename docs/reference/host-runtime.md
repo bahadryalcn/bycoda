@@ -1,5 +1,43 @@
 # Host runtime and WebSocket migration
 
+## Host server module architecture
+
+`host/server.ts` is the composition root for `createHostServer`. It builds the
+Host services, wires their shared bindings, and exposes the resulting server;
+implementation modules live in `host/server/`. `bindings.ts` defines the typed
+`ServerBindings` contract. Runtime modules accept narrow `Pick<ServerBindings,
+...>` dependency sets, so each module declares which services it uses.
+
+The composition root uses lazy binding getters for values produced by later
+runtime constructors. This preserves existing forward references and service
+cycles while keeping construction order explicit. Keep those references lazy
+when moving a dependency; eagerly reading a later runtime during initialization
+can observe an uninitialized value.
+
+Async factories publish lexical getter objects into `runtime-slot.ts` slots before
+their first await. An initialized local becomes available during its readiness
+wait, while a later local retains its original initialization boundary. Do not
+defer publication until all readiness promises resolve. Mutable heartbeat, closing
+and observation state keeps lexical setters.
+
+Runtime modules group session views, queues and leases; workspaces and projects;
+conversation and management tools; assistant, social and mobile services;
+devices, development, Git and voice; subscriptions and WebSocket setup; and
+registry/HTTP composition. `registry.ts` maps typed Host methods to domain and
+service operations. `http.ts` owns HTTP/RPC transport admission, request-scoped
+authorization and response handling. Method-family dispatch should receive
+typed dependencies, while transport authentication and authorization stay at
+the request boundary. `lifecycle.ts` owns startup readiness and idempotent
+resource shutdown; preserve cleanup ordering, in-flight request settlement and
+late-start guards.
+
+The refactor does not change wire methods, authorization ownership, HTTP/WS
+route precedence, or shutdown semantics. Focused coverage remains in
+`host/server.test.ts`, `host/server-websocket.test.ts`, and the owning domain
+family tests.
+
+## Execution and ownership
+
 The current Host input path uses one shared in-process issuer across Engine and
 the actual backend. Private operation handles cannot be restored from JSON IDs.
 Normal writes and original cleanup have separate admission; both retain the true

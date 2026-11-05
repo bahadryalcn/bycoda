@@ -20,8 +20,8 @@ import {
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
-import type { UnifiedLine } from "../../source-control/model/unifiedDiff";
-import { applyStageReplacements } from "../../source-control/model/selectiveStage";
+import type { UnifiedLine } from "../../source-control";
+import { applyStageReplacements } from "../../source-control/public/selectiveStage";
 
 /** Shared with the split layout so both draw the same hunks. */
 export const DIFF_CONFIG = { scanLimit: 5_000, timeout: 100 };

@@ -27,12 +27,12 @@ internals in [host runtime](host-runtime.md); UI ownership in
 A feature is named once and keeps that name in every layer it touches. Code for a
 feature never lands in a shared file because that file already exists.
 
-| Layer  | Location                                                 | Internal convention                                                                                                                                                                                                   |
-| ------ | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| UI     | `src/features/<feature>/`                                | `model/` pure TypeScript and its tests, `ui/` components and CSS, optional `hooks/`, `data/` or `runtime/` for I/O glue, `index.ts` as the only public entry. No loose files at the feature root.                     |
-| Host   | `host/<feature>/`                                        | Service, storage, scheduling and tests of that feature. `host/domains/<feature>/service.ts` stays the thin wire-facing layer; `host/server.ts` and `host/engine.ts` only compose. No new loose files at `host/` root. |
-| Native | `src-tauri/src/<feature>/` with a sibling `<feature>.rs` | New `#[tauri::command]` handlers go in the owning module folder, not in `fs.rs`, `harness.rs`, `session_store.rs` or `remote.rs`.                                                                                     |
-| Shared | `src/shared/`, `packages/core/`                          | Only code used by two or more features with no feature-specific state.                                                                                                                                                |
+| Layer  | Location                                                 | Internal convention                                                                                                                                                                                                                                                         |
+| ------ | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| UI     | `src/features/<feature>/`                                | `model/` pure TypeScript and its tests, `ui/` components and CSS, optional `hooks/`, `data/` or `runtime/` for I/O glue. `index.ts` declares the public types, deferred loaders and exact `public/<contract>.ts` runtime entries. No other loose files at the feature root. |
+| Host   | `host/<feature>/`                                        | Service, storage, scheduling and tests of that feature. `host/domains/<feature>/service.ts` stays the thin wire-facing layer; `host/server.ts` and `host/engine.ts` only compose. No new loose files at `host/` root.                                                       |
+| Native | `src-tauri/src/<feature>/` with a sibling `<feature>.rs` | New `#[tauri::command]` handlers go in the owning module folder, not in `fs.rs`, `harness.rs`, `session_store.rs` or `remote.rs`.                                                                                                                                           |
+| Shared | `src/shared/`, `packages/core/`                          | Only code used by two or more features with no feature-specific state.                                                                                                                                                                                                      |
 
 Feature names follow the UI folder: `voice`, `source-control`, `social`, `devices`,
 `tasks`, `inbox`, `crews`, `dev-servers`, `workspaces`. Where a Host folder still uses
@@ -62,17 +62,19 @@ per `ui/` file, a `model/` file importing React, inline Rust test modules over 5
 
 ## Import boundaries
 
-| Rule                                    | Meaning                                                                                                                                             | Gated                                                            |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| `foundation-imports-app`                | `src/shared/`, `src/platform/`, `src/integrations/` must not import `src/features/` or `src/app/`. Lift the shared part into `src/shared/` instead. | yes                                                              |
-| `feature-imports-app`                   | `src/features/` must not import `src/app/`. The app composes features; features receive what they need through props, stores or shared modules.     | yes                                                              |
-| `host-imports-ui`                       | `host/` must not import `src/app/` or any `src/features/*/ui/`. Share through `src/shared/model/host-contracts`.                                    | yes                                                              |
-| `cross-feature-deep-import`             | A feature imports another feature's internals instead of its `index.ts`.                                                                            | report only until `index.ts` barrels exist for the busiest pairs |
-| `loose-host-file`, `loose-feature-file` | A non-test `.ts`/`.tsx` sits directly under `host/` or `src/features/<feature>/`.                                                                   | yes                                                              |
+| Rule                                    | Meaning                                                                                                                                             | Gated |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| `foundation-imports-app`                | `src/shared/`, `src/platform/`, `src/integrations/` must not import `src/features/` or `src/app/`. Lift the shared part into `src/shared/` instead. | yes   |
+| `feature-imports-app`                   | `src/features/` must not import `src/app/`. The app composes features; features receive what they need through props, stores or shared modules.     | yes   |
+| `host-imports-ui`                       | `host/` must not import `src/app/` or any `src/features/*/ui/`. Share through `src/shared/model/host-contracts`.                                    | yes   |
+| `cross-feature-deep-import`             | A feature imports a peer file not declared as a public entry.                                                                                       | yes   |
+| `loose-host-file`, `loose-feature-file` | A non-test `.ts`/`.tsx` sits directly under `host/` or `src/features/<feature>/`.                                                                   | yes   |
 
 Portable Host roots and headless CLI isolation stay with
 `scripts/checks/check-host-runtime-boundaries.mjs` and
 `scripts/checks/check-host-headless-boundaries.mjs`; this check does not duplicate them.
+
+Cross-feature imports may use feature root paths or exact `public/<contract>.ts` entries declared by the target feature's `index.ts` with `export type * as <api> from "./public/<contract>"`. These type-only declarations list contracts without eagerly loading their runtime modules. Keep each public entry narrow to limit its dependency graph.
 
 ## Writing code that stays small
 

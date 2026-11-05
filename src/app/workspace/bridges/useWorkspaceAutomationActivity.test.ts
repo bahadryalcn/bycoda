@@ -30,19 +30,27 @@ it("skips follower source polling and resumes after leader transfer", async () =
   api.list.mockReset().mockResolvedValue([{ id: "automation", enabled: true }]);
   api.tasks.mockReset().mockResolvedValue([]);
   api.claim.mockReset().mockResolvedValue([]);
-  const recover = vi.fn(async () => {}), launch = vi.fn(async () => {});
-  function Probe() { useWorkspaceAutomationActivity({ ensureAutomationRecovery: recover, launchAutomation: launch }); return null; }
+  const recover = vi.fn(async () => {}),
+    launch = vi.fn(async () => {});
+  function Probe() {
+    useWorkspaceAutomationActivity({ ensureAutomationRecovery: recover, launchAutomation: launch });
+    return null;
+  }
   const root = createRoot(document.createElement("div"));
   try {
     await act(async () => root.render(createElement(Probe)));
     expect(api.list).not.toHaveBeenCalled();
     expect(api.tasks).not.toHaveBeenCalled();
     api.lead.mockResolvedValue(true);
-    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
     expect(api.list).toHaveBeenCalledTimes(1);
     expect(api.tasks).toHaveBeenCalledTimes(1);
     api.lead.mockResolvedValue(false);
-    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
     expect(api.list).toHaveBeenCalledTimes(1);
     expect(launch).not.toHaveBeenCalled();
   } finally {
@@ -57,15 +65,27 @@ it("does not start source reads after an original leader check outlives unmount"
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   let release!: (lead: boolean) => void;
-  api.lead.mockImplementationOnce(() => new Promise<boolean>((resolve) => { release = resolve; }));
-  api.list.mockClear(); api.tasks.mockClear();
-  const recover = vi.fn(async () => {}), launch = vi.fn(async () => {});
-  function Probe() { useWorkspaceAutomationActivity({ ensureAutomationRecovery: recover, launchAutomation: launch }); return null; }
+  api.lead.mockImplementationOnce(
+    () =>
+      new Promise<boolean>((resolve) => {
+        release = resolve;
+      }),
+  );
+  api.list.mockClear();
+  api.tasks.mockClear();
+  const recover = vi.fn(async () => {}),
+    launch = vi.fn(async () => {});
+  function Probe() {
+    useWorkspaceAutomationActivity({ ensureAutomationRecovery: recover, launchAutomation: launch });
+    return null;
+  }
   const root = createRoot(document.createElement("div"));
   try {
     await act(async () => root.render(createElement(Probe)));
     await act(async () => root.unmount());
-    await act(async () => { release(true); });
+    await act(async () => {
+      release(true);
+    });
     expect(api.list).not.toHaveBeenCalled();
     expect(api.tasks).not.toHaveBeenCalled();
   } finally {

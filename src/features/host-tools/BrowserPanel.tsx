@@ -93,7 +93,11 @@ export function BrowserPanel(props: Props) {
         props.cwd,
         props.initialUrl,
         props.sessionId,
-        props.roomSubject && [props.roomSubject.environmentId, props.roomSubject.projectId, props.roomSubject.threadId],
+        props.roomSubject && [
+          props.roomSubject.environmentId,
+          props.roomSubject.projectId,
+          props.roomSubject.threadId,
+        ],
         props.composerSessionId,
         hostToolTargetKey(props.hostTarget ?? { kind: "project" }),
         props.annotationsAllowed ?? (!props.hostTarget || props.hostTarget.kind === "project"),
@@ -117,7 +121,9 @@ function ProjectBrowserPanel({
   roomSubject,
   onMounted,
 }: Props) {
-  useEffect(() => { onMounted?.(); }, [onMounted]);
+  useEffect(() => {
+    onMounted?.();
+  }, [onMounted]);
   useLocale();
   const [state, setState] = useState<BrowserState>();
   const [url, setUrl] = useState(initialUrl ?? "http://localhost:3000");
@@ -329,9 +335,17 @@ function ProjectBrowserPanel({
             (params.documentId && latest.current.documentId !== params.documentId))
         )
           throw new Error(t("Browser input was not sent because the page or control changed."));
-        if (roomSubject && !roomSubject.valid()) throw new Error("Room browser source is unavailable.");
+        if (roomSubject && !roomSubject.valid())
+          throw new Error("Room browser source is unavailable.");
         const result = roomSubject
-          ? await invoke<BrowserState>("control_room_browser_panel_request", { environmentId: roomSubject.environmentId, projectId: roomSubject.projectId, threadId: roomSubject.threadId, projectCwd: roomSubject.cwd, action: method, input: parameters })
+          ? await invoke<BrowserState>("control_room_browser_panel_request", {
+              environmentId: roomSubject.environmentId,
+              projectId: roomSubject.projectId,
+              threadId: roomSubject.threadId,
+              projectCwd: roomSubject.cwd,
+              action: method,
+              input: parameters,
+            })
           : annotationMethod || hostTarget.kind === "project"
             ? await hostFeatureRequest<BrowserState>(cwd, capability, method, parameters)
             : await hostToolRequest<BrowserState>(cwd, capability, method, parameters, hostTarget);

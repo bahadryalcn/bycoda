@@ -1,7 +1,12 @@
 /// <reference lib="webworker" />
 
 import type { NewThreadBackgroundEffect } from "./appearance";
-import { BackgroundEffectCache, BACKGROUND_MAX_EDGE, BACKGROUND_SOURCE_BYTES, BACKGROUND_RENDER_BYTES } from "./backgroundEffectCache";
+import {
+  BackgroundEffectCache,
+  BACKGROUND_MAX_EDGE,
+  BACKGROUND_SOURCE_BYTES,
+  BACKGROUND_RENDER_BYTES,
+} from "./backgroundEffectCache";
 
 type Source = {
   width: number;
@@ -27,8 +32,10 @@ type RenderRequest = {
 
 type WorkerRequest = LoadRequest | RenderRequest;
 
-const sources = new BackgroundEffectCache<Source>(BACKGROUND_SOURCE_BYTES,
-  (source) => source.pixels.buffer.byteLength + source.luma.buffer.byteLength);
+const sources = new BackgroundEffectCache<Source>(
+  BACKGROUND_SOURCE_BYTES,
+  (source) => source.pixels.buffer.byteLength + source.luma.buffer.byteLength,
+);
 const rendered = new BackgroundEffectCache<Blob>(BACKGROUND_RENDER_BYTES, (blob) => blob.size);
 
 function post(id: number, result?: Blob, error?: string) {
@@ -171,9 +178,18 @@ function scanlinePixels(source: Source, light: boolean) {
 async function loadSource(sourceKey: string, bytes: ArrayBuffer) {
   const decoded = await createImageBitmap(new Blob([bytes]));
   let decodedOpen = true;
-  const closeDecoded = () => { if (decodedOpen) { decodedOpen = false; decoded.close(); } };
+  const closeDecoded = () => {
+    if (decodedOpen) {
+      decodedOpen = false;
+      decoded.close();
+    }
+  };
   try {
-    const scale = Math.min(1, BACKGROUND_MAX_EDGE / decoded.width, BACKGROUND_MAX_EDGE / decoded.height);
+    const scale = Math.min(
+      1,
+      BACKGROUND_MAX_EDGE / decoded.width,
+      BACKGROUND_MAX_EDGE / decoded.height,
+    );
     const width = Math.max(1, Math.round(decoded.width * scale));
     const height = Math.max(1, Math.round(decoded.height * scale));
     const canvas = new OffscreenCanvas(width, height);
@@ -186,11 +202,18 @@ async function loadSource(sourceKey: string, bytes: ArrayBuffer) {
       const luma = new Uint8Array(width * height);
       for (let pixel = 0; pixel < luma.length; pixel += 1) {
         const offset = pixel * 4;
-        luma[pixel] = Math.round(pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722);
+        luma[pixel] = Math.round(
+          pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722,
+        );
       }
       sources.set(sourceKey, { width, height, pixels, luma });
-    } finally { canvas.width = 0; canvas.height = 0; }
-  } finally { closeDecoded(); }
+    } finally {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+  } finally {
+    closeDecoded();
+  }
 }
 
 async function render(sourceKey: string, effect: NewThreadBackgroundEffect, light: boolean) {
@@ -218,22 +241,27 @@ async function render(sourceKey: string, effect: NewThreadBackgroundEffect, ligh
     const blob = await canvas.convertToBlob({ type: "image/png" });
     rendered.set(cacheKey, blob);
     return blob;
-  } finally { canvas.width = 0; canvas.height = 0; }
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
 }
 
 let jobs = Promise.resolve();
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const data = event.data;
-  jobs = jobs.then(async () => {
-    try {
-      if (data.kind === "load") {
-        await loadSource(data.sourceKey, data.bytes);
-        post(data.id);
-      } else post(data.id, await render(data.sourceKey, data.effect, data.light));
-    } catch (error) {
-      post(data.id, undefined, error instanceof Error ? error.message : String(error));
-    }
-  }).catch(() => {});
+  jobs = jobs
+    .then(async () => {
+      try {
+        if (data.kind === "load") {
+          await loadSource(data.sourceKey, data.bytes);
+          post(data.id);
+        } else post(data.id, await render(data.sourceKey, data.effect, data.light));
+      } catch (error) {
+        post(data.id, undefined, error instanceof Error ? error.message : String(error));
+      }
+    })
+    .catch(() => {});
 };
 
 export {};

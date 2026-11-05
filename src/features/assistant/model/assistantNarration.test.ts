@@ -1,8 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
-import { AssistantNarration, type NarrationGates, type NarrationReceipt, type NarrationSource } from "./assistantNarration";
+import {
+  AssistantNarration,
+  type NarrationGates,
+  type NarrationReceipt,
+  type NarrationSource,
+} from "./assistantNarration";
 
-const source: NarrationSource = { hostId: "host", eventId: "event", generation: "voice-1", kind: "completed", text: "Work completed." };
-const gates: NarrationGates = { enabled: true, connected: true, present: true, quiet: false, dnd: false, busy: false };
+const source: NarrationSource = {
+  hostId: "host",
+  eventId: "event",
+  generation: "voice-1",
+  kind: "completed",
+  text: "Work completed.",
+};
+const gates: NarrationGates = {
+  enabled: true,
+  connected: true,
+  present: true,
+  quiet: false,
+  dnd: false,
+  busy: false,
+};
 function fixture() {
   const receipts = new Map<string, NarrationReceipt>();
   const ports = {
@@ -20,16 +38,24 @@ function fixture() {
   return { ports, receipts };
 }
 describe("assistant narration", () => {
-  it.each(["enabled", "connected", "present", "quiet", "dnd", "busy"] as const)("honors %s gate", async key => {
-    const f = fixture();
-    f.ports.current.mockResolvedValue({ source, gates: { ...gates, [key]: key === "quiet" || key === "dnd" || key === "busy" } });
-    await new AssistantNarration(f.ports).deliver(source);
-    expect(f.ports.claim).not.toHaveBeenCalled();
-    expect(f.ports.speak).not.toHaveBeenCalled();
-  });
+  it.each(["enabled", "connected", "present", "quiet", "dnd", "busy"] as const)(
+    "honors %s gate",
+    async (key) => {
+      const f = fixture();
+      f.ports.current.mockResolvedValue({
+        source,
+        gates: { ...gates, [key]: key === "quiet" || key === "dnd" || key === "busy" },
+      });
+      await new AssistantNarration(f.ports).deliver(source);
+      expect(f.ports.claim).not.toHaveBeenCalled();
+      expect(f.ports.speak).not.toHaveBeenCalled();
+    },
+  );
   it("rechecks exact source after claim and never speaks a changed event", async () => {
     const f = fixture();
-    f.ports.current.mockResolvedValueOnce({ source, gates }).mockResolvedValueOnce({ source: { ...source, generation: "voice-2" }, gates });
+    f.ports.current
+      .mockResolvedValueOnce({ source, gates })
+      .mockResolvedValueOnce({ source: { ...source, generation: "voice-2" }, gates });
     await new AssistantNarration(f.ports).deliver(source);
     expect(f.ports.speak).not.toHaveBeenCalled();
     expect(f.receipts.get(source.eventId)?.state).toBe("unknown");
@@ -45,9 +71,14 @@ describe("assistant narration", () => {
   it("stop while claim waits prevents playback without cancelling Host work", async () => {
     const f = fixture();
     let release!: () => void;
-    const wait = new Promise<void>(resolve => { release = resolve; });
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const claim = f.ports.claim;
-    f.ports.claim = vi.fn(async item => { await wait; return claim(item); });
+    f.ports.claim = vi.fn(async (item) => {
+      await wait;
+      return claim(item);
+    });
     const owner = new AssistantNarration(f.ports);
     const pending = owner.deliver(source);
     await vi.waitFor(() => expect(f.ports.claim).toHaveBeenCalled());

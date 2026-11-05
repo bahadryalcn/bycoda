@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { blockRevisions } from "./block-revisions";
 import { HostStore } from "../store";
 import { applyHarnessEvent } from "../../src/integrations/harness/core/apply";
-import { changedBlocks, registerBlockChanges } from "../../src/features/sessions/model/blockChanges";
+import {
+  changedBlocks,
+  registerBlockChanges,
+} from "../../src/features/sessions/model/blockChanges";
 import { registerStreamingTextUpdate } from "../../src/features/sessions/model/stableBlocks";
 import type { Block, Session } from "../../src/features/sessions/model/session";
 import type { HostSession } from "../../src/features/connections/model/protocol";

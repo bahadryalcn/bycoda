@@ -1,4 +1,7 @@
-import { withRoomPrivacyMutation, type PrivacyMutationToken } from "../../../features/group-lock/model/roomPrivacyProjection";
+import {
+  withRoomPrivacyMutation,
+  type PrivacyMutationToken,
+} from "../../../features/group-lock/model/roomPrivacyProjection";
 import {
   useCallback,
   useState,
@@ -173,7 +176,9 @@ export function useProjectOpen({
         if (token) setRecents(rememberProjectInMutation(step.path, token));
         else pending.push(rememberProject(step.path).then(setRecents));
       }
-      return Promise.all(pending).then(() => { promptAddedProjectNames(knownBefore); });
+      return Promise.all(pending).then(() => {
+        promptAddedProjectNames(knownBefore);
+      });
     },
     [activateTab, insertBeside, onCwdChange, promptAddedProjectNames, readProjectReturnMemory],
   );
@@ -182,12 +187,14 @@ export function useProjectOpen({
     (path: string, workspaceRequestId?: string) => {
       workspaceNavigation.cancel();
       if (workspaceRequestId) {
-        return withRoomPrivacyMutation(async token => {
+        return withRoomPrivacyMutation(async (token) => {
           await openProjects([path], token);
           workspaceNavigation.selectProject(path);
         }, workspaceRequestId);
       }
-      void openProjects([path]).catch((error: unknown) => console.error("Could not remember project", error));
+      void openProjects([path]).catch((error: unknown) =>
+        console.error("Could not remember project", error),
+      );
       workspaceNavigation.selectProject(path);
     },
     [openProjects, workspaceNavigation.cancel, workspaceNavigation.selectProject],

@@ -72,7 +72,9 @@ it("keeps pending approval and live output mounted outside bounded historical wi
   });
   expect(host.querySelectorAll("[data-transcript-turn]")).toHaveLength(62);
   expect(host.querySelector('[data-transcript-turn="u-0"]')).not.toBeNull();
-  expect(host.querySelector('[data-transcript-turn="u-90"]')?.textContent).toContain("Open this request in its conversation to respond.");
+  expect(host.querySelector('[data-transcript-turn="u-90"]')?.textContent).toContain(
+    "Open this request in its conversation to respond.",
+  );
   expect(host.querySelector('[data-transcript-turn="u-199"]')).not.toBeNull();
   expect(
     [...host.querySelectorAll("button")].some((button) =>

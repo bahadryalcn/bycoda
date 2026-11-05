@@ -37,7 +37,10 @@ export function createSyncWindowOwner(
       if (native) {
         // A failed native ownership check is unknown, not proof of retirement.
         console.warn("Sync ownership is unavailable; retry after the window recovers.", error);
-        if (!stopped) retry = setTimeout(() => { void acquire().catch(reportAcquireFailure); }, 5_000);
+        if (!stopped)
+          retry = setTimeout(() => {
+            void acquire().catch(reportAcquireFailure);
+          }, 5_000);
       } else {
         owner = true;
         notify();
@@ -53,13 +56,20 @@ export function createSyncWindowOwner(
       stopped = true;
       owner = false;
       clearTimeout(retry);
-      if (!drain) { release?.(); return; }
-      void drain.then((settled) => {
-        if (settled) release?.();
-        else console.warn("Sync ownership remains held because a transport outcome is uncertain.");
-      }, (error: unknown) => {
-        console.warn("Sync ownership remains held because draining failed.", error);
-      });
+      if (!drain) {
+        release?.();
+        return;
+      }
+      void drain.then(
+        (settled) => {
+          if (settled) release?.();
+          else
+            console.warn("Sync ownership remains held because a transport outcome is uncertain.");
+        },
+        (error: unknown) => {
+          console.warn("Sync ownership remains held because draining failed.", error);
+        },
+      );
     },
   };
 }

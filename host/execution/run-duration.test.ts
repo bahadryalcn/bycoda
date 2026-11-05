@@ -10,6 +10,53 @@ import {
   localRunDay,
 } from "./run-duration";
 
+it("exposes a real admitted origin to nested budget reads before commit", async () => {
+  const store = new HostStore(":memory:");
+  await store.ready;
+  try {
+    await store.transaction(async () => {
+      await admitRunDuration(store, "session", "accepted", 1_000, 100);
+      expect(await confirmedRunProgress(store, "session", "accepted", 1_000, 100)).toEqual({
+        elapsed: 0,
+        uncertain: false,
+      });
+      expect(await confirmedRunProgress(store, "session", "accepted", 2_000, 1_100)).toEqual({
+        elapsed: 1_000,
+        uncertain: false,
+      });
+    });
+    expect(await confirmedRunProgress(store, "session", "accepted", 3_000, 2_100)).toEqual({
+      elapsed: 2_000,
+      uncertain: false,
+    });
+  } finally {
+    await store.close();
+  }
+});
+
+it("removes an admitted origin and nested samples when the accepting batch rolls back", async () => {
+  const store = new HostStore(":memory:");
+  await store.ready;
+  try {
+    await expect(
+      store.transaction(async () => {
+        await admitRunDuration(store, "session", "accepted", 1_000, 100);
+        expect(await confirmedRunProgress(store, "session", "accepted", 2_000, 1_100)).toEqual({
+          elapsed: 1_000,
+          uncertain: false,
+        });
+        throw new Error("acceptance rolled back");
+      }),
+    ).rejects.toThrow("acceptance rolled back");
+    expect(await confirmedRunProgress(store, "session", "accepted", 3_000, 2_100)).toEqual({
+      elapsed: 0,
+      uncertain: true,
+    });
+  } finally {
+    await store.close();
+  }
+});
+
 it("records the admitted day even before any elapsed interval", async () => {
   const store = new HostStore(":memory:");
   await store.ready;

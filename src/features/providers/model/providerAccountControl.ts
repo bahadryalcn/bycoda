@@ -57,7 +57,9 @@ export function createProviderAccountControl(
       !context.valid() ||
       !context.environmentId ||
       !(context.sourceSessionId ?? context.sourceThreadId) ||
-      (!!context.sourceThreadId && (!!context.projectId !== !!context.projectCwd || !!context.projectCwd !== !!context.workingCwd)) ||
+      (!!context.sourceThreadId &&
+        (!!context.projectId !== !!context.projectCwd ||
+          !!context.projectCwd !== !!context.workingCwd)) ||
       !!context.projectCwd?.startsWith("remote://") ||
       !!context.workingCwd?.startsWith("remote://")
     )
@@ -92,7 +94,8 @@ export function createProviderAccountControl(
     const quota = action === "providerManagement.quotaRefresh";
     if (action !== "providerManagement.patch" && !quota)
       throw Error("Unsupported account metadata action");
-    if (context.sourceThreadId && !context.authorize) throw Error("Room effect authority is unavailable");
+    if (context.sourceThreadId && !context.authorize)
+      throw Error("Room effect authority is unavailable");
     exact(input, [
       "operationId",
       "expectedAccountRevision",
@@ -184,7 +187,8 @@ export function createProviderAccountControl(
         !accounts.some((row) => row.provider === provider && row.id === accountId)
       )
         throw Error("Account metadata changed; review it again");
-      if (context.authorize && !(await context.authorize())) throw Error("Account authority revoked");
+      if (context.authorize && !(await context.authorize()))
+        throw Error("Account authority revoked");
       assert(context);
       if (accountMetadataSignature(deps.accounts()) !== signatureBefore)
         throw Error("Account metadata changed; review it again");

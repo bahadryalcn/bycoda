@@ -476,7 +476,12 @@ export class SocialPrograms {
     const adapter = this.images.codex;
     if (!adapter) return undefined;
     const known = this.featureSnapshot;
-    if (!refresh && known?.adapter === adapter && known.epoch === this.lifecycleEpoch && performance.now() < known.expires)
+    if (
+      !refresh &&
+      known?.adapter === adapter &&
+      known.epoch === this.lifecycleEpoch &&
+      performance.now() < known.expires
+    )
       return structuredClone(known.value);
     if (this.featureProbe?.adapter === adapter)
       return structuredClone(await this.featureProbe.promise);
@@ -488,7 +493,9 @@ export class SocialPrograms {
       const value = await pending.promise;
       if (this.featureProbe === pending && epoch === this.lifecycleEpoch)
         this.featureSnapshot = {
-          adapter, epoch, expires: performance.now() + (value.available ? 30_000 : 5_000),
+          adapter,
+          epoch,
+          expires: performance.now() + (value.available ? 30_000 : 5_000),
           value: structuredClone(value),
         };
       return structuredClone(value);
@@ -503,7 +510,9 @@ export class SocialPrograms {
       await mapAsync(
         ["codex", "gemini", "comfyui", "openai-api"] as const,
         async (provider) =>
-          (provider === "codex" ? await this.codexFeatureCapability(refresh) : await this.images[provider]?.capability()) ?? {
+          (provider === "codex"
+            ? await this.codexFeatureCapability(refresh)
+            : await this.images[provider]?.capability()) ?? {
             provider,
             available: false,
             reason: "Not configured on this executor.",

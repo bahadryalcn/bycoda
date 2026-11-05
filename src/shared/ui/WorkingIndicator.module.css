@@ -3,6 +3,7 @@
    signal reads the same active role at a shared icon size. */
 .indicator {
   --working-indicator-size: var(--ui-icon-xs);
+  color: var(--ui-tone-accent-fg);
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
@@ -41,7 +42,7 @@
   block-size: calc(14 / 24 * 100%);
   border-radius: 999px;
   /* Not currentColor: an ancestor or consumer text color must not recolor it. */
-  background: var(--color-active);
+  background: var(--ui-tone-accent-fg);
   transform: scaleY(var(--bar-scale, 0.6));
 }
 

@@ -1,23 +1,33 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { SendTurnInput } from "../../src/integrations/harness/core/types";
 import type { HostProvider } from "../providers/providers";
 import { HostEngine } from "../engine";
 import { HostStore } from "../store";
-import { HostTasks } from "./tasks";
+import { HostTasks } from "./service";
+import { finishedRunProgress } from "../execution/run-duration";
 import { taskPreflightResourceKey } from "../../src/features/tasks/model/taskPreflight";
+import * as time from "../../src/shared/lib/time/timestamps";
 if (process.platform === "win32") vi.setConfig({ testTimeout: 60000 });
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
-  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  try {
+    for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  } finally {
+    vi.restoreAllMocks();
+  }
 });
 async function setup() {
-  const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-harness-")));
-  const store = new HostStore(join(directory, "host.db"));
-  const project = await store.addProject(directory, "Harness fixture");
+  const fixture = realpathSync.native(mkdtempSync(join(tmpdir(), "bycoda-harness-")));
+  const directory = join(fixture, "workspace");
+  mkdirSync(directory);
   const clock = { now: new Date("2026-10-24T12:00:00").getTime() };
+  vi.spyOn(Date, "now").mockImplementation(() => clock.now);
+  vi.spyOn(time, "monotonicNow").mockImplementation(() => clock.now);
+  const store = new HostStore(join(fixture, "host.db"));
+  const project = await store.addProject(directory, "Harness fixture");
   const turns: Array<{
     input: SendTurnInput;
     finish: () => void;
@@ -70,6 +80,7 @@ async function setup() {
   };
   const finish = async (reply = "Prepared the report") => {
     const turn = turns.at(-1)!;
+    const runId = (await store.session(turn.input.sessionId)).runId!;
     turn.input.onEvent({ type: "message.delta", text: reply });
     turn.input.onEvent({ type: "message.completed" });
     turn.finish();
@@ -79,6 +90,9 @@ async function setup() {
         timeout: 10000,
       },
     );
+    await vi.waitFor(async () => {
+      expect(await finishedRunProgress(store, turn.input.sessionId, runId)).not.toBeNull();
+    });
     clock.now += 1;
     await tick();
   };
@@ -87,7 +101,7 @@ async function setup() {
     await engine.close();
     await tasks.idle();
     await store.close();
-    rmSync(directory, { recursive: true, force: true, maxRetries: 5 });
+    rmSync(fixture, { recursive: true, force: true, maxRetries: 5 });
   });
   return {
     directory,
@@ -110,9 +124,15 @@ it("continues an accepted task after its originating project permit closes", asy
   await s.tasks.save(s.input({ status: "todo" }));
   const gate = Promise.withResolvers<void>();
   const tick = s.tasks.tick.bind(s.tasks);
-  const delayed = vi.spyOn(s.tasks, "tick").mockImplementationOnce(async () => { await gate.promise; return tick(); });
+  const delayed = vi.spyOn(s.tasks, "tick").mockImplementationOnce(async () => {
+    await gate.promise;
+    return tick();
+  });
   let permit = true;
-  const accepted = await s.store.db.withAuthorization(async () => permit, () => s.tasks.startTask("harness-task"));
+  const accepted = await s.store.db.withAuthorization(
+    async () => permit,
+    () => s.tasks.startTask("harness-task"),
+  );
   expect(accepted.status).toBe("queued");
   expect(s.turns).toHaveLength(0);
   permit = false;
@@ -128,10 +148,12 @@ it("does not schedule a task when its enclosing acceptance transaction rolls bac
   const s = await setup();
   await s.tasks.save(s.input({ status: "todo" }));
   const tick = vi.spyOn(s.tasks, "tick");
-  await expect(s.store.transaction(async () => {
-    await s.tasks.startTask("harness-task");
-    throw new Error("rollback fixture");
-  })).rejects.toThrow("rollback fixture");
+  await expect(
+    s.store.transaction(async () => {
+      await s.tasks.startTask("harness-task");
+      throw new Error("rollback fixture");
+    }),
+  ).rejects.toThrow("rollback fixture");
   expect(tick).not.toHaveBeenCalled();
   expect((await s.task()).status).toBe("todo");
   expect(s.turns).toHaveLength(0);
@@ -140,10 +162,17 @@ it("does not schedule a task when its enclosing acceptance transaction rolls bac
 it("schedules an accepted retry after its originating project permit closes", async () => {
   const s = await setup();
   await s.tasks.save(s.input({ status: "todo" }));
-  await s.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.status','blocked','$.error','fixture failure') WHERE id=?").run("harness-task");
+  await s.store.db
+    .prepare(
+      "UPDATE tasks SET value=json_set(value,'$.status','blocked','$.error','fixture failure') WHERE id=?",
+    )
+    .run("harness-task");
   const reviewed = await s.task();
   let permit = true;
-  const accepted = await s.store.db.withAuthorization(async () => permit, () => s.tasks.move("harness-task", "queued", reviewed));
+  const accepted = await s.store.db.withAuthorization(
+    async () => permit,
+    () => s.tasks.move("harness-task", "queued", reviewed),
+  );
   expect(accepted.status).toBe("queued");
   permit = false;
   await s.tick();
@@ -156,7 +185,10 @@ it("schedules an accepted retry after its originating project permit closes", as
 it("schedules a newly accepted queued task after its originating project permit closes", async () => {
   const s = await setup();
   let permit = true;
-  const accepted = await s.store.db.withAuthorization(async () => permit, () => s.tasks.save(s.input({ status: "queued" })));
+  const accepted = await s.store.db.withAuthorization(
+    async () => permit,
+    () => s.tasks.save(s.input({ status: "queued" })),
+  );
   expect(accepted.status).toBe("queued");
   permit = false;
   await s.tick();
@@ -216,7 +248,10 @@ describe("task harness preparation and aggregate budgets", () => {
     const s = await setup();
     await s.start({ budget: { maxAgentMinutes: 1 } });
     writeFileSync(join(s.directory, "retained-result.md"), "Keep this work");
-    s.clock.now += 2 * 60000;
+    s.clock.now += 30_000;
+    await s.tick();
+    expect((await s.task()).status).toBe("running");
+    s.clock.now += 30_001;
     await s.tick();
     expect((await s.task()).status).toBe("blocked");
     expect((await s.task()).budgetStop).toBeTruthy();
@@ -287,6 +322,7 @@ describe("task harness preparation and aggregate budgets", () => {
     const s = await setup();
     await s.start({ review: true, budget: { maxAgentMinutes: 1 } });
     await s.finish();
+    expect((await s.task()).error).toBeFalsy();
     await vi.waitFor(() => expect(s.turns).toHaveLength(2), { timeout: 10000 });
     const reviewerId = (await s.task()).reviewer!.sessionId!;
     s.clock.now += 61000;

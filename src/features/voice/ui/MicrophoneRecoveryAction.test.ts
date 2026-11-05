@@ -6,9 +6,15 @@ import { afterEach, expect, it, vi } from "vitest";
 const platform = vi.hoisted(() => ({ mac: false, win: false, linux: false, native: true }));
 const openPrivacySettings = vi.hoisted(() => vi.fn(async (_pane: string) => {}));
 vi.mock("../../../platform/tauri/platform", () => ({
-  get IS_MAC() { return platform.mac; },
-  get IS_WIN() { return platform.win; },
-  get IS_LINUX() { return platform.linux; },
+  get IS_MAC() {
+    return platform.mac;
+  },
+  get IS_WIN() {
+    return platform.win;
+  },
+  get IS_LINUX() {
+    return platform.linux;
+  },
 }));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => platform.native }));
 vi.mock("../../../platform/tauri/privacySettings", () => ({ openPrivacySettings }));
@@ -35,14 +41,19 @@ async function render(message = microphoneBlockedMessage()) {
   return () => element!.querySelector("button");
 }
 
-it.each(["mac", "win"] as const)("opens %s microphone settings without claiming a grant", async (os) => {
-  platform[os] = true;
-  const button = await render();
-  expect(button()?.getAttribute("aria-label") ?? button()?.textContent).toContain("Open Privacy Settings");
-  await act(async () => button()!.click());
-  expect(openPrivacySettings).toHaveBeenCalledExactlyOnceWith("microphone");
-  expect(element?.textContent).not.toContain("allowed");
-});
+it.each(["mac", "win"] as const)(
+  "opens %s microphone settings without claiming a grant",
+  async (os) => {
+    platform[os] = true;
+    const button = await render();
+    expect(button()?.getAttribute("aria-label") ?? button()?.textContent).toContain(
+      "Open Privacy Settings",
+    );
+    await act(async () => button()!.click());
+    expect(openPrivacySettings).toHaveBeenCalledExactlyOnceWith("microphone");
+    expect(element?.textContent).not.toContain("allowed");
+  },
+);
 
 it.each(["linux", "browser"])("does not offer an unsupported %s settings route", async (target) => {
   platform.linux = target === "linux";
@@ -62,14 +73,24 @@ it("does not offer microphone settings for unrelated errors", async () => {
 it("guards duplicate opens and reports launch failure for retry", async () => {
   platform.win = true;
   let reject!: (cause: Error) => void;
-  openPrivacySettings.mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }));
+  openPrivacySettings.mockImplementationOnce(
+    () =>
+      new Promise<void>((_, fail) => {
+        reject = fail;
+      }),
+  );
   const button = await render();
-  await act(async () => { button()!.click(); button()!.click(); });
+  await act(async () => {
+    button()!.click();
+    button()!.click();
+  });
   expect(openPrivacySettings).toHaveBeenCalledOnce();
   expect(button()?.getAttribute("aria-busy")).toBe("true");
   expect(button()?.getAttribute("aria-disabled")).toBe("true");
   await act(async () => reject(new Error("native route failed")));
-  expect(element?.textContent).toContain("Could not open microphone settings. Open your system settings manually.");
+  expect(element?.textContent).toContain(
+    "Could not open microphone settings. Open your system settings manually.",
+  );
   expect(button()?.disabled).toBe(false);
   await act(async () => button()!.click());
   expect(openPrivacySettings).toHaveBeenCalledTimes(2);
@@ -79,7 +100,12 @@ it("guards duplicate opens and reports launch failure for retry", async () => {
 it("ignores settings launch completion after unmount", async () => {
   platform.mac = true;
   let reject!: (cause: Error) => void;
-  openPrivacySettings.mockImplementationOnce(() => new Promise<void>((_, fail) => { reject = fail; }));
+  openPrivacySettings.mockImplementationOnce(
+    () =>
+      new Promise<void>((_, fail) => {
+        reject = fail;
+      }),
+  );
   const button = await render();
   await act(async () => button()!.click());
   await act(async () => root!.unmount());

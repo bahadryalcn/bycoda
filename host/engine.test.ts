@@ -9,34 +9,53 @@ import { HostEngine, parseCommand, type ManagedTurnHistoryAdapter } from "./engi
 import type { TurnGitRecord, TurnGitSnapshot } from "./workspaces/workspace-contracts";
 import { HostStore } from "./store";
 
-it.each(["success", "known-empty", "missing", "pending", "failed", "wrong-token", "reused-token", "late"] as const)(
+it.each([
+  "success",
+  "known-empty",
+  "missing",
+  "pending",
+  "failed",
+  "wrong-token",
+  "reused-token",
+  "late",
+] as const)(
   "keeps automatic utility ownership truthful for %s without manual Title commands",
   async (outcome) => {
     const { engine, store, id, provider } = await setup();
     const value = await store.session(id);
     type Context = NonNullable<SendTurnInput["operationContext"]>;
     const internal = engine as unknown as {
-      backgroundProviderWork(input: typeof value, provider: HostProvider, effect: (context: Context) => Promise<null>, apply: (result: null) => Promise<void>): void;
+      backgroundProviderWork(
+        input: typeof value,
+        provider: HostProvider,
+        effect: (context: Context) => Promise<null>,
+        apply: (result: null) => Promise<void>,
+      ): void;
       activityProviders: Map<{ bookkeepingWork: Promise<unknown> }, unknown>;
       retainedProviders: Map<string, Set<HostProvider>>;
     };
     let late: (() => void) | undefined;
-    internal.backgroundProviderWork(value, provider, async (context) => {
-      if (outcome === "success" || outcome === "known-empty")
-        await runTextOperation(context, async () => null);
-      else if (outcome !== "missing") {
-        const token = {};
-        context.onUtilityStarted?.(token);
-        if (outcome === "failed") context.onUtilityFailed?.(token);
-        else if (outcome === "wrong-token") context.onUtilityCompleted?.({});
-        else if (outcome === "reused-token") {
-          context.onUtilityCompleted?.(token);
+    internal.backgroundProviderWork(
+      value,
+      provider,
+      async (context) => {
+        if (outcome === "success" || outcome === "known-empty")
+          await runTextOperation(context, async () => null);
+        else if (outcome !== "missing") {
+          const token = {};
           context.onUtilityStarted?.(token);
-          context.onUtilityCompleted?.(token);
-        } else if (outcome === "late") late = () => context.onUtilityCompleted?.(token);
-      }
-      return null;
-    }, async () => {});
+          if (outcome === "failed") context.onUtilityFailed?.(token);
+          else if (outcome === "wrong-token") context.onUtilityCompleted?.({});
+          else if (outcome === "reused-token") {
+            context.onUtilityCompleted?.(token);
+            context.onUtilityStarted?.(token);
+            context.onUtilityCompleted?.(token);
+          } else if (outcome === "late") late = () => context.onUtilityCompleted?.(token);
+        }
+        return null;
+      },
+      async () => {},
+    );
     const activity = [...internal.activityProviders.keys()][0];
     await activity.bookkeepingWork;
     late?.();
@@ -47,7 +66,9 @@ it.each(["success", "known-empty", "missing", "pending", "failed", "wrong-token"
       expect(remove).toHaveBeenCalledOnce();
     } else {
       expect(internal.retainedProviders.get(id)?.has(provider)).toBe(true);
-      await expect(engine.withRetiredProviderWriterForDeletion(id, remove, async () => {})).rejects.toThrow("Other original provider work remains");
+      await expect(
+        engine.withRetiredProviderWriterForDeletion(id, remove, async () => {}),
+      ).rejects.toThrow("Other original provider work remains");
       expect(remove).not.toHaveBeenCalled();
     }
   },
@@ -56,16 +77,27 @@ it.each(["success", "known-empty", "missing", "pending", "failed", "wrong-token"
 it("checks original authority after asynchronous skill preparation before provider entry", async () => {
   const { engine, store, id, provider, turns } = await setup();
   let entered!: () => void, release!: () => void;
-  const preparing = new Promise<void>((resolve) => { entered = resolve; });
-  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const preparing = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   provider.prepareOperationPolicy = async (input) => {
     entered();
     await gate;
     return input;
   };
-  const receipt = await engine.command({ type: "send", commandId: "async-skill-authority", sessionId: id, text: "Continue" });
+  const receipt = await engine.command({
+    type: "send",
+    commandId: "async-skill-authority",
+    sessionId: id,
+    text: "Continue",
+  });
   await preparing;
-  const authority = vi.spyOn(store, "assertAuthority").mockRejectedValueOnce(new Error("Original authority replaced"));
+  const authority = vi
+    .spyOn(store, "assertAuthority")
+    .mockRejectedValueOnce(new Error("Original authority replaced"));
   release();
   try {
     await engine.waitForRun(id, receipt.runId);
@@ -77,23 +109,35 @@ it("checks original authority after asynchronous skill preparation before provid
   }
 });
 
-it.each(["configure", "draft"] as const)("rejects stale %s revisions atomically and reuses an accepted receipt", async (type) => {
-  const { engine, store, id } = await setup();
-  const initial = await store.session(id);
-  const command = {
-    type, commandId: `revision-${type}`, sessionId: id, expectedRevision: initial.revision,
-    ...(type === "configure" ? { model: "codex:updated", modelSettings: {}, runtimeMode: "supervised" } : { text: "unsent draft" }),
-  };
-  await engine.updateSession(id, { title: "Changed by owner" });
-  await expect(engine.command(command)).rejects.toThrow("conversation changed");
-  const current = await store.session(id);
-  expect(current.session.model).toBe(initial.session.model);
-  expect(current.session.blocks).toEqual(initial.session.blocks);
-  const accepted = { ...command, commandId: `accepted-${type}`, expectedRevision: current.revision };
-  const receipt = await engine.command(accepted);
-  expect(await engine.command(accepted)).toEqual(receipt);
-  expect((await store.session(id)).revision).toBe(receipt.revision);
-});
+it.each(["configure", "draft"] as const)(
+  "rejects stale %s revisions atomically and reuses an accepted receipt",
+  async (type) => {
+    const { engine, store, id } = await setup();
+    const initial = await store.session(id);
+    const command = {
+      type,
+      commandId: `revision-${type}`,
+      sessionId: id,
+      expectedRevision: initial.revision,
+      ...(type === "configure"
+        ? { model: "codex:updated", modelSettings: {}, runtimeMode: "supervised" }
+        : { text: "unsent draft" }),
+    };
+    await engine.updateSession(id, { title: "Changed by owner" });
+    await expect(engine.command(command)).rejects.toThrow("conversation changed");
+    const current = await store.session(id);
+    expect(current.session.model).toBe(initial.session.model);
+    expect(current.session.blocks).toEqual(initial.session.blocks);
+    const accepted = {
+      ...command,
+      commandId: `accepted-${type}`,
+      expectedRevision: current.revision,
+    };
+    const receipt = await engine.command(accepted);
+    expect(await engine.command(accepted)).toEqual(receipt);
+    expect((await store.session(id)).revision).toBe(receipt.revision);
+  },
+);
 import { launchSessionRun } from "./sessions/sessionRuns";
 import { readAttachmentChunk, writeAttachmentChunk } from "./attachments/attachments";
 import {
@@ -118,13 +162,40 @@ const cleanups: Array<() => Promise<void> | void> = [];
 it("regenerates only title metadata using the selected utility model and replays its receipt", async () => {
   const { engine, store, id, provider, turns } = await setup();
   const original = await store.session(id);
-  await store.save({ ...original, revision: original.revision + 1, session: { ...original.session, blocks: [{ id: "message", role: "user", text: "Fix title generation" }] } }, { type: "test.seed" });
-  provider.generateTitle = vi.fn(async () => ({ title: "Reliable title generation", workItem: null }));
-  const command = { type: "regenerateTitle", commandId: "regenerate-1", sessionId: id, expectedTitle: original.session.title, harness: "codex", model: "codex:terra", modelSettings: { effort: "low" } };
+  await store.save(
+    {
+      ...original,
+      revision: original.revision + 1,
+      session: {
+        ...original.session,
+        blocks: [{ id: "message", role: "user", text: "Fix title generation" }],
+      },
+    },
+    { type: "test.seed" },
+  );
+  provider.generateTitle = vi.fn(async () => ({
+    title: "Reliable title generation",
+    workItem: null,
+  }));
+  const command = {
+    type: "regenerateTitle",
+    commandId: "regenerate-1",
+    sessionId: id,
+    expectedTitle: original.session.title,
+    harness: "codex",
+    model: "codex:terra",
+    modelSettings: { effort: "low" },
+  };
   const receipt = await engine.command(command);
   expect(await engine.command(command)).toEqual(receipt);
   expect(provider.generateTitle).toHaveBeenCalledOnce();
-  expect(provider.generateTitle).toHaveBeenCalledWith(expect.objectContaining({ model: "codex:terra", modelSettings: { effort: "low" }, message: "user: Fix title generation" }));
+  expect(provider.generateTitle).toHaveBeenCalledWith(
+    expect.objectContaining({
+      model: "codex:terra",
+      modelSettings: { effort: "low" },
+      message: "user: Fix title generation",
+    }),
+  );
   const saved = await store.session(id);
   expect(saved.session.title).toContain("Reliable title generation");
   expect(saved.session.model).toBe(original.session.model);
@@ -135,7 +206,16 @@ it("regenerates only title metadata using the selected utility model and replays
 it("rejects stale title regeneration without invoking the provider", async () => {
   const { engine, id, provider } = await setup();
   provider.generateTitle = vi.fn(async () => ({ title: "Other", workItem: null }));
-  await expect(engine.command({ type: "regenerateTitle", commandId: "stale-title", sessionId: id, expectedTitle: "Earlier title", harness: "codex", model: "codex:terra" })).rejects.toThrow("Conversation title changed");
+  await expect(
+    engine.command({
+      type: "regenerateTitle",
+      commandId: "stale-title",
+      sessionId: id,
+      expectedTitle: "Earlier title",
+      harness: "codex",
+      model: "codex:terra",
+    }),
+  ).rejects.toThrow("Conversation title changed");
   expect(provider.generateTitle).not.toHaveBeenCalled();
 });
 it("projects citation-only prompts at the Host provider boundary while preserving raw history", async () => {
@@ -3547,7 +3627,12 @@ describe("handoff context capacity", () => {
     // Use the production enforcement wrapper around the fake provider transport.
     Object.assign(
       provider,
-      withMachineSkillPolicy("codex", { ...provider }, () => policy, () => []),
+      withMachineSkillPolicy(
+        "codex",
+        { ...provider },
+        () => policy,
+        () => [],
+      ),
     );
     await engine.command({
       type: "send",

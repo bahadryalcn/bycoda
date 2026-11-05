@@ -50,10 +50,19 @@ function createEntry() {
 // Controllers and queues stay in memory; restarting the app never restores a
 // loading flag for a process that is no longer running.
 const entries = new CheckoutCache<string, ReturnType<typeof createEntry>>(
-  (entry) => entry.listeners.size > 0 || !!entry.backgroundFetch || !!entry.generateAbort.current ||
-    entry.fileActions.current.size > 0 || !!entry.state.busy || !!entry.state.pending ||
-    !!entry.state.status || !!entry.state.message || entry.state.generating ||
-    !!entry.state.stashAction || !!entry.state.amendTarget || !!entry.state.feedback,
+  (entry) =>
+    entry.listeners.size > 0 ||
+    !!entry.backgroundFetch ||
+    !!entry.generateAbort.current ||
+    entry.fileActions.current.size > 0 ||
+    !!entry.state.busy ||
+    !!entry.state.pending ||
+    !!entry.state.status ||
+    !!entry.state.message ||
+    entry.state.generating ||
+    !!entry.state.stashAction ||
+    !!entry.state.amendTarget ||
+    !!entry.state.feedback,
   (entry) => entry.state,
 );
 
@@ -76,17 +85,27 @@ export function retainGitPanelRuntime(cwd: string) {
 
 export async function withGitPanelRuntime<T>(cwd: string, work: () => Promise<T>): Promise<T> {
   const original = retainGitPanelRuntime(cwd);
-  try { return await work(); } finally { original.release(); }
+  try {
+    return await work();
+  } finally {
+    original.release();
+  }
 }
 
 /** Commit-time subscription rechecks canonical identity after an interrupted render. */
 export function useGitPanelRuntime(cwd: string) {
   const checkout = pathKey(cwd);
-  const subscribe = useCallback((listener: () => void) => {
-    const entry = gitPanelRuntime(checkout);
-    entry.listeners.add(listener);
-    return () => { entry.listeners.delete(listener); entries.prune(); };
-  }, [checkout]);
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const entry = gitPanelRuntime(checkout);
+      entry.listeners.add(listener);
+      return () => {
+        entry.listeners.delete(listener);
+        entries.prune();
+      };
+    },
+    [checkout],
+  );
   const snapshot = useCallback(() => gitPanelRuntime(checkout), [checkout]);
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }

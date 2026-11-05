@@ -398,14 +398,20 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
       const url = new URL(String(raw));
       if (url.pathname.endsWith("/known-0/comments") && first) {
         first = false;
-        return Response.json({ data: [], paging: { next: "ignored", cursors: { after: "comments-next" } } });
+        return Response.json({
+          data: [],
+          paging: { next: "ignored", cursors: { after: "comments-next" } },
+        });
       }
       return Response.json({ data: [] });
     });
     const acct = account("facebook");
     acct.scopes = ["pages_read_engagement", "pages_read_user_content"];
     const adapter = createSocialAdapters(new SocialHttp(fetcher)).facebook;
-    const source = vi.fn(async (after?: string) => ({ posts: after ? ["known-2"] : ["known-0", "known-1"], next: after ? undefined : "job-1" }));
+    const source = vi.fn(async (after?: string) => ({
+      posts: after ? ["known-2"] : ["known-0", "known-1"],
+      next: after ? undefined : "job-1",
+    }));
     const initial = await adapter.poll(acct, "token", [], undefined, source);
     expect(source.mock.calls).toEqual([[undefined]]);
     // The bounded first poll drains known-0 including its second comment page;
@@ -416,7 +422,9 @@ describe("Resmi sosyal API adaptör sözleşmeleri", () => {
     expect(JSON.parse(drained.cursor!).posts).toEqual([]);
     await adapter.poll(acct, "token", [], drained.cursor, source);
     expect(source.mock.calls).toEqual([[undefined], ["job-1"]]);
-    expect(fetcher.mock.calls.some(([raw]) => String(raw).includes("after=comments-next"))).toBe(true);
+    expect(fetcher.mock.calls.some(([raw]) => String(raw).includes("after=comments-next"))).toBe(
+      true,
+    );
   });
   it("drains legacy cursor-only IDs without replacing them with new discovery", async () => {
     const visited: string[] = [];

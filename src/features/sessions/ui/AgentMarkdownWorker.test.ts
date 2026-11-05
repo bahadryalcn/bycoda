@@ -10,12 +10,20 @@ class ControlledWorker {
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: ((event: ErrorEvent) => void) | null = null;
   request?: { text: string; sequence: number };
-  constructor() { ControlledWorker.current = this; }
-  postMessage(request: { text: string; sequence: number }) { this.request = request; }
+  constructor() {
+    ControlledWorker.current = this;
+  }
+  postMessage(request: { text: string; sequence: number }) {
+    this.request = request;
+  }
   terminate() {}
   complete() {
     const request = this.request!;
-    act(() => this.onmessage!({ data: { sequence: request.sequence, blocks: parseStreamingMarkdown(request.text) } } as MessageEvent));
+    act(() =>
+      this.onmessage!({
+        data: { sequence: request.sequence, blocks: parseStreamingMarkdown(request.text) },
+      } as MessageEvent),
+    );
   }
 }
 function fixture() {
@@ -27,7 +35,11 @@ function fixture() {
   return {
     container,
     render: (text: string) => act(() => root.render(createElement(AgentMarkdown, { text }))),
-    close() { act(() => root.unmount()); container.remove(); vi.unstubAllGlobals(); },
+    close() {
+      act(() => root.unmount());
+      container.remove();
+      vi.unstubAllGlobals();
+    },
   };
 }
 it("uses explicit pending first paint instead of raw large Markdown", async () => {
@@ -38,9 +50,13 @@ it("uses explicit pending first paint instead of raw large Markdown", async () =
     expect(f.container.textContent).toContain("Rendering Markdown");
     expect(f.container.textContent).not.toContain("**Formatted beginning**");
     await act(async () => ControlledWorker.current.complete());
-    expect(f.container.querySelector('[data-streamdown="strong"]')?.textContent).toBe("Formatted beginning");
+    expect(f.container.querySelector('[data-streamdown="strong"]')?.textContent).toBe(
+      "Formatted beginning",
+    );
     expect(f.container.querySelector('[aria-busy="true"]')).toBeNull();
-  } finally { f.close(); }
+  } finally {
+    f.close();
+  }
 });
 it("retains formatted nodes and selection when growth crosses worker threshold", () => {
   const f = fixture();
@@ -59,7 +75,9 @@ it("retains formatted nodes and selection when growth crosses worker threshold",
     ControlledWorker.current.complete();
     expect(f.container.querySelector("p")).toBe(paragraph);
     expect(document.getSelection()!.toString()).toBe("Completed selectable paragraph.");
-  } finally { f.close(); }
+  } finally {
+    f.close();
+  }
 });
 it("exposes complete inert source after failure instead of blocking synchronous parse", () => {
   const f = fixture();
@@ -71,7 +89,9 @@ it("exposes complete inert source after failure instead of blocking synchronous 
     expect(f.container.textContent).toContain(text);
     expect(f.container.querySelector("script")).toBeNull();
     expect(f.container.querySelector('[aria-busy="true"]')).toBeNull();
-  } finally { f.close(); }
+  } finally {
+    f.close();
+  }
 });
 it("labels source fallback when workers are unavailable", () => {
   const f = fixture();
@@ -82,5 +102,7 @@ it("labels source fallback when workers are unavailable", () => {
     expect(f.container.textContent).toContain("Formatted preview unavailable. Showing source.");
     expect(f.container.textContent).toContain(text);
     expect(f.container.textContent).not.toContain("Rendering Markdown");
-  } finally { f.close(); }
+  } finally {
+    f.close();
+  }
 });

@@ -21,7 +21,10 @@ import {
 import { readAssistantRecovery } from "../work/assistant-worker-recovery";
 import type { HostNote } from "../../notes/host-notes";
 import type { AssistantNote } from "../../../src/shared/model/host-contracts/assistant";
-import { assistantRoleExecution, assistantRoleProfile } from "../../../src/shared/model/assistantRoles";
+import {
+  assistantRoleExecution,
+  assistantRoleProfile,
+} from "../../../src/shared/model/assistantRoles";
 import { readAssistantQuestionStatus, type AssistantQuestionStatus } from "./assistant-questions";
 import { AssistantChiefReads } from "../chief/assistant-chief-reads";
 import { assistantWorkerModelSettings } from "../work/assistant-worker-settings";
@@ -180,18 +183,24 @@ export function assistantExecutionPorts(
           listNotes: async () => {
             const list = await notes().list();
             const found = list.notes
-              .filter((note) => !note.sourceCwd && !note.sourceSessionId && note.tags.includes("assistant"))
+              .filter(
+                (note) =>
+                  !note.sourceCwd && !note.sourceSessionId && note.tags.includes("assistant"),
+              )
               .slice(0, 100);
             return (await Promise.all(found.map((note) => notes().get(note.id))))
               .filter((note) => note !== null)
               .map(assistantNoteDto);
           },
-          saveNote: async (input: {
-            id?: string;
-            title: string;
-            body: string;
-            expectedUpdatedAt?: number;
-          }, authorized?: () => Promise<boolean>) => {
+          saveNote: async (
+            input: {
+              id?: string;
+              title: string;
+              body: string;
+              expectedUpdatedAt?: number;
+            },
+            authorized?: () => Promise<boolean>,
+          ) => {
             const old = input.id ? await notes().get(input.id) : null;
             if (
               input.id &&

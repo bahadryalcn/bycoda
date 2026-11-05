@@ -475,10 +475,14 @@ it("reports unconfirmed shutdown and retains the terminal for retry", async () =
   expect(s.service.list(project.id).terminals).toHaveLength(0);
 });
 
-
 it("tiny terminal chunks retain exact ANSI/UTF16 ranges without append-time materialization", async () => {
   const s = setup();
-  const terminal = await s.service.create(project, { requestId: "paged-output" }, "owner", () => true);
+  const terminal = await s.service.create(
+    project,
+    { requestId: "paged-output" },
+    "owner",
+    () => true,
+  );
   const reads = vi.spyOn(OutputBuffer.prototype, "slice");
   try {
     let expected = "x".repeat(TERMINAL_OUTPUT_LIMIT);
@@ -492,13 +496,25 @@ it("tiny terminal chunks retain exact ANSI/UTF16 ranges without append-time mate
     expect(reads).not.toHaveBeenCalled();
     const start = end - expected.length;
     expect(s.service.read(project.id, { id: terminal.id, after: 0, limit: 3 })).toMatchObject({
-      output: expected.slice(0, 3), cursor: start + 3, truncated: true, hasMore: true,
+      output: expected.slice(0, 3),
+      cursor: start + 3,
+      truncated: true,
+      hasMore: true,
     });
     const after = end - 10;
     const first = s.service.read(project.id, { id: terminal.id, after, limit: 3 });
-    expect(first).toMatchObject({ output: expected.slice(after - start, after - start + 3), cursor: after + 3, truncated: false });
+    expect(first).toMatchObject({
+      output: expected.slice(after - start, after - start + 3),
+      cursor: after + 3,
+      truncated: false,
+    });
     const rest = s.service.read(project.id, { id: terminal.id, after: first.cursor, limit: 65536 });
-    expect(rest).toMatchObject({ output: expected.slice(first.cursor - start), cursor: end, truncated: false, hasMore: false });
+    expect(rest).toMatchObject({
+      output: expected.slice(first.cursor - start),
+      cursor: end,
+      truncated: false,
+      hasMore: false,
+    });
     s.output("later");
     expect(rest.output).toBe(expected.slice(first.cursor - start));
   } finally {

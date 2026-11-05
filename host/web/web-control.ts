@@ -71,6 +71,8 @@ function controlPage(nonce: string) {
 
 export const CONTROL_SCRIPT = String.raw`
 const $=id=>document.getElementById(id);let token='',environment,projectId='',sessionId='',snapshot,before,leaseId='',timer,catalogTimer,reading=false,models={},uncertain,displayedFrame,frameGeneration=0;
+const questionDrafts=new Map();
+const fixedQuestionOption=o=>o.id!=='__custom__'&&(o.literal===true||!/^other$/i.test(o.label.trim()));
 const showError=e=>{$('error').textContent=e?.message||String(e||'')};
 const el=(tag,text)=>{const n=document.createElement(tag);n.textContent=text;return n};
 const option=(select,id,text)=>{const n=el('option',text);n.value=id;select.append(n)};
@@ -83,7 +85,7 @@ async function rpc(method,params={}){
  }finally{clearTimeout(timeout)}
 }
 function clearFrame(){frameGeneration++;displayedFrame=undefined;$('frame').onload=null;$('frame').onerror=null;$('frame').removeAttribute('src')}
-function disconnect(){clearTimeout(timer);clearTimeout(catalogTimer);token='';environment=undefined;leaseId='';snapshot=undefined;sessionId='';$('credential').value='';$('workspace').hidden=true;$('login').hidden=false;$('transcript').replaceChildren();$('questions').replaceChildren();clearFrame()}
+function disconnect(){questionDrafts.clear();clearTimeout(timer);clearTimeout(catalogTimer);token='';environment=undefined;leaseId='';snapshot=undefined;sessionId='';$('credential').value='';$('workspace').hidden=true;$('login').hidden=false;$('transcript').replaceChildren();$('questions').replaceChildren();clearFrame()}
 async function command(params){if(params.type==='approve'){if(!environment?.capabilities?.includes('sessions.approvalOccurrence.v1'))throw Error('This Host cannot verify which request you are answering. Update the Host before responding.');if(typeof params.approvalOccurrenceId!=='string'||params.approvalOccurrenceId.length!==36||!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(params.approvalOccurrenceId))throw Error('This request cannot be verified. Refresh the conversation or update its execution client.')}const commandId=crypto.randomUUID();try{return await rpc('commands.dispatch',{...params,commandId})}catch(e){uncertain=commandId;$('recover').hidden=false;throw Error(e.message+'\nCommand '+commandId+' may have been accepted. Check its status before sending again.')}}
 function providerModels(){const select=$('model'),previous=select.value;select.replaceChildren();for(const m of models[$('provider').value]||[])option(select,m.id,m.name||m.id);if(Array.from(select.options).some(o=>o.value===previous))select.value=previous}
 async function loadModels(selected){const catalog=await rpc('models.list',{projectId:selected,progressive:true});if(!token||selected!==projectId)return;models=catalog.models||{};providerModels();if(catalog.pending?.length)catalogTimer=setTimeout(()=>void loadModels(selected).catch(showError),1000)}
@@ -94,7 +96,28 @@ async function readSession(force=false){if(!sessionId||reading||!token)return;re
  const page=await rpc('sessions.page',{sessionId:selected,preview:true});if(selected!==sessionId)return;if(page.sync.kind!=='snapshot')throw Error('History requires desktop transfer; use desktop for this session');snapshot=page.sync.value;before=page.before;render();
  }finally{reading=false}}
 function render(){const displayed=snapshot,displayedSessionId=sessionId,displayedEnvironment=environment,displayedCredential=token,s=displayed.session;$('status').textContent=displayed.status+' · '+(s.title||displayedSessionId);$('transcript').replaceChildren();for(const b of s.blocks){if(b.internal)continue;const row=el('div',(b.role||b.kind||'')+'\n'+(b.text||b.output||''));row.className='block';if(b.remoteContent)row.append(el('small','\n[Large content preview; open desktop for full block]'));if(b.approval&&!b.approval.decided){const original=Object.freeze({sessionId:displayedSessionId,runId:displayed.runId,authorityGeneration:displayed.authorityGeneration,requestId:b.approval.requestId,approvalOccurrenceId:b.approval.occurrenceId});for(const decision of ['allow','deny']){const btn=el('button',decision);btn.onclick=()=>action(btn,async()=>{if(environment!==displayedEnvironment||token!==displayedCredential)throw Error('This approval request or its connection changed. This decision was not sent.');await command({...original,type:'approve',decision});await readSession(true)});row.append(btn)}}$('transcript').append(row)}
- $('older').disabled=before===undefined;$('stop').disabled=!snapshot.runId;$('questions').replaceChildren();const pending=s.pendingQuestion;if(pending){const answers={},custom={};for(const q of pending.questions){const field=el('fieldset','');field.append(el('legend',q.prompt));for(const o of q.options){const label=el('label','');const input=document.createElement('input');input.type=q.multiSelect?'checkbox':'radio';input.name=q.id;input.onchange=()=>{answers[q.id]=Array.from(field.querySelectorAll('input:checked')).map(i=>i.value)};input.value=o.id;label.append(input,document.createTextNode(' '+o.label));field.append(label)}if(q.allowCustom){const input=document.createElement('input');input.placeholder='Custom answer';input.oninput=()=>custom[q.id]=input.value;field.append(input)}$('questions').append(field)}const submit=el('button','Answer questions');submit.onclick=()=>action(submit,async()=>{await command({type:'answer',sessionId,runId:snapshot.runId,requestId:pending.requestId,reply:{kind:'answered',answers,custom}});await readSession(true)});$('questions').append(submit)} }
+ $('older').disabled=before===undefined;$('stop').disabled=!snapshot.runId;renderQuestions(displayed,displayedSessionId,displayedEnvironment,displayedCredential); }
+function renderQuestions(displayed,originalSessionId,originalEnvironment,originalCredential){
+ $('questions').replaceChildren();const pending=displayed.session.pendingQuestion;if(!pending){for(const key of questionDrafts.keys())if(JSON.parse(key)[0]===originalSessionId)questionDrafts.delete(key);return;}
+ const key=JSON.stringify([originalSessionId,displayed.runId,pending.occurrenceId,pending.requestId,pending.callId,pending.questions]);
+ for(const stale of questionDrafts.keys())if(stale!==key&&JSON.parse(stale)[0]===originalSessionId)questionDrafts.delete(stale);
+ const draft=questionDrafts.get(key)||{answers:{},custom:{},notes:{}};questionDrafts.set(key,draft);
+ const {answers,custom,notes}=draft;
+ for(const q of pending.questions){
+  const field=el('fieldset','');let noteLabel;field.append(el('legend',q.prompt));
+  for(const o of q.options){const label=el('label',''),input=document.createElement('input');input.type=q.multiSelect?'checkbox':'radio';input.name=q.id;input.value=o.id;input.checked=answers[q.id]?.includes(o.id)||false;input.onchange=()=>{answers[q.id]=Array.from(field.querySelectorAll('input:checked')).map(i=>i.value);if(noteLabel)noteLabel.hidden=!q.options.some(o=>fixedQuestionOption(o)&&answers[q.id]?.includes(o.id))};label.append(input,document.createTextNode(' '+o.label));field.append(label)}
+  if(q.allowCustom){const input=document.createElement('input');input.placeholder='Custom answer';input.value=custom[q.id]||'';input.oninput=()=>custom[q.id]=input.value;field.append(input)}
+  if(q.allowCustom&&!q.preserveCustomWhitespace&&q.options.some(fixedQuestionOption)){const label=el('label','Additional note (optional)'),input=document.createElement('textarea');input.value=notes[q.id]||'';input.oninput=()=>notes[q.id]=input.value;label.append(input);noteLabel=label;label.hidden=!q.options.some(o=>fixedQuestionOption(o)&&answers[q.id]?.includes(o.id));field.append(label)}
+  $('questions').append(field);
+ }
+ const submit=el('button','Answer questions');submit.onclick=()=>action(submit,async()=>{
+  if(environment!==originalEnvironment||token!==originalCredential)throw Error('This question or its connection changed. This answer was not sent.');
+  const selectedNotes=Object.fromEntries(pending.questions.filter(q=>q.allowCustom&&!q.preserveCustomWhitespace&&q.options.some(o=>fixedQuestionOption(o)&&answers[q.id]?.includes(o.id))).flatMap(q=>notes[q.id]?.trim()?[[q.id,notes[q.id].trim()]]:[]));
+  const reply={kind:'answered',answers:structuredClone(answers),custom:structuredClone(custom),...(Object.keys(selectedNotes).length?{notes:selectedNotes}:{})};
+  await command({type:'answer',sessionId:originalSessionId,runId:displayed.runId,requestId:pending.requestId,reply});await readSession(true);
+ });$('questions').append(submit);
+}
+
 async function action(button,fn){button.disabled=true;showError('');try{await fn()}catch(e){showError(e)}finally{button.disabled=false}}
 function bind(id,fn){$(id).onclick=()=>action($(id),fn)}
 function schedule(){clearTimeout(timer);if(!token)return;timer=setTimeout(async()=>{try{if(!document.hidden)await readSession()}catch(e){showError(e)}finally{schedule()}},3000)}

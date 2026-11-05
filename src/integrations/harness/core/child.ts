@@ -22,7 +22,11 @@ import {
 } from "./nativeOutputDelivery";
 import { socialBridge, socialSpawnArgs } from "./socialBridge";
 import { observeProviderOperation } from "./providerObservation";
-import { nativeControlTurnReceipt, nativeSessionCapability, type ControlTurnHandle } from "./controlTurn";
+import {
+  nativeControlTurnReceipt,
+  nativeSessionCapability,
+  type ControlTurnHandle,
+} from "./controlTurn";
 import type { HostRunHandle, HostRunBinding } from "./hostRun";
 import { retireProviderProcess } from "./providerRetirement";
 import { runtimeLogsBridge, runtimeLogsSpawnArgs } from "./runtimeLogsBridge";
@@ -229,9 +233,10 @@ export function createChildProcessHandle(
   if (typeof sessionId !== "string" || !sessionId || sessionId.length > 512)
     throw new Error("Invalid harness process locator");
   if (nativeControlTurn) nativeControlTurnReceipt(nativeControlTurn);
-  const purposePage = purpose && !backend && typeof isTauri === "function" && isTauri()
-    ? tauriInvoke<string>("canonical_store_page_token")
-    : undefined;
+  const purposePage =
+    purpose && !backend && typeof isTauri === "function" && isTauri()
+      ? tauriInvoke<string>("canonical_store_page_token")
+      : undefined;
   if (purposePage) void purposePage.catch(() => undefined);
   const handle = Object.freeze({ sessionId }) as ChildProcessHandle;
   let resolve!: ChildProcessState["resolve"];
@@ -458,9 +463,7 @@ export function invalidateChildOutput(handle: ChildProcessHandle, reason: string
   else {
     // The actual invoked spawn may still return after local close/cancellation.
     // Only its own receipt can select a stream; unknown remains quarantined.
-    void state.ready.then(invalidate, () =>
-      quarantineNativeOutputSession(state.routeId, reason),
-    );
+    void state.ready.then(invalidate, () => quarantineNativeOutputSession(state.routeId, reason));
   }
 }
 
@@ -974,16 +977,24 @@ export async function spawnChild(
     }
     checkGuarded();
     const managementRequest = Object.freeze({
-      command, args: Object.freeze([...launchArgs]), cwd,
+      command,
+      args: Object.freeze([...launchArgs]),
+      cwd,
       account: account ? Object.freeze({ ...account }) : undefined,
-      binaryProvider, binaryPath, purpose: state.purpose,
+      binaryProvider,
+      binaryPath,
+      purpose: state.purpose,
     });
-    const managementGrant = state.backend === "native" && state.purpose && state.purposeToken
-      ? await state.invoke<{ token: string; routeId: string } | null>("harness_management_spawn_grant", {
-          pageToken: state.purposeToken,
-          command: managementRequest,
-        })
-      : undefined;
+    const managementGrant =
+      state.backend === "native" && state.purpose && state.purposeToken
+        ? await state.invoke<{ token: string; routeId: string } | null>(
+            "harness_management_spawn_grant",
+            {
+              pageToken: state.purposeToken,
+              command: managementRequest,
+            },
+          )
+        : undefined;
     checkGuarded();
     if (managementGrant) bindProcessRoute(state, managementGrant.routeId);
     if (!Number.isSafeInteger(spawnOrder + 1))
@@ -994,7 +1005,13 @@ export async function spawnChild(
       ...managementRequest,
       sessionId: state.routeId,
       genericAcpId,
-      ...(managementGrant ? { nativeManagementToken: managementGrant.token, nativeManagementRouteId: managementGrant.routeId, nativeManagementPurpose: state.purpose } : {}),
+      ...(managementGrant
+        ? {
+            nativeManagementToken: managementGrant.token,
+            nativeManagementRouteId: managementGrant.routeId,
+            nativeManagementPurpose: state.purpose,
+          }
+        : {}),
       ...(logicalSessionId === undefined ? {} : { logicalSessionId }),
       ...(state.backend === "native" && state.nativeControlTurn
         ? { controlTurn: nativeControlTurnReceipt(state.nativeControlTurn) }
@@ -1031,7 +1048,12 @@ export async function spawnChild(
           previous.retired = true;
           detachProcess(previous);
         }
-      if (previousState && previousState !== state && previousState.routeId !== sessionId && previousState.order < state.order) {
+      if (
+        previousState &&
+        previousState !== state &&
+        previousState.routeId !== sessionId &&
+        previousState.order < state.order
+      ) {
         previousState.retired = true;
         detachProcess(previousState);
       }
@@ -1115,7 +1137,12 @@ export function writeChild(
                 : {}),
             ...authorityArgs,
             ...(original.purpose && original.purposeToken
-              ? { nativeProcessPurpose: { kind: original.purpose, pageToken: original.purposeToken } }
+              ? {
+                  nativeProcessPurpose: {
+                    kind: original.purpose,
+                    pageToken: original.purposeToken,
+                  },
+                }
               : {}),
             ...(writer.backend === "native" && writer.controlTurn
               ? { nativeSessionCapability: nativeSessionCapability(writer.controlTurn) }
@@ -1480,22 +1507,43 @@ export async function updateHarnessCli(
 
 /** Capture cleanup permission while the exact fresh utility child still exists.
  * Execute only after caller has physically retired that original child. */
-export async function prepareUtilitySessionCleanup(handle: ChildProcessHandle, command: string, args: string[], cwd: string, binaryProvider: ConfigurableBinaryProvider): Promise<() => Promise<string>> {
+export async function prepareUtilitySessionCleanup(
+  handle: ChildProcessHandle,
+  command: string,
+  args: string[],
+  cwd: string,
+  binaryProvider: ConfigurableBinaryProvider,
+): Promise<() => Promise<string>> {
   const state = childState(handle);
   const binaryPath = runtimeProviderBinaryPath(binaryProvider);
-  const request = Object.freeze({ command, args: Object.freeze([...args]), cwd, binaryProvider, binaryPath });
+  const request = Object.freeze({
+    command,
+    args: Object.freeze([...args]),
+    cwd,
+    binaryProvider,
+    binaryPath,
+  });
   if (state.backend !== "native" || typeof isTauri !== "function" || !isTauri()) {
     return () => execChild(command, args, cwd, binaryProvider, binaryPath, "utility");
   }
-  const receipt = state.receipt ?? await state.ready;
-  const grant = await state.invoke<{ token: string; routeId: string }>("harness_utility_cleanup_grant", {
-    sessionId: state.routeId, constructionId: receipt.constructionId, command: request,
-  });
+  const receipt = state.receipt ?? (await state.ready);
+  const grant = await state.invoke<{ token: string; routeId: string }>(
+    "harness_utility_cleanup_grant",
+    {
+      sessionId: state.routeId,
+      constructionId: receipt.constructionId,
+      command: request,
+    },
+  );
   let invoked = false;
   return () => {
     if (invoked) throw new Error("Original utility cleanup already dispatched.");
     invoked = true;
-    return state.invoke<string>("harness_exec", { ...request, nativeManagementToken: grant.token, nativeManagementRouteId: grant.routeId });
+    return state.invoke<string>("harness_exec", {
+      ...request,
+      nativeManagementToken: grant.token,
+      nativeManagementRouteId: grant.routeId,
+    });
   };
 }
 
@@ -1513,19 +1561,34 @@ export function execChild(
       : binaryPathOverride;
   const work = captureNativeOutputWork();
   const originalBackend = backend;
-  const originalInvoke = originalBackend ? originalBackend.invoke.bind(originalBackend) : tauriInvoke;
-  const request = Object.freeze({ command, args: Object.freeze([...args]), cwd, binaryProvider, binaryPath });
-  const purposePage = purpose && !originalBackend && typeof isTauri === "function" && isTauri()
-    ? tauriInvoke<string>("canonical_store_page_token")
-    : undefined;
+  const originalInvoke = originalBackend
+    ? originalBackend.invoke.bind(originalBackend)
+    : tauriInvoke;
+  const request = Object.freeze({
+    command,
+    args: Object.freeze([...args]),
+    cwd,
+    binaryProvider,
+    binaryPath,
+  });
+  const purposePage =
+    purpose && !originalBackend && typeof isTauri === "function" && isTauri()
+      ? tauriInvoke<string>("canonical_store_page_token")
+      : undefined;
   const dispatch = (pageToken?: string): Promise<string> => {
-    const invokeExec = (grant?: { token: string; routeId: string }) => originalInvoke<string>("harness_exec", {
-      ...request,
-      ...(purpose && pageToken ? { nativeProcessPurpose: { kind: purpose, pageToken } } : {}),
-      ...(grant ? { nativeManagementToken: grant.token, nativeManagementRouteId: grant.routeId } : {}),
-    });
+    const invokeExec = (grant?: { token: string; routeId: string }) =>
+      originalInvoke<string>("harness_exec", {
+        ...request,
+        ...(purpose && pageToken ? { nativeProcessPurpose: { kind: purpose, pageToken } } : {}),
+        ...(grant
+          ? { nativeManagementToken: grant.token, nativeManagementRouteId: grant.routeId }
+          : {}),
+      });
     return purpose === "management" && pageToken
-      ? originalInvoke<{ token: string; routeId: string }>("harness_management_grant", { pageToken, command: request }).then(invokeExec)
+      ? originalInvoke<{ token: string; routeId: string }>("harness_management_grant", {
+          pageToken,
+          command: request,
+        }).then(invokeExec)
       : invokeExec();
   };
   let actual: Promise<string>;

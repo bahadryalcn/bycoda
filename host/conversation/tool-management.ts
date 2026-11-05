@@ -1,5 +1,15 @@
 import { createHash } from "node:crypto";
 import { MANAGEMENT_CONVERSATION_TOOLS } from "./conversation-management-tools";
+import { ROOM_NOTEBOOK_TOOLS } from "../assistant/room/assistant-room-notebook";
+import { ROOM_WORKSPACE_TOOLS } from "../assistant/room/assistant-room-workspace";
+import { ROOM_SESSION_TOOLS } from "../assistant/room/assistant-room-session";
+import {
+  ROOM_TERMINAL_SCHEMAS,
+  ROOM_SOCIAL_SCHEMAS,
+  ROOM_REMOTE_SCHEMAS,
+} from "../assistant/room/assistant-room-tool-schemas";
+import { SOCIAL_TOOLS } from "../../src/features/social/model/social";
+import { socialAuthorizationScope } from "../social/social-tools";
 
 /** Metadata describes existing operations; it never grants permission or dispatches them. */
 export type ManagedToolGroup = "conversation" | "social" | "runtime-logs";
@@ -10,6 +20,8 @@ export type ToolCatalogEntry = {
   action: string;
   inputSchema: Record<string, unknown>;
   description?: string;
+  /** Existing transport scope, distinct from whether the operation has effects. */
+  authorizationScope?: "read" | "write";
   annotations?: {
     readOnlyHint?: boolean;
     destructiveHint?: boolean;
@@ -62,8 +74,27 @@ const CONVERSATION_ACTIONS = new Set(
   ),
 );
 CONVERSATION_ACTIONS.add("browser.preview");
-for (const action of ["devices.control.status", "devices.control.claim", "devices.control.renew", "devices.control.release", "devices.inspect"]) CONVERSATION_ACTIONS.add(action);
+for (const action of [
+  "devices.control.status",
+  "devices.control.claim",
+  "devices.control.renew",
+  "devices.control.release",
+  "devices.inspect",
+])
+  CONVERSATION_ACTIONS.add(action);
 for (const action of Object.keys(MANAGEMENT_CONVERSATION_TOOLS)) CONVERSATION_ACTIONS.add(action);
+for (const action of [
+  ...Object.keys(ROOM_NOTEBOOK_TOOLS),
+  ...Object.keys(ROOM_WORKSPACE_TOOLS),
+  ...Object.keys(ROOM_SESSION_TOOLS),
+  ...Object.keys(ROOM_TERMINAL_SCHEMAS),
+  ...Object.keys(ROOM_SOCIAL_SCHEMAS),
+  ...Object.keys(ROOM_REMOTE_SCHEMAS),
+  "files.operation.status",
+  "devServers.operation.status",
+  "browser.operation.status",
+])
+  CONVERSATION_ACTIONS.add(action);
 CONVERSATION_ACTIONS.add("browser.resize");
 for (const action of ["servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel"])
   CONVERSATION_ACTIONS.add(action);
@@ -82,17 +113,7 @@ for (const action of [
   "desktop.clipboard",
 ])
   CONVERSATION_ACTIONS.add(action);
-const SOCIAL_READS = new Set(
-  "policy.get accounts.list capabilities.get campaigns.preview campaigns.status inbox.list thread.read contacts.search jobs.status programs.list programs.status programs.preview-schedule".split(
-    " ",
-  ),
-);
-const SOCIAL_ACTIONS = new Set([
-  ...SOCIAL_READS,
-  ..."campaigns.create campaigns.schedule replies.draft replies.send contacts.upsert segments.create messages.draft messages.send comments.draft comments.send automations.create automations.pause jobs.cancel programs.configure programs.generate".split(
-    " ",
-  ),
-]);
+const SOCIAL_ACTIONS = new Set<string>(SOCIAL_TOOLS);
 const READBACKS: Record<string, string[]> = {
   visuals: [],
   crews: ["crews.get"],
@@ -190,7 +211,9 @@ function isSupported(group: ManagedToolGroup, action: string) {
 function knownRead(group: ManagedToolGroup, entry: ToolCatalogEntry) {
   return (
     group === "runtime-logs" ||
-    (group === "social" ? SOCIAL_READS.has(entry.action) : entry.annotations?.readOnlyHint === true)
+    (group === "social"
+      ? SOCIAL_ACTIONS.has(entry.action) && socialAuthorizationScope(entry.action) === "read"
+      : entry.annotations?.readOnlyHint === true)
   );
 }
 function effectFor(group: ManagedToolGroup, action: string, read: boolean): ToolEffect[] {
@@ -269,6 +292,7 @@ export function createManagedToolCatalog(
       const action = entry.action;
       const family = group === "runtime-logs" ? "logs" : action.split(".")[0];
       const read = knownRead(group, entry);
+      const authorizationScope = entry.authorizationScope ?? (read ? "read" : "write");
       const supported = isSupported(group, action);
       const properties = entry.inputSchema.properties as Record<string, unknown> | undefined;
       const fields = Object.keys(properties ?? {});
@@ -392,9 +416,9 @@ export function createManagedToolCatalog(
         inputSchema: structuredClone(entry.inputSchema),
         description,
         annotations: entry.annotations ? { ...entry.annotations } : undefined,
-        authorizationScope: read ? ("read" as const) : ("write" as const),
+        authorizationScope,
         supported,
-        authorization: { legacyScope: read ? ("read" as const) : ("write" as const), requirement },
+        authorization: { legacyScope: authorizationScope, requirement },
         effects,
         retry: {
           mode,

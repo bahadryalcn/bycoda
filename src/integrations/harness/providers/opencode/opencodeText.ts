@@ -234,14 +234,25 @@ async function startLive(
   try {
     const { path } = await resolveOpenCodeBinary();
     assertCurrent();
-    const versionOut = await execChild(path, ["--version"], cwd, "opencode", undefined, "management").catch(() => "");
+    const versionOut = await execChild(
+      path,
+      ["--version"],
+      cwd,
+      "opencode",
+      undefined,
+      "management",
+    ).catch(() => "");
     assertCurrent();
     const version = parseOpenCodeVersion(versionOut);
     const generation = assertSupportedOpenCodeVersion(version);
     // Reserve a physical B only after transport discovery, before any A
     // teardown. v2 owns a logical pending HTTP request, never a fake child.
     if (generation === "v1") {
-      const child = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn, operationContext?.nativeControlTurn ? undefined : "utility");
+      const child = createChildProcessHandle(
+        TEXT_CHILD_ID,
+        operationContext?.nativeControlTurn,
+        operationContext?.nativeControlTurn ? undefined : "utility",
+      );
       prepareTextProcess(child, operationContext, true);
       setup.child = retirements.admitPending(child);
     }
@@ -251,7 +262,10 @@ async function startLive(
     const capability = operationContext?.nativeControlTurn
       ? nativeSessionCapability(operationContext.nativeControlTurn)
       : undefined;
-    const service = generation === "v2" ? await resolveOpenCodeV2Service(path, cwd, capability, "utility") : undefined;
+    const service =
+      generation === "v2"
+        ? await resolveOpenCodeV2Service(path, cwd, capability, "utility")
+        : undefined;
     assertCurrent();
     setup.serverUrl = service?.url ?? "";
     if (generation === "v1") {
@@ -288,7 +302,16 @@ async function startLive(
         : await waitForUrl(() => setup.serverUrl, SERVER_TIMEOUT_MS);
     assertCurrent();
     const eventRoute = setup.child ? capturedChildRoute(setup.child) : TEXT_CHILD_ID;
-    const base = new OpenCodeClient(url, cwd, generation, service?.password, eventRoute, undefined, capability, service?.nativeOwnedService);
+    const base = new OpenCodeClient(
+      url,
+      cwd,
+      generation,
+      service?.password,
+      eventRoute,
+      undefined,
+      capability,
+      service?.nativeOwnedService,
+    );
     const bootstrap = operationContext?.hostRun ? base.withHostRun(operationContext.hostRun) : base;
     setup.createWork = bootstrap
       .createSession({ permission: [{ permission: "*", pattern: "*", action: "deny" }] })

@@ -36,9 +36,11 @@ test("two renderer windows follow focused sessions, retain pin, select manually,
   await source.getByRole("button", { name: "Atlas", exact: true }).click();
   await expect(identity).toContainText("Atlas");
   await hub.bringToFront();
-  await identity.click(); await hub.getByRole("option").filter({ hasText: "Studio" }).click();
+  await identity.click();
+  await hub.getByRole("option").filter({ hasText: "Studio" }).click();
   await expect(identity).toContainText("Studio");
-  await source.bringToFront(); await source.getByRole("button", { name: "Atlas", exact: true }).click();
+  await source.bringToFront();
+  await source.getByRole("button", { name: "Atlas", exact: true }).click();
   await expect(identity).toContainText("Atlas");
   for (const theme of ["light", "dark"])
     for (const width of [1280, 800]) {
@@ -46,13 +48,22 @@ test("two renderer windows follow focused sessions, retain pin, select manually,
       await hub.goto(`${fixture}?role=hub&theme=${theme}`);
       await expect(hub.locator(".tools-hub-identity button")).toContainText("Atlas");
       await expect(hub.locator(".tools-hub-pane:not([hidden]) .host-browser-bar")).toBeVisible();
-      await hub.screenshot({ animations: "disabled", path: `${captures}/${theme}-${width}-hub.png` });
+      await hub.screenshot({
+        animations: "disabled",
+        path: `${captures}/${theme}-${width}-hub.png`,
+      });
       await hub.locator(".tools-hub-identity button").hover();
       await expect(hub.getByRole("tooltip")).toBeVisible();
-      await hub.screenshot({ animations: "disabled", path: `${captures}/${theme}-${width}-hover.png` });
+      await hub.screenshot({
+        animations: "disabled",
+        path: `${captures}/${theme}-${width}-hover.png`,
+      });
       await hub.locator(".tools-hub-identity button").click();
       await expect(hub.getByRole("listbox", { name: "Tool conversations" })).toBeVisible();
-      await hub.screenshot({ animations: "disabled", path: `${captures}/${theme}-${width}-picker.png` });
+      await hub.screenshot({
+        animations: "disabled",
+        path: `${captures}/${theme}-${width}-picker.png`,
+      });
       expect(
         await hub
           .locator(".tools-hub-header")

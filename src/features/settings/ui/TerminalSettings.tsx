@@ -5,10 +5,10 @@ import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { ChevronRight, RefreshCw } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
-import { remoteRequest, useRemoteMachines } from "../../connections/model/connections";
-import { HOST_UPDATE_NOTICE } from "../../connections/model/remoteCapabilities";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
-import type { RemoteMachine } from "../../connections/model/protocol";
+import { remoteRequest, useRemoteMachines } from "../../connections/public/connections";
+import { HOST_UPDATE_NOTICE } from "../../connections/public/remoteCapabilities";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import type { RemoteMachine } from "../../connections";
 import {
   effectiveProfileId,
   listTerminalProfiles,

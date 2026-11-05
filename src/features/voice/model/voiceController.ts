@@ -313,7 +313,18 @@ export function createVoiceController(read: () => VoiceControllerPorts) {
       }
       if (!isVoiceToolFamily(args.family)) throw new Error("Unknown tool family.");
       const accountId = text(args.accountId, "accountId", true);
-      if (accountId && (!(args.family === "social" || (args.family === "conversation" && ["observations.read", "observations.ack", "observations.resnapshot"].includes(action))) || args.projectPath !== undefined || args.sessionId !== undefined || (bound?.scope ?? read().getScope?.() ?? "global") !== "global" || (read().getScope?.() ?? "global") !== "global"))
+      if (
+        accountId &&
+        (!(
+          args.family === "social" ||
+          (args.family === "conversation" &&
+            ["observations.read", "observations.ack", "observations.resnapshot"].includes(action))
+        ) ||
+          args.projectPath !== undefined ||
+          args.sessionId !== undefined ||
+          (bound?.scope ?? read().getScope?.() ?? "global") !== "global" ||
+          (read().getScope?.() ?? "global") !== "global")
+      )
         throw new Error("Choose Global voice scope for an account target.");
       const selected = await source(
         args,

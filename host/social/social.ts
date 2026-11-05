@@ -107,7 +107,12 @@ import {
   parsePublishingSchedule,
 } from "./social-schedule";
 import type { SocialPolicies, SocialPolicy } from "../../src/features/social/model/social";
-import { isReviewedRoomSend, type ReviewedRoomSend, type RoomSocialProposal, type RoomSocialSnapshot } from "../assistant/room/assistant-room-social-send";
+import {
+  isReviewedRoomSend,
+  type ReviewedRoomSend,
+  type RoomSocialProposal,
+  type RoomSocialSnapshot,
+} from "../assistant/room/assistant-room-social-send";
 import type { GlobalManagementPrincipal } from "../conversation/conversation-management-tools";
 import { SocialPrograms } from "./social-programs";
 import {
@@ -200,89 +205,225 @@ const SOCIAL_TICK_MS = 5000;
 const SOCIAL_IDLE_TICK_MS = 30_000;
 export class SocialService {
   /** Installed by Host composition. Missing or revoked source admission fails closed. */
-  roomSendSourceAdmission?: (source: { threadId: string; accountId: string; accountGrantVersion: string; projectId: string | null; projectCwd: string | null }) => Promise<boolean>;
-  withRoomSendSource?: <T>(source: { threadId: string; accountId: string; accountGrantVersion: string; projectId: string | null; projectCwd: string | null }, effect: (valid: () => boolean) => Promise<T>) => Promise<T>;
-  retireAssistantVoiceGenerations?: <T>(input: { threadId: string; generationKey: string; deviceHash: string; accounts: { accountId: string; version: string }[] }[], effect: (valid: () => boolean) => Promise<T>) => Promise<T>;
+  roomSendSourceAdmission?: (source: {
+    threadId: string;
+    accountId: string;
+    accountGrantVersion: string;
+    projectId: string | null;
+    projectCwd: string | null;
+  }) => Promise<boolean>;
+  withRoomSendSource?: <T>(
+    source: {
+      threadId: string;
+      accountId: string;
+      accountGrantVersion: string;
+      projectId: string | null;
+      projectCwd: string | null;
+    },
+    effect: (valid: () => boolean) => Promise<T>,
+  ) => Promise<T>;
+  retireAssistantVoiceGenerations?: <T>(
+    input: {
+      threadId: string;
+      generationKey: string;
+      deviceHash: string;
+      accounts: { accountId: string; version: string }[];
+    }[],
+    effect: (valid: () => boolean) => Promise<T>,
+  ) => Promise<T>;
   private readonly voiceRetirements = new Set<string>();
   private voiceRotationTail: Promise<void> = Promise.resolve();
-  private readonly assistantAccountFences = new Map<string, { epoch: number; writers: number; inFlight: number; waiters: (() => void)[] }>();
+  private readonly assistantAccountFences = new Map<
+    string,
+    { epoch: number; writers: number; inFlight: number; waiters: (() => void)[] }
+  >();
   private assistantAccountFence(accountId: string) {
     let entry = this.assistantAccountFences.get(accountId);
-    if (!entry) { entry = { epoch: 0, writers: 0, inFlight: 0, waiters: [] }; this.assistantAccountFences.set(accountId, entry); }
+    if (!entry) {
+      entry = { epoch: 0, writers: 0, inFlight: 0, waiters: [] };
+      this.assistantAccountFences.set(accountId, entry);
+    }
     return entry;
   }
   /** Rotation blocks new disclosures and drains earlier provider/persistence effects before it commits. */
-  private async withAssistantGrantRotation<T>(accountId: string, permissions: ("read" | "draft")[], prepare: () => Promise<void>, work: () => Promise<T>): Promise<T> {
-    if (this.store.db.ownsScope) throw new Error("Assistant access cannot be changed inside a database scope.");
+  private async withAssistantGrantRotation<T>(
+    accountId: string,
+    permissions: ("read" | "draft")[],
+    prepare: () => Promise<void>,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    if (this.store.db.ownsScope)
+      throw new Error("Assistant access cannot be changed inside a database scope.");
     const entry = this.assistantAccountFence(accountId);
-    entry.epoch++; entry.writers++;
+    entry.epoch++;
+    entry.writers++;
     const prior = this.voiceRotationTail;
     let release!: () => void;
-    const turn = new Promise<void>(resolve => { release = resolve; });
+    const turn = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     this.voiceRotationTail = prior.then(() => turn);
     try {
       await prepare();
-      await this.store.db.prepare("INSERT INTO social_assistant_revocations(account_id,permissions) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET permissions=excluded.permissions").run(accountId, JSON.stringify(permissions));
+      await this.store.db
+        .prepare(
+          "INSERT INTO social_assistant_revocations(account_id,permissions) VALUES(?,?) ON CONFLICT(account_id) DO UPDATE SET permissions=excluded.permissions",
+        )
+        .run(accountId, JSON.stringify(permissions));
       if (entry.inFlight) await new Promise<void>((resolve) => entry.waiters.push(resolve));
       await prior;
       return await this.retireAssistantVoiceLeases(accountId, work);
-    } finally { release(); entry.writers--; }
+    } finally {
+      release();
+      entry.writers--;
+    }
   }
-  private async retireAssistantVoiceLeases<T>(accountId: string, work: () => Promise<T>): Promise<T> {
-    const generations = await this.store.db.scope(() => this.store.db.prepare("SELECT DISTINCT thread_id,generation_key FROM social_assistant_voice_leases WHERE account_id=?").all(accountId));
+  private async retireAssistantVoiceLeases<T>(
+    accountId: string,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const generations = await this.store.db.scope(() =>
+      this.store.db
+        .prepare(
+          "SELECT DISTINCT thread_id,generation_key FROM social_assistant_voice_leases WHERE account_id=?",
+        )
+        .all(accountId),
+    );
     if (!generations.length) return work();
-    const keys = generations.map(generation => JSON.stringify([generation.thread_id, generation.generation_key]));
+    const keys = generations.map((generation) =>
+      JSON.stringify([generation.thread_id, generation.generation_key]),
+    );
     for (const key of keys) this.voiceRetirements.add(key);
     try {
-      const inputs: { threadId: string; generationKey: string; deviceHash: string; accounts: { accountId: string; version: string }[] }[] = [];
+      const inputs: {
+        threadId: string;
+        generationKey: string;
+        deviceHash: string;
+        accounts: { accountId: string; version: string }[];
+      }[] = [];
       for (const generation of generations) {
-        const rows = await this.store.db.scope(() => this.store.db.prepare("SELECT account_id,version,device_hash FROM social_assistant_voice_leases WHERE thread_id=? AND generation_key=? ORDER BY account_id").all(generation.thread_id, generation.generation_key));
+        const rows = await this.store.db.scope(() =>
+          this.store.db
+            .prepare(
+              "SELECT account_id,version,device_hash FROM social_assistant_voice_leases WHERE thread_id=? AND generation_key=? ORDER BY account_id",
+            )
+            .all(generation.thread_id, generation.generation_key),
+        );
         if (!rows.length) continue;
-        if (rows.some(row => row.device_hash !== rows[0].device_hash)) throw new Error("Assistant voice generation source changed.");
-        inputs.push({ threadId: String(generation.thread_id), generationKey: String(generation.generation_key), deviceHash: String(rows[0].device_hash), accounts: rows.map(row => ({ accountId: String(row.account_id), version: String(row.version) })) });
+        if (rows.some((row) => row.device_hash !== rows[0].device_hash))
+          throw new Error("Assistant voice generation source changed.");
+        inputs.push({
+          threadId: String(generation.thread_id),
+          generationKey: String(generation.generation_key),
+          deviceHash: String(rows[0].device_hash),
+          accounts: rows.map((row) => ({
+            accountId: String(row.account_id),
+            version: String(row.version),
+          })),
+        });
       }
       if (!inputs.length) return work();
-      if (!this.retireAssistantVoiceGenerations) throw new Error("Active Assistant voice generation cannot be retired on this Host.");
-      return await this.retireAssistantVoiceGenerations(inputs, async valid => {
+      if (!this.retireAssistantVoiceGenerations)
+        throw new Error("Active Assistant voice generation cannot be retired on this Host.");
+      return await this.retireAssistantVoiceGenerations(inputs, async (valid) => {
         if (!valid()) throw new Error("Voice generation retirement authority changed.");
         const result = await work();
         await this.store.transaction(async () => {
           if (!valid()) throw new Error("Voice generation retirement authority changed.");
-          for (const input of inputs) await this.store.db.prepare("DELETE FROM social_assistant_voice_leases WHERE thread_id=? AND generation_key=?").run(input.threadId, input.generationKey);
+          for (const input of inputs)
+            await this.store.db
+              .prepare(
+                "DELETE FROM social_assistant_voice_leases WHERE thread_id=? AND generation_key=?",
+              )
+              .run(input.threadId, input.generationKey);
         });
         return result;
       });
-    } finally { for (const key of keys) this.voiceRetirements.delete(key); }
+    } finally {
+      for (const key of keys) this.voiceRetirements.delete(key);
+    }
   }
-  async registerAssistantVoiceLease(input: { threadId: string; generationKey: string; deviceHash: string; accounts: { accountId: string; version: string }[] }, valid: () => boolean): Promise<void> {
-    if (!input.threadId || !input.generationKey || !input.deviceHash || input.accounts.length > 100) throw new Error("Invalid Assistant voice generation lease.");
+  async registerAssistantVoiceLease(
+    input: {
+      threadId: string;
+      generationKey: string;
+      deviceHash: string;
+      accounts: { accountId: string; version: string }[];
+    },
+    valid: () => boolean,
+  ): Promise<void> {
+    if (!input.threadId || !input.generationKey || !input.deviceHash || input.accounts.length > 100)
+      throw new Error("Invalid Assistant voice generation lease.");
     const key = JSON.stringify([input.threadId, input.generationKey]);
     await this.store.transaction(async () => {
-      if (!valid() || this.voiceRetirements.has(key)) throw new Error("Assistant account access changed before voice disclosure.");
-      const owner = await this.store.db.prepare("SELECT device_hash FROM social_assistant_voice_leases WHERE thread_id=? AND generation_key=? LIMIT 1").get(input.threadId, input.generationKey);
-      if (owner && owner.device_hash !== input.deviceHash) throw new Error("Assistant voice generation device changed.");
+      if (!valid() || this.voiceRetirements.has(key))
+        throw new Error("Assistant account access changed before voice disclosure.");
+      const owner = await this.store.db
+        .prepare(
+          "SELECT device_hash FROM social_assistant_voice_leases WHERE thread_id=? AND generation_key=? LIMIT 1",
+        )
+        .get(input.threadId, input.generationKey);
+      if (owner && owner.device_hash !== input.deviceHash)
+        throw new Error("Assistant voice generation device changed.");
       for (const account of input.accounts) {
-        const previous = await this.store.db.prepare("SELECT version,device_hash FROM social_assistant_voice_leases WHERE thread_id=? AND generation_key=? AND account_id=?").get(input.threadId, input.generationKey, account.accountId);
-        if (previous && (previous.version !== account.version || previous.device_hash !== input.deviceHash)) throw new Error("Assistant voice generation scope changed.");
-        await this.store.db.prepare("INSERT OR IGNORE INTO social_assistant_voice_leases(thread_id,generation_key,account_id,version,device_hash) VALUES(?,?,?,?,?)").run(input.threadId, input.generationKey, account.accountId, account.version, input.deviceHash);
+        const previous = await this.store.db
+          .prepare(
+            "SELECT version,device_hash FROM social_assistant_voice_leases WHERE thread_id=? AND generation_key=? AND account_id=?",
+          )
+          .get(input.threadId, input.generationKey, account.accountId);
+        if (
+          previous &&
+          (previous.version !== account.version || previous.device_hash !== input.deviceHash)
+        )
+          throw new Error("Assistant voice generation scope changed.");
+        await this.store.db
+          .prepare(
+            "INSERT OR IGNORE INTO social_assistant_voice_leases(thread_id,generation_key,account_id,version,device_hash) VALUES(?,?,?,?,?)",
+          )
+          .run(
+            input.threadId,
+            input.generationKey,
+            account.accountId,
+            account.version,
+            input.deviceHash,
+          );
       }
-      if (!valid() || this.voiceRetirements.has(key)) throw new Error("Assistant account access changed before voice disclosure.");
+      if (!valid() || this.voiceRetirements.has(key))
+        throw new Error("Assistant account access changed before voice disclosure.");
     }, "critical");
   }
-  async withAssistantAccountProofs<T>(threadId: string, proofs: readonly { accountId: string; version: string }[], authorized: () => Promise<boolean>, effect: (valid: () => boolean) => Promise<T>): Promise<T> {
+  async withAssistantAccountProofs<T>(
+    threadId: string,
+    proofs: readonly { accountId: string; version: string }[],
+    authorized: () => Promise<boolean>,
+    effect: (valid: () => boolean) => Promise<T>,
+  ): Promise<T> {
     if (!proofs.length) return effect(() => true);
-    if (!(await authorized()) || !(await this.assistantAccountProofsValid(threadId, proofs))) throw new Error("Room account access became unavailable or changed.");
-    const entries = [...new Set(proofs.map((proof) => proof.accountId))].map((accountId) => this.assistantAccountFence(accountId));
+    if (!(await authorized()) || !(await this.assistantAccountProofsValid(threadId, proofs)))
+      throw new Error("Room account access became unavailable or changed.");
+    const entries = [...new Set(proofs.map((proof) => proof.accountId))].map((accountId) =>
+      this.assistantAccountFence(accountId),
+    );
     if (entries.some((entry) => entry.writers)) throw new Error("Room account access is changing.");
     const epochs = entries.map((entry) => entry.epoch);
     for (const entry of entries) entry.inFlight++;
     let released = false;
-    const valid = () => !released && entries.every((entry, index) => !entry.writers && entry.epoch === epochs[index]);
+    const valid = () =>
+      !released && entries.every((entry, index) => !entry.writers && entry.epoch === epochs[index]);
     try {
-      if (!valid() || !(await authorized()) || !(await this.assistantAccountProofsValid(threadId, proofs)) || !valid())
+      if (
+        !valid() ||
+        !(await authorized()) ||
+        !(await this.assistantAccountProofsValid(threadId, proofs)) ||
+        !valid()
+      )
         throw new Error("Room account access became unavailable or changed.");
       const result = await effect(valid);
-      if (!valid() || !(await authorized()) || !(await this.assistantAccountProofsValid(threadId, proofs)))
+      if (
+        !valid() ||
+        !(await authorized()) ||
+        !(await this.assistantAccountProofsValid(threadId, proofs))
+      )
         throw new Error("Room account access became unavailable or changed.");
       return result;
     } finally {
@@ -430,8 +571,14 @@ export class SocialService {
       CREATE TABLE IF NOT EXISTS social_assistant_voice_leases (thread_id TEXT NOT NULL, generation_key TEXT NOT NULL, account_id TEXT NOT NULL, version TEXT NOT NULL, device_hash TEXT NOT NULL, PRIMARY KEY(thread_id,generation_key,account_id));
       CREATE TABLE IF NOT EXISTS social_assistant_revocations (account_id TEXT PRIMARY KEY, permissions TEXT);
       CREATE INDEX IF NOT EXISTS social_assistant_voice_leases_account ON social_assistant_voice_leases(account_id);`);
-      if (!(await this.store.db.prepare("PRAGMA table_info(social_assistant_revocations)").all()).some(row => row.name === "permissions"))
-        await this.store.db.exec("ALTER TABLE social_assistant_revocations ADD COLUMN permissions TEXT");
+        if (
+          !(
+            await this.store.db.prepare("PRAGMA table_info(social_assistant_revocations)").all()
+          ).some((row) => row.name === "permissions")
+        )
+          await this.store.db.exec(
+            "ALTER TABLE social_assistant_revocations ADD COLUMN permissions TEXT",
+          );
         this.programsValue = new SocialPrograms(
           store,
           {
@@ -732,16 +879,28 @@ export class SocialService {
       throw new Error("Verified assistant thread identity required.");
     if (principal.kind === "assistant-thread") {
       if (principal.assistantAccountId) {
-        if (principal.projectId || principal.sessionId || !principal.threadId ||
-            principal.provider !== "assistant" || principal.actorId !== `assistant-thread:${principal.threadId}` ||
-            !principal.assistantGrantVersion || !this.assistantThread)
+        if (
+          principal.projectId ||
+          principal.sessionId ||
+          !principal.threadId ||
+          principal.provider !== "assistant" ||
+          principal.actorId !== `assistant-thread:${principal.threadId}` ||
+          !principal.assistantGrantVersion ||
+          !this.assistantThread
+        )
           throw new Error("Verified assistant thread identity required.");
         const thread = await this.assistantThread(principal.threadId);
         if (!thread || thread.id !== principal.threadId || thread.projectId !== undefined)
           throw new Error("Assistant thread scope changed.");
         const account = await this.get<SocialAccount>("account", principal.assistantAccountId);
-        if (this.assistantAccountFence(account.id).writers || await this.store.db.prepare("SELECT account_id FROM social_assistant_revocations WHERE account_id=?").get(account.id) || account.assistantGrant?.version !== principal.assistantGrantVersion ||
-            !account.assistantGrant.permissions.includes("read"))
+        if (
+          this.assistantAccountFence(account.id).writers ||
+          (await this.store.db
+            .prepare("SELECT account_id FROM social_assistant_revocations WHERE account_id=?")
+            .get(account.id)) ||
+          account.assistantGrant?.version !== principal.assistantGrantVersion ||
+          !account.assistantGrant.permissions.includes("read")
+        )
           throw new Error("Assistant account access was revoked or changed.");
         return;
       }
@@ -784,9 +943,11 @@ export class SocialService {
     await this.validate(principal);
     const account = await this.get<SocialAccount>("account", accountId);
     if (principal.assistantAccountId) {
-      if (account.id !== principal.assistantAccountId ||
-          (permission !== "read" && permission !== "draft") ||
-          !account.assistantGrant?.permissions.includes(permission))
+      if (
+        account.id !== principal.assistantAccountId ||
+        (permission !== "read" && permission !== "draft") ||
+        !account.assistantGrant?.permissions.includes(permission)
+      )
         throw new Error("Assistant has no permission for this social account.");
       return account;
     }
@@ -841,34 +1002,63 @@ export class SocialService {
   }
   /** Never silently truncate legacy arrays: direct large callers to bounded reads. */
   private async legacyJobs(where: string, values: (string | number)[]): Promise<SocialJob[]> {
-    const rows = await this.store.db.prepare(`SELECT value FROM social_jobs WHERE ${where} ORDER BY scheduled_at,id LIMIT 1001`).all(...values);
+    const rows = await this.store.db
+      .prepare(`SELECT value FROM social_jobs WHERE ${where} ORDER BY scheduled_at,id LIMIT 1001`)
+      .all(...values);
     if (rows.length > 1000)
-      throw new Error("Social job history exceeds the legacy response capacity. Use jobs.status or campaigns.status with page=true, or workspace.snapshot for the workspace.");
+      throw new Error(
+        "Social job history exceeds the legacy response capacity. Use jobs.status or campaigns.status with page=true, or workspace.snapshot for the workspace.",
+      );
     return rows.map((row) => JSON.parse(String(row.value)) as SocialJob);
   }
-  private async jobPage(where: string, values: (string | number)[], input: Record<string, unknown>) {
+  private async jobPage(
+    where: string,
+    values: (string | number)[],
+    input: Record<string, unknown>,
+  ) {
     const offset = finite(input.offset ?? 0, "job offset", 0, Number.MAX_SAFE_INTEGER);
     const limit = finite(input.limit ?? 50, "job limit", 1, 100);
     if (!Number.isInteger(offset) || !Number.isInteger(limit)) throw new Error("Invalid job page.");
     const total = await this.jobCount(where, values);
-    const jobs = (await this.store.db.prepare(`SELECT value FROM social_jobs WHERE ${where} ORDER BY scheduled_at,id LIMIT ? OFFSET ?`).all(...values, limit, offset)).map((row) => JSON.parse(String(row.value)) as SocialJob);
+    const jobs = (
+      await this.store.db
+        .prepare(
+          `SELECT value FROM social_jobs WHERE ${where} ORDER BY scheduled_at,id LIMIT ? OFFSET ?`,
+        )
+        .all(...values, limit, offset)
+    ).map((row) => JSON.parse(String(row.value)) as SocialJob);
     return { jobs, page: { offset, limit, total } };
   }
   private async jobExists(where: string, values: (string | number)[] = []): Promise<boolean> {
-    return !!(await this.store.db.prepare(`SELECT 1 FROM social_jobs WHERE ${where} LIMIT 1`).get(...values));
+    return !!(await this.store.db
+      .prepare(`SELECT 1 FROM social_jobs WHERE ${where} LIMIT 1`)
+      .get(...values));
   }
-  private async firstJob(where: string, values: (string | number)[]): Promise<SocialJob | undefined> {
-    const row = await this.store.db.prepare(`SELECT value FROM social_jobs WHERE ${where} ORDER BY scheduled_at,id LIMIT 1`).get(...values);
-    return row ? JSON.parse(String(row.value)) as SocialJob : undefined;
+  private async firstJob(
+    where: string,
+    values: (string | number)[],
+  ): Promise<SocialJob | undefined> {
+    const row = await this.store.db
+      .prepare(`SELECT value FROM social_jobs WHERE ${where} ORDER BY scheduled_at,id LIMIT 1`)
+      .get(...values);
+    return row ? (JSON.parse(String(row.value)) as SocialJob) : undefined;
   }
   private async jobCount(where: string, values: (string | number)[]): Promise<number> {
-    return Number((await this.store.db.prepare(`SELECT COUNT(*) AS total FROM social_jobs WHERE ${where}`).get(...values))!.total);
+    return Number(
+      (await this.store.db
+        .prepare(`SELECT COUNT(*) AS total FROM social_jobs WHERE ${where}`)
+        .get(...values))!.total,
+    );
   }
   /** Recovery/mutation walks keep every relevant owner without materializing history. */
   private async *jobPages(where: string, values: (string | number)[]): AsyncGenerator<SocialJob[]> {
     let after: string | undefined;
     for (;;) {
-      const rows = await this.store.db.prepare(`SELECT id,value FROM social_jobs WHERE ${where}${after === undefined ? "" : " AND id>?"} ORDER BY id LIMIT 128`).all(...values, ...(after === undefined ? [] : [after]));
+      const rows = await this.store.db
+        .prepare(
+          `SELECT id,value FROM social_jobs WHERE ${where}${after === undefined ? "" : " AND id>?"} ORDER BY id LIMIT 128`,
+        )
+        .all(...values, ...(after === undefined ? [] : [after]));
       if (!rows.length) return;
       yield rows.map((row) => JSON.parse(String(row.value)) as SocialJob);
       after = String(rows[rows.length - 1].id);
@@ -1149,15 +1339,28 @@ export class SocialService {
       return { token, expiresAt, scope };
     });
   }
-  async listAssistantAccounts(threadId: string, deviceHash: string, page: { offset?: number; limit?: number } = {}) {
+  async listAssistantAccounts(
+    threadId: string,
+    deviceHash: string,
+    page: { offset?: number; limit?: number } = {},
+  ) {
     await this.ready;
     const offset = page.offset ?? 0;
     const limit = page.limit ?? 25;
-    if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000 ||
-        !Number.isSafeInteger(limit) || limit < 1 || limit > 50)
+    if (
+      !Number.isSafeInteger(offset) ||
+      offset < 0 ||
+      offset > 1000000 ||
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 50
+    )
       throw new Error("Invalid Assistant account page.");
     return this.store.db.scope(async () => {
-      if (!deviceHash || !(await this.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(deviceHash)))
+      if (
+        !deviceHash ||
+        !(await this.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(deviceHash))
+      )
         throw new Error("Device revoked.");
       if (!this.assistantThread || !threadId || threadId.length > 200)
         throw new Error("Verified assistant thread identity required.");
@@ -1165,42 +1368,87 @@ export class SocialService {
       if (!thread || thread.id !== threadId || thread.projectId !== undefined)
         throw new Error("Assistant thread scope changed.");
       const where = `r.kind='account' AND NOT EXISTS (SELECT 1 FROM social_assistant_revocations h WHERE h.account_id=r.id) AND EXISTS (SELECT 1 FROM json_each(json_extract(r.value,'$.assistantGrant.permissions')) WHERE value='read')`;
-      const total = Number((await this.store.db.prepare(`SELECT COUNT(*) AS total FROM social_records r WHERE ${where}`).get())!.total);
-      const rows = await this.store.db.prepare(`SELECT r.id,json_extract(r.value,'$.name') AS name,json_extract(r.value,'$.platform') AS platform FROM social_records r WHERE ${where} ORDER BY r.id LIMIT ? OFFSET ?`).all(limit, offset);
-      const items = rows.map((row) => ({ id: String(row.id), name: String(row.name), platform: String(row.platform) }));
-      return { items, offset, limit, total, ...(offset + items.length < total ? { nextOffset: offset + items.length } : {}) };
+      const total = Number(
+        (await this.store.db
+          .prepare(`SELECT COUNT(*) AS total FROM social_records r WHERE ${where}`)
+          .get())!.total,
+      );
+      const rows = await this.store.db
+        .prepare(
+          `SELECT r.id,json_extract(r.value,'$.name') AS name,json_extract(r.value,'$.platform') AS platform FROM social_records r WHERE ${where} ORDER BY r.id LIMIT ? OFFSET ?`,
+        )
+        .all(limit, offset);
+      const items = rows.map((row) => ({
+        id: String(row.id),
+        name: String(row.name),
+        platform: String(row.platform),
+      }));
+      return {
+        items,
+        offset,
+        limit,
+        total,
+        ...(offset + items.length < total ? { nextOffset: offset + items.length } : {}),
+      };
     });
   }
   /** Read grant versions from the same serialized account snapshot as discovery. */
-  async listAssistantAccountsWithProof(threadId: string, deviceHash: string, page: { offset?: number; limit?: number } = {}) {
+  async listAssistantAccountsWithProof(
+    threadId: string,
+    deviceHash: string,
+    page: { offset?: number; limit?: number } = {},
+  ) {
     await this.ready;
     return this.store.db.scope(async () => {
       const value = await this.listAssistantAccounts(threadId, deviceHash, page);
       const accounts = [];
       for (const item of value.items) {
         const account = await this.get<SocialAccount>("account", item.id);
-        if (!account.assistantGrant?.permissions.includes("read")) throw new Error("Assistant account access changed.");
+        if (!account.assistantGrant?.permissions.includes("read"))
+          throw new Error("Assistant account access changed.");
         accounts.push({ accountId: account.id, version: account.assistantGrant.version });
       }
       return { value, accounts };
     });
   }
-  async assistantAccountProofsValid(threadId: string, accounts: readonly { accountId: string; version: string }[]): Promise<boolean> {
+  async assistantAccountProofsValid(
+    threadId: string,
+    accounts: readonly { accountId: string; version: string }[],
+  ): Promise<boolean> {
     await this.ready;
     if (!this.assistantThread || !threadId || accounts.length > 100) return false;
     return this.store.db.scope(async () => {
       const thread = await this.assistantThread!(threadId);
       if (!thread || thread.id !== threadId || thread.projectId !== undefined) return false;
       for (const proof of accounts) {
-        if (!proof || typeof proof.accountId !== "string" || typeof proof.version !== "string") return false;
-        if (this.assistantAccountFence(proof.accountId).writers || await this.store.db.prepare("SELECT account_id FROM social_assistant_revocations WHERE account_id=?").get(proof.accountId)) return false;
-        const account = await this.get<SocialAccount>("account", proof.accountId).catch(() => undefined);
-        if (!account || account.assistantGrant?.version !== proof.version || !account.assistantGrant.permissions.includes("read")) return false;
+        if (!proof || typeof proof.accountId !== "string" || typeof proof.version !== "string")
+          return false;
+        if (
+          this.assistantAccountFence(proof.accountId).writers ||
+          (await this.store.db
+            .prepare("SELECT account_id FROM social_assistant_revocations WHERE account_id=?")
+            .get(proof.accountId))
+        )
+          return false;
+        const account = await this.get<SocialAccount>("account", proof.accountId).catch(
+          () => undefined,
+        );
+        if (
+          !account ||
+          account.assistantGrant?.version !== proof.version ||
+          !account.assistantGrant.permissions.includes("read")
+        )
+          return false;
       }
       return true;
     });
   }
-  async issueAccountThreadGrant(threadId: string, accountId: string, deviceHash?: string, expectedScope?: unknown) {
+  async issueAccountThreadGrant(
+    threadId: string,
+    accountId: string,
+    deviceHash?: string,
+    expectedScope?: unknown,
+  ) {
     await this.ready;
     return this.store.db.scope(async () => {
       if (!this.assistantThread || !threadId || threadId.length > 200)
@@ -1208,10 +1456,19 @@ export class SocialService {
       const thread = await this.assistantThread(threadId);
       if (!thread || thread.id !== threadId || thread.projectId !== undefined)
         throw new Error("Assistant thread scope changed.");
-      if (deviceHash && !(await this.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(deviceHash)))
+      if (
+        deviceHash &&
+        !(await this.store.db.prepare("SELECT id FROM devices WHERE hash=?").get(deviceHash))
+      )
         throw new Error("Device revoked.");
       const account = await this.get<SocialAccount>("account", accountId);
-      if (this.assistantAccountFence(accountId).writers || await this.store.db.prepare("SELECT account_id FROM social_assistant_revocations WHERE account_id=?").get(accountId)) throw new Error("Assistant account access is held while voice retirement is pending.");
+      if (
+        this.assistantAccountFence(accountId).writers ||
+        (await this.store.db
+          .prepare("SELECT account_id FROM social_assistant_revocations WHERE account_id=?")
+          .get(accountId))
+      )
+        throw new Error("Assistant account access is held while voice retirement is pending.");
       if (!account.assistantGrant?.permissions.includes("read"))
         throw new Error("Assistant account access is not granted.");
       for (const [key, grant] of this.grants)
@@ -1219,13 +1476,39 @@ export class SocialService {
       if (this.grants.size >= 4096) throw new Error("Social session grant capacity reached.");
       const token = randomBytes(32).toString("base64url");
       const expiresAt = this.now() + 5 * 60_000;
-      const scope = { kind: "assistant-account" as const, threadId, accountId, environmentId: this.store.environmentId, version: account.assistantGrant.version };
-      if (expectedScope !== undefined && (!expectedScope || typeof expectedScope !== "object" || Array.isArray(expectedScope) ||
+      const scope = {
+        kind: "assistant-account" as const,
+        threadId,
+        accountId,
+        environmentId: this.store.environmentId,
+        version: account.assistantGrant.version,
+      };
+      if (
+        expectedScope !== undefined &&
+        (!expectedScope ||
+          typeof expectedScope !== "object" ||
+          Array.isArray(expectedScope) ||
           Object.keys(expectedScope).length !== Object.keys(scope).length ||
-          Object.entries(scope).some(([key, value]) => (expectedScope as Record<string, unknown>)[key] !== value)))
+          Object.entries(scope).some(
+            ([key, value]) => (expectedScope as Record<string, unknown>)[key] !== value,
+          ))
+      )
         throw new Error("Assistant account grant scope changed.");
-      const grant: Grant = { principal: { kind: "assistant-thread", threadId, assistantAccountId: accountId, assistantGrantVersion: scope.version, provider: "assistant", actorId: `assistant-thread:${threadId}` }, expiresAt, deviceHash };
-      this.store.afterCommit(() => { this.grants.set(hash(token), grant); });
+      const grant: Grant = {
+        principal: {
+          kind: "assistant-thread",
+          threadId,
+          assistantAccountId: accountId,
+          assistantGrantVersion: scope.version,
+          provider: "assistant",
+          actorId: `assistant-thread:${threadId}`,
+        },
+        expiresAt,
+        deviceHash,
+      };
+      this.store.afterCommit(() => {
+        this.grants.set(hash(token), grant);
+      });
       return { token, expiresAt, scope };
     });
   }
@@ -1403,7 +1686,11 @@ export class SocialService {
             await this.audit(principal, action, operationId, accountId, "success", result);
             if (principal.assistantAccountId) {
               await this.validate(principal);
-              if (["replies.draft", "messages.draft", "comments.draft", "drafts.update"].includes(action))
+              if (
+                ["replies.draft", "messages.draft", "comments.draft", "drafts.update"].includes(
+                  action,
+                )
+              )
                 await this.access(principal, principal.assistantAccountId, "draft");
             }
             return result;
@@ -1451,7 +1738,22 @@ export class SocialService {
     input: Record<string, unknown>,
     operationId: string,
   ): Promise<unknown> {
-    if (p.assistantAccountId && !["accounts.list", "inbox.list", "thread.read", "thread.page", "policy.get", "capabilities.get", "replies.draft", "messages.draft", "comments.draft", "drafts.read", "drafts.update"].includes(action))
+    if (
+      p.assistantAccountId &&
+      ![
+        "accounts.list",
+        "inbox.list",
+        "thread.read",
+        "thread.page",
+        "policy.get",
+        "capabilities.get",
+        "replies.draft",
+        "messages.draft",
+        "comments.draft",
+        "drafts.read",
+        "drafts.update",
+      ].includes(action)
+    )
       throw new Error("This operation is not available to account-scoped Assistant access.");
     if (action === "programs.media-preview") {
       this.owner(p);
@@ -1469,7 +1771,8 @@ export class SocialService {
     }
     if (action === "programs.features") {
       exact(input, ["refresh"]);
-      if (input.refresh !== undefined && typeof input.refresh !== "boolean") throw new Error("Invalid feature refresh.");
+      if (input.refresh !== undefined && typeof input.refresh !== "boolean")
+        throw new Error("Invalid feature refresh.");
       return await this.programs.features(await this.accounts(p), input.refresh === true);
     }
     if (action.startsWith("programs.")) {
@@ -1622,21 +1925,30 @@ export class SocialService {
         const accountId = str(input.accountId, "account");
         const prepare = async () => {
           const account = await this.access(p, accountId, "read");
-          if (input.expectedVersion !== (account.assistantGrant?.version ?? null)) throw new Error("Assistant access changed. Refresh before saving.");
-        };
-        return await this.withAssistantGrantRotation(accountId, allowed as ("read" | "draft")[], prepare, () => this.transaction(async () => {
-          const account = await this.access(p, accountId, "read");
-          const current = account.assistantGrant?.version ?? null;
-          if (input.expectedVersion !== current)
+          if (input.expectedVersion !== (account.assistantGrant?.version ?? null))
             throw new Error("Assistant access changed. Refresh before saving.");
-          account.assistantGrant = {
-            permissions: allowed as ("read" | "draft")[],
-            version: randomUUID(),
-          };
-          const saved = await this.put("account", account.id, account);
-          await this.store.db.prepare("DELETE FROM social_assistant_revocations WHERE account_id=?").run(accountId);
-          return saved;
-        }));
+        };
+        return await this.withAssistantGrantRotation(
+          accountId,
+          allowed as ("read" | "draft")[],
+          prepare,
+          () =>
+            this.transaction(async () => {
+              const account = await this.access(p, accountId, "read");
+              const current = account.assistantGrant?.version ?? null;
+              if (input.expectedVersion !== current)
+                throw new Error("Assistant access changed. Refresh before saving.");
+              account.assistantGrant = {
+                permissions: allowed as ("read" | "draft")[],
+                version: randomUUID(),
+              };
+              const saved = await this.put("account", account.id, account);
+              await this.store.db
+                .prepare("DELETE FROM social_assistant_revocations WHERE account_id=?")
+                .run(accountId);
+              return saved;
+            }),
+        );
       }
       case "accounts.pause": {
         this.owner(p);
@@ -1662,9 +1974,7 @@ export class SocialService {
       case "accounts.executor": {
         this.owner(p);
         const account = await this.access(p, str(input.accountId, "account"), "read");
-        if (
-          await this.jobExists("account_id=? AND status='running'", [account.id])
-        )
+        if (await this.jobExists("account_id=? AND status='running'", [account.id]))
           throw new Error("Wait for the active send before changing executor ownership.");
         await this.cancelBrowserWorkflow?.(account.id);
         account.executorId = str(input.executorId, "executor", 200);
@@ -1779,8 +2089,13 @@ export class SocialService {
         return await this.scheduleCampaign(p, str(input.id, "campaign"), operationId);
       case "campaigns.status": {
         const campaign = await this.campaign(p, str(input.id, "campaign"));
-        if (input.page === true) return { campaign, ...await this.jobPage("json_extract(value,'$.campaignId')=?", [campaign.id], input) };
-        if (input.offset !== undefined || input.limit !== undefined) throw new Error("Set page=true to request bounded job history.");
+        if (input.page === true)
+          return {
+            campaign,
+            ...(await this.jobPage("json_extract(value,'$.campaignId')=?", [campaign.id], input)),
+          };
+        if (input.offset !== undefined || input.limit !== undefined)
+          throw new Error("Set page=true to request bounded job history.");
         return {
           campaign,
           jobs: await this.legacyJobs("json_extract(value,'$.campaignId')=?", [campaign.id]),
@@ -1870,12 +2185,13 @@ export class SocialService {
       case "replies.draft":
       case "messages.draft":
       case "comments.draft":
-        if (p.assistantAccountId) return await this.transaction(async () => {
-          await this.access(p, p.assistantAccountId!, "draft");
-          const result = await this.createDraft(p, action, input);
-          await this.access(p, p.assistantAccountId!, "draft");
-          return result;
-        });
+        if (p.assistantAccountId)
+          return await this.transaction(async () => {
+            await this.access(p, p.assistantAccountId!, "draft");
+            const result = await this.createDraft(p, action, input);
+            await this.access(p, p.assistantAccountId!, "draft");
+            return result;
+          });
         return await this.createDraft(p, action, input);
       case "drafts.read": {
         exact(input, ["id"]);
@@ -1914,12 +2230,13 @@ export class SocialService {
         });
       }
       case "drafts.update":
-        if (p.assistantAccountId) return await this.transaction(async () => {
-          await this.access(p, p.assistantAccountId!, "draft");
-          const result = await this.updateDraft(p, input);
-          await this.access(p, p.assistantAccountId!, "draft");
-          return result;
-        });
+        if (p.assistantAccountId)
+          return await this.transaction(async () => {
+            await this.access(p, p.assistantAccountId!, "draft");
+            const result = await this.updateDraft(p, input);
+            await this.access(p, p.assistantAccountId!, "draft");
+            return result;
+          });
         return await this.updateDraft(p, input);
       case "replies.send":
       case "messages.send":
@@ -2033,7 +2350,8 @@ export class SocialService {
           const filter = this.visibleJobCriteria(p, scope);
           return await this.jobPage(filter.where, filter.values, input);
         }
-        if (input.offset !== undefined || input.limit !== undefined) throw new Error("Set page=true to request bounded job history.");
+        if (input.offset !== undefined || input.limit !== undefined)
+          throw new Error("Set page=true to request bounded job history.");
         return await this.visibleJobs(p);
       }
       case "jobs.cancel": {
@@ -2077,12 +2395,36 @@ export class SocialService {
     }
   }
   private async accounts(p: SocialPrincipal): Promise<SocialAccount[]> {
-    const held = p.kind === "owner" ? new Map((await this.store.db.prepare("SELECT account_id,permissions FROM social_assistant_revocations").all()).map(row => [String(row.account_id), row.permissions ? JSON.parse(String(row.permissions)) as ("read" | "draft")[] : []])) : new Map<string, ("read" | "draft")[]>();
+    const held =
+      p.kind === "owner"
+        ? new Map(
+            (
+              await this.store.db
+                .prepare("SELECT account_id,permissions FROM social_assistant_revocations")
+                .all()
+            ).map((row) => [
+              String(row.account_id),
+              row.permissions ? (JSON.parse(String(row.permissions)) as ("read" | "draft")[]) : [],
+            ]),
+          )
+        : new Map<string, ("read" | "draft")[]>();
     return (await this.list<SocialAccount>("account"))
-      .filter((account) => p.kind === "owner" || (p.assistantAccountId ? account.id === p.assistantAccountId && account.assistantGrant?.permissions.includes("read") : account.grants[p.projectId!]?.includes("read")))
+      .filter(
+        (account) =>
+          p.kind === "owner" ||
+          (p.assistantAccountId
+            ? account.id === p.assistantAccountId &&
+              account.assistantGrant?.permissions.includes("read")
+            : account.grants[p.projectId!]?.includes("read")),
+      )
       .map((account) =>
         p.kind === "owner"
-          ? { ...account, ...(held.has(account.id) ? { assistantGrantPending: { permissions: held.get(account.id)! } } : {}) }
+          ? {
+              ...account,
+              ...(held.has(account.id)
+                ? { assistantGrantPending: { permissions: held.get(account.id)! } }
+                : {}),
+            }
           : {
               ...account,
               assistantGrant: undefined,
@@ -2147,12 +2489,18 @@ export class SocialService {
     const filter = this.visibleJobCriteria(p, scope);
     return await this.legacyJobs(filter.where, filter.values);
   }
-  private visibleJobCriteria(p: SocialPrincipal, scope: SocialReadScope): { where: string; values: string[] } {
+  private visibleJobCriteria(
+    p: SocialPrincipal,
+    scope: SocialReadScope,
+  ): { where: string; values: string[] } {
     if (p.kind !== "owner" && !p.projectId) return { where: "0", values: [] };
-    return p.kind === "owner" ? { where: "1", values: [] } : {
-      where: "account_id IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM json_each(social_jobs.value,'$.projectIds') WHERE value=?)",
-      values: [JSON.stringify([...scope.allowedAccountIds]), p.projectId!],
-    };
+    return p.kind === "owner"
+      ? { where: "1", values: [] }
+      : {
+          where:
+            "account_id IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM json_each(social_jobs.value,'$.projectIds') WHERE value=?)",
+          values: [JSON.stringify([...scope.allowedAccountIds]), p.projectId!],
+        };
   }
   private historyProjection(property: "events" | "history", offset: string, limit: number): string {
     const total = `COALESCE(json_array_length(r.value,'$.${property}'),0)`;
@@ -2204,8 +2552,9 @@ export class SocialService {
     const account = await this.access(p, metadata.accountId, "read");
     if (kind === "thread") {
       const thread = metadata as SocialThread;
-      if (!thread.projectId) { if (!p.assistantAccountId) this.owner(p); }
-      else await this.project(p, thread.projectId);
+      if (!thread.projectId) {
+        if (!p.assistantAccountId) this.owner(p);
+      } else await this.project(p, thread.projectId);
       if (p.kind !== "owner" && account.platform === "linkedin")
         throw new Error(
           "LinkedIn third-party API content cannot be passed to AI reply-generation tools.",
@@ -3224,7 +3573,10 @@ export class SocialService {
       );
     // A campaign variant has one global dedupe key, including normal one-off scheduling.
     for (const entry of plan.campaigns.slice(plan.nextIndex)) {
-      const existing = await this.firstJob("dedupe_key=? AND (status!='cancelled' OR json_extract(value,'$.dispatchedAt') IS NOT NULL)", [`campaign:${entry.campaignId}:${entry.revision}:${plan.accountId}`]);
+      const existing = await this.firstJob(
+        "dedupe_key=? AND (status!='cancelled' OR json_extract(value,'$.dispatchedAt') IS NOT NULL)",
+        [`campaign:${entry.campaignId}:${entry.revision}:${plan.accountId}`],
+      );
       if (existing && existing.id !== plan.pendingJobId)
         throw new Error(
           "A pool campaign is already scheduled or dispatched. Choose new unpublished campaigns.",
@@ -3546,7 +3898,10 @@ export class SocialService {
       );
     if (
       previous &&
-      await this.jobExists("json_extract(value,'$.campaignId')=? AND status IN ('queued','running','succeeded','review')", [previous.id])
+      (await this.jobExists(
+        "json_extract(value,'$.campaignId')=? AND status IN ('queued','running','succeeded','review')",
+        [previous.id],
+      ))
     )
       throw new Error(
         "A scheduled campaign is immutable. Create a new campaign for another announcement.",
@@ -3692,18 +4047,28 @@ export class SocialService {
       throw new Error("Reply account must match the thread.");
     const draftAccount = await this.access(p, accountId, "draft");
     if (p.assistantAccountId && draftAccount.platform === "linkedin")
-      throw new Error("LinkedIn third-party API content cannot be passed to AI reply-generation tools.");
-    const personal = !!thread && !thread.projectId && (!!p.assistantAccountId || p.kind === "owner");
+      throw new Error(
+        "LinkedIn third-party API content cannot be passed to AI reply-generation tools.",
+      );
+    const personal =
+      !!thread && !thread.projectId && (!!p.assistantAccountId || p.kind === "owner");
     if (p.assistantAccountId && !personal)
       throw new Error("Choose an unassigned conversation on this account.");
-    const projectId = personal ? undefined : (thread?.projectId ?? str(input.projectId ?? p.projectId, "project"));
+    const projectId = personal
+      ? undefined
+      : (thread?.projectId ?? str(input.projectId ?? p.projectId, "project"));
     if (projectId) await this.project(p, projectId);
     if (thread && input.projectId && input.projectId !== thread.projectId)
       throw new Error("Reply project must match the thread.");
     if (kind === "reply" && !thread) throw new Error("A reply needs an existing conversation.");
     const contactId = thread?.contactId ?? str(input.contactId, "contact");
-    const contact = personal ? await this.get<SocialContact>("contact", contactId) : await this.contact(p, contactId);
-    if (contact.accountId !== accountId || (thread && input.contactId && input.contactId !== contactId))
+    const contact = personal
+      ? await this.get<SocialContact>("contact", contactId)
+      : await this.contact(p, contactId);
+    if (
+      contact.accountId !== accountId ||
+      (thread && input.contactId && input.contactId !== contactId)
+    )
       throw new Error("Recipient must match the account/conversation.");
     if (projectId && !contact.projectIds.includes(projectId))
       throw new Error("Recipient is not shared with the selected project.");
@@ -3728,7 +4093,8 @@ export class SocialService {
       factIds,
       createdAt: this.now(),
     };
-    if (thread?.reviewReason && !(personal && thread.reviewReason === UNASSIGNED_REVIEW)) draft.reviewReason = thread.reviewReason;
+    if (thread?.reviewReason && !(personal && thread.reviewReason === UNASSIGNED_REVIEW))
+      draft.reviewReason = thread.reviewReason;
     await this.assertLength(
       await this.get<SocialAccount>("account", accountId),
       kind === "message" || thread?.kind === "message" ? "message" : "comment",
@@ -3815,7 +4181,9 @@ export class SocialService {
     const draft = await this.get<SocialDraft>("draft", str(input.id, "draft"));
     const account = await this.access(p, draft.accountId, "draft");
     if (p.assistantAccountId && account.platform === "linkedin")
-      throw new Error("LinkedIn third-party API content cannot be passed to AI reply-generation tools.");
+      throw new Error(
+        "LinkedIn third-party API content cannot be passed to AI reply-generation tools.",
+      );
     if (draft.projectId) await this.project(p, draft.projectId);
     else if (!draft.threadId) throw new Error("Personal draft must belong to a conversation.");
     if (p.assistantAccountId && (draft.projectId || !input.expectedDraft))
@@ -3827,11 +4195,16 @@ export class SocialService {
     if (draft.generation?.status === "running" || this.generationControllers.has(draft.id))
       throw new Error("Wait for AI generation to finish before editing this draft.");
     if (
-      await this.jobExists("json_extract(value,'$.draftId')=? AND (status!='cancelled' OR json_extract(value,'$.dispatchedAt') IS NOT NULL)", [draft.id])
+      await this.jobExists(
+        "json_extract(value,'$.draftId')=? AND (status!='cancelled' OR json_extract(value,'$.dispatchedAt') IS NOT NULL)",
+        [draft.id],
+      )
     )
       throw new Error("Cancel a queued send before editing; dispatched drafts cannot be edited.");
     const thread = draft.threadId ? await this.thread(p, draft.threadId) : undefined;
-    const contact = draft.projectId ? await this.contact(p, draft.contactId) : await this.get<SocialContact>("contact", draft.contactId);
+    const contact = draft.projectId
+      ? await this.contact(p, draft.contactId)
+      : await this.get<SocialContact>("contact", draft.contactId);
     if (
       contact.accountId !== account.id ||
       (draft.projectId && !contact.projectIds.includes(draft.projectId)) ||
@@ -3855,7 +4228,8 @@ export class SocialService {
         ? ""
         : str(input.text, "draft text");
     const factIds = array(input.factIds ?? draft.factIds, "verified facts");
-    if (!draft.projectId && factIds.length) throw new Error("Personal drafts cannot use project facts.");
+    if (!draft.projectId && factIds.length)
+      throw new Error("Personal drafts cannot use project facts.");
     if (draft.projectId) await this.facts([draft.projectId], factIds);
     await this.assertLength(
       account,
@@ -3883,87 +4257,258 @@ export class SocialService {
     delete draft.generation;
     delete draft.ruleId;
     delete draft.approvedAt;
-    if (thread?.reviewReason && !(!draft.projectId && thread.reviewReason === UNASSIGNED_REVIEW)) draft.reviewReason = thread.reviewReason;
+    if (thread?.reviewReason && !(!draft.projectId && thread.reviewReason === UNASSIGNED_REVIEW))
+      draft.reviewReason = thread.reviewReason;
     else delete draft.reviewReason;
     return await this.transaction(async () => {
       await this.store.db.prepare("DELETE FROM social_approvals WHERE entity_id=?").run(draft.id);
       return await this.put("draft", draft.id, draft);
     });
   }
-  async prepareRoomSend(proposal: RoomSocialProposal, principal: GlobalManagementPrincipal, projectCwd: string | null, authorized: () => Promise<boolean>): Promise<RoomSocialSnapshot> {
+  async prepareRoomSend(
+    proposal: RoomSocialProposal,
+    principal: GlobalManagementPrincipal,
+    projectCwd: string | null,
+    authorized: () => Promise<boolean>,
+  ): Promise<RoomSocialSnapshot> {
     await this.ready;
-    if (!(await authorized()) || principal.kind !== "assistant-thread" || principal.environmentId !== this.store.environmentId)
+    if (
+      !(await authorized()) ||
+      principal.kind !== "assistant-thread" ||
+      principal.environmentId !== this.store.environmentId
+    )
       throw new Error("Room social authority unavailable.");
     const account = await this.get<SocialAccount>("account", proposal.accountId);
     const version = account.assistantGrant?.version;
-    const source = { threadId: principal.threadId, accountId: account.id, accountGrantVersion: version ?? "", projectId: proposal.projectId, projectCwd };
-    if (!version || !account.assistantGrant?.permissions.includes("read") || !account.assistantGrant.permissions.includes("draft") ||
-        !(await this.assistantAccountProofsValid(principal.threadId, [{ accountId: account.id, version }])) ||
-        !this.roomSendSourceAdmission || !(await this.roomSendSourceAdmission(source)))
+    const source = {
+      threadId: principal.threadId,
+      accountId: account.id,
+      accountGrantVersion: version ?? "",
+      projectId: proposal.projectId,
+      projectCwd,
+    };
+    if (
+      !version ||
+      !account.assistantGrant?.permissions.includes("read") ||
+      !account.assistantGrant.permissions.includes("draft") ||
+      !(await this.assistantAccountProofsValid(principal.threadId, [
+        { accountId: account.id, version },
+      ])) ||
+      !this.roomSendSourceAdmission ||
+      !(await this.roomSendSourceAdmission(source))
+    )
       throw new Error("Room social source unavailable or changed.");
     const draft = await this.get<SocialDraft>("draft", proposal.entityId);
-    const kind = proposal.action === "replies.send" ? "reply" : proposal.action === "messages.send" ? "message" : "comment";
-    if (draft.accountId !== account.id || (draft.projectId ?? null) !== proposal.projectId || draft.kind !== kind || draft.ruleId)
+    const kind =
+      proposal.action === "replies.send"
+        ? "reply"
+        : proposal.action === "messages.send"
+          ? "message"
+          : "comment";
+    if (
+      draft.accountId !== account.id ||
+      (draft.projectId ?? null) !== proposal.projectId ||
+      draft.kind !== kind ||
+      draft.ruleId
+    )
       throw new Error("Room social draft source changed.");
     if (proposal.projectId) {
       const project = await this.store.project(proposal.projectId);
-      if (!projectCwd || project.cwd !== projectCwd || !["read", "draft", kind].every(permission => account.grants[proposal.projectId!]?.includes(permission as SocialPermission)))
+      if (
+        !projectCwd ||
+        project.cwd !== projectCwd ||
+        !["read", "draft", kind].every((permission) =>
+          account.grants[proposal.projectId!]?.includes(permission as SocialPermission),
+        )
+      )
         throw new Error("Project identity or social permission changed.");
     } else if (projectCwd !== null) throw new Error("Room social project identity changed.");
-    if (!proposal.projectId && !draft.threadId) throw new Error("Personal sends require an owner-reviewed conversation.");
-    if (draft.generation && draft.generation.status !== "completed") throw new Error("AI draft generation requires completion or review before sending.");
+    if (!proposal.projectId && !draft.threadId)
+      throw new Error("Personal sends require an owner-reviewed conversation.");
+    if (draft.generation && draft.generation.status !== "completed")
+      throw new Error("AI draft generation requires completion or review before sending.");
     const contact = await this.get<SocialContact>("contact", draft.contactId);
-    const thread = draft.threadId ? await this.get<SocialThread>("thread", draft.threadId) : undefined;
-    if ((proposal.projectId && !contact.projectIds.includes(proposal.projectId)) ||
-        (thread && (thread.accountId !== account.id || thread.contactId !== contact.id || (thread.projectId ?? null) !== proposal.projectId)))
+    const thread = draft.threadId
+      ? await this.get<SocialThread>("thread", draft.threadId)
+      : undefined;
+    if (
+      (proposal.projectId && !contact.projectIds.includes(proposal.projectId)) ||
+      (thread &&
+        (thread.accountId !== account.id ||
+          thread.contactId !== contact.id ||
+          (thread.projectId ?? null) !== proposal.projectId))
+    )
       throw new Error("Social recipient or conversation changed.");
-    if (thread && draft.inboundEventId !== thread.events.filter(event => event.direction === "inbound").at(-1)?.id)
+    if (
+      thread &&
+      draft.inboundEventId !==
+        thread.events.filter((event) => event.direction === "inbound").at(-1)?.id
+    )
       throw new Error("A newer inbound message arrived. Review a new draft before sending.");
     const limitKind = kind === "message" || thread?.kind === "message" ? "message" : "comment";
     await this.assertLength(account, limitKind, draft.text);
     this.eligibility(account, contact, kind, thread, !proposal.projectId);
     const effectivePolicy = await this.policy(account);
     const payload = {
-      text: draft.text, media: draft.media ?? [],
-      recipientId: thread?.kind === "comment" || (kind === "comment" && account.platform !== "youtube") ? undefined : contact.platformId,
-      threadId: thread && (thread.kind === "message" || (account.connection === "browser" && account.platform !== "x")) ? thread.platformThreadId : undefined,
-      postId: thread?.kind === "comment" ? (account.connection === "browser" && account.platform !== "x" ? (thread.platformPostId ?? thread.platformThreadId) : thread.platformThreadId) : draft.postId,
+      text: draft.text,
+      media: draft.media ?? [],
+      recipientId:
+        thread?.kind === "comment" || (kind === "comment" && account.platform !== "youtube")
+          ? undefined
+          : contact.platformId,
+      threadId:
+        thread &&
+        (thread.kind === "message" ||
+          (account.connection === "browser" && account.platform !== "x"))
+          ? thread.platformThreadId
+          : undefined,
+      postId:
+        thread?.kind === "comment"
+          ? account.connection === "browser" && account.platform !== "x"
+            ? (thread.platformPostId ?? thread.platformThreadId)
+            : thread.platformThreadId
+          : draft.postId,
       objectPostId: thread?.platformPostId,
     };
     if (payload.media.length) this.capability(account, "media");
     const unsupported = contentSupport(account, { kind, payload });
     if (unsupported) throw new Error(unsupported);
-    if (!(await authorized()) || !(await this.assistantAccountProofsValid(principal.threadId, [{ accountId: account.id, version }])) || !(await this.roomSendSourceAdmission(source))) throw new Error("Room social authority revoked.");
-    return { accountId: account.id, accountGrantVersion: version, projectId: proposal.projectId, projectCwd, action: proposal.action, entityId: draft.id,
-      policyVersion: hash(JSON.stringify(effectivePolicy)), effectivePolicy,
-      platformLimits: { kind: limitKind, maximum: socialLimit(effectivePolicy, limitKind) ?? null, utf16Maximum: limitKind === "message" && ["whatsapp", "telegram"].includes(account.platform) ? 4096 : null },
-      payload: { payload, draft, contact, thread: thread ?? null, account: { platform: account.platform, platformId: account.platformId, connection: account.connection ?? null, executorId: account.executorId, grants: proposal.projectId ? account.grants[proposal.projectId] : null } } };
+    if (
+      !(await authorized()) ||
+      !(await this.assistantAccountProofsValid(principal.threadId, [
+        { accountId: account.id, version },
+      ])) ||
+      !(await this.roomSendSourceAdmission(source))
+    )
+      throw new Error("Room social authority revoked.");
+    return {
+      accountId: account.id,
+      accountGrantVersion: version,
+      projectId: proposal.projectId,
+      projectCwd,
+      action: proposal.action,
+      entityId: draft.id,
+      policyVersion: hash(JSON.stringify(effectivePolicy)),
+      effectivePolicy,
+      platformLimits: {
+        kind: limitKind,
+        maximum: socialLimit(effectivePolicy, limitKind) ?? null,
+        utf16Maximum:
+          limitKind === "message" && ["whatsapp", "telegram"].includes(account.platform)
+            ? 4096
+            : null,
+      },
+      payload: {
+        payload,
+        draft,
+        contact,
+        thread: thread ?? null,
+        account: {
+          platform: account.platform,
+          platformId: account.platformId,
+          connection: account.connection ?? null,
+          executorId: account.executorId,
+          grants: proposal.projectId ? account.grants[proposal.projectId] : null,
+        },
+      },
+    };
   }
 
-  async enqueueReviewedRoomSend(proposal: RoomSocialProposal, snapshot: RoomSocialSnapshot, principal: GlobalManagementPrincipal, authorized: () => Promise<boolean>, review: ReviewedRoomSend): Promise<SocialJob> {
-    const expectedReview = hash(JSON.stringify(["social.send", { requestId: `social-send:${proposal.requestId}`, proposal, snapshot, source: principal }]));
-    if (!isReviewedRoomSend(review) || review.operationHash !== expectedReview) throw new Error("Exact native owner review required.");
+  async enqueueReviewedRoomSend(
+    proposal: RoomSocialProposal,
+    snapshot: RoomSocialSnapshot,
+    principal: GlobalManagementPrincipal,
+    authorized: () => Promise<boolean>,
+    review: ReviewedRoomSend,
+  ): Promise<SocialJob> {
+    const expectedReview = hash(
+      JSON.stringify([
+        "social.send",
+        { requestId: `social-send:${proposal.requestId}`, proposal, snapshot, source: principal },
+      ]),
+    );
+    if (!isReviewedRoomSend(review) || review.operationHash !== expectedReview)
+      throw new Error("Exact native owner review required.");
     return this.transaction(async () => {
-      const current = await this.prepareRoomSend(proposal, principal, snapshot.projectCwd, authorized);
-      if (JSON.stringify(current) !== JSON.stringify(snapshot)) throw new Error("Room social source changed after review.");
-      const detail = current.payload as { payload: SocialJob["payload"]; draft: SocialDraft; thread: SocialThread | null };
-      const key = detail.thread ? `reply:${detail.thread.id}:${detail.thread.events.filter(event => event.direction === "inbound").at(-1)?.id}` : `draft:${detail.draft.id}`;
+      const current = await this.prepareRoomSend(
+        proposal,
+        principal,
+        snapshot.projectCwd,
+        authorized,
+      );
+      if (JSON.stringify(current) !== JSON.stringify(snapshot))
+        throw new Error("Room social source changed after review.");
+      const detail = current.payload as {
+        payload: SocialJob["payload"];
+        draft: SocialDraft;
+        thread: SocialThread | null;
+      };
+      const key = detail.thread
+        ? `reply:${detail.thread.id}:${detail.thread.events.filter((event) => event.direction === "inbound").at(-1)?.id}`
+        : `draft:${detail.draft.id}`;
       const previous = await this.queuedJob(key);
-      if (previous) throw new Error("A send for this conversation is already queued or dispatched.");
-      const kind = proposal.action === "replies.send" ? "reply" : proposal.action === "messages.send" ? "message" : "comment";
-      return this.writeJob({ id: randomUUID(), operationId: proposal.requestId, dedupeKey: key, accountId: proposal.accountId,
-        projectIds: proposal.projectId ? [proposal.projectId] : [], provider: "assistant", actorId: `assistant-thread:${principal.threadId}`,
-        draftId: detail.draft.id, contactId: detail.draft.contactId, kind, payload: detail.payload, status: "queued", scheduledAt: this.now(), attempts: 0, createdAt: this.now(),
-        roomSource: { threadId: principal.threadId, accountGrantVersion: current.accountGrantVersion, projectCwd: current.projectCwd, policyVersion: current.policyVersion, snapshotHash: hash(JSON.stringify(current)), operationHash: review.operationHash, requestId: proposal.requestId } });
+      if (previous)
+        throw new Error("A send for this conversation is already queued or dispatched.");
+      const kind =
+        proposal.action === "replies.send"
+          ? "reply"
+          : proposal.action === "messages.send"
+            ? "message"
+            : "comment";
+      return this.writeJob({
+        id: randomUUID(),
+        operationId: proposal.requestId,
+        dedupeKey: key,
+        accountId: proposal.accountId,
+        projectIds: proposal.projectId ? [proposal.projectId] : [],
+        provider: "assistant",
+        actorId: `assistant-thread:${principal.threadId}`,
+        draftId: detail.draft.id,
+        contactId: detail.draft.contactId,
+        kind,
+        payload: detail.payload,
+        status: "queued",
+        scheduledAt: this.now(),
+        attempts: 0,
+        createdAt: this.now(),
+        roomSource: {
+          threadId: principal.threadId,
+          accountGrantVersion: current.accountGrantVersion,
+          projectCwd: current.projectCwd,
+          policyVersion: current.policyVersion,
+          snapshotHash: hash(JSON.stringify(current)),
+          operationHash: review.operationHash,
+          requestId: proposal.requestId,
+        },
+      });
     });
   }
 
-  async roomSendJobStatus(jobId: string, principal: GlobalManagementPrincipal, authorized: () => Promise<boolean>): Promise<SocialJob> {
+  async roomSendJobStatus(
+    jobId: string,
+    principal: GlobalManagementPrincipal,
+    authorized: () => Promise<boolean>,
+  ): Promise<SocialJob> {
     const job = await this.job(jobId);
     const source = job.roomSource;
-    if (!source || source.threadId !== principal.threadId || principal.environmentId !== this.store.environmentId || !(await authorized()) ||
-        !(await this.assistantAccountProofsValid(source.threadId, [{ accountId: job.accountId, version: source.accountGrantVersion }])) ||
-        !this.roomSendSourceAdmission || !(await this.roomSendSourceAdmission({ threadId: source.threadId, accountId: job.accountId, accountGrantVersion: source.accountGrantVersion, projectId: job.projectIds[0] ?? null, projectCwd: source.projectCwd })) || !(await authorized()))
+    if (
+      !source ||
+      source.threadId !== principal.threadId ||
+      principal.environmentId !== this.store.environmentId ||
+      !(await authorized()) ||
+      !(await this.assistantAccountProofsValid(source.threadId, [
+        { accountId: job.accountId, version: source.accountGrantVersion },
+      ])) ||
+      !this.roomSendSourceAdmission ||
+      !(await this.roomSendSourceAdmission({
+        threadId: source.threadId,
+        accountId: job.accountId,
+        accountGrantVersion: source.accountGrantVersion,
+        projectId: job.projectIds[0] ?? null,
+        projectCwd: source.projectCwd,
+      })) ||
+      !(await authorized())
+    )
       throw new Error("Room social result source unavailable.");
     return job;
   }
@@ -3980,7 +4525,8 @@ export class SocialService {
     if (draft.projectId) await this.project(p, draft.projectId);
     else {
       this.owner(p);
-      if (!draft.threadId || draft.ruleId) throw new Error("Personal sends require an owner-reviewed conversation.");
+      if (!draft.threadId || draft.ruleId)
+        throw new Error("Personal sends require an owner-reviewed conversation.");
     }
     const account = await this.access(p, draft.accountId, kind);
     if (draft.generation && draft.generation.status !== "completed")
@@ -4069,7 +4615,12 @@ export class SocialService {
     if (kind === "reply") {
       if (thread?.replyAllowed === false)
         throw new Error("Platform does not permit replies to this comment thread.");
-      if (!thread || (!thread.projectId && !allowPersonal) || (thread.reviewReason && !(allowPersonal && thread.reviewReason === UNASSIGNED_REVIEW)) || !contact.replyEligible)
+      if (
+        !thread ||
+        (!thread.projectId && !allowPersonal) ||
+        (thread.reviewReason && !(allowPersonal && thread.reviewReason === UNASSIGNED_REVIEW)) ||
+        !contact.replyEligible
+      )
         throw new Error("Reply requires an eligible, assigned conversation.");
       this.capability(account, thread.kind === "message" ? "message.reply" : "reply");
       if (
@@ -4177,7 +4728,10 @@ export class SocialService {
     contact.commentEligible = false;
     if (contact.consent) contact.consent.allowed = false;
     await this.put("contact", contact.id, contact);
-    for await (const page of this.jobPages("json_extract(value,'$.contactId')=? AND status='queued'", [contact.id]))
+    for await (const page of this.jobPages(
+      "json_extract(value,'$.contactId')=? AND status='queued'",
+      [contact.id],
+    ))
       for (const job of page) {
         job.status = "cancelled";
         job.error = "Contact opted out.";
@@ -4294,7 +4848,12 @@ export class SocialService {
             account.grants[project].includes("read"),
           );
           const linked = event.postId
-            ? (await this.firstJob("account_id=? AND json_extract(value,'$.platformId')=? AND json_array_length(value,'$.projectIds')=1", [accountId, event.postId]))?.projectIds[0]
+            ? (
+                await this.firstJob(
+                  "account_id=? AND json_extract(value,'$.platformId')=? AND json_array_length(value,'$.projectIds')=1",
+                  [accountId, event.postId],
+                )
+              )?.projectIds[0]
             : undefined;
           const projectId = linked ?? (projects.length === 1 ? projects[0] : undefined);
           let contact = (await this.list<SocialContact>("contact")).find(
@@ -4413,7 +4972,10 @@ export class SocialService {
       const day = Math.floor(this.now() / 86_400_000) * 86_400_000;
       const quotaDayStart = Math.floor(this.now() / 86_400_000) * 86_400_000;
       if (
-        await this.jobCount("json_extract(value,'$.ruleId')=? AND json_extract(value,'$.createdAt')>=? AND json_extract(value,'$.createdAt')<? AND status!='cancelled'", [rule.id, quotaDayStart, quotaDayStart + 86_400_000]) >= rule.dailyLimit
+        (await this.jobCount(
+          "json_extract(value,'$.ruleId')=? AND json_extract(value,'$.createdAt')>=? AND json_extract(value,'$.createdAt')<? AND status!='cancelled'",
+          [rule.id, quotaDayStart, quotaDayStart + 86_400_000],
+        )) >= rule.dailyLimit
       )
         reason = "Daily automatic reply limit reached.";
       let fact: PublicFact | undefined;
@@ -4436,7 +4998,8 @@ export class SocialService {
         (await this.list<SocialDraft>("draft")).filter(
           (item) =>
             item.generation?.ruleId === rule.id &&
-            item.createdAt >= day && item.createdAt < day + 86_400_000,
+            item.createdAt >= day &&
+            item.createdAt < day + 86_400_000,
         ).length >= rule.dailyLimit
       )
         reason = "Daily AI generation limit reached.";
@@ -4530,7 +5093,8 @@ export class SocialService {
         account.paused ||
         (await this.setting("stopped")) === "true" ||
         account.executorId !== this.store.environmentId ||
-        !draft.projectId || !account.grants[draft.projectId]?.includes("draft") ||
+        !draft.projectId ||
+        !account.grants[draft.projectId]?.includes("draft") ||
         (await this.get<SocialContact>("contact", draft.contactId)).optedOut ||
         thread.projectId !== draft.projectId ||
         thread.reviewReason ||
@@ -4595,9 +5159,10 @@ export class SocialService {
       await this.assertLength(account, thread.kind, draft.text);
       if (
         rule.mode === "automatic" &&
-        (!draft.projectId || !(await this.facts([draft.projectId], draft.factIds)).some(
-          (fact) => fact.text.trim() === draft.text,
-        ))
+        (!draft.projectId ||
+          !(await this.facts([draft.projectId], draft.factIds)).some(
+            (fact) => fact.text.trim() === draft.text,
+          ))
       )
         throw new Error(
           "AI rewrote the verified answer. Human approval is required before sending.",
@@ -4614,9 +5179,11 @@ export class SocialService {
         };
         const operationId = randomUUID();
         await this.sendDraft(principal, draft.id, "replies", operationId);
-        await this.audit(principal, "automatic.reply", operationId, draft.accountId).catch((error) => {
-          console.error("Automatic reply audit failed after queueing", error);
-        });
+        await this.audit(principal, "automatic.reply", operationId, draft.accountId).catch(
+          (error) => {
+            console.error("Automatic reply audit failed after queueing", error);
+          },
+        );
       }
     } catch (error) {
       generation.status = "review";
@@ -5216,10 +5783,16 @@ export class SocialService {
   private async execute(id: string): Promise<boolean> {
     const original = await this.job(id);
     if (!original.roomSource) return this.executeOwned(id, () => true);
-    const source = { threadId: original.roomSource.threadId, accountId: original.accountId, accountGrantVersion: original.roomSource.accountGrantVersion, projectId: original.projectIds[0] ?? null, projectCwd: original.roomSource.projectCwd };
+    const source = {
+      threadId: original.roomSource.threadId,
+      accountId: original.accountId,
+      accountGrantVersion: original.roomSource.accountGrantVersion,
+      projectId: original.projectIds[0] ?? null,
+      projectCwd: original.roomSource.projectCwd,
+    };
     try {
       if (!this.withRoomSendSource) throw new Error("Room social source lease unavailable.");
-      return await this.withRoomSendSource(source, valid => this.executeOwned(id, valid));
+      return await this.withRoomSendSource(source, (valid) => this.executeOwned(id, valid));
     } catch {
       await this.transaction(async () => {
         const current = await this.job(id);
@@ -5291,13 +5864,47 @@ export class SocialService {
         const currentAccount = await this.get<SocialAccount>("account", account.id);
         if (job.roomSource) {
           const source = job.roomSource;
-          const action = job.kind === "reply" ? "replies.send" : job.kind === "message" ? "messages.send" : job.kind === "comment" ? "comments.send" : undefined;
-          if (!action || !job.draftId || job.projectIds.length > 1 || job.sessionId || job.actorId !== `assistant-thread:${source.threadId}` || !/^[a-f0-9]{64}$/.test(source.operationHash))
+          const action =
+            job.kind === "reply"
+              ? "replies.send"
+              : job.kind === "message"
+                ? "messages.send"
+                : job.kind === "comment"
+                  ? "comments.send"
+                  : undefined;
+          if (
+            !action ||
+            !job.draftId ||
+            job.projectIds.length > 1 ||
+            job.sessionId ||
+            job.actorId !== `assistant-thread:${source.threadId}` ||
+            !/^[a-f0-9]{64}$/.test(source.operationHash)
+          )
             throw new Error("Room social job provenance is invalid.");
-          const proposal: RoomSocialProposal = { requestId: source.requestId, accountId: job.accountId, projectId: job.projectIds[0] ?? null, action, entityId: job.draftId };
-          const current = await this.prepareRoomSend(proposal, { kind: "assistant-thread", threadId: source.threadId, environmentId: this.store.environmentId }, source.projectCwd, async () => true);
+          const proposal: RoomSocialProposal = {
+            requestId: source.requestId,
+            accountId: job.accountId,
+            projectId: job.projectIds[0] ?? null,
+            action,
+            entityId: job.draftId,
+          };
+          const current = await this.prepareRoomSend(
+            proposal,
+            {
+              kind: "assistant-thread",
+              threadId: source.threadId,
+              environmentId: this.store.environmentId,
+            },
+            source.projectCwd,
+            async () => true,
+          );
           const detail = current.payload as { payload: SocialJob["payload"] };
-          if (current.accountGrantVersion !== source.accountGrantVersion || current.policyVersion !== source.policyVersion || hash(JSON.stringify(current)) !== source.snapshotHash || JSON.stringify(detail.payload) !== JSON.stringify(job.payload))
+          if (
+            current.accountGrantVersion !== source.accountGrantVersion ||
+            current.policyVersion !== source.policyVersion ||
+            hash(JSON.stringify(current)) !== source.snapshotHash ||
+            JSON.stringify(detail.payload) !== JSON.stringify(job.payload)
+          )
             throw new Error("Room social review no longer matches current source.");
         }
         if (
@@ -5389,7 +5996,12 @@ export class SocialService {
           const draft = await this.get<SocialDraft>("draft", job.draftId!);
           if (draft.projectId && !contact.projectIds.includes(draft.projectId))
             throw new Error("Recipient is no longer shared with this project.");
-          if (!draft.projectId && (!draft.threadId || draft.ruleId || (!job.roomSource && !(await this.approved(draft.id, draft)))))
+          if (
+            !draft.projectId &&
+            (!draft.threadId ||
+              draft.ruleId ||
+              (!job.roomSource && !(await this.approved(draft.id, draft))))
+          )
             throw new Error("Personal sends require an owner-reviewed conversation.");
           const thread = draft.threadId
             ? await this.get<SocialThread>("thread", draft.threadId)
@@ -5407,7 +6019,10 @@ export class SocialService {
               thread.events.filter((event) => event.direction === "inbound").at(-1)?.id
           )
             throw new Error("A newer inbound message arrived. Review the response before sending.");
-          if (draft.ruleId && (!draft.projectId || !currentAccount.grants[draft.projectId]?.includes("reply")))
+          if (
+            draft.ruleId &&
+            (!draft.projectId || !currentAccount.grants[draft.projectId]?.includes("reply"))
+          )
             throw new Error("Project reply permission was revoked.");
           if (draft.ruleId && !(await this.ruleAllows(draft)))
             throw new Error("Automatic rule was paused or changed.");
@@ -5415,7 +6030,10 @@ export class SocialService {
             const rule = await this.get<SocialRule>("rule", draft.ruleId);
             const day = Math.floor(this.now() / 86_400_000) * 86_400_000;
             if (
-              await this.jobCount("id!=? AND json_extract(value,'$.ruleId')=? AND json_extract(value,'$.dispatchedAt')>0 AND json_extract(value,'$.dispatchedAt')>=? AND json_extract(value,'$.dispatchedAt')<?", [job.id, rule.id, day, day + 86_400_000]) >= rule.dailyLimit
+              (await this.jobCount(
+                "id!=? AND json_extract(value,'$.ruleId')=? AND json_extract(value,'$.dispatchedAt')>0 AND json_extract(value,'$.dispatchedAt')>=? AND json_extract(value,'$.dispatchedAt')<?",
+                [job.id, rule.id, day, day + 86_400_000],
+              )) >= rule.dailyLimit
             )
               throw new Error("Daily automatic send limit reached.");
           }
@@ -5629,15 +6247,17 @@ export class SocialService {
       const result = await adapter.poll(
         account,
         credential.accessToken,
-        adapter.ownedPostPages ? [] : (
-          await this.store.db
-            .prepare(`SELECT json_extract(value,'$.platformId') AS platform_id FROM social_jobs
+        adapter.ownedPostPages
+          ? []
+          : (
+              await this.store.db
+                .prepare(`SELECT json_extract(value,'$.platformId') AS platform_id FROM social_jobs
            WHERE account_id=? AND status='succeeded' AND json_extract(value,'$.kind')='publish'
              AND json_extract(value,'$.platformId') IS NOT NULL ORDER BY scheduled_at,id`)
-            .all(account.id)
-        )
-          .map((row) => String(row.platform_id))
-          .filter(Boolean),
+                .all(account.id)
+            )
+              .map((row) => String(row.platform_id))
+              .filter(Boolean),
         await this.setting(`cursor:${account.id}`),
         adapter.ownedPostPages ? ownedPosts : undefined,
       );

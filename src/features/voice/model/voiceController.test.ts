@@ -275,12 +275,19 @@ it("routes Room file reads to the captured project without creating a coding ses
   controller.captureTurn();
   state.active = "b";
   await controller.execute("app_tool_call", {
-    family: "conversation", action: "files.read", input: { path: "README.md" }, requestId: "thread-file",
+    family: "conversation",
+    action: "files.read",
+    input: { path: "README.md" },
+    requestId: "thread-file",
   });
   expect(source).not.toHaveBeenCalled();
   expect(mock.call).toHaveBeenCalledWith(
     { cwd: "/a", threadId: "thread-a" },
-    expect.objectContaining({ action: "files.read", input: { path: "README.md" }, requestId: "thread-file" }),
+    expect.objectContaining({
+      action: "files.read",
+      input: { path: "README.md" },
+      requestId: "thread-file",
+    }),
   );
 });
 
@@ -393,7 +400,10 @@ it("routes Room terminal creation to its original project and thread", async () 
   controller.captureTurn();
   state.active = "b";
   await controller.execute("app_tool_call", {
-    family: "conversation", action: "terminals.create", input: {}, requestId: "terminal",
+    family: "conversation",
+    action: "terminals.create",
+    input: {},
+    requestId: "terminal",
   });
   expect(source).not.toHaveBeenCalled();
   expect(mock.call).toHaveBeenCalledWith(
@@ -632,7 +642,25 @@ it("passes an exact social account target without inheriting the focused project
   const f = setup();
   f.ports.getThreadId = () => "room";
   f.controller.captureTurn();
-  await f.controller.execute("app_tool_call", { family: "social", action: "thread.read", accountId: "account-a", input: { id: "thread" }, requestId: "read" });
-  expect(mock.call).toHaveBeenCalledWith(expect.objectContaining({ cwd: "", threadId: "room" }), expect.objectContaining({ accountId: "account-a" }));
-  await expect(f.controller.execute("app_tool_call", { family: "social", action: "thread.read", accountId: "account-a", projectPath: "/a", input: { id: "thread" }, requestId: "other" })).rejects.toThrow("Global voice scope");
+  await f.controller.execute("app_tool_call", {
+    family: "social",
+    action: "thread.read",
+    accountId: "account-a",
+    input: { id: "thread" },
+    requestId: "read",
+  });
+  expect(mock.call).toHaveBeenCalledWith(
+    expect.objectContaining({ cwd: "", threadId: "room" }),
+    expect.objectContaining({ accountId: "account-a" }),
+  );
+  await expect(
+    f.controller.execute("app_tool_call", {
+      family: "social",
+      action: "thread.read",
+      accountId: "account-a",
+      projectPath: "/a",
+      input: { id: "thread" },
+      requestId: "other",
+    }),
+  ).rejects.toThrow("Global voice scope");
 });

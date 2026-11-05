@@ -141,7 +141,9 @@ export async function runMcpProxy(
         if (response.status === 429) {
           await response.body?.cancel();
           const retryAfter = Number(response.headers.get("retry-after"));
-          throw new McpRateLimited(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined);
+          throw new McpRateLimited(
+            Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+          );
         }
       }
       if (!response.ok) {

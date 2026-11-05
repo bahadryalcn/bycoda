@@ -1,10 +1,10 @@
-import { readFileSync } from "node:fs";
+import { hostServerDispatchSource } from "../../scripts/checks/host-rpc-source-fixture.mjs";
 import { expect, it } from "vitest";
 import { conversationToolCatalog } from "../conversation/conversation-tools";
 import { VOICE_CAPABILITY_COVERAGE } from "./voice-capability-coverage";
 import { MANAGEMENT_CONVERSATION_TOOLS } from "../conversation/conversation-management-tools";
 it("requires an explicit coverage or owner-boundary decision for every Host RPC family", () => {
-  const source = readFileSync(new URL("../server.ts", import.meta.url), "utf8");
+  const source = hostServerDispatchSource();
   const families = [
     ...new Set(
       [...source.matchAll(/case "([A-Za-z][A-Za-z0-9-]*)\.[^"]+"/g)].map((match) => match[1]),

@@ -73,7 +73,7 @@
 .social-policy-panel {
   padding: 1.5rem;
   border-radius: var(--ui-radius-control);
-  background: var(--ui-surface-panel);
+  background: transparent;
 }
 .social-view .social-policy-scope {
   display: grid;

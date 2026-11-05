@@ -2,7 +2,8 @@ import {
   classifyTurnRecovery,
   shouldAutoContinue,
   type TurnRecovery,
-} from "../../sessions/model/turnRecovery";
+} from "../../sessions/public/turnRecovery";
+
 import type { HostSession } from "./protocol";
 
 /**

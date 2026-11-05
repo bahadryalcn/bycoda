@@ -51,7 +51,11 @@ function Fixture() {
       <div ref={scope} data-outline-scope className="@container relative min-h-0 flex-1">
         <div ref={setScroller} className="agent-transcript h-full overflow-auto">
           {blocks.map((block) => (
-            <div key={block.id} className="transcript-turn h-20" data-prompt-anchor={block.role === "user" ? block.id : undefined}>
+            <div
+              key={block.id}
+              className="transcript-turn h-20"
+              data-prompt-anchor={block.role === "user" ? block.id : undefined}
+            >
               {block.text}
             </div>
           ))}

@@ -1,4 +1,5 @@
-import { isRemoteProvider, type RemoteProvider } from "../../connections/model/protocol";
+import { isRemoteProvider } from "../../connections/public/protocol";
+import { type RemoteProvider } from "../../connections";
 import { parseProviderAccountId } from "../../providers/model/providerAccountId";
 import { RUNTIME_MODES, type RuntimeMode } from "../../sessions/model/session";
 import type { HostTask } from "./hostTasks";

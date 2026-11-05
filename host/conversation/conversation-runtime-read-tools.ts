@@ -4,7 +4,11 @@ import type { HostStore } from "../store";
 import type { HostLimits } from "../limits";
 import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 import { listShellProfiles } from "../execution/shellProfiles";
-import { attachmentPath, readAttachmentChunk, MAX_REMOTE_ATTACHMENT_BYTES } from "../attachments/attachments";
+import {
+  attachmentPath,
+  readAttachmentChunk,
+  MAX_REMOTE_ATTACHMENT_BYTES,
+} from "../attachments/attachments";
 import { scrubRuntimeLogText } from "../execution/runtime-logs";
 
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({

@@ -24,7 +24,10 @@ vi.mock("../../connections/model/connections", () => ({ remoteRequest: fixture.r
 import { useProjectCrews } from "./crewClient";
 function projectCrews(cwd: string) {
   let state!: ReturnType<typeof useProjectCrews>;
-  function Fixture() { state = useProjectCrews(cwd); return null; }
+  function Fixture() {
+    state = useProjectCrews(cwd);
+    return null;
+  }
   renderToStaticMarkup(createElement(Fixture));
   return state;
 }
@@ -74,7 +77,14 @@ it("loads crew state with a progressive catalog and revisits pending providers",
 });
 
 it("refreshes partial Stop results after failure without sending Stop again", async () => {
-  fixture.data = { machine: { id: "local" }, project: { id: "project" }, runs: [], definitions: [], agents: [], catalog: { models: {}, errors: {} } };
+  fixture.data = {
+    machine: { id: "local" },
+    project: { id: "project" },
+    runs: [],
+    definitions: [],
+    agents: [],
+    catalog: { models: {}, errors: {} },
+  };
   fixture.invalidate.mockClear();
   fixture.request.mockClear();
   fixture.request.mockRejectedValueOnce(new Error("Some conversations could not be stopped"));

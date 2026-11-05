@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useTranscriptSelection } from "../../sessions/hooks/useTranscriptSelection";
-import { requestAddToChat } from "../../sessions/model/quoteDraft";
-import type { TranscriptSelection } from "../../sessions/model/transcriptSelection";
-import { TranscriptSelectionMenu } from "../../sessions/ui/TranscriptSelectionMenu";
+import { useTranscriptSelection } from "../../sessions/public/useTranscriptSelection";
+import { requestAddToChat } from "../../sessions/public/quoteDraft";
+import type { TranscriptSelection } from "../../sessions";
+import { TranscriptSelectionMenu } from "../../sessions/public/TranscriptSelectionMenu";
 
 export function PreviewSelectionMenu({
   selection,

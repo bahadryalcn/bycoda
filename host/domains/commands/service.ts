@@ -72,7 +72,10 @@ export interface CommandServicePorts<View> {
     persistenceReady(): boolean;
     /** Existing semantic admission (notes, prompts, accounts, workspace etc.). */
     validateCommand(raw: unknown): void;
-    validateQuestionAttachments?(command: SessionCommand, context: HostDomainContext): Promise<void>;
+    validateQuestionAttachments?(
+      command: SessionCommand,
+      context: HostDomainContext,
+    ): Promise<void>;
     attachmentRefs(raw: unknown): readonly { id: string; size: number }[];
     previewContextual(command: Contextual, view: View): Promise<{ digest: string }>;
     command(command: SessionCommand): Promise<CommandReceipt>;

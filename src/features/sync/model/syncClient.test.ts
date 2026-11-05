@@ -580,12 +580,22 @@ describe("sync status", () => {
 
   it("releases browser ownership after a stopped cycle's response settles", async () => {
     let finish!: (value: unknown) => void;
-    const request = vi.fn(() => new Promise<unknown>((resolve) => { finish = resolve; }));
-    const loop = startSyncLoop(() => ["stop-settled"], () => request);
+    const request = vi.fn(
+      () =>
+        new Promise<unknown>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const loop = startSyncLoop(
+      () => ["stop-settled"],
+      () => request,
+    );
     expect(request).toHaveBeenCalledTimes(1);
     const stopped = loop.stop();
     let drained = false;
-    void stopped.then(() => { drained = true; });
+    void stopped.then(() => {
+      drained = true;
+    });
     await Promise.resolve();
     expect(drained).toBe(false);
     finish({ rev: 0, records: [] });

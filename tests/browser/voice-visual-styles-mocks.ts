@@ -56,8 +56,15 @@ export class LocalVoice {
   mute(value: boolean) {
     this.level.current = value ? 0 : 0.55;
   }
-  beginPushToTalk() { fixtureVoice.pushToTalkStarts++; this.level.current = 0.55; return true; }
-  endPushToTalk() { fixtureVoice.pushToTalkEnds++; this.level.current = 0; }
+  beginPushToTalk() {
+    fixtureVoice.pushToTalkStarts++;
+    this.level.current = 0.55;
+    return true;
+  }
+  endPushToTalk() {
+    fixtureVoice.pushToTalkEnds++;
+    this.level.current = 0;
+  }
   setOutputMuted(value: boolean) {
     fixtureVoice.speakerMuted = value;
   }

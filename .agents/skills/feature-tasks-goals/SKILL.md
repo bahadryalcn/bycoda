@@ -13,7 +13,7 @@ Code paths below are repository-root relative.
 
 - `src/features/tasks/ui/TasksView.tsx`
 - `src/features/tasks/model/taskClient.ts`
-- `host/tasks/tasks.ts`
+- `host/tasks/service.ts` (`host/tasks/tasks.ts` preserves the public entry)
 
 ## Workflow
 

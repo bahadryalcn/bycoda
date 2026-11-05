@@ -37,7 +37,17 @@ export type TaskStatusKind =
   | "failed"
   | "blocked";
 
-export type TaskStatusTone = "neutral" | "info" | "success" | "warning" | "danger";
+export type TaskStatusTone = "neutral" | "accent" | "info" | "success" | "warning" | "danger";
+
+/** Plain board states already named by their column; exceptional states keep their own line. */
+export const QUIET_TASK_STATUS: ReadonlySet<TaskStatusKind> = new Set([
+  "todo",
+  "queued",
+  "running",
+  "finished",
+  "done",
+  "blocked",
+]);
 
 export type TaskStatusLine = {
   kind: TaskStatusKind;
@@ -129,19 +139,19 @@ export function taskStatusLine(task: HostTask): TaskStatusLine {
       if (task.blockedTakeover)
         return line(
           "takeover",
-          "info",
+          "accent",
           t("Independent AI completing blocked work"),
           firstSentence(task.blockedTakeover.blocker),
         );
       if ((task.repairAttempts ?? 0) > 0)
-        return line("correcting", "info", correctionLabel(task), firstSentence(task.repairNote));
+        return line("correcting", "accent", correctionLabel(task), firstSentence(task.repairNote));
       return task.status === "queued"
         ? line("queued", "neutral", t("Queued"))
-        : line("running", "info", t("Running"));
+        : line("running", "accent", t("Running"));
     case "verifying":
       return line(
         "verifying",
-        "info",
+        "accent",
         (task.repairAttempts ?? 0) > 0
           ? t("Verifying · correction {p0}", { p0: task.repairAttempts })
           : t("Verifying"),

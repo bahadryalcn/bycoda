@@ -1,4 +1,10 @@
-import { composeJsonWire, normalizeJsonField, normalizeJsonWire, readNormalizedJsonWire, type NormalizedJsonWire } from "../normalized-wire";
+import {
+  composeJsonWire,
+  normalizeJsonField,
+  normalizeJsonWire,
+  readNormalizedJsonWire,
+  type NormalizedJsonWire,
+} from "../normalized-wire";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
@@ -25,6 +31,7 @@ import {
   type RpcError,
 } from "../../../src/shared/model/host-contracts";
 import { HostDispatchError, type HostDispatchContext } from "../dispatch";
+import { effectFailureDelivery } from "./effect-failure-delivery";
 import { HostReadWorkBudget } from "../read-budget";
 import { HostBulkError, hostBulkDependencies, type HostBulkTransfers } from "../http/bulk";
 import { HostStreamError, type HostSubscriptionHub } from "./subscriptions";
@@ -198,11 +205,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
     } else if (peer.socket.readyState !== WebSocket.CLOSED) peer.socket.terminate();
   }
 
-  function send(
-    peer: Peer,
-    value: unknown,
-    normalized?: NormalizedJsonWire,
-  ): boolean {
+  function send(peer: Peer, value: unknown, normalized?: NormalizedJsonWire): boolean {
     if (peer.closed || peer.socket.readyState !== WebSocket.OPEN) return false;
     let serialized: string;
     let byteLength: number;
@@ -210,8 +213,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
       const capture = normalized ? readNormalizedJsonWire(normalized) : undefined;
       serialized = capture?.serialized ?? JSON.stringify(value);
       byteLength = capture?.byteLength ?? Buffer.byteLength(serialized);
-      if (byteLength > WS_LIMITS.maxMessageBytes)
-        throw new Error("Response too large.");
+      if (byteLength > WS_LIMITS.maxMessageBytes) throw new Error("Response too large.");
       const wire = capture ? capture.wire : JSON.parse(serialized);
       if (wire?.method === "subscription.event") SubscriptionEventSchema.parse(wire);
       else RpcResponseSchema.parse(wire);
@@ -472,17 +474,19 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           // transforms may strip fields or construct new values; normalize that
           // output with its real enclosing result key before reusing bytes.
           const bulkValue = lease ? JsonValueSchema.parse(validated) : undefined;
-          const capture = definition.resultSchema === JsonValueSchema
-            ? initial
-            : normalizeJsonField(lease ? bulkValue : validated, "result");
+          const capture =
+            definition.resultSchema === JsonValueSchema
+              ? initial
+              : normalizeJsonField(lease ? bulkValue : validated, "result");
           const delivered = lease
             ? options.bulk!.encodeNormalized(lease, capture, WS_LIMITS.maxMessageBytes - 1024)
             : readNormalizedJsonWire(capture).wire;
           return {
             value: delivered,
-            capture: lease && delivered !== readNormalizedJsonWire(capture).wire
-              ? normalizeJsonField(delivered, "result")
-              : capture,
+            capture:
+              lease && delivered !== readNormalizedJsonWire(capture).wire
+                ? normalizeJsonField(delivered, "result")
+                : capture,
           };
         } finally {
           if (lease) options.bulk!.release(lease);
@@ -508,7 +512,11 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
           if (!(await waitFor(check(), controller.signal)))
             throw new HostBulkError(409, "Result authority expired.");
         if (!controller.signal.aborted) {
-          const response = composeJsonWire({ jsonrpc: "2.0", id: request.id }, "result", result.capture);
+          const response = composeJsonWire(
+            { jsonrpc: "2.0", id: request.id },
+            "result",
+            result.capture,
+          );
           // send still validates the complete actual wire envelope/schema and
           // enforces frame/backpressure limits after the final authority awaits.
           send(peer, undefined, response);
@@ -550,12 +558,11 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
                 retryable:
                   (error.code === "overloaded" || error.details?.retryable === true) &&
                   !(dispatchStarted && hostRpcHasEffect(request.method, definition.kind)),
-                delivery:
-                  error.code === "service-unavailable" && error.details?.delivery === "accepted"
-                    ? "accepted"
-                    : dispatchStarted && hostRpcHasEffect(request.method, definition.kind)
-                      ? "unknown"
-                      : "not-sent",
+                delivery: effectFailureDelivery(
+                  error,
+                  dispatchStarted,
+                  hostRpcHasEffect(request.method, definition.kind),
+                ),
                 ...(definition.kind === "command"
                   ? { commandId: String(request.params.commandId) }
                   : {}),
@@ -742,7 +749,9 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
         : "unknown";
     const claimedIngress = request.headers["x-bycoda-mobile-ingress"];
     const secret = options.mobileIngressSecret;
-    const mobile = typeof claimedIngress === "string" && typeof secret === "string" &&
+    const mobile =
+      typeof claimedIngress === "string" &&
+      typeof secret === "string" &&
       Buffer.byteLength(claimedIngress) === Buffer.byteLength(secret) &&
       timingSafeEqual(Buffer.from(claimedIngress), Buffer.from(secret));
     if (claimedIngress !== undefined && !mobile) {

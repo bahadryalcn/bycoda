@@ -1,7 +1,12 @@
-import type { Block, Session, RuntimeMode, SecondOpinionMeta } from "../../sessions/model/session";
-import type { UserQuestionReply } from "../../sessions/model/userQuestion";
-import type { AgentModel } from "../../sessions/model/models";
-import type { LinkedWorkItem } from "../../sessions/model/session";
+import type {
+  Block,
+  Session,
+  RuntimeMode,
+  SecondOpinionMeta,
+  UserQuestionReply,
+  AgentModel,
+  LinkedWorkItem,
+} from "../../sessions";
 import type { BuildIdentity, WorkspaceCapability } from "../../workspaces/model/contracts";
 export type {
   ManagedWorkspace,
@@ -154,7 +159,7 @@ export type HostSession = {
   /** Host observed provider work for this exact run; metadata saves do not refresh it. */
   runActivity?: { runId: string; lastActivityAt: number };
   /** Host-stamped projection for summary rows; client commands cannot set this. */
-  managedBy?: import("../../sessions/model/session").AssistantSessionManagement;
+  managedBy?: import("../../sessions").AssistantSessionManagement;
   /** Durable execution/history floor for migrated sessions, independent of stream revision. */
   authorityGeneration?: number;
   /** Client view is incomplete; never save this as an authoritative transcript. */
@@ -193,7 +198,7 @@ export type HostSession = {
   };
 };
 export type HostSessionSummary = Omit<HostSession, "session" | "blockRevisions" | "desktop"> & {
-  providerHistory?: import("../../sessions/model/sessionProviderHistory").SessionProviderHistory;
+  providerHistory?: import("../../sessions").SessionProviderHistory;
   issue?: "retrying" | "failed";
   issueTurnId?: string;
   issueMessage?: string;
@@ -260,8 +265,7 @@ export type SessionSyncResponse = SessionSync | SessionSyncTransfer;
 export function applySessionSync(known: HostSession | undefined, sync: SessionSync): HostSession {
   if (sync.kind === "snapshot") return sync.value;
   const sourceEpoch = sync.kind === "delta" ? sync.value.sourceEpoch : sync.sourceEpoch;
-  if (known?.sourceEpoch !== sourceEpoch)
-    throw new Error("Session sync source changed");
+  if (known?.sourceEpoch !== sourceEpoch) throw new Error("Session sync source changed");
   if (!known || known.revision !== (sync.kind === "delta" ? sync.base : sync.revision))
     throw new Error("Session sync base does not match");
   if (sync.kind === "unchanged") return known;
@@ -319,7 +323,13 @@ export type MachineChanges = {
   tasks?: { etag: string };
   instanceId: string;
   reset: boolean;
-  sessions: { sessionId: string; revision: number; sourceEpoch?: string; deleted?: boolean; sync?: SessionSync }[];
+  sessions: {
+    sessionId: string;
+    revision: number;
+    sourceEpoch?: string;
+    deleted?: boolean;
+    sync?: SessionSync;
+  }[];
   projects: {
     projectId: string;
     etag: string;

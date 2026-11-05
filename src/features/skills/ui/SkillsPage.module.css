@@ -90,6 +90,11 @@
   overscroll-behavior: contain;
   padding: 0.5rem;
 }
+.continuousSkills {
+  max-block-size: min(42dvh, 30rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .message {
   margin: 0.5rem;
   color: var(--ui-text-secondary);

@@ -3,8 +3,8 @@ import {
   supportsProviderAccounts,
 } from "../../providers/model/providerAccounts";
 import { backgroundMachineFor } from "../../automations/model/hostAutomationClient";
-import { isLocalSyncMachine } from "../../connections/model/localSync";
-import type { RemoteMachine } from "../../connections/model/protocol";
+import { isLocalSyncMachine } from "../../connections/public/localSync";
+import type { RemoteMachine } from "../../connections";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { looksLikeProject, type RecentProject } from "../../projects/model/recents";

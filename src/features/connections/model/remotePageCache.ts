@@ -1,4 +1,4 @@
-import type { Block } from "../../sessions/model/session";
+import type { Block } from "../../sessions";
 import type { HostSession } from "./protocol";
 
 export const REMOTE_PAGE_CACHE_SCHEMA = 1;

@@ -16,8 +16,8 @@ import {
   loadSessionAdditionalDirs,
   saveSessionAdditionalDirs,
   subscribeSessionAdditionalDirs,
-} from "../../projects/model/additionalDirs";
-import { isLocalProject, loadRecents, type RecentProject } from "../../projects/model/recents";
+} from "../../projects/public/additionalDirs";
+import { isLocalProject, loadRecents, type RecentProject } from "../../projects/public/recents";
 
 function uniquePaths(paths: readonly string[]): string[] {
   const seen = new Set<string>();

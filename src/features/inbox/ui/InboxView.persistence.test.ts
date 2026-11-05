@@ -8,7 +8,6 @@ import { InboxView as RawInboxView } from "./InboxView";
 import { withQueryClient } from "../../../../tests/browser/queryTest";
 import type { InboxItem } from "../model/githubTasks";
 import type { LinkedWorkItem } from "../../sessions/model/session";
-import { LIST_PAGE_SIZE } from "../../../shared/lib/listWindow";
 
 const { read, invoke } = vi.hoisted(() => ({ read: vi.fn(), invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke, isTauri: () => false }));
@@ -42,7 +41,6 @@ function inboxRow(scope: ParentNode, title: string): HTMLButtonElement | null {
 
 let root: Root;
 let container: HTMLDivElement;
-let revealMore: (() => void) | undefined;
 const items = (cwd: string): InboxItem[] =>
   [1, 2].map((number) => ({
     kind: "issue",
@@ -67,20 +65,18 @@ beforeEach(async () => {
     "ResizeObserver",
     class {
       observe() {}
-      disconnect() {}
-    },
-  );
-  vi.stubGlobal(
-    "IntersectionObserver",
-    class {
-      constructor(callback: (entries: { isIntersecting: boolean }[]) => void) {
-        revealMore = () => callback([{ isIntersecting: true }]);
-      }
-      observe() {}
       unobserve() {}
       disconnect() {}
     },
   );
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.hasAttribute("data-index") ? 64 : 480;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(640);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
   Element.prototype.scrollIntoView = vi.fn();
   await setLanguagePreference("en");
   invoke.mockReset();
@@ -94,7 +90,7 @@ beforeEach(async () => {
   root = createRoot(container);
 });
 
-it("restores the loaded list window before restoring a position beyond its first page", async () => {
+it("bounds loaded rows and restores a scrolled position beyond the initial window", async () => {
   const base = items("/work/project")[0];
   read.mockResolvedValue({
     items: Array.from({ length: 100 }, (_, index) => ({
@@ -107,22 +103,25 @@ it("restores the loaded list window before restoring a position beyond its first
   await show();
   const rows = () =>
     container.querySelectorAll<HTMLButtonElement>('button[aria-label*=": Inbox issue "]');
-  expect(rows()).toHaveLength(LIST_PAGE_SIZE);
-  await act(async () => revealMore!());
-  expect(rows()).toHaveLength(LIST_PAGE_SIZE * 2);
-  const scroller = rows()[0].closest("ul")!.parentElement!;
+  expect(rows().length).toBeLessThan(64);
+  const scroller = container.querySelector<HTMLElement>("[data-continuous-list]")!;
   scroller.scrollTop = 2440;
-  scroller.dispatchEvent(new Event("scroll"));
+  await act(async () => scroller.dispatchEvent(new Event("scroll")));
+  expect(inboxRow(container, "Inbox issue 40")).not.toBeNull();
+  expect(rows().length).toBeLessThan(64);
   await act(async () => root.unmount());
   root = createRoot(container);
   await show();
-  expect(rows()).toHaveLength(LIST_PAGE_SIZE * 2);
-  expect(rows()[0].closest("ul")!.parentElement!.scrollTop).toBe(2440);
+  const restoredScroller = container.querySelector<HTMLElement>("[data-continuous-list]")!;
+  expect(restoredScroller.scrollTop).toBe(2440);
+  expect(inboxRow(container, "Inbox issue 40")).not.toBeNull();
+  expect(rows().length).toBeLessThan(64);
 });
 
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   localStorage.clear();
 });
@@ -148,7 +147,7 @@ it("restores the selected inbox item and list position after leaving the tool", 
   const second = inboxRow(container, "Inbox issue 2")!;
   expect(second).not.toBeNull();
   await act(async () => second.click());
-  const scroller = second.closest("ul")!.parentElement!;
+  const scroller = second.closest("[data-continuous-list]")!;
   scroller.scrollTop = 420;
   scroller.dispatchEvent(new Event("scroll"));
   await act(async () => root.unmount());
@@ -156,7 +155,7 @@ it("restores the selected inbox item and list position after leaving the tool", 
   await show();
   const restored = inboxRow(container, "Inbox issue 2")!;
   expect(restored.getAttribute("aria-current")).toBe("true");
-  expect(restored.closest("ul")!.parentElement!.scrollTop).toBe(420);
+  expect(restored.closest("[data-continuous-list]")!.scrollTop).toBe(420);
   await act(async () => root.unmount());
   root = createRoot(container);
   const remoteCwd = "remote://other-host/work/project";
@@ -164,7 +163,7 @@ it("restores the selected inbox item and list position after leaving the tool", 
   await show(remoteCwd);
   const firstOnOtherHost = inboxRow(container, "Inbox issue 1")!;
   expect(firstOnOtherHost.getAttribute("aria-current")).toBe("true");
-  expect(firstOnOtherHost.closest("ul")!.parentElement!.scrollTop).toBe(0);
+  expect(firstOnOtherHost.closest("[data-continuous-list]")!.scrollTop).toBe(0);
   await act(async () => root.unmount());
   root = createRoot(container);
   await show("/work/project", {
@@ -179,7 +178,7 @@ it("restores the selected inbox item and list position after leaving the tool", 
 it("returns from the narrow detail view without clearing the selected item or list position", async () => {
   await show();
   const second = inboxRow(container, "Inbox issue 2")!;
-  const scroller = second.closest("ul")!.parentElement!;
+  const scroller = second.closest("[data-continuous-list]")!;
   scroller.scrollTop = 420;
   await act(async () => second.click());
   expect(container.querySelector(".inbox-list-detail")?.getAttribute("data-detail-open")).toBe(

@@ -46,7 +46,11 @@ vi.mock("../../sessions/ui/modelSource", () => ({
 }));
 vi.mock("../model/assistantClient", () => ({
   useAssistantSnapshot: () => ({
-    snapshot: { profile: state.profile, keepAwake: state.keepAwake, capabilities: { observationTasks: false } },
+    snapshot: {
+      profile: state.profile,
+      keepAwake: state.keepAwake,
+      capabilities: { observationTasks: false },
+    },
     environmentId: state.environmentId,
     loading: false,
     error: "",

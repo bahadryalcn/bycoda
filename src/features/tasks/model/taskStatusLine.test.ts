@@ -53,14 +53,14 @@ describe("taskStatusLine", () => {
     );
   });
   it("names active work calmly, including automatic correction", () => {
-    expect(pick({ status: "running" })).toMatchObject({ kind: "running", tone: "info" });
+    expect(pick({ status: "running" })).toMatchObject({ kind: "running", tone: "accent" });
     expect(pick({ status: "queued" })).toMatchObject({ kind: "queued", tone: "neutral" });
     expect(pick({ status: "verifying" })).toMatchObject({ kind: "verifying", label: "Verifying" });
     expect(
       pick({ status: "running", repairAttempts: 2, repairNote: "Test is red. More text." }),
     ).toEqual({
       kind: "correcting",
-      tone: "info",
+      tone: "accent",
       label: "Auto-correcting 2/3",
       detail: "Test is red.",
       notices: 0,

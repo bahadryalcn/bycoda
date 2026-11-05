@@ -1,4 +1,4 @@
-import type { Block } from "../../sessions/model/session";
+import type { Block } from "../../sessions";
 
 /**
  * The wire form of a transcript block (`host/sessions/transcriptPage.ts previewBlock`).

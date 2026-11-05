@@ -74,6 +74,7 @@ export function buildQuestionReply(
   answers: Record<string, string[]>,
   custom: Record<string, string> = {},
   attachments: Record<string, UserQuestionAttachment[]> = {},
+  notes: Record<string, string> = {},
 ): UserQuestionReply {
   const answered = questions.filter(
     (question) =>
@@ -86,6 +87,7 @@ export function buildQuestionReply(
   const nextAnswers: Record<string, string[]> = {};
   const nextCustom: Record<string, string> = {};
   const nextAttachments: Record<string, UserQuestionAttachment[]> = {};
+  const nextNotes: Record<string, string> = {};
   for (const question of answered) {
     const selected = answers[question.id];
     if (selected?.length) nextAnswers[question.id] = selected;
@@ -93,6 +95,14 @@ export function buildQuestionReply(
       ? custom[question.id]
       : custom[question.id]?.trim();
     if (text) nextCustom[question.id] = text;
+    const note = notes[question.id]?.trim();
+    if (
+      note &&
+      question.allowCustom &&
+      !question.preserveCustomWhitespace &&
+      selected?.some((id) => !isCustomSelection(question, id))
+    )
+      nextNotes[question.id] = note;
     if (
       question.allowCustom &&
       !question.preserveCustomWhitespace &&
@@ -104,6 +114,7 @@ export function buildQuestionReply(
     kind: "answered",
     answers: nextAnswers,
     ...(Object.keys(nextCustom).length > 0 ? { custom: nextCustom } : {}),
+    ...(Object.keys(nextNotes).length > 0 ? { notes: nextNotes } : {}),
     ...(Object.keys(nextAttachments).length > 0 ? { attachments: nextAttachments } : {}),
   };
 }
@@ -129,7 +140,37 @@ export function selectedAnswerLabels(
     question.allowCustom && !question.preserveCustomWhitespace
       ? reply.attachments?.[question.id]
       : undefined;
-  return files?.length ? [[...labels, ...files.map(attachmentPathText)].join("\n\n")] : labels;
+  const note = reply.notes?.[question.id]?.trim();
+  if (
+    note &&
+    (!question.allowCustom ||
+      question.preserveCustomWhitespace ||
+      !(selected ?? []).some((id) => !isCustomSelection(question, id)))
+  )
+    throw new Error("Question notes are only supported for free-text-capable fixed selections.");
+  const withNote =
+    note && labels.length
+      ? [...labels.slice(0, -1), `${labels[labels.length - 1]}\n${note}`]
+      : labels;
+  return files?.length ? [[...withNote, ...files.map(attachmentPathText)].join("\n\n")] : withNote;
+}
+
+export function assertQuestionNotesSupported(
+  questions: UserQuestion[],
+  reply: UserQuestionReply,
+): void {
+  if (reply.kind !== "answered" || !reply.notes) return;
+  for (const [id, note] of Object.entries(reply.notes)) {
+    const question = questions.find((item) => item.id === id);
+    if (
+      !question ||
+      !question.allowCustom ||
+      question.preserveCustomWhitespace ||
+      !note.trim() ||
+      !(reply.answers[id] ?? []).some((optionId) => !isCustomSelection(question, optionId))
+    )
+      throw new Error("Question notes are only supported for free-text-capable questions.");
+  }
 }
 
 export function isCustomSelection(question: UserQuestion, optionId: string): boolean {

@@ -5,9 +5,9 @@ import {
   remoteMachineFor,
   remoteRequest,
   remoteSessionFor,
-} from "../../connections/model/connections";
-import type { RemoteMachine } from "../../connections/model/protocol";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
+} from "../../connections/public/connections";
+import type { RemoteMachine } from "../../connections";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import type { Session } from "./session";
 
 export const EDIT_FROM_HERE_CAPABILITY = "sessions.edit-from-here.v1";

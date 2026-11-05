@@ -225,16 +225,29 @@ export class DevicePreviews {
     try {
       const lease = await this.host.control.claim(input.deviceId, owner, job.id, live);
       leaseId = lease.leaseId;
-      await this.host.control.execute(input.deviceId, owner, leaseId, job.id, input, async (track) => {
-        if (!(await this.runOwned(job, input, owner, lease.leaseId, track))) throw new Error("DEVICE_PREVIEW_UNCONFIRMED");
-      });
+      await this.host.control.execute(
+        input.deviceId,
+        owner,
+        leaseId,
+        job.id,
+        input,
+        async (track) => {
+          if (!(await this.runOwned(job, input, owner, lease.leaseId, track)))
+            throw new Error("DEVICE_PREVIEW_UNCONFIRMED");
+        },
+      );
       await this.host.control.release(input.deviceId, owner, leaseId);
       leaseId = undefined;
       job.state = "ready";
     } catch (cause) {
       if ((job as Preview).state !== "blocked") {
         job.state = "blocked";
-        job.stages.push({ name: "control", state: "blocked", code: "DEVICE_CONTROL_BUSY", message: cause instanceof Error ? cause.message : "Device control unavailable." });
+        job.stages.push({
+          name: "control",
+          state: "blocked",
+          code: "DEVICE_CONTROL_BUSY",
+          message: cause instanceof Error ? cause.message : "Device control unavailable.",
+        });
         if (!leaseId) this.settledAt.set(job.id, this.now());
       }
     } finally {
@@ -242,7 +255,13 @@ export class DevicePreviews {
       job.updatedAt = new Date().toISOString();
     }
   }
-  private async runOwned(job: Preview, input: PreviewInput, owner: string, leaseId: string, track: <T>(work: Promise<T>) => Promise<T>) {
+  private async runOwned(
+    job: Preview,
+    input: PreviewInput,
+    owner: string,
+    leaseId: string,
+    track: <T>(work: Promise<T>) => Promise<T>,
+  ) {
     job.state = "running";
     let setupStarted = false;
     let completed = false;

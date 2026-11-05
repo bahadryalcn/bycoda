@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { newDefaultSession, type RuntimeMode, type Session } from "../../sessions/model/session";
-import { worktreeFocus } from "../../source-control/model/worktreeFocus";
-import { isLocalProject } from "../../projects/model/recents";
+import { newDefaultSession, type RuntimeMode, type Session } from "../../sessions/public/session";
+
+import { worktreeFocus } from "../../source-control/public/worktreeFocus";
+import { isLocalProject } from "../../projects/public/recents";
 import { remoteRequest, refreshRemoteMachines } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
 import type { HostDescriptor, HostProject, RemoteMachine } from "./protocol";

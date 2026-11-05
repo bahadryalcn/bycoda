@@ -1,3 +1,4 @@
+import { URL as NodeURL } from "node:url";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
@@ -88,7 +89,7 @@ export class StoreDatabase {
     }
   >();
 
-  constructor(path: string, workerURL = new URL("./store-worker.mjs", import.meta.url)) {
+  constructor(path: string, workerURL = new NodeURL("./store-worker.mjs", import.meta.url)) {
     let resolveReady!: () => void;
     let rejectReady!: (error: Error) => void;
     this.ready = new Promise<void>((resolve, reject) => {
@@ -473,7 +474,9 @@ export class StoreDatabase {
         return result as Awaited<ReturnType<typeof work>>;
       });
     });
-    const settled = pending.finally(() => { if (signal) this.queuedCancellableReads--; });
+    const settled = pending.finally(() => {
+      if (signal) this.queuedCancellableReads--;
+    });
     this.tail = settled.catch(() => undefined);
     if (!signal) return settled;
     return new Promise<T>((resolve, reject) => {
@@ -484,7 +487,10 @@ export class StoreDatabase {
       };
       signal.addEventListener("abort", cancelled, { once: true });
       if (signal.aborted) cancelled();
-      settled.then(resolve, reject).finally(() => signal.removeEventListener("abort", cancelled)).catch(() => undefined);
+      settled
+        .then(resolve, reject)
+        .finally(() => signal.removeEventListener("abort", cancelled))
+        .catch(() => undefined);
     });
   }
 

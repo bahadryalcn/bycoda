@@ -140,22 +140,31 @@ async function setup(delayAssignment = false) {
   let permit = true;
   if (delayAssignment) {
     const tick = tasks.tick.bind(tasks);
-    vi.spyOn(tasks, "tick").mockImplementationOnce(async () => { await launchGate.promise; return tick(); });
+    vi.spyOn(tasks, "tick").mockImplementationOnce(async () => {
+      await launchGate.promise;
+      return tick();
+    });
   }
-  const assign = () => crews.assign(
-    project.id,
-    {
-      runId: "run",
-      requestId: "backend",
-      memberId: "backend",
-      title: "Backend",
-      prompt: "Implement backend",
-      files: ["backend.ts"],
-    },
-    principal,
-  );
-  const assignment = delayAssignment ? await store.db.withAuthorization(async () => permit, assign) : await assign();
-  if (delayAssignment) { permit = false; launchGate.resolve(); }
+  const assign = () =>
+    crews.assign(
+      project.id,
+      {
+        runId: "run",
+        requestId: "backend",
+        memberId: "backend",
+        title: "Backend",
+        prompt: "Implement backend",
+        files: ["backend.ts"],
+      },
+      principal,
+    );
+  const assignment = delayAssignment
+    ? await store.db.withAuthorization(async () => permit, assign)
+    : await assign();
+  if (delayAssignment) {
+    permit = false;
+    launchGate.resolve();
+  }
   await waitForReview(tasks, store, assignment.taskId);
   return { crews, tasks, project, principal, assignment, cwd, reviewer, worker, store };
 }

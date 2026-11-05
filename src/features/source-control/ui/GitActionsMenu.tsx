@@ -9,7 +9,7 @@ import {
   Plus,
   Check,
 } from "../../../shared/ui/icons";
-import { ExplorerMenu } from "../../files/ui/ExplorerMenu";
+import { ExplorerMenu } from "../../files/public/ExplorerMenu";
 import { Button } from "../../../shared/ui/Button";
 import { Spinner } from "../../../shared/ui/Spinner";
 import {
@@ -46,7 +46,7 @@ import {
   GIT_ACTIONS,
   HOST_UPDATE_NOTICE,
   useRemoteSupports,
-} from "../../connections/model/remoteCapabilities";
+} from "../../connections/public/remoteCapabilities";
 import { useProjectBranchesState } from "../hooks/useProjectBranches";
 import { deleteLocalBranch } from "../model/deleteBranch";
 import { operationLabel } from "../model/commitActions";

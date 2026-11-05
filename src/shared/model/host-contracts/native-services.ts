@@ -48,24 +48,99 @@ export const NativeWorkspaceFormatParamsSchema = z.strictObject({
   args: z.strictObject({ path: z.string(), source: z.string(), cursorOffset: SafeCounterSchema }),
 });
 export const NATIVE_SERVICES_RPC_SCHEMAS = {
-  "native.services.assistant.observations.ingest": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
-  "native.services.assistant.delegation.publicKey": { params: z.strictObject({}), result: z.strictObject({ publicKey: z.string(), environmentId: z.string() }) },
-  "native.services.assistant.delegation.origin": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
-  "native.services.assistant.delegation.nativeChallenge": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
-  "native.services.assistant.delegation.attest": { params: z.strictObject({ input: JsonObjectSchema }), result: z.strictObject({ signature: z.string() }) },
-  "native.services.assistant.delegation.issue": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
-  "native.services.assistant.delegation.issue.status": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
-  "native.services.assistant.delegation.challenge": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
-  "native.services.assistant.delegation.call": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonValueSchema },
-  "native.services.assistant.delegation.revoke": { params: z.strictObject({ input: JsonObjectSchema }), result: JsonObjectSchema },
-  "native.services.assistant.visibility.epoch": { params: empty, result: z.strictObject({ epoch: SafeCounterSchema }) },
-  "native.services.assistant.visibility.revoke": { params: empty, result: z.strictObject({ epoch: SafeCounterSchema }) },
-  "native.services.assistant.visibility.reopen": { params: z.strictObject({ input: JsonObjectSchema }), result: z.strictObject({ epoch: SafeCounterSchema }) },
-  "native.services.assistant.notification.authorize": { params: z.strictObject({ input: z.strictObject({ threadId: z.string(), notificationId: z.string(), operationHash: z.string() }) }), result: z.strictObject({ authorized: z.boolean() }) },
-  "native.services.assistant.workspace.authorize": { params: z.strictObject({ input: z.strictObject({ threadId: z.string(), requestId: z.string(), operationHash: z.string() }) }), result: z.strictObject({ authorized: z.boolean() }) },
+  "native.services.assistant.observations.ingest": {
+    params: z.strictObject({ input: JsonObjectSchema }),
+    result: JsonObjectSchema,
+  },
+  "native.services.assistant.delegation.publicKey": {
+    params: z.strictObject({}),
+    result: z.strictObject({ publicKey: z.string(), environmentId: z.string() }),
+  },
+  "native.services.assistant.delegation.origin": {
+    params: z.strictObject({ input: JsonObjectSchema }),
+    result: JsonObjectSchema,
+  },
+  "native.services.assistant.delegation.nativeChallenge": {
+    params: z.strictObject({ input: JsonObjectSchema }),
+    result: JsonObjectSchema,
+  },
+  "native.services.assistant.delegation.attest": {
+    params: z.strictObject({ input: JsonObjectSchema }),
+    result: z.strictObject({ signature: z.string() }),
+  },
+  "native.services.assistant.delegation.issue": {
+    params: z.strictObject({ input: JsonObjectSchema }),
+    result: JsonObjectSchema,
+  },
+  "native.services.assistant.delegation.issue.status": {
+    params: z.strictObject({ input: JsonObjectSchema }),
+    result: JsonObjectSchema,
+  },
+  "native.services.assistant.delegation.challenge": {
+    params: z.strictObject({ input: JsonObjectSchema }),
+    result: JsonObjectSchema,
+  },
+  "native.services.assistant.delegation.call": {
+    params: z.strictObject({ input: JsonObjectSchema }),
+    result: JsonValueSchema,
+  },
+  "native.services.assistant.delegation.revoke": {
+    params: z.strictObject({ input: JsonObjectSchema }),
+    result: JsonObjectSchema,
+  },
+  "native.services.assistant.visibility.epoch": {
+    params: empty,
+    result: z.strictObject({ epoch: SafeCounterSchema }),
+  },
+  "native.services.assistant.visibility.revoke": {
+    params: empty,
+    result: z.strictObject({ epoch: SafeCounterSchema }),
+  },
+  "native.services.assistant.visibility.reopen": {
+    params: z.strictObject({ input: JsonObjectSchema }),
+    result: z.strictObject({ epoch: SafeCounterSchema }),
+  },
+  "native.services.assistant.notification.authorize": {
+    params: z.strictObject({
+      input: z.strictObject({
+        threadId: z.string(),
+        notificationId: z.string(),
+        operationHash: z.string(),
+      }),
+    }),
+    result: z.strictObject({ authorized: z.boolean() }),
+  },
+  "native.services.assistant.workspace.authorize": {
+    params: z.strictObject({
+      input: z.strictObject({
+        threadId: z.string(),
+        requestId: z.string(),
+        operationHash: z.string(),
+      }),
+    }),
+    result: z.strictObject({ authorized: z.boolean() }),
+  },
   "native.services.assistant.browser.panel": {
     // Filesystem paths are bounded by the owner in UTF-16, as with FilesReadParamsSchema.
-    params: z.strictObject({ environmentId: IdentifierSchema, projectId: IdentifierSchema, threadId: IdentifierSchema, projectCwd: z.string(), action: z.enum(["browser.status", "browser.claim", "browser.release", "browser.open", "browser.frame", "browser.resize", "browser.input", "browser.close", "browser.operation.status"]), input: JsonObjectSchema, requestId: IdentifierSchema }),
+    params: z.strictObject({
+      environmentId: IdentifierSchema,
+      projectId: IdentifierSchema,
+      threadId: IdentifierSchema,
+      projectCwd: z.string(),
+      action: z.enum([
+        "browser.status",
+        "browser.claim",
+        "browser.release",
+        "browser.open",
+        "browser.frame",
+        "browser.resize",
+        "browser.input",
+        "browser.close",
+        "browser.operation.status",
+      ]),
+      input: JsonObjectSchema,
+      requestId: IdentifierSchema,
+    }),
     result: JsonObjectSchema,
   },
   "native.services.assistant.presence.get": { params: empty, result: assistantPresence },
@@ -210,10 +285,11 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
   },
 } as const;
 // Preserve domain UTF-16 path bounds without exporting Unicode-incompatible checks.
-export const NativeAssistantBrowserPanelParamsSchema =
-  NATIVE_SERVICES_RPC_SCHEMAS["native.services.assistant.browser.panel"].params.extend({
-    projectCwd: z.string().regex(/^[^\u0000]{1,4096}(?![\s\S])/),
-  });
+export const NativeAssistantBrowserPanelParamsSchema = NATIVE_SERVICES_RPC_SCHEMAS[
+  "native.services.assistant.browser.panel"
+].params.extend({
+  projectCwd: z.string().regex(/^[^\u0000]{1,4096}(?![\s\S])/),
+});
 export type NativeServiceMethod = keyof typeof NATIVE_SERVICES_RPC_SCHEMAS;
 export const NATIVE_SERVICE_METHODS = Object.freeze(
   Object.keys(NATIVE_SERVICES_RPC_SCHEMAS) as NativeServiceMethod[],

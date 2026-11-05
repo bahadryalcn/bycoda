@@ -52,9 +52,11 @@ async function fixture() {
     reply,
     roomManagement: tools,
     roomManagementVisible: visible,
-    roomProjectProofsValid: async proofs => proofs.every(proof => proof.projectId === "project" && proof.cwd === currentCwd),
+    roomProjectProofsValid: async (proofs) =>
+      proofs.every((proof) => proof.projectId === "project" && proof.cwd === currentCwd),
     withRoomProjectDisclosure: async (threadId, ids, admission, effect) => {
-      if (!(await admission.authorized()) || !(await visible(threadId, ids, admission))) throw new Error("Room project visibility unavailable.");
+      if (!(await admission.authorized()) || !(await visible(threadId, ids, admission)))
+        throw new Error("Room project visibility unavailable.");
       return await effect(() => true);
     },
   };
@@ -111,7 +113,9 @@ async function fixture() {
     },
     thread,
     directory,
-    retarget: () => { currentCwd = `${directory}-retargeted`; },
+    retarget: () => {
+      currentCwd = `${directory}-retargeted`;
+    },
     admission,
     input,
     request,
@@ -134,8 +138,14 @@ it("redacts retained Room output when the source project is retargeted", async (
   const response = await f.request();
   expect(response.messages?.at(-1)?.text).toContain("Exact current task");
   f.retarget();
-  const history = await f.service.request({ op: "threads.messages", threadId: f.thread.id, limit: 10 }, "owner", f.admission);
-  expect(history.messages?.at(-1)?.text).toBe("This message is unavailable because its source access changed.");
+  const history = await f.service.request(
+    { op: "threads.messages", threadId: f.thread.id, limit: 10 },
+    "owner",
+    f.admission,
+  );
+  expect(history.messages?.at(-1)?.text).toBe(
+    "This message is unavailable because its source access changed.",
+  );
 });
 
 it("executes typed Room tools with real owner/thread admission and retains verified result across restart", async () => {

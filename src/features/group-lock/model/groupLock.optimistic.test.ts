@@ -4,7 +4,10 @@ import { expect, it, vi } from "vitest";
 const pending = vi.hoisted(() => ({ reject: undefined as undefined | ((error: Error) => void) }));
 vi.mock("./roomPrivacyProjection", () => ({
   queueRoomPrivacyProjection: () => {},
-  withRoomPrivacyMutation: () => new Promise((_resolve, reject) => { pending.reject = reject; }),
+  withRoomPrivacyMutation: () =>
+    new Promise((_resolve, reject) => {
+      pending.reject = reject;
+    }),
 }));
 
 it("conceals immediately while drain is pending and stays concealed if it fails", async () => {
@@ -15,7 +18,10 @@ it("conceals immediately while drain is pending and stays concealed if it fails"
   const record = await createPasswordRecord("correct-password");
   localStorage.setItem("bycoda.groupLock", JSON.stringify({ record, relockOnLaunch: false }));
   localStorage.setItem("bycoda.groupLock.unlocked", JSON.stringify(["private"]));
-  localStorage.setItem("bycoda.projectGroups", JSON.stringify([{ id: "private", name: "Private", lockable: true }]));
+  localStorage.setItem(
+    "bycoda.projectGroups",
+    JSON.stringify([{ id: "private", name: "Private", lockable: true }]),
+  );
   localStorage.setItem("bycoda.projectGroupAssignments", JSON.stringify({ "/private": "private" }));
   const model = await import("./groupLock");
   expect(model.isProjectLocked("/private")).toBe(false);

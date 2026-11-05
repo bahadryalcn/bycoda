@@ -14,7 +14,13 @@ import type {
   WorkspaceRegistry,
 } from "../workspaces/workspace-service-contracts";
 import type { WorkspaceRpcRequest } from "../workspaces/workspace-rpc-contracts";
-import { durableWrite, GitTurnHistory, gitText, refComponent, rewindRef } from "../git/turn-git-history";
+import {
+  durableWrite,
+  GitTurnHistory,
+  gitText,
+  refComponent,
+  rewindRef,
+} from "../git/turn-git-history";
 import { withHostGitMutation } from "../git/git-mutations";
 
 /** Both HostStore and native SQLite must implement this boundary atomically. No provider file revert. */

@@ -1,5 +1,5 @@
 import { removeAttachmentFromText } from "./attachmentTokens";
-import { REMOTE_PROVIDERS as HARNESSES } from "../../connections/model/protocol";
+import { REMOTE_PROVIDERS as HARNESSES } from "../../connections/public/protocol";
 import type { Attachment, AttachmentKind, ModelTarget, QueuedMessage, TurnIntent } from "./session";
 import { parseBrowserAnnotation } from "../../../shared/lib/browserAnnotation";
 

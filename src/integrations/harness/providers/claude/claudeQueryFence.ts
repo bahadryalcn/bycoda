@@ -8,7 +8,9 @@ export class ClaudeQueryFence {
 
   assertReady(): void {
     if (this.current || this.uncertain)
-      throw new Error("Claude is still settling a previous query. Stop the session before retrying.");
+      throw new Error(
+        "Claude is still settling a previous query. Stop the session before retrying.",
+      );
   }
 
   begin(): number {

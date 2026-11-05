@@ -15,8 +15,10 @@ export type ProviderManagementContext = {
   projectId?: string;
   valid: () => boolean;
   authorize?: () => Promise<boolean>;
-} & ({ sourceSessionId: string; sourceThreadId?: never; projectCwd: string; workingCwd: string }
-  | { sourceThreadId: string; sourceSessionId?: never; projectCwd?: string; workingCwd?: string });
+} & (
+  | { sourceSessionId: string; sourceThreadId?: never; projectCwd: string; workingCwd: string }
+  | { sourceThreadId: string; sourceSessionId?: never; projectCwd?: string; workingCwd?: string }
+);
 type Deps = {
   accounts: () => ProviderAccount[];
   quota: (provider: "claude" | "codex", id: string) => ProviderRateLimits;
@@ -77,10 +79,12 @@ export async function readProviderManagement(
 ) {
   const valid = () =>
     context.valid() &&
-    [context.environmentId, context.sourceSessionId ?? context.sourceThreadId].every(
-      (value) => text(value, 4096),
+    [context.environmentId, context.sourceSessionId ?? context.sourceThreadId].every((value) =>
+      text(value, 4096),
     ) &&
-    (!context.sourceThreadId || (!!context.projectId === !!context.projectCwd && !!context.projectCwd === !!context.workingCwd)) &&
+    (!context.sourceThreadId ||
+      (!!context.projectId === !!context.projectCwd &&
+        !!context.projectCwd === !!context.workingCwd)) &&
     (!context.projectCwd || !context.projectCwd.startsWith("remote://")) &&
     (!context.workingCwd || !context.workingCwd.startsWith("remote://"));
   if (Object.keys(request).length || !valid())

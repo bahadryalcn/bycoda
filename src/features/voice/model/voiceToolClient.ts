@@ -111,8 +111,21 @@ export async function callVoiceTool(
     Array.isArray(call.input) ||
     (call.requestId !== undefined && (!call.requestId.trim() || call.requestId.length > 300)) ||
     (target.causalContext && !call.requestId) ||
-    (call.accountId !== undefined && (!(call.family === "social" || (call.family === "conversation" && ["observations.read", "observations.ack", "observations.resnapshot"].includes(call.action))) || !!target.cwd.trim() || !call.accountId.trim() || call.accountId.length > 200)) ||
-    (!target.cwd.trim() && call.family === "social" && call.action !== "accounts.list" && !call.accountId)
+    (call.accountId !== undefined &&
+      (!(
+        call.family === "social" ||
+        (call.family === "conversation" &&
+          ["observations.read", "observations.ack", "observations.resnapshot"].includes(
+            call.action,
+          ))
+      ) ||
+        !!target.cwd.trim() ||
+        !call.accountId.trim() ||
+        call.accountId.length > 200)) ||
+    (!target.cwd.trim() &&
+      call.family === "social" &&
+      call.action !== "accounts.list" &&
+      !call.accountId)
   )
     throw new Error("The voice tool request is invalid.");
   const params = {

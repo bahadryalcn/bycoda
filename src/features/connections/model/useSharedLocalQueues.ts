@@ -1,14 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useSyncExternalStore, type MutableRefObject } from "react";
 import { t } from "../../../shared/i18n";
-import type { QueueActionResult } from "../../sessions/model/queueAction";
+import type { QueueActionResult, QueuedMessage, Session } from "../../sessions";
 import {
   lateSettlementPossible,
   setQueueHoldReason,
   trackLateSettlement,
-} from "../../sessions/model/deliveryReview";
-import type { QueuedMessage, Session } from "../../sessions/model/session";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+} from "../../sessions/public/deliveryReview";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import { hostSessionBinding } from "./sessionExecutionBinding";
 import { loadRemoteCapabilities } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
@@ -26,7 +25,7 @@ import {
   beginDeliveryProgress,
   clearDeliveryProgress,
   updateDeliveryProgress,
-} from "../../sessions/model/deliveryProgress";
+} from "../../sessions/public/deliveryProgress";
 import { DeliveryUnknownError } from "../../../shared/lib/deliveryUnknown";
 import { LOCAL_HOST_REACHABLE_EVENT } from "./hostWake";
 import { hasInlineQueueAttachments, storeInlineQueueAttachments } from "./queuedAttachmentStorage";

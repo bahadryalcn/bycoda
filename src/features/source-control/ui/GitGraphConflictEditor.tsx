@@ -21,7 +21,7 @@ import { GitFeedback } from "./GitFeedback";
 import type { GraphRun } from "./GitGraphBranches";
 import { ConflictLayout, conflictSourcesFromMarkers } from "./ConflictLayout";
 import { MergeConflictEditor } from "./MergeConflictEditor";
-import { restoreMixedLineEndings } from "../../files/editor/editorDoc";
+import { restoreMixedLineEndings } from "../../files/public/editorDoc";
 
 export function GitGraphConflictEditor({
   cwd,

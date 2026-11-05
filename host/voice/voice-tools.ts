@@ -1,5 +1,12 @@
-import { OBSERVATION_TOOL_SCHEMAS, isAssistantObservationAction, validateAssistantObservationInput } from "../assistant/observations/assistant-observation-tools";
-import { conversationToolCatalog, validateConversationTool } from "../conversation/conversation-tools";
+import {
+  OBSERVATION_TOOL_SCHEMAS,
+  isAssistantObservationAction,
+  validateAssistantObservationInput,
+} from "../assistant/observations/assistant-observation-tools";
+import {
+  conversationToolCatalog,
+  validateConversationTool,
+} from "../conversation/conversation-tools";
 import { normalizeSocialToolRequest, socialToolCatalog } from "../social/social-tools";
 import {
   RUNTIME_LOG_TOOLS,
@@ -38,9 +45,17 @@ type GrantIssuer = {
 export function voiceToolCatalog() {
   return [
     ...Object.entries(OBSERVATION_TOOL_SCHEMAS).map(([action, inputSchema]) => ({
-      family: "conversation" as const, action, inputSchema, name: `conversation_${action.replace(/\./g, "_")}`,
-      description: "Read or reconcile bounded observation metadata for an explicitly authorized project or account. Availability requires a live source permit; it never grants authority.",
-      annotations: { readOnlyHint: action === "observations.read", destructiveHint: false, idempotentHint: action !== "observations.resnapshot" },
+      family: "conversation" as const,
+      action,
+      inputSchema,
+      name: `conversation_${action.replace(/\./g, "_")}`,
+      description:
+        "Read or reconcile bounded observation metadata for an explicitly authorized project or account. Availability requires a live source permit; it never grants authority.",
+      annotations: {
+        readOnlyHint: action === "observations.read",
+        destructiveHint: false,
+        idempotentHint: action !== "observations.resnapshot",
+      },
     })),
     ...conversationToolCatalog().map((tool) => ({ ...tool, family: "conversation" as const })),
     ...socialToolCatalog().map((tool) => ({ ...tool, family: "social" as const })),
@@ -90,8 +105,20 @@ export function parseVoiceToolCall(params: Input) {
         ].includes(key),
     ) ||
     (params.projectId !== undefined && !identity(params.projectId)) ||
-    (params.accountId !== undefined && (!identity(params.accountId) || !(params.family === "social" || (params.family === "conversation" && typeof params.action === "string" && ["observations.read", "observations.ack", "observations.resnapshot"].includes(params.action))) || params.projectId !== undefined || params.sessionId !== undefined)) ||
-    (params.projectId === undefined && (!identity(params.threadId) || params.sessionId !== undefined)) ||
+    (params.accountId !== undefined &&
+      (!identity(params.accountId) ||
+        !(
+          params.family === "social" ||
+          (params.family === "conversation" &&
+            typeof params.action === "string" &&
+            ["observations.read", "observations.ack", "observations.resnapshot"].includes(
+              params.action,
+            ))
+        ) ||
+        params.projectId !== undefined ||
+        params.sessionId !== undefined)) ||
+    (params.projectId === undefined &&
+      (!identity(params.threadId) || params.sessionId !== undefined)) ||
     (!identity(params.sessionId) && !identity(params.threadId)) ||
     (params.sessionId !== undefined && !identity(params.sessionId)) ||
     (params.threadId !== undefined && !identity(params.threadId)) ||
@@ -109,7 +136,8 @@ export function parseVoiceToolCall(params: Input) {
   );
   if (!tool) throw new Error("Unknown voice tool. Discover the available tools first.");
   if (tool.family === "conversation") {
-    if (isAssistantObservationAction(tool.action)) validateAssistantObservationInput(tool.action, input);
+    if (isAssistantObservationAction(tool.action))
+      validateAssistantObservationInput(tool.action, input);
     else validateConversationTool(tool.action, input);
   }
   if (

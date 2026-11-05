@@ -17,9 +17,24 @@ import { t } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
 import type { useLinkedWorkItemPanelState } from "../bridges/useLinkedWorkItemPanels";
 import type { useSessionLoading } from "./useSessionLoading";
-import { flushHostSessionBindings, hostSessionBinding, patchHostSessionShellMetadata } from "../../../features/connections/model/sessionExecutionBinding";
-import { pinState, resolvePinTarget, samePinTarget, type PinAttempt, type PinTarget } from "../../../features/sessions/data/sessionPinReceipts";
-import { listPinSagas, preparePinSaga, resumePinSaga, type PinSaga } from "../../../features/sessions/model/sessionPinSaga";
+import {
+  flushHostSessionBindings,
+  hostSessionBinding,
+  patchHostSessionShellMetadata,
+} from "../../../features/connections/model/sessionExecutionBinding";
+import {
+  pinState,
+  resolvePinTarget,
+  samePinTarget,
+  type PinAttempt,
+  type PinTarget,
+} from "../../../features/sessions/data/sessionPinReceipts";
+import {
+  listPinSagas,
+  preparePinSaga,
+  resumePinSaga,
+  type PinSaga,
+} from "../../../features/sessions/model/sessionPinSaga";
 import { NATIVE_SESSION_ORGANIZATION_ACTIVE } from "../../../features/sessions/model/sessionOrganizationStore";
 import { isProjectPasswordLocked } from "../../../features/group-lock/model/groupLock";
 import { withRoomPrivacyMutation } from "../../../features/group-lock/model/roomPrivacyProjection";
@@ -53,78 +68,147 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
     sidebarCwd,
   } = deps;
 
-  const onPinHistorySession = useCallback(async (sessionId: string, pinned: boolean, captured?: { cwd: string; target: PinTarget | null }): Promise<PinAttempt | void> => {
-    const open = sessionsRef.current.find((session) => session.id === sessionId && (!captured || pathKey(session.cwd) === pathKey(captured.cwd)));
-    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-      const cwd = captured?.cwd ?? open?.cwd ?? history.find((entry) => entry.id === sessionId)?.cwd;
-      let sagaId: string | undefined;
-      let confirmed: PinAttempt | undefined;
+  const onPinHistorySession = useCallback(
+    async (
+      sessionId: string,
+      pinned: boolean,
+      captured?: { cwd: string; target: PinTarget | null },
+    ): Promise<PinAttempt | void> => {
+      const open = sessionsRef.current.find(
+        (session) =>
+          session.id === sessionId && (!captured || pathKey(session.cwd) === pathKey(captured.cwd)),
+      );
+      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+        const cwd =
+          captured?.cwd ?? open?.cwd ?? history.find((entry) => entry.id === sessionId)?.cwd;
+        let sagaId: string | undefined;
+        let confirmed: PinAttempt | undefined;
+        try {
+          if (!cwd) throw new Error("Session project is unavailable.");
+          return await withRoomPrivacyMutation<PinAttempt>(async () => {
+            if (isProjectPasswordLocked(cwd)) throw new Error("Project is locked.");
+            if (captured && !captured.target)
+              throw new Error("The original pin owner is unavailable; refresh this list.");
+            const resolved = await resolvePinTarget(sessionId, cwd);
+            if (captured?.target && !samePinTarget(captured.target, resolved))
+              throw new Error("The pin owner changed; refresh this list.");
+            const target = captured?.target ?? resolved;
+            if (open && shouldPersistSession(open) && !(await upsertSession(open)))
+              throw new Error(t("Could not save changes"));
+            const state = await pinState(target);
+            if (state.state !== "current" || state.pinned === null) {
+              await message("The pin owner refused this change. Refresh the session list.", {
+                title: appName(),
+                kind: "error",
+              });
+              return { state: "refused", version: state.version, pinned: state.pinned };
+            }
+            sagaId = crypto.randomUUID();
+            const saga: PinSaga = {
+              id: sagaId,
+              organizationId: crypto.randomUUID(),
+              organization: null,
+              state: "prepared",
+              steps: [
+                {
+                  viewSessionId: sessionId,
+                  viewCwd: cwd,
+                  viewKind: "local",
+                  target,
+                  operationId: crypto.randomUUID(),
+                  desiredPinned: pinned,
+                  expectedVersion: state.version,
+                  expectedAuthority: state.authority ?? null,
+                  previousPinned: state.pinned,
+                  state: "not-started",
+                },
+              ],
+            };
+            const prepared = await preparePinSaga(saga);
+            if (prepared !== "applied") {
+              await message(
+                prepared === "unknown"
+                  ? `Pin preparation outcome is unknown: ${sagaId}`
+                  : "Pin change conflicted; refresh before retrying.",
+                { title: appName(), kind: "error" },
+              );
+              return prepared === "unknown"
+                ? { state: "unknown", operationId: sagaId }
+                : { state: "refused", version: state.version, pinned: state.pinned };
+            }
+            const result = await resumePinSaga(sagaId);
+            const receipt = result.saga.steps[0]?.receipt;
+            confirmed = receipt;
+            if (receipt?.state === "applied") {
+              if (!samePinTarget(target, await resolvePinTarget(sessionId, cwd)))
+                throw new Error("The displayed pin owner changed.");
+              if (hostSessionBinding({ id: sessionId })) {
+                patchHostSessionShellMetadata(sessionId, { pinned });
+                await flushHostSessionBindings(sessionId);
+              }
+              setHistory((current) =>
+                current.map((entry) =>
+                  entry.id === sessionId &&
+                  (!captured || pathKey(entry.cwd) === pathKey(captured.cwd))
+                    ? { ...entry, pinned }
+                    : entry,
+                ),
+              );
+            }
+            if (result.state !== "applied")
+              await message(
+                result.state === "unknown"
+                  ? `Pin outcome is unknown: ${result.operationId ?? sagaId}`
+                  : result.state === "applied-unavailable"
+                    ? "Pin was applied, but refresh failed."
+                    : "Pin change needs review in the sidebar.",
+                { title: appName(), kind: "error" },
+              );
+            return receipt ?? { state: "unknown", operationId: sagaId };
+          });
+        } catch (error) {
+          await message(
+            confirmed?.state === "applied"
+              ? `Pin was applied, but refresh failed: ${String(error)}`
+              : String(error),
+            { title: appName(), kind: "error" },
+          );
+          if (confirmed?.state === "applied") return confirmed;
+          return sagaId
+            ? { state: "unknown", operationId: sagaId }
+            : { state: "refused", version: 0, pinned: null };
+        }
+      }
       try {
-        if (!cwd) throw new Error("Session project is unavailable.");
-        return await withRoomPrivacyMutation<PinAttempt>(async () => {
-        if (isProjectPasswordLocked(cwd)) throw new Error("Project is locked.");
-        if (captured && !captured.target) throw new Error("The original pin owner is unavailable; refresh this list.");
-        const resolved = await resolvePinTarget(sessionId, cwd);
-        if (captured?.target && !samePinTarget(captured.target, resolved)) throw new Error("The pin owner changed; refresh this list.");
-        const target = captured?.target ?? resolved;
-        if (open && shouldPersistSession(open) && !await upsertSession(open)) throw new Error(t("Could not save changes"));
-        const state = await pinState(target);
-        if (state.state !== "current" || state.pinned === null) {
-          await message("The pin owner refused this change. Refresh the session list.", { title: appName(), kind: "error" });
-          return { state: "refused", version: state.version, pinned: state.pinned };
+        if (open && shouldPersistSession(open)) {
+          const saved = await upsertSession(open);
+          if (!saved) throw new Error(t("Could not save changes"));
         }
-        sagaId = crypto.randomUUID();
-        const saga: PinSaga = { id: sagaId, organizationId: crypto.randomUUID(), organization: null, state: "prepared", steps: [{
-          viewSessionId: sessionId, viewCwd: cwd, viewKind: "local", target, operationId: crypto.randomUUID(), desiredPinned: pinned,
-          expectedVersion: state.version, expectedAuthority: state.authority ?? null, previousPinned: state.pinned, state: "not-started",
-        }] };
-        const prepared = await preparePinSaga(saga);
-        if (prepared !== "applied") {
-          await message(prepared === "unknown" ? `Pin preparation outcome is unknown: ${sagaId}` : "Pin change conflicted; refresh before retrying.", { title: appName(), kind: "error" });
-          return prepared === "unknown" ? { state: "unknown", operationId: sagaId } : { state: "refused", version: state.version, pinned: state.pinned };
-        }
-        const result = await resumePinSaga(sagaId);
-        const receipt = result.saga.steps[0]?.receipt;
-        confirmed = receipt;
-        if (receipt?.state === "applied") {
-          if (!samePinTarget(target, await resolvePinTarget(sessionId, cwd))) throw new Error("The displayed pin owner changed.");
-          if (hostSessionBinding({ id: sessionId })) { patchHostSessionShellMetadata(sessionId, { pinned }); await flushHostSessionBindings(sessionId); }
-          setHistory((current) => current.map((entry) => entry.id === sessionId && (!captured || pathKey(entry.cwd) === pathKey(captured.cwd)) ? { ...entry, pinned } : entry));
-        }
-        if (result.state !== "applied") await message(result.state === "unknown" ? `Pin outcome is unknown: ${result.operationId ?? sagaId}` : result.state === "applied-unavailable" ? "Pin was applied, but refresh failed." : "Pin change needs review in the sidebar.", { title: appName(), kind: "error" });
-        return receipt ?? { state: "unknown", operationId: sagaId };
-        });
+        await setSessionPinned(sessionId, pinned);
       } catch (error) {
-        await message(confirmed?.state === "applied" ? `Pin was applied, but refresh failed: ${String(error)}` : String(error), { title: appName(), kind: "error" });
-        if (confirmed?.state === "applied") return confirmed;
-        return sagaId ? { state: "unknown", operationId: sagaId } : { state: "refused", version: 0, pinned: null };
+        await message(`${t("Could not save changes")}\n\n${String(error)}`, {
+          title: appName(),
+          kind: "error",
+        });
+        return;
       }
-    }
-    try {
-      if (open && shouldPersistSession(open)) {
-        const saved = await upsertSession(open);
-        if (!saved) throw new Error(t("Could not save changes"));
-      }
-      await setSessionPinned(sessionId, pinned);
-    } catch (error) {
-      await message(`${t("Could not save changes")}\n\n${String(error)}`, {
-        title: appName(),
-        kind: "error",
+      setHistory((current) => {
+        const existing = current.find(
+          (entry) =>
+            entry.id === sessionId && (!captured || pathKey(entry.cwd) === pathKey(captured.cwd)),
+        );
+        if (existing) {
+          return mergeProjectHistorySummary(current, { ...existing, pinned });
+        }
+        if (!open) return current;
+        return mergeProjectHistorySummary(current, {
+          ...summaryFromSession(open),
+          pinned,
+        });
       });
-      return;
-    }
-    setHistory((current) => {
-      const existing = current.find((entry) => entry.id === sessionId && (!captured || pathKey(entry.cwd) === pathKey(captured.cwd)));
-      if (existing) {
-        return mergeProjectHistorySummary(current, { ...existing, pinned });
-      }
-      if (!open) return current;
-      return mergeProjectHistorySummary(current, {
-        ...summaryFromSession(open),
-        pinned,
-      });
-    });
-  }, [history, sessionsRef, setHistory]);
+    },
+    [history, sessionsRef, setHistory],
+  );
 
   const onSetHistorySessionLinkedWorkItem = useCallback(
     (sessionId: string, linkedWorkItem: LinkedWorkItem | undefined) => {
@@ -201,25 +285,47 @@ export function useHistorySessionMeta(deps: HistorySessionMetaDeps) {
         for (const sessionId of sessionIds) {
           const result = await onPinHistorySession(sessionId, pinned);
           if (!result || result.state !== "applied") break;
-          if ((await listPinSagas()).some((saga) => saga.state !== "applied" && saga.state !== "accepted")) break;
+          if (
+            (await listPinSagas()).some(
+              (saga) => saga.state !== "applied" && saga.state !== "accepted",
+            )
+          )
+            break;
         }
-      } else await Promise.all(sessionIds.map((sessionId) => onPinHistorySession(sessionId, pinned)));
+      } else
+        await Promise.all(sessionIds.map((sessionId) => onPinHistorySession(sessionId, pinned)));
     },
     [onPinHistorySession],
   );
 
-  const onConfirmedPin = useCallback(async (sessionId: string, cwd: string, pinned: boolean, target: PinTarget) => {
-    if (!samePinTarget(target, await resolvePinTarget(sessionId, cwd))) throw new Error("Pin was applied on its original owner, but the displayed owner changed.");
-    setHistory((current) => current.map((entry) => entry.id === sessionId && pathKey(entry.cwd) === pathKey(cwd) ? { ...entry, pinned } : entry));
-    if (hostSessionBinding({ id: sessionId })) {
-      patchHostSessionShellMetadata(sessionId, { pinned });
-      await flushHostSessionBindings(sessionId);
-    }
-  }, [setHistory]);
-  const onPreparePin = useCallback(async (sessionId: string, cwd: string) => {
-    const open = sessionsRef.current.find((session) => session.id === sessionId && pathKey(session.cwd) === pathKey(cwd));
-    if (open && shouldPersistSession(open) && !await upsertSession(open)) throw new Error(t("Could not save changes"));
-  }, [sessionsRef]);
+  const onConfirmedPin = useCallback(
+    async (sessionId: string, cwd: string, pinned: boolean, target: PinTarget) => {
+      if (!samePinTarget(target, await resolvePinTarget(sessionId, cwd)))
+        throw new Error("Pin was applied on its original owner, but the displayed owner changed.");
+      setHistory((current) =>
+        current.map((entry) =>
+          entry.id === sessionId && pathKey(entry.cwd) === pathKey(cwd)
+            ? { ...entry, pinned }
+            : entry,
+        ),
+      );
+      if (hostSessionBinding({ id: sessionId })) {
+        patchHostSessionShellMetadata(sessionId, { pinned });
+        await flushHostSessionBindings(sessionId);
+      }
+    },
+    [setHistory],
+  );
+  const onPreparePin = useCallback(
+    async (sessionId: string, cwd: string) => {
+      const open = sessionsRef.current.find(
+        (session) => session.id === sessionId && pathKey(session.cwd) === pathKey(cwd),
+      );
+      if (open && shouldPersistSession(open) && !(await upsertSession(open)))
+        throw new Error(t("Could not save changes"));
+    },
+    [sessionsRef],
+  );
 
   return {
     onPinHistorySession,

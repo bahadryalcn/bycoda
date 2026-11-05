@@ -2,13 +2,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { hostSessionBinding } from "./sessionExecutionBinding";
 import { useEffect, useRef, type MutableRefObject } from "react";
 import { bindHarnessSession, isLiveHarness } from "../../../integrations/harness/core/registry";
-import { sessionWorkCwd, type Session } from "../../sessions/model/session";
+import { sessionWorkCwd, type Session } from "../../sessions/public/session";
+
 import {
   getSession,
   storedSessionUpdatedAt,
   upsertSession,
   upsertSessionIfUnchanged,
-} from "../../sessions/data/sessionStore";
+} from "../../sessions/public/sessionStore";
 import {
   ADOPTED_POLL_HIDDEN_MS,
   ADOPTED_POLL_VISIBLE_MS,
@@ -26,7 +27,7 @@ import { loadRemoteCapabilities, loadRemoteSession, remoteRequest } from "./conn
 import { isLocalSyncMachine } from "./localSync";
 import type { HostProject, RemoteMachine } from "./protocol";
 import type { LocalHostSessionTarget } from "./openLocalHostSession";
-import { loadRecents, sameProjectPath } from "../../projects/model/recents";
+import { loadRecents, sameProjectPath } from "../../projects/public/recents";
 import { subscribeRemoteRecovered } from "./remoteHealth";
 import { DIGESTS_CAPABILITY } from "../../sync/model/conversationHead";
 import { adoptedBeatFresh, notifyLocalHostReachable, setAdoptedWaker } from "./hostWake";

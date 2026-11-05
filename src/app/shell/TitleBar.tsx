@@ -1,4 +1,6 @@
 import { Button } from "../../shared/ui/Button";
+import { Badge } from "../../shared/ui/Badge";
+import { StatusDot } from "../../shared/ui/StatusDot";
 import { WindowChromeInset } from "../../shared/ui/PaneHeader";
 import { Tooltip } from "../../shared/ui/Tooltip";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
@@ -289,11 +291,9 @@ function TabHarnesses({
         );
       })}
       {extra > 0 ? (
-        <span
-          className={`pl-0.5 text-ui-caption leading-none ${dimmed ? "text-(--ui-text-secondary)" : "text-content"}`}
-        >
+        <Badge variant="count" size="xs" className="ms-0.5">
           +{extra}
-        </span>
+        </Badge>
       ) : null}
     </span>
   );
@@ -487,11 +487,7 @@ function TitleTabItem({
             ) : null}
             {tab.dirty ? (
               <Tooltip label={t("Unsaved changes")}>
-                <span
-                  role="img"
-                  className="size-1.5 shrink-0 rounded-full bg-(--ui-text-secondary)"
-                  aria-label={t("Unsaved changes")}
-                />
+                <StatusDot tone="neutral" label={t("Unsaved changes")} />
               </Tooltip>
             ) : null}
           </span>
@@ -668,14 +664,17 @@ export function DevModeIndicator({ className }: { className?: string }) {
       className={`flex min-w-0 shrink-0 items-center px-3 pb-2 pt-1 @max-[140px]/rail:justify-center @max-[140px]/rail:px-0 ${className ?? ""}`}
     >
       <Tooltip label={t("Development build")} side="top">
-        <span
+        <Badge
+          size="xs"
+          tone="info"
+          appearance="subtle"
           role="img"
           aria-label={t("Development build")}
-          className="inline-flex min-w-0 items-center gap-1.5 text-ui-caption font-medium text-(--ui-tone-info-fg)"
+          className="min-w-0"
         >
           <Wrench className="icon-xs shrink-0" strokeWidth={1.75} aria-hidden="true" />
           <span className="truncate @max-[140px]/rail:hidden">{t("Development")}</span>
-        </span>
+        </Badge>
       </Tooltip>
     </div>
   );

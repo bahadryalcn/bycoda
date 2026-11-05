@@ -82,6 +82,7 @@ export const UserQuestionReplySchema = z.discriminatedUnion("kind", [
     kind: z.literal("answered"),
     answers: z.record(text, z.array(text).max(50)),
     custom: z.record(text, text).optional(),
+    notes: z.record(text, text).optional(),
     attachments: z.record(text, z.array(RemoteAttachmentSchema).max(20)).optional(),
   }),
 ]);

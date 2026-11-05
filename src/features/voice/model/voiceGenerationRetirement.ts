@@ -27,7 +27,11 @@ export function associateVoiceGeneration(runtime: object, generation: string) {
 export async function bindVoiceGeneration(generation: string, identity: Identity) {
   const previous = generationBindings.get(generation);
   if (previous) {
-    if (previous.identity.environmentId !== identity.environmentId || previous.identity.threadId !== identity.threadId) throw new Error("Voice generation source changed.");
+    if (
+      previous.identity.environmentId !== identity.environmentId ||
+      previous.identity.threadId !== identity.threadId
+    )
+      throw new Error("Voice generation source changed.");
     return previous.promise;
   }
   const runtime = generationBirths.get(generation);
@@ -38,7 +42,12 @@ export async function bindVoiceGeneration(generation: string, identity: Identity
     return;
   }
   const binding = import("@tauri-apps/api/core").then(({ invoke }) =>
-    invoke<void>("voice_generation_bind", { birth: birth.id, generation, environment: identity.environmentId, thread: identity.threadId }),
+    invoke<void>("voice_generation_bind", {
+      birth: birth.id,
+      generation,
+      environment: identity.environmentId,
+      thread: identity.threadId,
+    }),
   );
   birth.bindings.push(binding);
   generationBindings.set(generation, { identity, promise: binding });
@@ -52,7 +61,9 @@ export function closeVoiceRuntimeEvidence(runtime: object, closure: Promise<void
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("voice_runtime_closed", { birth: birth.id });
   });
-  void completion.catch(() => { /* Missing evidence remains held. */ });
+  void completion.catch(() => {
+    /* Missing evidence remains held. */
+  });
 }
 
 /** A normal disconnect records the same physical closure, so future owner
@@ -91,27 +102,60 @@ export function registerVoiceGenerationRetirement(
 }
 
 export function voiceGenerationStatus(input: Record<string, unknown>, source: Identity) {
-  if (Object.keys(input).sort().join(",") !== "generationKey,operationHash,requestId" || typeof input.generationKey !== "string" || typeof input.requestId !== "string" || !input.requestId || typeof input.operationHash !== "string" || !/^[a-f0-9]{64}$/.test(input.operationHash)) throw new Error("Invalid voice status request.");
+  if (
+    Object.keys(input).sort().join(",") !== "generationKey,operationHash,requestId" ||
+    typeof input.generationKey !== "string" ||
+    typeof input.requestId !== "string" ||
+    !input.requestId ||
+    typeof input.operationHash !== "string" ||
+    !/^[a-f0-9]{64}$/.test(input.operationHash)
+  )
+    throw new Error("Invalid voice status request.");
   const entry = entries.get(input.generationKey);
   const identity = entry?.identity();
-  if (!entry || entry.closed || !identity || identity.threadId !== source.threadId || identity.environmentId !== source.environmentId || !entry.outputReady?.()) throw new Error("Voice generation output unavailable.");
+  if (
+    !entry ||
+    entry.closed ||
+    !identity ||
+    identity.threadId !== source.threadId ||
+    identity.environmentId !== source.environmentId ||
+    !entry.outputReady?.()
+  )
+    throw new Error("Voice generation output unavailable.");
   return { generationKey: input.generationKey, active: true };
 }
 
 /** Pre-connect source evidence requires a bound live runtime, not audio output. */
 export function voiceGenerationSource(input: Record<string, unknown>, source: Identity) {
-  if (Object.keys(input).sort().join(",") !== "generationKey,operationHash,requestId" ||
-      typeof input.generationKey !== "string" || !input.generationKey || input.generationKey.length > 200 ||
-      typeof input.requestId !== "string" || !input.requestId || input.requestId.length > 200 ||
-      typeof input.operationHash !== "string" || !/^[a-f0-9]{64}$/.test(input.operationHash))
+  if (
+    Object.keys(input).sort().join(",") !== "generationKey,operationHash,requestId" ||
+    typeof input.generationKey !== "string" ||
+    !input.generationKey ||
+    input.generationKey.length > 200 ||
+    typeof input.requestId !== "string" ||
+    !input.requestId ||
+    input.requestId.length > 200 ||
+    typeof input.operationHash !== "string" ||
+    !/^[a-f0-9]{64}$/.test(input.operationHash)
+  )
     throw new Error("Invalid voice source request.");
   const entry = entries.get(input.generationKey);
   const identity = entry?.identity();
   const runtime = generationBirths.get(input.generationKey);
   const binding = generationBindings.get(input.generationKey);
-  if (!entry || entry.closed || entry.pending || !runtime || !births.get(runtime) || !binding || !identity ||
-      identity.threadId !== source.threadId || identity.environmentId !== source.environmentId ||
-      binding.identity.threadId !== source.threadId || binding.identity.environmentId !== source.environmentId)
+  if (
+    !entry ||
+    entry.closed ||
+    entry.pending ||
+    !runtime ||
+    !births.get(runtime) ||
+    !binding ||
+    !identity ||
+    identity.threadId !== source.threadId ||
+    identity.environmentId !== source.environmentId ||
+    binding.identity.threadId !== source.threadId ||
+    binding.identity.environmentId !== source.environmentId
+  )
     throw new Error("Voice generation source unavailable.");
   return { generationKey: input.generationKey, active: true };
 }

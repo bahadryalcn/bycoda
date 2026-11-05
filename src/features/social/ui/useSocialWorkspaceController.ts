@@ -25,7 +25,7 @@ import type {
   SocialWorkspaceQuery,
   SocialWorkspaceResponse,
 } from "../model/social";
-import { scopeSocialSnapshot } from "../model/socialWorkspace";
+import { appendSocialWorkspacePage, scopeSocialSnapshot } from "../model/socialWorkspace";
 import type { Run } from "./socialShared";
 
 export type Tab =
@@ -67,6 +67,7 @@ export function workspaceSection(tab: Tab, automationMode: string): Section {
 export type HostWorkspaceState = {
   machineId: string;
   snapshots: Map<Section, SocialSnapshot>;
+  snapshotScopes: Map<Section, string>;
   cursors: Map<string, SocialWorkspaceResponse>;
   projects: HostProject[];
   projectsLoaded: boolean;
@@ -277,10 +278,35 @@ export function useSocialWorkspaceController({
       setStale(answers.some((answer) => answer.status === "rejected"));
       if (answers[0].status === "fulfilled") {
         const result = answers[0].value;
-        const next = result.snapshot ?? host.cursors.get(queryKey)?.snapshot;
-        if (!next) throw new Error(t("The Social Media refresh response is incomplete."));
+        const page = result.snapshot ?? host.cursors.get(queryKey)?.snapshot;
+        if (!page) throw new Error(t("The Social Media refresh response is incomplete."));
+        if (!legacyHosts.current.has(id)) {
+          for (const [collection, offset] of Object.entries(input.offsets ?? {})) {
+            if (offset && page.pages?.[collection as SocialCollection]?.offset !== offset) {
+              setStale(true);
+              setLoadError(
+                t("The {p0} page response did not match the requested offset.", { p0: collection }),
+              );
+              setLoading(false);
+              setRefreshing(false);
+              refreshSucceeded.current = false;
+              return;
+            }
+          }
+        }
+        const scopeKey = JSON.stringify({
+          section: input.section,
+          projectId: input.projectId ?? "",
+          filters: input.filters ?? {},
+        });
+        const prior =
+          host.snapshotScopes.get(input.section!) === scopeKey
+            ? host.snapshots.get(input.section!)
+            : undefined;
+        const next = appendSocialWorkspacePage(prior, page, input.offsets);
         retainCursor(host.cursors, queryKey, { ...result, snapshot: next });
         host.snapshot = next;
+        host.snapshotScopes.set(input.section!, scopeKey);
         if (legacyHosts.current.has(id)) {
           for (const key of LEGACY_SNAPSHOT_SECTIONS) host.snapshots.set(key, next);
         } else host.snapshots.set(input.section!, next);
@@ -365,6 +391,7 @@ export function useSocialWorkspaceController({
         host = {
           machineId,
           snapshots: new Map(),
+          snapshotScopes: new Map(),
           cursors: new Map(),
           projects: [],
           projectsLoaded: false,
@@ -459,8 +486,12 @@ export function useSocialWorkspaceController({
       return true;
     } catch (value) {
       if (lastAction.current === "accounts.assistantGrant" && currentMachine.current === id) {
-        try { await refresh(id, true); }
-        catch (cause) { if (currentMachine.current === id) setLoadError(cause instanceof Error ? cause.message : String(cause)); }
+        try {
+          await refresh(id, true);
+        } catch (cause) {
+          if (currentMachine.current === id)
+            setLoadError(cause instanceof Error ? cause.message : String(cause));
+        }
       }
       if (currentMachine.current === id)
         setError(value instanceof Error ? value.message : String(value));

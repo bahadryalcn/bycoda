@@ -2,17 +2,6 @@
 version: alpha
 name: bycoda
 description: A compact, quiet workspace for conversations, projects and agent work.
-omitted:
-  - section: colors
-    reason: Theme values remain in the existing desktop and native semantic token owners.
-  - section: typography
-    reason: Platform type scales and user font preferences remain in their existing owners.
-  - section: spacing
-    reason: Platform geometry and density preferences remain in their existing owners.
-  - section: rounded
-    reason: Control and floating-surface geometry remain in the existing shared adapters.
-  - section: components
-    reason: Platform component contracts remain in the existing implementation guides.
 ---
 
 # bycoda design language
@@ -24,6 +13,10 @@ interface is compact, neutral and quiet, with familiar controls, readable type
 and precise alignment. Apple-inspired clarity means removing repetition and
 competing emphasis while keeping every capability discoverable.
 
+This document states product rules only. The owner decisions behind them are kept
+in each owning feature's `references/decisions.md`, and token names and values
+live in the desktop design system.
+
 Apply this product language through the [desktop design system](ui-design-system.md)
 and the native mobile design system (`mobile/docs/reference/design-system.md` in the separate mobile repository).
 Keep their platform-specific controls, geometry and behavior; consistent intent
@@ -31,9 +24,7 @@ does not require copying desktop controls into a touch interface.
 
 ## Product-wide redesign outcome
 
-Owner direction, 2026-10-28, session `0567326f-aade-4baa-89f3-b44c6256ae9e`:
-
-> heryerde yep yeni tasarım anlayışı istiyorum demiştim. T3Code klasında birşeylere ihtiyaç vardı
+Provenance: feature-workbench-design decisions.
 
 The outcome is a coherent product-wide visual and interaction redesign, with
 T3 Code as a quality reference. Evaluate complete screen and control groups:
@@ -56,15 +47,36 @@ adapters and shared theme to establish one control and composition language.
 Do not introduce marketing typography, decorative textures, another UI library
 or new product defaults as an interpretation of higher quality.
 
-The single execution view is the shared redesign TODO kept in local, untracked
-planning files.
-Each product package specifies a target composition as well as source gaps.
-Design acceptance covers the whole surface and its states, with real light/dark
-1280/800 consumers and independent review after the owner's deferred checks.
-Source delivery and design acceptance are separate states. No existing packet
-is visually accepted merely because its handoff says fixed or REVIEW.
+Each change states its target composition as well as its source gaps. Design
+acceptance covers the whole surface and its states, checked in real light and
+dark consumers at desktop and narrow widths, with independent review. Shipping
+source and accepting the design are separate states: a surface is not visually
+accepted because its source landed or because it was marked done.
 
 ## Colors
+
+### Canvas first
+
+Provenance: feature-appearance decisions.
+
+The ground is pure black in dark mode and pure white in light mode by default,
+and every ordinary surface shares it. Project rail, sidebars, chat and transcript
+areas, assistant chat, settings pages and their groups, collection lists, detail
+panes and empty states are the canvas, with hairline borders or spacing as
+separation. Nothing ordinary gets a gray fill, a mid-gray panel layer or a card
+tone of its own.
+
+Raised surfaces are reserved for: floating surfaces (menus, popovers, dialogs,
+toasts), the composer writing area, code/terminal/log viewers, inputs, and the
+hover/selected/drag states that already have roles. Appearance previews and danger
+zones keep their status tone. Tinted canvas and custom surface colors keep the same
+hierarchy one step above their own ground.
+
+Background tone offers Pure (the default) and Tinted. Under Pure, the window, rail,
+sidebars, chat, side panels, editor and terminal share one pure ground. Derived
+layers (surfaces, text, borders) keep their steps above that ground, and a custom
+surface color that matches no palette keeps its tinted canvas. Native glass keeps
+its own opacity settings and tints with the active canvas.
 
 Build hierarchy with neutral surfaces, text contrast and restrained emphasis.
 Use the user's accent for intentional emphasis and semantic status colors for
@@ -89,13 +101,7 @@ marketing typography into the workbench.
 
 ## Layout
 
-Owner correction, 2026-10-28, session `0567326f-aade-4baa-89f3-b44c6256ae9e`:
-
-> en soldaki menülerdeki projeler groups last sessions filan aralarında boşluk var ve çok yer kpalıyorlar.
-
-> en üstteki development yazısınıda sol alta renkli şekilde yazalım yada ikon ile gösterelim
-
-> Ayarlar ekranıda full screen olmak zorunda değil gibi artık
+Provenance: feature-workbench-design decisions.
 
 The project rail uses one neutral ground. Its tools fill the available rail width
 without an inner raised tray, decorative frame or an unrelated surface color.
@@ -155,51 +161,30 @@ appearance settings; hover must not be required to discover where a region ends.
 
 ## Elevation & Depth
 
-Owner decision, 2026-10-31, V3-033, source:
-`temp/local/2026-10-31-ui-refinements-3/TODO.md` (rail/sidebar/chat screenshots):
+Provenance: feature-workbench-design decisions (navigation and focus); feature-appearance
+decisions (background tone); feature-chat-composer decisions (composer surface);
+feature-settings decisions (groups).
 
-> burda en soldaki burası ve burasının renkleri burdan farklı sağdaki chat paneli gibi olsunlar istiyorum aynı arka plan renginde zaten borderlar ile ayrılmış durumda bunu düzeltelim lütfen
+The project rail and sidebars share the chat canvas in light, dark and custom
+themes; pane borders provide the separation. Navigation is not a separate gray
+layer. Order the layers as canvas and navigation together, then reading and form
+surfaces, then floating surfaces. Muted fields, hover, selection, group colors and
+pane borders keep their own roles. Native glass keeps its shared base tint,
+independent sidebar and main opacity settings, and its light-mode opaque policy.
 
-The project rail and Sessions/Explorer/Changes sidebar share the chat canvas in
-light, dark and custom themes: `--ui-surface-panel` resolves to `--ui-chat-canvas`.
-Existing pane borders provide separation. Navigation is no longer a separate gray
-layer: canvas = navigation < reading/form surface < floating surface. Muted fields,
-hover, selection, group colors and pane borders retain their own roles; composer
-and floating-surface roles remain unchanged. Native glass keeps its existing shared
-base tint, independent sidebar/main opacity settings and light-mode opaque policy.
+On the Pure background the chat composer writing area is one quiet step above the
+ground, slightly lifted in dark mode and faintly tinted in light mode, with its
+border keeping the writing area distinct.
 
-Owner decision, 2026-10-31, V3-039, source: owner chat (Appearance screenshots):
+Settings groups and collections have no gray fill. The group interior is the page
+canvas, framed by a thin rounded border, with hairline dividers between rows.
+Inputs, selected rows, focus rings and drag targets keep their own boundary roles.
+Appearance previews, danger zones and code or path views stay colored or filled.
 
-> Defaultu da tam siyah tam beyaz olması gerekiyor hatta
-
-Appearance → Themes → Background tone offers Pure (default) and Tinted. Pure sets
-`html[data-canvas-background="pure"]`, which paints `--color-background-base` and
-`--ui-chat-canvas` with `--palette-canvasPureDark` / `--palette-canvasPureLight`
-(pure black / white) for every palette, so the window, rail, sidebar, chat, side
-panels, editor and terminal share one pure ground. Derived layers (surfaces, text,
-borders) mix from `--ui-tint-base`, the palette ground, so they keep their steps
-above it; pure light adds one faint `--ui-surface` step. Custom surface colors (a
-tint that matches no palette) keep their tinted canvas. Native glass keeps its
-opacity settings and tints with the active canvas.
-
-Owner decision, 2026-11-01, UI standards round, source: owner chat:
-
-> tamam düzeltmelere başla lütfen hepsini
-
-This authorized the whole standards round: missing shared primitives are built, drift is
-caught by `check-ui-drift`, and screens migrate onto the shared parts (see the feature-shared-ui
-card and `ui-component-catalog.md`).
-
-Owner decision, 2026-11-01, composer surface, source: owner chat:
-
-> buranın rengi 1e1e1e bunun yerine 0e0e0e ve light modda da tam tersi yada uygun şekilde
-
-The chat composer is no longer the mid-gray step on the Pure background. In
-`html[data-canvas-background="pure"]`, `--ui-composer-surface` is one quiet step above the
-pure ground (about `#0e0e0e` on black, 6% content ink over the canvas); the light mirror is a
-faint off-white (3% content ink over the white canvas). The composer border keeps the writing
-area distinct. Source-checked in `src/styles/index.css`; not visually verified by the docs
-agent. This supersedes "composer ... roles remain unchanged" for the Pure background only.
+Floating surfaces (menus, popovers, dialogs) are distinguished from the work
+beneath them by shared floating treatments. Preserve existing glass and background
+preferences while keeping content and focus readable; effects do not replace task
+hierarchy.
 
 Make separation clear before reducing containment. Separate ordinary sections
 primarily with spacing and subtle surface-tone differences.
@@ -209,11 +194,6 @@ boundary. Keep input, selection, focus and drag boundaries distinguishable.
 Do not add nested cards, repeated headers or decorative boxes around ordinary
 content.
 
-Owner correction, 2026-10-28, session
-`0567326f-aade-4baa-89f3-b44c6256ae9e`:
-
-> böyle border filan geldi fokus olunca bunları istemiyorum mesela solda sağda altta üstte şerit çizgiler istemiyorum mesela bunlarıda toparlamak gerekiyor.
-
 Do not introduce a surrounding focus frame or decorative edge stripe on a large
 composer, panel, card or row. Use the owning surface, text/icon emphasis and
 caret to convey the relevant state; keyboard-operated controls keep a visible
@@ -221,28 +201,6 @@ local focus cue. Treat required input/drag/resize and system high-contrast
 boundaries separately. Do not wrap a composer's subordinate workspace toolbar
 in another attached outline. Apply this rule to screen compositions and shared
 controls together rather than inventing an edge treatment on each screen.
-
-Owner decision, 2026-10-31, V3-013 (Crews page with a reference screenshot of
-T3 Code "Sharing & access"):
-
-> Bu ortadaki gri arka planların hepsinden kurtulmak istiyorum aslına bakarsan. Bak t3code nasıl design etmiş bizde gri renkle ayırmışız heryeri bunlarıda düzeltelim bence.
-
-Settings groups and collections therefore have no gray fill: the group interior
-is the page canvas. A group is a thin-bordered, rounded frame; rows inside are
-separated by hairline dividers. This explicit owner decision takes precedence
-over the general "standard panel/card surfaces use `var(--ui-surface)`" rule for
-Settings groups and collections only. The roles are defined once in
-`src/styles/index.css` and derive from the user's tint, so light, dark and
-custom themes follow: `--ui-settings-group-surface` (transparent),
-`--ui-settings-group-border`, `--ui-settings-hairline` and
-`--ui-settings-row-hover` (a very subtle hover). Inputs, selected rows, focus
-rings and drag targets keep their own boundary roles. Exceptions that stay
-colored or filled: Appearance previews, danger zones (status tone) and code/path
-views. Reference order only; the visual design stays ours.
-
-Use shared floating surfaces to distinguish menus, popovers and dialogs from
-the work beneath them. Preserve existing glass and background preferences while
-keeping content and focus readable; effects do not replace task hierarchy.
 
 ## Shapes
 
@@ -265,6 +223,62 @@ Reuse the shared platform adapters, extend an existing owner for a reusable gap,
 and add a shared component only for a concrete unmet need. Keep domain data,
 validation, permissions and operation state in their feature owners. Desktop
 Arc source is an implementation resource, not a second application theme.
+
+### Two conversation layouts
+
+Provenance: feature-assistant decisions (messaging layout) and feature-sessions-sidebar
+decisions (transcript layout).
+
+The product has exactly two conversation layouts; do not invent a third per screen.
+
+- Messaging layout: the personal assistant chat, social direct messages and any
+  person-to-person or person-to-assistant thread. The owner's messages sit on the
+  right, the other party on the left, in bounded-width bubbles one quiet step above
+  the canvas. Day separators, a small time under each bubble, a compact composer at
+  the bottom; Enter sends, Shift+Enter breaks a line. Voice and send are separate
+  controls that never overlap.
+- Transcript layout: agent and coding sessions. Full-width reading column, user
+  prompts as distinct blocks, tool and command steps as single-line summaries with
+  details on demand, active work and approvals always visible. No bubbles, no
+  alternating alignment.
+
+Both keep drafts, attachments, selection and scroll position; both use the shared
+composer owner for text entry.
+
+### Badges and status tones
+
+Provenance: feature-shared-ui decisions.
+
+- Counter badges are small, borderless labels derived from the user's accent, with
+  the same height as the surrounding caption text. They never carry their own hue
+  or a filled pill with a border. `99+` and exact counts stay.
+- A pending question or approval uses the warning tone, not the information tone;
+  it is a request for the owner's attention, not a notice.
+- Running work shows an accent dot or activity icon beside its title. No colored
+  edge stripe on rows, cards or panes to indicate running, draft or selected state.
+- Information, success, warning and failure tones are reserved for real status and
+  always come with a label or meaningful icon.
+
+### Permission, readiness and activity are three states
+
+Provenance: feature-settings decisions.
+
+Opening a settings page must never activate a capability, and the page must not say
+"active" because a permission is stored. Show three separate facts wherever a
+capability has them: whether the owner has enabled it, whether the helper or
+provider is verified ready, and whether an operation is running right now. A failed
+refresh clears a stale "ready" or "active" reading instead of keeping it. The same
+triad applies to voice, devices, providers, skills and MCP servers.
+
+### Collections scroll, they do not page
+
+Provenance: feature-shared-ui decisions.
+
+Lists are continuous, bounded windows that extend as the user scrolls, with an
+explicit "load more" only where a backend requires a controlled step. Numbered
+pagination controls are removed, not restyled. Keep the query, filters, selection
+and scroll position across loads; show loading, empty, error and partial states
+inline at the end of the list.
 
 ### Give content and state distinct identities
 

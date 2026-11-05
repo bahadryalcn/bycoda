@@ -88,7 +88,8 @@ export function createTerminalWebgl(
       // A renderer that failed to attach must not keep its WebGL context alive.
       try {
         (context ?? (before ? rendererContext(term, before) : null))
-          ?.getExtension("WEBGL_lose_context")?.loseContext();
+          ?.getExtension("WEBGL_lose_context")
+          ?.loseContext();
       } catch {
         // The context is already gone.
       }

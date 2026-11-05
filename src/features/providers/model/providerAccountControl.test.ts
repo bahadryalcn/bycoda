@@ -122,11 +122,17 @@ it("applies one canonical setter and returns receipt without replay", async () =
 });
 it("rechecks Room authority and metadata immediately before a provider write", async () => {
   const f = await fixture();
-  const room = { environmentId: "host", sourceThreadId: "room", valid: () => true,
+  const room = {
+    environmentId: "host",
+    sourceThreadId: "room",
+    valid: () => true,
     authorize: async () => {
-      f.set(f.get().map((row) => row.id === "two" ? { ...row, label: "Changed during review" } : row));
+      f.set(
+        f.get().map((row) => (row.id === "two" ? { ...row, label: "Changed during review" } : row)),
+      );
       return true;
-    } };
+    },
+  };
   const result = await f.control(room, "providerManagement.patch", f.input);
   expect(result.state).toBe("failed");
   expect(f.writes).toEqual([]);

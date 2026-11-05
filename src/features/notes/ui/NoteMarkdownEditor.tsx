@@ -244,7 +244,8 @@ export function NoteMarkdownEditor({
         ...(composing ||
         settling ||
         view.compositionStarted ||
-        normalizeLineBreaks(valueRef.current) !== (documentValue.current ?? view.state.doc.toString())
+        normalizeLineBreaks(valueRef.current) !==
+          (documentValue.current ?? view.state.doc.toString())
           ? { busy: "notes-view-reconciliation" }
           : {}),
       }),

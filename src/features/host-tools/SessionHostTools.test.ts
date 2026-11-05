@@ -271,19 +271,23 @@ it("resets device control when switching conversations in the same project", asy
       : method === "devices.control.status"
         ? { deviceId: "sim", busy: false }
         : method === "devices.control.claim"
-          ? { deviceId: "sim", leaseId: `lease-${String(params?.requestId)}`, expiresAt: Number.MAX_SAFE_INTEGER }
+          ? {
+              deviceId: "sim",
+              leaseId: `lease-${String(params?.requestId)}`,
+              expiresAt: Number.MAX_SAFE_INTEGER,
+            }
           : method === "devices.control.release"
             ? { released: true }
-      : {
-          running: true,
-          installed: true,
-          agentInstalled: true,
-          controlProtocol: 1,
-          platform: "darwin",
-          platforms: [],
-          devices: [],
-          errors: [],
-        },
+            : {
+                running: true,
+                installed: true,
+                agentInstalled: true,
+                controlProtocol: 1,
+                platform: "darwin",
+                platforms: [],
+                devices: [],
+                errors: [],
+              },
   );
   const render = (sessionId: string) =>
     toolAct(async () =>
@@ -307,7 +311,9 @@ it("resets device control when switching conversations in the same project", asy
       .querySelector('[role="switch"][aria-label="Allow device control"]')!
       .getAttribute("aria-checked"),
   ).toBe("true");
-  expect(vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "devices.control.claim")).toBe(true);
+  expect(
+    vi.mocked(hostFeatureRequest).mock.calls.some((call) => call[2] === "devices.control.claim"),
+  ).toBe(true);
   await render("second");
   await chooseTool("Devices");
   expect(

@@ -1,5 +1,5 @@
-import { remoteRequest } from "../../connections/model/connections";
-import type { HostSession } from "../../connections/model/protocol";
+import { remoteRequest } from "../../connections/public/connections";
+import type { HostSession } from "../../connections";
 import type { HostTask } from "./hostTasks";
 import type { BoardTask } from "./taskClient";
 import { sessionDisplayTitle, sessionNeedsInput } from "../../sessions/model/session";

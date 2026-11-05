@@ -1,4 +1,4 @@
-import { ProjectMascot } from "../../projects/ui/ProjectMascot";
+import { ProjectMascot } from "../../projects/public/ProjectMascot";
 import { EmptyState } from "../../../shared/ui/EmptyState";
 
 /** A quiet empty state for a workspace with no discussion yet. */

@@ -78,7 +78,10 @@ export class HostTerminals {
     this.prune();
     return {
       terminals: [...this.entries.values()]
-        .filter((entry) => entry.value.projectId === projectId && (owner === undefined || entry.owner === owner))
+        .filter(
+          (entry) =>
+            entry.value.projectId === projectId && (owner === undefined || entry.owner === owner),
+        )
         .map((entry) => ({ ...entry.value })),
       writable: true,
       profiles: this.profiles().profiles.map(({ id, name }) => ({ id, name })),
@@ -307,7 +310,11 @@ export class HostTerminals {
 
   private owned(projectId: string, id: unknown, owner?: string): TerminalEntry {
     const entry = typeof id === "string" ? this.entries.get(id) : undefined;
-    if (!entry || entry.value.projectId !== projectId || (owner !== undefined && entry.owner !== owner))
+    if (
+      !entry ||
+      entry.value.projectId !== projectId ||
+      (owner !== undefined && entry.owner !== owner)
+    )
       throw new Error("Terminal is unavailable in this project");
     return entry;
   }

@@ -81,8 +81,21 @@ export function runtimeStatusProjection(action: string, value: unknown, input: I
     const raw = value as { progress?: unknown; result?: unknown } | undefined;
     return {
       ...pick(value, ["state"]),
-      ...(raw?.progress ? { progress: pick(raw.progress, ["total", "done", "imported", "skipped", "failed"]) } : {}),
-      ...(raw?.result ? { result: pick(raw.result, ["imported", "skipped", "failed", "readOnly", "truncated", "cancelled"]) } : {}),
+      ...(raw?.progress
+        ? { progress: pick(raw.progress, ["total", "done", "imported", "skipped", "failed"]) }
+        : {}),
+      ...(raw?.result
+        ? {
+            result: pick(raw.result, [
+              "imported",
+              "skipped",
+              "failed",
+              "readOnly",
+              "truncated",
+              "cancelled",
+            ]),
+          }
+        : {}),
     };
   }
   if (action === "tunnels.status") {
@@ -123,7 +136,8 @@ export class ConversationManagementRuntime {
     authorized: () => Promise<boolean>,
   ) {
     const check = async () => {
-      if (!(await withTimeout(authorized(), 5000, "Conversation authority"))) throw new Error("Conversation authority revoked.");
+      if (!(await withTimeout(authorized(), 5000, "Conversation authority")))
+        throw new Error("Conversation authority revoked.");
     };
     await check();
     if (!principal.projectId && !isGlobalRuntimeRead(action))
@@ -173,11 +187,7 @@ export class ConversationManagementRuntime {
         reading = true;
         try {
           await check();
-          const all = await withTimeout(
-            this.ports.snapshot(projectId),
-            5000,
-            "Project events",
-          );
+          const all = await withTimeout(this.ports.snapshot(projectId), 5000, "Project events");
           await check();
           const items = all.slice(0, 100);
           const cursor = createHash("sha256")

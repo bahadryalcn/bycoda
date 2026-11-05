@@ -1,6 +1,20 @@
 # Working with bycoda tools
 
+## Capability status
+
+Computer use, voice, devices, providers, skills and MCP keep three observations
+separate: owner permission, verified readiness and current activity. Enabled does
+not imply ready or running. Unknown means that the current read cannot prove the
+fact, including after a failed refresh. Inventory, installation and saved sign-in
+alone are not runtime verification. Opening settings or the device panel never
+enables a capability or starts its helper; use the explicit setup, start or refresh
+action when needed. Device control leases remain separate from saved permission.
+
 ## Devices
+
+An installed Device Host starts only after **Connect devices**. Opening the panel
+reads its status. Failed status or discovery refreshes invalidate the previous
+readiness and activity observation; retained device drafts and frames stay intact.
 
 Devices opens in view-only mode. Claim control explicitly before sending input;
 release it when finished. Another controller's claim, an expired lease or an older

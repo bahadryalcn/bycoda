@@ -27,8 +27,15 @@ async function fixture() {
     readPresence: async () => ({ supported: true, locked: false, idleMs: 0 }),
     listProjects: async () => [{ id: "project", path: directory, name: "Project" }],
     roomProjectProofsValid: async (proofs: { projectId: string; cwd: string }[]) => {
-      try { return (await Promise.all(proofs.map(async proof => (await store.project(proof.projectId)).cwd === proof.cwd))).every(Boolean); }
-      catch { return false; }
+      try {
+        return (
+          await Promise.all(
+            proofs.map(async (proof) => (await store.project(proof.projectId)).cwd === proof.cwd),
+          )
+        ).every(Boolean);
+      } catch {
+        return false;
+      }
     },
   };
   let service = new HostAssistant(store, ports);
@@ -237,16 +244,27 @@ it("enriches every message acknowledgement, retry, page and search with actual c
     };
   const scopedReply = await f.service.request(send, "owner");
   expect(
-    scopedReply.messages!.every(
-      (message) => JSON.stringify(message.projectIds) === '["project"]',
-    ),
+    scopedReply.messages!.every((message) => JSON.stringify(message.projectIds) === '["project"]'),
     JSON.stringify(scopedReply),
   ).toBe(true);
   expect((await f.service.request(send, "owner")).messages![0].projectIds).toEqual(["project"]);
   const originalProject = await f.store.project("project");
-  await f.store.withProjectIdentityWrite(() => f.store.db.prepare("UPDATE projects SET cwd=? WHERE id=?").run(`${originalProject.cwd}-retargeted`, "project").then(() => undefined));
-  expect((await f.service.request(send, "owner")).messages![0]).toMatchObject({ text: "This message is unavailable because its source access changed.", unverifiedToolContext: true });
-  await f.store.withProjectIdentityWrite(() => f.store.db.prepare("UPDATE projects SET cwd=? WHERE id=?").run(originalProject.cwd, "project").then(() => undefined));
+  await f.store.withProjectIdentityWrite(() =>
+    f.store.db
+      .prepare("UPDATE projects SET cwd=? WHERE id=?")
+      .run(`${originalProject.cwd}-retargeted`, "project")
+      .then(() => undefined),
+  );
+  expect((await f.service.request(send, "owner")).messages![0]).toMatchObject({
+    text: "This message is unavailable because its source access changed.",
+    unverifiedToolContext: true,
+  });
+  await f.store.withProjectIdentityWrite(() =>
+    f.store.db
+      .prepare("UPDATE projects SET cwd=? WHERE id=?")
+      .run(originalProject.cwd, "project")
+      .then(() => undefined),
+  );
   // Deleted referenced jobs keep their authoritative project identity. A
   // genuinely lost association remains unknown even inside a project thread.
   await f.service.request(

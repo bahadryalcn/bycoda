@@ -10,7 +10,10 @@ vi.mock("./shellProfiles", () => ({
   resolveShellProfile: () => undefined,
 }));
 
-afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.clearAllMocks();
+});
 
 it("preserves UTF-8 characters split across stdout and stderr chunks", async () => {
   const child = Object.assign(new EventEmitter(), {
@@ -51,10 +54,12 @@ it("flushes an incomplete final character and retains the output cap", async () 
   expect(completed.exitCode).toBe(1);
 });
 
-
 it("appends tiny decoded chunks without materializing retained shell output", async () => {
   const child = Object.assign(new EventEmitter(), {
-    stdout: new PassThrough(), stderr: new PassThrough(), pid: 42, kill: vi.fn(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    pid: 42,
+    kill: vi.fn(),
   });
   vi.mocked(spawn).mockReturnValue(child as unknown as ReturnType<typeof spawn>);
   const result = runHostShell("/repo", "print");
@@ -75,12 +80,17 @@ it("appends tiny decoded chunks without materializing retained shell output", as
 
 it("output materialization failure still resolves with conservative physical ownership", async () => {
   const child = Object.assign(new EventEmitter(), {
-    stdout: new PassThrough(), stderr: new PassThrough(), pid: 42, kill: vi.fn(),
+    stdout: new PassThrough(),
+    stderr: new PassThrough(),
+    pid: 42,
+    kill: vi.fn(),
   });
   vi.mocked(spawn).mockReturnValue(child as unknown as ReturnType<typeof spawn>);
   const result = runHostShell("/repo", "print");
   child.stdout.write(Buffer.from("retained output"));
-  vi.spyOn(OutputBuffer.prototype, "slice").mockImplementation(() => { throw new Error("read failed"); });
+  vi.spyOn(OutputBuffer.prototype, "slice").mockImplementation(() => {
+    throw new Error("read failed");
+  });
   child.emit("close", 0);
   await expect(result).resolves.toMatchObject({
     exitCode: null,

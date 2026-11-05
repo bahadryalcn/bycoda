@@ -30,7 +30,7 @@
   flex-direction: column;
   gap: 16px;
   padding: 20px;
-  background: var(--ui-surface);
+  background: transparent;
   border: 1px solid var(--ui-pane-border);
   border-radius: var(--ui-radius-card);
 }

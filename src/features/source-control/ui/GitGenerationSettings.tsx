@@ -8,12 +8,14 @@ import {
   useDefaultGitGenerationChoice,
 } from "../model/gitGenerationPreferences";
 const ModelPicker = lazy(() =>
-  import("../../sessions/ui/ModelPicker").then((module) => ({
-    default: module.ModelPicker,
-  })),
+  import("../../sessions")
+    .then((entry) => entry.loadModelPicker())
+    .then((module) => ({
+      default: module.ModelPicker,
+    })),
 );
-import { defaultModelId, mergeModelSettings, resolveModel } from "../../sessions/model/models";
-import { HARNESSES, type HarnessId } from "../../sessions/model/session";
+import { defaultModelId, mergeModelSettings, resolveModel } from "../../sessions/public/models";
+import { HARNESSES, type HarnessId } from "../../sessions";
 import {
   defaultProviderAccountId,
   providerAccountLabel,

@@ -4,8 +4,13 @@ import type { HostDomainContext } from "../context";
 
 const method = "native.services.assistant.browser.panel";
 const input = {
-  environmentId: "host", projectId: "project", threadId: "thread",
-  projectCwd: "/project", action: "browser.status", input: {}, requestId: "request",
+  environmentId: "host",
+  projectId: "project",
+  threadId: "thread",
+  projectCwd: "/project",
+  action: "browser.status",
+  input: {},
+  requestId: "request",
 };
 function fixture() {
   const browserPanel = vi.fn(async () => ({ mounted: true }));
@@ -33,7 +38,9 @@ it("preserves bounded Unicode paths and rejects invalid paths before native disc
 
 it("rejects revoked authority and foreign wire fields before invoking the owner", async () => {
   const f = fixture();
-  await expect(f.service.call(method, input, { ...f.context, authorized: async () => false })).rejects.toThrow();
+  await expect(
+    f.service.call(method, input, { ...f.context, authorized: async () => false }),
+  ).rejects.toThrow();
   await expect(f.service.call(method, { ...input, takeover: true }, f.context)).rejects.toThrow();
   expect(f.browserPanel).not.toHaveBeenCalled();
 });

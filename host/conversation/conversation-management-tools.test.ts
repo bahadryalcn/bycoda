@@ -39,13 +39,32 @@ describe("management authority and uncertain delivery", () => {
   it("qualifies the canonical effect only after native review and holds it until settled", async () => {
     const f = fixture();
     const events: string[] = [];
-    f.approve.mockImplementation(async operation => { events.push("review"); return { approved: true, operationHash: operation.operationHash }; });
-    let finish!: () => void;
-    f.execute.mockImplementation(async () => { events.push("effect"); await new Promise<void>(resolve => { finish = resolve; }); return { changed: true }; });
-    const pending = f.tools.call("preferences.patch", { requestId: "qualified", expectedRevision: "rev", change: {} }, principal, async () => true, async effect => {
-      events.push("capture");
-      try { return await effect(); } finally { events.push("release"); }
+    f.approve.mockImplementation(async (operation) => {
+      events.push("review");
+      return { approved: true, operationHash: operation.operationHash };
     });
+    let finish!: () => void;
+    f.execute.mockImplementation(async () => {
+      events.push("effect");
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      return { changed: true };
+    });
+    const pending = f.tools.call(
+      "preferences.patch",
+      { requestId: "qualified", expectedRevision: "rev", change: {} },
+      principal,
+      async () => true,
+      async (effect) => {
+        events.push("capture");
+        try {
+          return await effect();
+        } finally {
+          events.push("release");
+        }
+      },
+    );
     await vi.waitFor(() => expect(events).toEqual(["review", "capture", "effect"]));
     finish();
     expect(await pending).toMatchObject({ state: "completed" });
@@ -54,34 +73,85 @@ describe("management authority and uncertain delivery", () => {
 
   it("keeps global thread receipts stable across restart and separate from project scope", async () => {
     const f = fixture();
-    const global: GlobalManagementPrincipal = { kind: "assistant-thread", threadId: "thread", environmentId: "host" };
-    const tools = new ConversationManagementTools<ManagementAction, GlobalManagementPrincipal>(f.ports);
-    const input = { requestId: "same-id", expectedRevision: "rev", change: { kind: "theme", value: "dark" } };
-    expect(await tools.call("preferences.patch", input, global, async () => true)).toMatchObject({ state: "completed" });
-    expect(await new ConversationManagementTools<ManagementAction, GlobalManagementPrincipal>(f.ports).call("preferences.patch", input, global, async () => true)).toMatchObject({ state: "completed" });
+    const global: GlobalManagementPrincipal = {
+      kind: "assistant-thread",
+      threadId: "thread",
+      environmentId: "host",
+    };
+    const tools = new ConversationManagementTools<ManagementAction, GlobalManagementPrincipal>(
+      f.ports,
+    );
+    const input = {
+      requestId: "same-id",
+      expectedRevision: "rev",
+      change: { kind: "theme", value: "dark" },
+    };
+    expect(await tools.call("preferences.patch", input, global, async () => true)).toMatchObject({
+      state: "completed",
+    });
+    expect(
+      await new ConversationManagementTools<ManagementAction, GlobalManagementPrincipal>(
+        f.ports,
+      ).call("preferences.patch", input, global, async () => true),
+    ).toMatchObject({ state: "completed" });
     await f.tools.call("preferences.patch", input, principal, async () => true);
     expect(f.execute).toHaveBeenCalledTimes(2);
-    await expect(tools.call("preferences.patch", { ...input, expectedRevision: "changed" }, global, async () => true)).rejects.toThrow("different input");
+    await expect(
+      tools.call(
+        "preferences.patch",
+        { ...input, expectedRevision: "changed" },
+        global,
+        async () => true,
+      ),
+    ).rejects.toThrow("different input");
   });
   it("fails global writes if thread authority is revoked during approval", async () => {
     const f = fixture();
-    const global: GlobalManagementPrincipal = { kind: "assistant-thread", threadId: "thread", environmentId: "host" };
+    const global: GlobalManagementPrincipal = {
+      kind: "assistant-thread",
+      threadId: "thread",
+      environmentId: "host",
+    };
     let valid = true;
-    f.approve.mockImplementation(async (operation) => { valid = false; return { approved: true, operationHash: operation.operationHash }; });
-    const result = await new ConversationManagementTools<ManagementAction, GlobalManagementPrincipal>(f.ports).call("preferences.patch", { requestId: "revoked", expectedRevision: "rev", change: {} }, global, async () => valid);
+    f.approve.mockImplementation(async (operation) => {
+      valid = false;
+      return { approved: true, operationHash: operation.operationHash };
+    });
+    const result = await new ConversationManagementTools<
+      ManagementAction,
+      GlobalManagementPrincipal
+    >(f.ports).call(
+      "preferences.patch",
+      { requestId: "revoked", expectedRevision: "rev", change: {} },
+      global,
+      async () => valid,
+    );
     expect(result).toMatchObject({ state: "failed" });
     expect(f.execute).not.toHaveBeenCalled();
   });
   it("retains an uncertain global receipt if authority is revoked while the effect returns", async () => {
     const f = fixture();
-    const global: GlobalManagementPrincipal = { kind: "assistant-thread", threadId: "thread", environmentId: "host" };
+    const global: GlobalManagementPrincipal = {
+      kind: "assistant-thread",
+      threadId: "thread",
+      environmentId: "host",
+    };
     let valid = true;
-    f.execute.mockImplementation(async () => { valid = false; return { changed: true }; });
-    const tools = new ConversationManagementTools<ManagementAction, GlobalManagementPrincipal>(f.ports);
+    f.execute.mockImplementation(async () => {
+      valid = false;
+      return { changed: true };
+    });
+    const tools = new ConversationManagementTools<ManagementAction, GlobalManagementPrincipal>(
+      f.ports,
+    );
     const input = { requestId: "uncertain", expectedRevision: "rev", change: {} };
-    expect(await tools.call("preferences.patch", input, global, async () => valid)).toMatchObject({ state: "uncertain" });
+    expect(await tools.call("preferences.patch", input, global, async () => valid)).toMatchObject({
+      state: "uncertain",
+    });
     valid = true;
-    expect(await tools.call("preferences.patch", input, global, async () => valid)).toMatchObject({ state: "uncertain" });
+    expect(await tools.call("preferences.patch", input, global, async () => valid)).toMatchObject({
+      state: "uncertain",
+    });
     expect(f.execute).toHaveBeenCalledTimes(1);
   });
   it("rejects command paths that bypass accepted attachments or execution authority", () => {
@@ -197,8 +267,9 @@ describe("management authority and uncertain delivery", () => {
       valid = false;
       return value;
     };
-    await expect(f.tools.call("git.commit", input, principal, async () => valid))
-      .rejects.toThrow("authority revoked");
+    await expect(f.tools.call("git.commit", input, principal, async () => valid)).rejects.toThrow(
+      "authority revoked",
+    );
     expect(f.execute).toHaveBeenCalledTimes(1);
   });
   it("keeps interrupted effects uncertain and never executes them again", async () => {

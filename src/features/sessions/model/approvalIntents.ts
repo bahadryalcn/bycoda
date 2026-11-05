@@ -8,10 +8,10 @@ import {
 import {
   captureRemoteSessionActions,
   type CapturedRemoteSessionActions,
-} from "../../connections/model/remoteSessionActions";
-import { remoteProjectFor } from "../../connections/model/remoteProjects";
-import type { HostSession } from "../../connections/model/protocol";
-import { hostSessionBinding } from "../../connections/model/sessionExecutionBinding";
+} from "../../connections/public/remoteSessionActions";
+import type { HostSession } from "../../connections";
+import { remoteProjectFor } from "../../connections/public/remoteProjects";
+import { hostSessionBinding } from "../../connections/public/sessionExecutionBinding";
 import { registerParentInput, type ParentAdmission } from "../data/parentInputClosure";
 import {
   copyNativeCaptureData,

@@ -42,17 +42,6 @@ async function markdownFiles(directory) {
 
 const relative = (target) => path.relative(root, target).split(path.sep).join("/");
 
-// Reviewed character allowances for entries that were over 6,000 characters when the limit
-// became an error (2026-11-05). Lower a value after shortening; never raise one.
-const oversizeAllowance = {
-  "feature-assistant": 7600,
-  "feature-conversation-tools": 6100,
-  "feature-host-runtime": 7800,
-  "feature-session-recovery": 6400,
-  "feature-sessions-sidebar": 7700,
-  "feature-voice": 6800,
-};
-
 // Task-log residue. Skills describe current contracts; history lives in Git, tests and
 // temp/local handoffs. Only references/decisions.md may carry dates (owner decisions).
 const historyPatterns = [
@@ -104,13 +93,10 @@ for (const entry of entries) {
   if (!frontmatter?.match(/^description:\s*\S/m)) {
     errors.push(`${entry.name}: missing description`);
   }
-  // Entries over the default read page are errors. Existing oversized entries keep a reviewed
-  // allowance that may only fall; shorten by linking a reference, never by dropping a contract.
-  const allowance = oversizeAllowance[entry.name] ?? 6000;
+  // Shorten entries by linking a reference, never by dropping a contract.
+  const allowance = 6000;
   if (text.length > allowance) {
     errors.push(`${entry.name}: entry is ${text.length} chars (limit ${allowance})`);
-  } else if (allowance > 6000 && text.length < allowance - 500) {
-    warnings.push(`${entry.name}: entry shrank to ${text.length}; lower its allowance to ratchet`);
   }
   for (const finding of historyFindings(text)) errors.push(`${entry.name}: ${finding}`);
   for (const paragraph of text.slice(text.indexOf("\n---", 4) + 4).split(/\r?\n\s*\r?\n/)) {

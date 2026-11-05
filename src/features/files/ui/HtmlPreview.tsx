@@ -3,7 +3,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Portal } from "../../../shared/ui/Portal";
 import { RefreshCw } from "../../../shared/ui/icons";
-import type { TranscriptSelection } from "../../sessions/model/transcriptSelection";
+import type { TranscriptSelection } from "../../sessions";
 import { readHtmlPreviewSelection, withHtmlSelectionBridge } from "../model/htmlPreviewSelection";
 import { Button } from "../../../shared/ui/Button";
 import { PreviewSelectionMenu } from "./PreviewSelection";

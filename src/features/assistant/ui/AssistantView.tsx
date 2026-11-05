@@ -1,8 +1,28 @@
-import { rebuildClosedRoomPrivacyProjection, getRoomPrivacyStatus, isRoomPrivacyRecoveryPending, retryRoomPrivacyProjection, subscribeRoomPrivacyStatus } from "../../group-lock/model/roomPrivacyProjection";
+import {
+  rebuildClosedRoomPrivacyProjection,
+  getRoomPrivacyStatus,
+  isRoomPrivacyRecoveryPending,
+  retryRoomPrivacyProjection,
+  subscribeRoomPrivacyStatus,
+} from "../../group-lock/model/roomPrivacyProjection";
 import { isTauri } from "@tauri-apps/api/core";
 import { isAppQuitting } from "../../../app/model/appLifecycle";
-import { beginAssistantDraftOperation, registerAssistantDraftFlusher } from "../model/assistantDraftFlush";
-import { assistantNativeHeldIntent, preserveAssistantDraft, readAssistantDraftBackup, readAssistantDraftBackups, readAssistantNativeDraft, readAssistantNativeHeldIntent, reconcileAssistantNative, sendAssistantNative, writeAssistantNativeDraft, type AssistantDraftBackup } from "../model/assistantNativeSend";
+import {
+  beginAssistantDraftOperation,
+  registerAssistantDraftFlusher,
+} from "../model/assistantDraftFlush";
+import {
+  assistantNativeHeldIntent,
+  preserveAssistantDraft,
+  readAssistantDraftBackup,
+  readAssistantDraftBackups,
+  readAssistantNativeDraft,
+  readAssistantNativeHeldIntent,
+  reconcileAssistantNative,
+  sendAssistantNative,
+  writeAssistantNativeDraft,
+  type AssistantDraftBackup,
+} from "../model/assistantNativeSend";
 import { AssistantResponseValidationSchema } from "../../../shared/model/host-contracts/assistant";
 import { formatBytes } from "../../../shared/i18n/format";
 import { listenWindow } from "../../../platform/tauri/listenWindow";
@@ -10,7 +30,16 @@ import { AssistantMemoryPanel } from "./AssistantMemoryPanel";
 import { AssistantRemoteAccess } from "./AssistantRemoteAccess";
 import { useAssistantControlSource } from "../model/useAssistantControlSource";
 import { MemoryEditor } from "./MemoryEditor";
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import sessionStyles from "./AssistantSessions.module.css";
 import { AssistantSettings } from "./AssistantSettings";
 import { AssistantHistory } from "./AssistantHistory";
@@ -171,7 +200,11 @@ function draftText(key: string) {
 }
 
 export function AssistantView(props: AssistantViewProps) {
-  const roomPrivacy = useSyncExternalStore(subscribeRoomPrivacyStatus, getRoomPrivacyStatus, getRoomPrivacyStatus);
+  const roomPrivacy = useSyncExternalStore(
+    subscribeRoomPrivacyStatus,
+    getRoomPrivacyStatus,
+    getRoomPrivacyStatus,
+  );
   const locale = useLocale();
   const {
     snapshot: canonicalSnapshot,
@@ -933,23 +966,41 @@ export function AssistantView(props: AssistantViewProps) {
         />
       )}
       {roomPrivacy.pending && (
-        <InlineMessage className={styles.feedbackInline} tone="info">{t("Confirming Room privacy protection...")}</InlineMessage>
+        <InlineMessage className={styles.feedbackInline} tone="info">
+          {t("Confirming Room privacy protection...")}
+        </InlineMessage>
       )}
       {roomPrivacy.error && (
-        <InlineError className={styles.feedbackInline} retry={{ onRetry: retryRoomPrivacyProjection }}>
+        <InlineError
+          className={styles.feedbackInline}
+          retry={{ onRetry: retryRoomPrivacyProjection }}
+        >
           {t("Room privacy protection could not be confirmed.")}
         </InlineError>
       )}
-      {roomPrivacy.error && (roomPrivacy.error === "Privacy lock state is unavailable" || isRoomPrivacyRecoveryPending()) && (
-        <div className={styles.feedback}>
-          <InlineMessage tone="info">{t("Review current project visibility before rebuilding Room privacy protection.")}</InlineMessage>
-          <Button size="sm" variant="ghost" onClick={() => { void rebuildClosedRoomPrivacyProjection().catch(() => {}); }}>
-            {t("Rebuild Room privacy protection")}
-          </Button>
-        </div>
-      )}
+      {roomPrivacy.error &&
+        (roomPrivacy.error === "Privacy lock state is unavailable" ||
+          isRoomPrivacyRecoveryPending()) && (
+          <div className={styles.feedback}>
+            <InlineMessage tone="info">
+              {t("Review current project visibility before rebuilding Room privacy protection.")}
+            </InlineMessage>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                void rebuildClosedRoomPrivacyProjection().catch(() => {});
+              }}
+            >
+              {t("Rebuild Room privacy protection")}
+            </Button>
+          </div>
+        )}
       {readError && (
-        <InlineError className={styles.feedback} retry={{ onRetry: () => void refresh(), pending: loading }}>
+        <InlineError
+          className={styles.feedback}
+          retry={{ onRetry: () => void refresh(), pending: loading }}
+        >
           {readError}
         </InlineError>
       )}
@@ -1610,16 +1661,23 @@ export function AssistantView(props: AssistantViewProps) {
             )}
             {view === "History" && (
               <>
-              {environmentId && <AssistantNotificationRecovery key={privacy.key} projects={projects} environmentId={environmentId} request={assistantRequest} />}
-              <AssistantHistory
-                filtered={Boolean(query.trim() || filter)}
-                entries={snapshot.activity.filter(
-                  (item) =>
-                    matches(query, item.summary, item.kind) && (!filter || item.kind === filter),
+                {environmentId && (
+                  <AssistantNotificationRecovery
+                    key={privacy.key}
+                    projects={projects}
+                    environmentId={environmentId}
+                    request={assistantRequest}
+                  />
                 )}
-                onOpenSession={onOpenSession}
-                onJob={setDetail}
-              />
+                <AssistantHistory
+                  filtered={Boolean(query.trim() || filter)}
+                  entries={snapshot.activity.filter(
+                    (item) =>
+                      matches(query, item.summary, item.kind) && (!filter || item.kind === filter),
+                  )}
+                  onOpenSession={onOpenSession}
+                  onJob={setDetail}
+                />
               </>
             )}
             {view === "Memory" && (
@@ -2769,14 +2827,33 @@ function ConversationPanel({
   });
   const requestKey = useRef(initialRequestKeys);
   const nativeSendInFlight = useRef(false);
-  const nativeDrafts = useRef(new Map<string, { environmentId: string; version: number; saved: string; desired: string; pending?: Promise<void> }>());
+  const nativeDrafts = useRef(
+    new Map<
+      string,
+      {
+        environmentId: string;
+        version: number;
+        saved: string;
+        desired: string;
+        pending?: Promise<void>;
+      }
+    >(),
+  );
   const [nativeDraftReady, setNativeDraftReady] = useState("");
   const [nativeDraftDisplayed, setNativeDraftDisplayed] = useState("");
   const nativeDraftKey = JSON.stringify([environmentId, threadId]);
   const [nativeDraftReload, setNativeDraftReload] = useState(0);
   const [draftRecovery, setDraftRecovery] = useState<{
-    threadId: string; environmentId: string; backups: AssistantDraftBackup[]; selected: string;
-    selectedText?: string; selectedSavedAt?: number | null; revision?: number; next?: string; loading: boolean; error?: string;
+    threadId: string;
+    environmentId: string;
+    backups: AssistantDraftBackup[];
+    selected: string;
+    selectedText?: string;
+    selectedSavedAt?: number | null;
+    revision?: number;
+    next?: string;
+    loading: boolean;
+    error?: string;
   } | null>(null);
   const flushNativeDraft = useCallback(async (id: string) => {
     const state = nativeDrafts.current.get(id);
@@ -2787,7 +2864,12 @@ function ConversationPanel({
       for (;;) {
         const text = state.desired;
         if (text === state.saved) return;
-        const version = await writeAssistantNativeDraft(id, state.environmentId, state.version, text);
+        const version = await writeAssistantNativeDraft(
+          id,
+          state.environmentId,
+          state.version,
+          text,
+        );
         state.version = version;
         state.saved = text;
         wrote = true;
@@ -2797,7 +2879,13 @@ function ConversationPanel({
     try {
       await work;
       nativeUnsavedConversationDrafts.delete(JSON.stringify([state.environmentId, id]));
-      if (wrote && selected.current === id && currentScope.current.environmentId === state.environmentId && nativeUnsavedConversationDrafts.size === 0) setDraftSaveError(false);
+      if (
+        wrote &&
+        selected.current === id &&
+        currentScope.current.environmentId === state.environmentId &&
+        nativeUnsavedConversationDrafts.size === 0
+      )
+        setDraftSaveError(false);
     } catch (error) {
       nativeUnsavedConversationDrafts.set(JSON.stringify([state.environmentId, id]), state.desired);
       setDraftSaveError(true);
@@ -2818,7 +2906,10 @@ function ConversationPanel({
       if (nativeUnsavedConversationDrafts.size > 0)
         throw new Error("An assistant draft could not be saved. Recover it before closing.");
     });
-    return () => { unregister(); mounted = false; };
+    return () => {
+      unregister();
+      mounted = false;
+    };
   }, [flushNativeDraft]);
   useEffect(() => {
     if (!isTauri() || !threadId || !environmentId) {
@@ -2834,33 +2925,45 @@ function ConversationPanel({
     void (async () => {
       if (previous?.pending) await previous.pending;
       return readAssistantNativeDraft(id, sourceEnvironment);
-    })().then((stored) => {
-      if (!active) return;
-      const unsaved = nativeUnsavedConversationDrafts.get(JSON.stringify([sourceEnvironment, id]));
-      if (unsaved !== undefined && unsaved !== stored.text) {
-        draftsRef.current = { ...draftsRef.current, [id]: unsaved };
-        setDrafts((current) => ({ ...current, [id]: unsaved }));
+    })()
+      .then((stored) => {
+        if (!active) return;
+        const unsaved = nativeUnsavedConversationDrafts.get(
+          JSON.stringify([sourceEnvironment, id]),
+        );
+        if (unsaved !== undefined && unsaved !== stored.text) {
+          draftsRef.current = { ...draftsRef.current, [id]: unsaved };
+          setDrafts((current) => ({ ...current, [id]: unsaved }));
+          setNativeDraftDisplayed(JSON.stringify([sourceEnvironment, id]));
+          setDraftSaveError(true);
+          return;
+        }
+        if (unsaved !== undefined)
+          nativeUnsavedConversationDrafts.delete(JSON.stringify([sourceEnvironment, id]));
+        nativeDrafts.current.set(id, {
+          environmentId: sourceEnvironment,
+          version: stored.version,
+          saved: stored.text,
+          desired: stored.text,
+        });
+        draftsRef.current = { ...draftsRef.current, [id]: stored.text };
+        setDrafts((current) => ({ ...current, [id]: stored.text }));
         setNativeDraftDisplayed(JSON.stringify([sourceEnvironment, id]));
+        setNativeDraftReady(JSON.stringify([sourceEnvironment, id]));
+        if (nativeUnsavedConversationDrafts.size === 0) setDraftSaveError(false);
+      })
+      .catch(() => {
+        if (!active) return;
+        const unsaved = nativeUnsavedConversationDrafts.get(
+          JSON.stringify([sourceEnvironment, id]),
+        );
+        if (unsaved !== undefined) {
+          draftsRef.current = { ...draftsRef.current, [id]: unsaved };
+          setDrafts((current) => ({ ...current, [id]: unsaved }));
+          setNativeDraftDisplayed(JSON.stringify([sourceEnvironment, id]));
+        }
         setDraftSaveError(true);
-        return;
-      }
-      if (unsaved !== undefined) nativeUnsavedConversationDrafts.delete(JSON.stringify([sourceEnvironment, id]));
-      nativeDrafts.current.set(id, { environmentId: sourceEnvironment, version: stored.version, saved: stored.text, desired: stored.text });
-      draftsRef.current = { ...draftsRef.current, [id]: stored.text };
-      setDrafts((current) => ({ ...current, [id]: stored.text }));
-      setNativeDraftDisplayed(JSON.stringify([sourceEnvironment, id]));
-      setNativeDraftReady(JSON.stringify([sourceEnvironment, id]));
-      if (nativeUnsavedConversationDrafts.size === 0) setDraftSaveError(false);
-    }).catch(() => {
-      if (!active) return;
-      const unsaved = nativeUnsavedConversationDrafts.get(JSON.stringify([sourceEnvironment, id]));
-      if (unsaved !== undefined) {
-        draftsRef.current = { ...draftsRef.current, [id]: unsaved };
-        setDrafts((current) => ({ ...current, [id]: unsaved }));
-        setNativeDraftDisplayed(JSON.stringify([sourceEnvironment, id]));
-      }
-      setDraftSaveError(true);
-    });
+      });
     return () => {
       active = false;
       const state = nativeDrafts.current.get(id);
@@ -2876,46 +2979,72 @@ function ConversationPanel({
     let active = true;
     const refresh = () => {
       const state = nativeDrafts.current.get(id);
-      if (!state || state.environmentId !== sourceEnvironment || state.pending || state.desired !== state.saved) return;
+      if (
+        !state ||
+        state.environmentId !== sourceEnvironment ||
+        state.pending ||
+        state.desired !== state.saved
+      )
+        return;
       const expectedVersion = state.version;
-      void readAssistantNativeDraft(id, sourceEnvironment).then((stored) => {
-        if (!active || nativeDrafts.current.get(id) !== state || state.pending || state.version !== expectedVersion ||
-            state.desired !== state.saved || selected.current !== id ||
-            currentScope.current.environmentId !== sourceEnvironment || currentScope.current.privacy.key !== sourcePrivacy || !threadVisible(id)) return;
-        state.version = stored.version;
-        state.saved = stored.text;
-        state.desired = stored.text;
-        draftsRef.current = { ...draftsRef.current, [id]: stored.text };
-        setDrafts((current) => ({ ...current, [id]: stored.text }));
-      }).catch(() => { if (active) setDraftSaveError(true); });
+      void readAssistantNativeDraft(id, sourceEnvironment)
+        .then((stored) => {
+          if (
+            !active ||
+            nativeDrafts.current.get(id) !== state ||
+            state.pending ||
+            state.version !== expectedVersion ||
+            state.desired !== state.saved ||
+            selected.current !== id ||
+            currentScope.current.environmentId !== sourceEnvironment ||
+            currentScope.current.privacy.key !== sourcePrivacy ||
+            !threadVisible(id)
+          )
+            return;
+          state.version = stored.version;
+          state.saved = stored.text;
+          state.desired = stored.text;
+          draftsRef.current = { ...draftsRef.current, [id]: stored.text };
+          setDrafts((current) => ({ ...current, [id]: stored.text }));
+        })
+        .catch(() => {
+          if (active) setDraftSaveError(true);
+        });
     };
     const unsubscribe = listenWindow<{ scope?: string }>("canonical-store-changed", (event) => {
       if (event.payload?.scope === "assistant-thread-drafts.v2") refresh();
     });
     window.addEventListener("focus", refresh);
-    return () => { active = false; unsubscribe(); window.removeEventListener("focus", refresh); };
+    return () => {
+      active = false;
+      unsubscribe();
+      window.removeEventListener("focus", refresh);
+    };
   }, [threadId, environmentId, privacy.key]);
-  const flushDrafts = useCallback((report = true) => {
-    if (maximumDraftTimer.current !== undefined) {
-      window.clearTimeout(maximumDraftTimer.current);
-      maximumDraftTimer.current = undefined;
-    }
-    const serialized = JSON.stringify(draftsRef.current);
-    if (isTauri()) {
-      for (const id of nativeDrafts.current.keys()) void flushNativeDraft(id).catch(() => {});
-      return;
-    }
-    if (serialized === savedDrafts.current) return;
-    try {
-      localStorage.setItem("bycoda.assistant.thread-drafts", serialized);
-      savedDrafts.current = serialized;
-      unsavedConversationDrafts = undefined;
-      if (report) setDraftSaveError(false);
-    } catch {
-      unsavedConversationDrafts = { ...draftsRef.current };
-      if (report) setDraftSaveError(true);
-    }
-  }, [flushNativeDraft]);
+  const flushDrafts = useCallback(
+    (report = true) => {
+      if (maximumDraftTimer.current !== undefined) {
+        window.clearTimeout(maximumDraftTimer.current);
+        maximumDraftTimer.current = undefined;
+      }
+      const serialized = JSON.stringify(draftsRef.current);
+      if (isTauri()) {
+        for (const id of nativeDrafts.current.keys()) void flushNativeDraft(id).catch(() => {});
+        return;
+      }
+      if (serialized === savedDrafts.current) return;
+      try {
+        localStorage.setItem("bycoda.assistant.thread-drafts", serialized);
+        savedDrafts.current = serialized;
+        unsavedConversationDrafts = undefined;
+        if (report) setDraftSaveError(false);
+      } catch {
+        unsavedConversationDrafts = { ...draftsRef.current };
+        if (report) setDraftSaveError(true);
+      }
+    },
+    [flushNativeDraft],
+  );
   useEffect(() => {
     const timer = window.setTimeout(() => flushDrafts(), 400);
     maximumDraftTimer.current ??= window.setTimeout(() => flushDrafts(), 2000);
@@ -2950,7 +3079,8 @@ function ConversationPanel({
         capturedEnvironment,
       );
       if (
-        !alive.current || sequence !== messageLoadSequence.current ||
+        !alive.current ||
+        sequence !== messageLoadSequence.current ||
         currentScope.current.environmentId !== capturedEnvironment ||
         !threadVisible(id)
       )
@@ -3028,66 +3158,164 @@ function ConversationPanel({
       setPending(false);
     }
   }
-  async function loadDraftBackups(id: string, sourceEnvironment: string, after?: string, revision?: number) {
+  async function loadDraftBackups(
+    id: string,
+    sourceEnvironment: string,
+    after?: string,
+    revision?: number,
+  ) {
     try {
       const page = await readAssistantDraftBackups(id, sourceEnvironment, after, revision);
       setDraftRecovery((current) => {
-        if (!current || current.threadId !== id || current.environmentId !== sourceEnvironment) return current;
-        const merged = after ? [...current.backups, ...page.backups.filter((item) => !current.backups.some((old) => old.hash === item.hash))] : page.backups;
-        return { ...current, backups: merged, revision: page.revision, next: page.next, loading: false, error: undefined };
+        if (!current || current.threadId !== id || current.environmentId !== sourceEnvironment)
+          return current;
+        const merged = after
+          ? [
+              ...current.backups,
+              ...page.backups.filter(
+                (item) => !current.backups.some((old) => old.hash === item.hash),
+              ),
+            ]
+          : page.backups;
+        return {
+          ...current,
+          backups: merged,
+          revision: page.revision,
+          next: page.next,
+          loading: false,
+          error: undefined,
+        };
       });
     } catch (cause) {
-      setDraftRecovery((current) => current && current.threadId === id && current.environmentId === sourceEnvironment
-        ? { ...current, loading: false, error: cause instanceof Error ? cause.message : String(cause) } : current);
+      setDraftRecovery((current) =>
+        current && current.threadId === id && current.environmentId === sourceEnvironment
+          ? {
+              ...current,
+              loading: false,
+              error: cause instanceof Error ? cause.message : String(cause),
+            }
+          : current,
+      );
     }
   }
   function openDraftRecovery() {
     if (!threadId || !environmentId || !threadVisible(threadId)) return;
     setDraftRecovery({ threadId, environmentId, backups: [], selected: "", loading: true });
-    void loadDraftBackups(threadId, environmentId).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
+    void loadDraftBackups(threadId, environmentId).catch((cause: unknown) =>
+      setError(cause instanceof Error ? cause.message : String(cause)),
+    );
   }
   async function selectDraftBackup(hash: string) {
     const recovery = draftRecovery;
     if (!recovery || recovery.loading) return;
-    setDraftRecovery({ ...recovery, selected: hash, selectedText: undefined, selectedSavedAt: undefined, loading: true, error: undefined });
+    setDraftRecovery({
+      ...recovery,
+      selected: hash,
+      selectedText: undefined,
+      selectedSavedAt: undefined,
+      loading: true,
+      error: undefined,
+    });
     try {
-      const backup = await readAssistantDraftBackup(recovery.threadId, recovery.environmentId, hash);
-      setDraftRecovery((current) => current && current.threadId === recovery.threadId && current.environmentId === recovery.environmentId && current.selected === hash
-        ? { ...current, selectedText: backup.text, selectedSavedAt: backup.savedAt, loading: false } : current);
+      const backup = await readAssistantDraftBackup(
+        recovery.threadId,
+        recovery.environmentId,
+        hash,
+      );
+      setDraftRecovery((current) =>
+        current &&
+        current.threadId === recovery.threadId &&
+        current.environmentId === recovery.environmentId &&
+        current.selected === hash
+          ? {
+              ...current,
+              selectedText: backup.text,
+              selectedSavedAt: backup.savedAt,
+              loading: false,
+            }
+          : current,
+      );
     } catch (cause) {
-      setDraftRecovery((current) => current && current.threadId === recovery.threadId && current.environmentId === recovery.environmentId && current.selected === hash
-        ? { ...current, loading: false, error: cause instanceof Error ? cause.message : String(cause) } : current);
+      setDraftRecovery((current) =>
+        current &&
+        current.threadId === recovery.threadId &&
+        current.environmentId === recovery.environmentId &&
+        current.selected === hash
+          ? {
+              ...current,
+              loading: false,
+              error: cause instanceof Error ? cause.message : String(cause),
+            }
+          : current,
+      );
     }
   }
   async function restoreDraftBackup() {
     if (isAppQuitting()) return;
     const recovery = draftRecovery;
-    if (!recovery || recovery.selectedText === undefined || recovery.loading || selected.current !== recovery.threadId ||
-        currentScope.current.environmentId !== recovery.environmentId || !threadVisible(recovery.threadId)) return;
+    if (
+      !recovery ||
+      recovery.selectedText === undefined ||
+      recovery.loading ||
+      selected.current !== recovery.threadId ||
+      currentScope.current.environmentId !== recovery.environmentId ||
+      !threadVisible(recovery.threadId)
+    )
+      return;
     const release = beginAssistantDraftOperation();
     setDraftRecovery({ ...recovery, loading: true, error: undefined });
     try {
       const old = nativeDrafts.current.get(recovery.threadId);
       if (old?.pending) await old.pending;
       const recoveryKey = JSON.stringify([recovery.environmentId, recovery.threadId]);
-      const localText = nativeDraftDisplayed === recoveryKey
-        ? (draftsRef.current[recovery.threadId] ?? "") : (nativeUnsavedConversationDrafts.get(recoveryKey) ?? "");
+      const localText =
+        nativeDraftDisplayed === recoveryKey
+          ? (draftsRef.current[recovery.threadId] ?? "")
+          : (nativeUnsavedConversationDrafts.get(recoveryKey) ?? "");
       await preserveAssistantDraft(recovery.threadId, recovery.environmentId, localText);
-      const latest = await readAssistantNativeDraft(recovery.threadId, recovery.environmentId, true);
+      const latest = await readAssistantNativeDraft(
+        recovery.threadId,
+        recovery.environmentId,
+        true,
+      );
       await preserveAssistantDraft(recovery.threadId, recovery.environmentId, latest.text);
-      if (selected.current !== recovery.threadId || currentScope.current.environmentId !== recovery.environmentId || !threadVisible(recovery.threadId))
+      if (
+        selected.current !== recovery.threadId ||
+        currentScope.current.environmentId !== recovery.environmentId ||
+        !threadVisible(recovery.threadId)
+      )
         throw new Error("The original conversation is no longer available.");
-      const version = await writeAssistantNativeDraft(recovery.threadId, recovery.environmentId, latest.version, recovery.selectedText);
-      nativeDrafts.current.set(recovery.threadId, { environmentId: recovery.environmentId, version, saved: recovery.selectedText, desired: recovery.selectedText });
+      const version = await writeAssistantNativeDraft(
+        recovery.threadId,
+        recovery.environmentId,
+        latest.version,
+        recovery.selectedText,
+      );
+      nativeDrafts.current.set(recovery.threadId, {
+        environmentId: recovery.environmentId,
+        version,
+        saved: recovery.selectedText,
+        desired: recovery.selectedText,
+      });
       draftsRef.current = { ...draftsRef.current, [recovery.threadId]: recovery.selectedText };
       setDrafts((current) => ({ ...current, [recovery.threadId]: recovery.selectedText! }));
-      nativeUnsavedConversationDrafts.delete(JSON.stringify([recovery.environmentId, recovery.threadId]));
+      nativeUnsavedConversationDrafts.delete(
+        JSON.stringify([recovery.environmentId, recovery.threadId]),
+      );
       setDraftSaveError(nativeUnsavedConversationDrafts.size > 0);
       setNativeDraftReady(JSON.stringify([recovery.environmentId, recovery.threadId]));
       setNativeDraftDisplayed(JSON.stringify([recovery.environmentId, recovery.threadId]));
       setDraftRecovery(null);
     } catch (cause) {
-      setDraftRecovery((current) => current ? { ...current, loading: false, error: cause instanceof Error ? cause.message : String(cause) } : current);
+      setDraftRecovery((current) =>
+        current
+          ? {
+              ...current,
+              loading: false,
+              error: cause instanceof Error ? cause.message : String(cause),
+            }
+          : current,
+      );
     } finally {
       release();
     }
@@ -3098,11 +3326,20 @@ function ConversationPanel({
     const target = threadId;
     try {
       if (isTauri() && environmentId) {
-        const intent = assistantNativeHeldIntent(target, environmentId) ?? await readAssistantNativeHeldIntent(target, environmentId);
-        if (intent && threadVisible(target) && currentScope.current.environmentId === intent.environmentId) {
-          if (nativeDraftReady !== JSON.stringify([intent.environmentId, target])) throw new Error("The original draft is unavailable. Recover it before continuing.");
+        const intent =
+          assistantNativeHeldIntent(target, environmentId) ??
+          (await readAssistantNativeHeldIntent(target, environmentId));
+        if (
+          intent &&
+          threadVisible(target) &&
+          currentScope.current.environmentId === intent.environmentId
+        ) {
+          if (nativeDraftReady !== JSON.stringify([intent.environmentId, target]))
+            throw new Error("The original draft is unavailable. Recover it before continuing.");
           await flushNativeDraft(target);
-          AssistantResponseValidationSchema.parse(await reconcileAssistantNative(target, intent.environmentId, intent.key));
+          AssistantResponseValidationSchema.parse(
+            await reconcileAssistantNative(target, intent.environmentId, intent.key),
+          );
           setNativeDraftReload((value) => value + 1);
           await load(target);
           return;
@@ -3110,7 +3347,11 @@ function ConversationPanel({
       }
       await load(target);
       if (isTauri() && selected.current === target && error)
-        setError(t("The original reply remains unconfirmed. Check the original Host before sending again."));
+        setError(
+          t(
+            "The original reply remains unconfirmed. Check the original Host before sending again.",
+          ),
+        );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -3123,9 +3364,20 @@ function ConversationPanel({
       if (nativeSendInFlight.current) return;
       const target = threadId;
       const text = (drafts[target] ?? "").trim();
-      if (!text || pending || clearingRef.current || nativeDraftReady !== nativeDraftKey || !threadVisible(target)) return;
+      if (
+        !text ||
+        pending ||
+        clearingRef.current ||
+        nativeDraftReady !== nativeDraftKey ||
+        !threadVisible(target)
+      )
+        return;
       if (!environmentId) {
-        setError(t("The original Host could not be verified. Keep this draft and reconnect its original computer."));
+        setError(
+          t(
+            "The original Host could not be verified. Keep this draft and reconnect its original computer.",
+          ),
+        );
         return;
       }
       const sourceEnvironment = environmentId;
@@ -3137,34 +3389,71 @@ function ConversationPanel({
       setError("");
       try {
         await flushNativeDraft(target);
-        if (selected.current !== target || currentScope.current.environmentId !== sourceEnvironment || !threadVisible(target))
-          throw new Error("The original conversation is no longer available. Keep the draft before continuing.");
+        if (
+          selected.current !== target ||
+          currentScope.current.environmentId !== sourceEnvironment ||
+          !threadVisible(target)
+        )
+          throw new Error(
+            "The original conversation is no longer available. Keep the draft before continuing.",
+          );
         const draft = nativeDrafts.current.get(target);
-        if (!draft || draft.environmentId !== sourceEnvironment) throw new Error("The original draft is unavailable.");
-        await sendAssistantNative(target, {
-          text, key, environmentId: sourceEnvironment, draftVersion: draft.version, ...(sourceSession ? { sessionId: sourceSession } : {}),
-        }, async (response) => {
-          if (isAppQuitting()) throw new Error("The reply is retained for recovery after closing.");
-          const reply = AssistantResponseValidationSchema.parse(response);
-          if (!reply.messages?.some((message) => message.role === "assistant"))
-            throw new Error(t("The reply has not been confirmed. Check the conversation before retrying."));
-          if (selected.current !== target || currentScope.current.environmentId !== sourceEnvironment || !threadVisible(target))
-            throw new Error("The original conversation is no longer available. Check it before retrying.");
-          setMessages((current) => {
-            const existing = current[target] ?? [];
-            return { ...current, [target]: [...existing, ...reply.messages!.filter((message) => !existing.some((item) => item.id === message.id))] };
-          });
-          const currentDrafts = draftsRef.current;
-          const nextDrafts = { ...currentDrafts, [target]: (currentDrafts[target] ?? "").trim() === text ? "" : currentDrafts[target] };
-          draftsRef.current = nextDrafts;
-          const currentDraft = nativeDrafts.current.get(target);
-          if (currentDraft?.environmentId === sourceEnvironment) currentDraft.desired = nextDrafts[target] ?? "";
-          setDrafts(nextDrafts);
-          // A confirmed reply must not clear its send fence until the matching
-          // draft update is durable too; otherwise reload could offer it again.
-          await flushNativeDraft(target);
-          return reply;
-        }, release);
+        if (!draft || draft.environmentId !== sourceEnvironment)
+          throw new Error("The original draft is unavailable.");
+        await sendAssistantNative(
+          target,
+          {
+            text,
+            key,
+            environmentId: sourceEnvironment,
+            draftVersion: draft.version,
+            ...(sourceSession ? { sessionId: sourceSession } : {}),
+          },
+          async (response) => {
+            if (isAppQuitting())
+              throw new Error("The reply is retained for recovery after closing.");
+            const reply = AssistantResponseValidationSchema.parse(response);
+            if (!reply.messages?.some((message) => message.role === "assistant"))
+              throw new Error(
+                t("The reply has not been confirmed. Check the conversation before retrying."),
+              );
+            if (
+              selected.current !== target ||
+              currentScope.current.environmentId !== sourceEnvironment ||
+              !threadVisible(target)
+            )
+              throw new Error(
+                "The original conversation is no longer available. Check it before retrying.",
+              );
+            setMessages((current) => {
+              const existing = current[target] ?? [];
+              return {
+                ...current,
+                [target]: [
+                  ...existing,
+                  ...reply.messages!.filter(
+                    (message) => !existing.some((item) => item.id === message.id),
+                  ),
+                ],
+              };
+            });
+            const currentDrafts = draftsRef.current;
+            const nextDrafts = {
+              ...currentDrafts,
+              [target]: (currentDrafts[target] ?? "").trim() === text ? "" : currentDrafts[target],
+            };
+            draftsRef.current = nextDrafts;
+            const currentDraft = nativeDrafts.current.get(target);
+            if (currentDraft?.environmentId === sourceEnvironment)
+              currentDraft.desired = nextDrafts[target] ?? "";
+            setDrafts(nextDrafts);
+            // A confirmed reply must not clear its send fence until the matching
+            // draft update is durable too; otherwise reload could offer it again.
+            await flushNativeDraft(target);
+            return reply;
+          },
+          release,
+        );
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : String(cause));
       } finally {
@@ -3175,19 +3464,29 @@ function ConversationPanel({
       return;
     }
     if (!navigator.locks) {
-      setError(t("The send identity could not be saved. Keep this window open until the result is known."));
+      setError(
+        t("The send identity could not be saved. Keep this window open until the result is known."),
+      );
       return;
     }
     try {
-      await navigator.locks.request("bycoda.assistant.send-intents", { ifAvailable: true }, async (lock) => {
-        if (!lock) {
-          setError(t("The reply has not been confirmed. Check the conversation before retrying."));
-          return;
-        }
-        await sendLocked();
-      });
+      await navigator.locks.request(
+        "bycoda.assistant.send-intents",
+        { ifAvailable: true },
+        async (lock) => {
+          if (!lock) {
+            setError(
+              t("The reply has not been confirmed. Check the conversation before retrying."),
+            );
+            return;
+          }
+          await sendLocked();
+        },
+      );
     } catch {
-      setError(t("The send identity could not be saved. Keep this window open until the result is known."));
+      setError(
+        t("The send identity could not be saved. Keep this window open until the result is known."),
+      );
     }
   }
   async function sendLocked() {
@@ -3196,9 +3495,12 @@ function ConversationPanel({
     let persisted: typeof requestKey.current;
     try {
       persisted = JSON.parse(localStorage.getItem("bycoda.assistant.send-intents") ?? "{}");
-      if (!persisted || typeof persisted !== "object" || Array.isArray(persisted)) throw new Error("Invalid intents");
+      if (!persisted || typeof persisted !== "object" || Array.isArray(persisted))
+        throw new Error("Invalid intents");
     } catch {
-      setError(t("The send identity could not be saved. Keep this window open until the result is known."));
+      setError(
+        t("The send identity could not be saved. Keep this window open until the result is known."),
+      );
       return;
     }
     requestKey.current = persisted;
@@ -3410,10 +3712,7 @@ function ConversationPanel({
             <div className={styles.messageMeta}>
               <span>{message.role === "user" ? t("You") : snapshot.profile.name}</span>
               <span>{t(message.via === "voice" ? "Voice" : "Text")}</span>
-              <time
-                dateTime={isoTimestamp(message.createdAt)}
-                title={date(message.createdAt)}
-              >
+              <time dateTime={isoTimestamp(message.createdAt)} title={date(message.createdAt)}>
                 {time(message.createdAt)}
               </time>
               <Button
@@ -3592,7 +3891,12 @@ function ConversationPanel({
           </div>
           {threadId && (
             <div className={styles.conversationActions}>
-              <AssistantRemoteAccess key={`${environmentId ?? ""}:${threadId}`} threadId={threadId} environmentId={environmentId} sourceStatus={roomSourceStatus} />
+              <AssistantRemoteAccess
+                key={`${environmentId ?? ""}:${threadId}`}
+                threadId={threadId}
+                environmentId={environmentId}
+                sourceStatus={roomSourceStatus}
+              />
               <Button
                 iconOnly
                 label={t("Conversation actions")}
@@ -3616,7 +3920,16 @@ function ConversationPanel({
                 else if (id === "clear") clearConversation();
               }}
               items={[
-                ...(isTauri() ? [{ kind: "item" as const, id: "recover-draft", label: t("Recover draft"), disabled: !environmentId || pending || clearing }] : []),
+                ...(isTauri()
+                  ? [
+                      {
+                        kind: "item" as const,
+                        id: "recover-draft",
+                        label: t("Recover draft"),
+                        disabled: !environmentId || pending || clearing,
+                      },
+                    ]
+                  : []),
                 {
                   kind: "item",
                   id: "summary",
@@ -3686,13 +3999,21 @@ function ConversationPanel({
         {draftSaveError && (
           <InlineError className={`${styles.error} shrink-0 px-5 py-2`}>
             {t("Could not save this draft. It is kept in this window.")}{" "}
-            <Button type="button" onClick={() => {
-              if (isTauri() && nativeDraftReady !== nativeDraftKey) setNativeDraftReload((value) => value + 1);
-              else flushDrafts();
-            }}>
+            <Button
+              type="button"
+              onClick={() => {
+                if (isTauri() && nativeDraftReady !== nativeDraftKey)
+                  setNativeDraftReload((value) => value + 1);
+                else flushDrafts();
+              }}
+            >
               {t("Retry saving")}
             </Button>
-            {isTauri() && <Button type="button" onClick={openDraftRecovery}>{t("Recover draft")}</Button>}
+            {isTauri() && (
+              <Button type="button" onClick={openDraftRecovery}>
+                {t("Recover draft")}
+              </Button>
+            )}
           </InlineError>
         )}
         <div className={styles.composer}>
@@ -3700,7 +4021,11 @@ function ConversationPanel({
             label={t("Message {p0}", { p0: snapshot.profile.name })}
             hideLabel
             placeholder={t("Message {p0}", { p0: snapshot.profile.name })}
-            value={threadId && (!isTauri() || nativeDraftDisplayed === nativeDraftKey) ? (drafts[threadId] ?? "") : ""}
+            value={
+              threadId && (!isTauri() || nativeDraftDisplayed === nativeDraftKey)
+                ? (drafts[threadId] ?? "")
+                : ""
+            }
             disabled={!threadId}
             readOnly={isTauri() && nativeDraftReady !== nativeDraftKey}
             minRows={1}
@@ -3725,7 +4050,8 @@ function ConversationPanel({
               if (isTauri() && isAppQuitting()) return;
               const value = event.currentTarget.value;
               const nativeDraft = nativeDrafts.current.get(threadId);
-              if (isTauri() && nativeDraft && nativeDraft.environmentId === environmentId) nativeDraft.desired = value;
+              if (isTauri() && nativeDraft && nativeDraft.environmentId === environmentId)
+                nativeDraft.desired = value;
               draftsRef.current = { ...draftsRef.current, [threadId]: value };
               setDrafts((current) => ({ ...current, [threadId]: value }));
             }}
@@ -3736,7 +4062,13 @@ function ConversationPanel({
             label={t("Send")}
             tooltip={t("Send")}
             loading={pending}
-            disabled={clearing || !threadId || !drafts[threadId]?.trim() || !supported || (isTauri() && nativeDraftReady !== nativeDraftKey)}
+            disabled={
+              clearing ||
+              !threadId ||
+              !drafts[threadId]?.trim() ||
+              !supported ||
+              (isTauri() && nativeDraftReady !== nativeDraftKey)
+            }
             onClick={() => void send()}
           >
             <ArrowUp className="icon-md" />
@@ -3747,34 +4079,119 @@ function ConversationPanel({
             {t("Conversation replies are unavailable. Configure a model on this Host.")}
           </p>
         )}
-        {draftRecovery && selected.current === draftRecovery.threadId &&
-          currentScope.current.environmentId === draftRecovery.environmentId && threadVisible(draftRecovery.threadId) && (
-          <Modal title={t("Recover draft")} onClose={() => { if (!draftRecovery.loading) setDraftRecovery(null); }} size="md" fitViewport
-            footer={<ModalActions>
-              <Button variant="ghost" disabled={draftRecovery.loading} onClick={() => setDraftRecovery(null)}>{t("Cancel")}</Button>
-              <Button variant="primary" loading={draftRecovery.loading} disabled={draftRecovery.selectedText === undefined} onClick={() => void restoreDraftBackup().catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))}>{t("Restore draft")}</Button>
-            </ModalActions>}>
-            {draftRecovery.error && <InlineError>{draftRecovery.error}</InlineError>}
-            <SearchableSelect label={t("Saved draft")} value={draftRecovery.selected}
-              options={draftRecovery.backups.map((item, index) => ({ value: item.hash, label: t("Draft {p0}", { p0: index + 1 }), description: formatBytes(item.bytes) }))}
-              onChange={(value) => void selectDraftBackup(value).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))}
-              disabled={draftRecovery.loading || draftRecovery.backups.length === 0} />
-            <TextareaField label={t("Draft preview")} readOnly minRows={3} maxRows={8} autosize
-              value={draftRecovery.selectedText ?? ""} />
-            {draftRecovery.selectedSavedAt != null && <p className={styles.muted}>{formatDate(draftRecovery.selectedSavedAt, { dateStyle: "medium", timeStyle: "short" })}</p>}
-            {draftRecovery.next && <Button disabled={draftRecovery.loading} onClick={() => {
-              const current = draftRecovery;
-              setDraftRecovery({ ...current, loading: true });
-              void loadDraftBackups(current.threadId, current.environmentId, current.next, current.revision).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
-            }}>{t("Load more")}</Button>}
-            <Button disabled={draftRecovery.loading} onClick={() => {
-              const current = draftRecovery;
-              setDraftRecovery({ ...current, backups: [], selected: "", selectedText: undefined, selectedSavedAt: undefined, next: undefined, revision: undefined, loading: true });
-              void loadDraftBackups(current.threadId, current.environmentId).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
-            }}>{t("Refresh")}</Button>
-            {!draftRecovery.loading && !draftRecovery.backups.length && !draftRecovery.error && <p>{t("No saved drafts found.")}</p>}
-          </Modal>
-        )}
+        {draftRecovery &&
+          selected.current === draftRecovery.threadId &&
+          currentScope.current.environmentId === draftRecovery.environmentId &&
+          threadVisible(draftRecovery.threadId) && (
+            <Modal
+              title={t("Recover draft")}
+              onClose={() => {
+                if (!draftRecovery.loading) setDraftRecovery(null);
+              }}
+              size="md"
+              fitViewport
+              footer={
+                <ModalActions>
+                  <Button
+                    variant="ghost"
+                    disabled={draftRecovery.loading}
+                    onClick={() => setDraftRecovery(null)}
+                  >
+                    {t("Cancel")}
+                  </Button>
+                  <Button
+                    variant="primary"
+                    loading={draftRecovery.loading}
+                    disabled={draftRecovery.selectedText === undefined}
+                    onClick={() =>
+                      void restoreDraftBackup().catch((cause: unknown) =>
+                        setError(cause instanceof Error ? cause.message : String(cause)),
+                      )
+                    }
+                  >
+                    {t("Restore draft")}
+                  </Button>
+                </ModalActions>
+              }
+            >
+              {draftRecovery.error && <InlineError>{draftRecovery.error}</InlineError>}
+              <SearchableSelect
+                label={t("Saved draft")}
+                value={draftRecovery.selected}
+                options={draftRecovery.backups.map((item, index) => ({
+                  value: item.hash,
+                  label: t("Draft {p0}", { p0: index + 1 }),
+                  description: formatBytes(item.bytes),
+                }))}
+                onChange={(value) =>
+                  void selectDraftBackup(value).catch((cause: unknown) =>
+                    setError(cause instanceof Error ? cause.message : String(cause)),
+                  )
+                }
+                disabled={draftRecovery.loading || draftRecovery.backups.length === 0}
+              />
+              <TextareaField
+                label={t("Draft preview")}
+                readOnly
+                minRows={3}
+                maxRows={8}
+                autosize
+                value={draftRecovery.selectedText ?? ""}
+              />
+              {draftRecovery.selectedSavedAt != null && (
+                <p className={styles.muted}>
+                  {formatDate(draftRecovery.selectedSavedAt, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                </p>
+              )}
+              {draftRecovery.next && (
+                <Button
+                  disabled={draftRecovery.loading}
+                  onClick={() => {
+                    const current = draftRecovery;
+                    setDraftRecovery({ ...current, loading: true });
+                    void loadDraftBackups(
+                      current.threadId,
+                      current.environmentId,
+                      current.next,
+                      current.revision,
+                    ).catch((cause: unknown) =>
+                      setError(cause instanceof Error ? cause.message : String(cause)),
+                    );
+                  }}
+                >
+                  {t("Load more")}
+                </Button>
+              )}
+              <Button
+                disabled={draftRecovery.loading}
+                onClick={() => {
+                  const current = draftRecovery;
+                  setDraftRecovery({
+                    ...current,
+                    backups: [],
+                    selected: "",
+                    selectedText: undefined,
+                    selectedSavedAt: undefined,
+                    next: undefined,
+                    revision: undefined,
+                    loading: true,
+                  });
+                  void loadDraftBackups(current.threadId, current.environmentId).catch(
+                    (cause: unknown) =>
+                      setError(cause instanceof Error ? cause.message : String(cause)),
+                  );
+                }}
+              >
+                {t("Refresh")}
+              </Button>
+              {!draftRecovery.loading && !draftRecovery.backups.length && !draftRecovery.error && (
+                <p>{t("No saved drafts found.")}</p>
+              )}
+            </Modal>
+          )}
         {confirm && confirmScope.current === privacy.key && (
           <ConfirmDialog request={confirm} onSettle={() => setConfirm(null)} />
         )}

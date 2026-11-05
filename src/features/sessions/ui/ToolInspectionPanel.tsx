@@ -118,17 +118,18 @@ export function ToolInspectionPanel({ block }: { block: Block }) {
     feedback.copy(() => copyMessage(copyText));
   };
   const presentation = useMemo(
-    () => sections.map((section) => ({
-      section,
-      json:
-        !section.diff &&
-        !section.error &&
-        !section.truncated &&
-        section.title !== "Command" &&
-        section.title !== "Written content"
-          ? inspectionJson(section.text)
-          : null,
-    })),
+    () =>
+      sections.map((section) => ({
+        section,
+        json:
+          !section.diff &&
+          !section.error &&
+          !section.truncated &&
+          section.title !== "Command" &&
+          section.title !== "Written content"
+            ? inspectionJson(section.text)
+            : null,
+      })),
     [sections],
   );
   // JsonViewer owns its own layout, so the wrap choice only matters when some section is plain text.

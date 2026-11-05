@@ -14,16 +14,17 @@ import {
 } from "../../../platform/tauri/fs";
 import { IS_MAC } from "../../../platform/tauri/platform";
 import { isLocalProject } from "../model/recents";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
+import { ExplorerMenu, type ExplorerMenuItem } from "../../files/public/ExplorerMenu";
+
 import { Modal } from "../../../shared/ui/Modal";
 import { ExternalEditorIcon } from "./ExternalEditorIcon";
 import { ProjectActionDialog } from "./ProjectActionDialog";
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import type { DevServerStart, DevServerStartResult } from "../../host-tools/devServerTypes";
-import { hostFeatureRequest } from "../../connections/model/hostFeatureClient";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { hostFeatureRequest } from "../../connections/public/hostFeatureClient";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { hasActiveOverlay } from "../../../shared/ui/overlay";
-import { shortcutMatches } from "../../settings/model/settings";
+import { shortcutMatches } from "../../settings/public/settings";
 import { quickComposerShortcutLabel } from "../../quick-composer/model/quickComposerShortcut";
 import {
   CodeBlock,

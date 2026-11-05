@@ -4,7 +4,10 @@ import type { HostTasks } from "../../tasks/tasks";
 import type { HostGoals } from "../../goals/goals";
 import { parseHostTask, type HostTask } from "../../../src/features/tasks/model/hostTasks";
 import { parseHostGoal, type HostGoal } from "../../../src/features/tasks/model/hostGoals";
-import { hasUnmergedBranch, orderTasksForDeletion } from "../../../src/features/tasks/model/taskRules";
+import {
+  hasUnmergedBranch,
+  orderTasksForDeletion,
+} from "../../../src/features/tasks/model/taskRules";
 import type {
   AssistantJob,
   AssistantJobDeleteReview,

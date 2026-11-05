@@ -10,7 +10,8 @@ import { Switch } from "./Switch";
 import { Slider } from "./Slider";
 import { SegmentedControl } from "./SegmentedControl";
 import { Popover } from "./Popover";
-import { Badge } from "./Badge";
+import { CapabilityStatus } from "./CapabilityStatus";
+import { BadgeSpecimen } from "./BadgeSpecimen";
 import { Alert } from "./Alert";
 import { Progress } from "./Progress";
 import { Skeleton } from "./Skeleton";
@@ -38,17 +39,13 @@ import { MediaToolbar, MediaToolbarButton } from "./MediaToolbar";
 import { SearchableSelect } from "./SearchableSelect";
 import { ShortcutRecorder } from "./ShortcutRecorder";
 import { SortableDataTable } from "./SortableDataTable";
+import { CollectionSpecimen } from "./CollectionSpecimen";
 import { Timeline } from "./Timeline";
 import { ControlBehaviorMatrix, type ControlMatrixLayout } from "./ControlBehaviorMatrix";
 import { UsageMeter } from "./UsageMeter";
 import { TreeRow, TreeRowIcon, TreeRowLabel, TreeRowToggle, TreeRowTrailing } from "./TreeRow";
 
-/**
- * Per-family state matrix for the development reference. Each family shows the states it can be in, in one row,
- * with the same wrapping grid: normal, selected/pressed, disabled, loading, error, long content and a narrow slot.
- * Hover, pressed and keyboard focus are live: point at, press or Tab into the first cell of a family. The matrix is
- * part of ControlSpecimen; no production route imports it.
- */
+/** Development-only family matrix: states, narrow slots and live pointer/keyboard feedback. */
 const LONG = "A deliberately long value that must truncate or wrap without breaking the layout";
 
 function Family({ name, children }: { name: string; children: ReactNode }) {
@@ -362,13 +359,8 @@ function StateMatrix({ layout }: { layout: ControlMatrixLayout }) {
 
       <Family name="Status and feedback">
         <Cell state="badges">
-          <div className="flex flex-wrap gap-1">
-            {(["neutral", "info", "success", "warning", "danger"] as const).map((tone) => (
-              <Badge key={tone} tone={tone}>
-                {tone}
-              </Badge>
-            ))}
-          </div>
+          <BadgeSpecimen />
+          <CapabilityStatus permission="enabled" readiness="ready" activity="idle" />
         </Cell>
         <Cell state="alert">
           <Alert tone="danger">{LONG}</Alert>
@@ -757,6 +749,7 @@ function StateMatrix({ layout }: { layout: ControlMatrixLayout }) {
         </Cell>
       </Family>
       <ControlBehaviorMatrix initialLayout={layout} />
+      <CollectionSpecimen />
     </div>
   );
 }
@@ -884,13 +877,7 @@ export function ControlSpecimen({
             <Checkbox defaultChecked />
             {t("Preview")}
           </label>
-          <div className="flex min-w-0 flex-wrap gap-2">
-            {(["neutral", "info", "success", "warning", "danger"] as const).map((tone) => (
-              <Badge key={tone} tone={tone}>
-                {t("Preview")}
-              </Badge>
-            ))}
-          </div>
+          <BadgeSpecimen label={t("Preview")} labelsOnly />
           <Alert tone="info">{t("Preview")}</Alert>
           <Progress label={t("Progress")} value={amount} />
           <Skeleton lines={2} label={t("Loading…")} />

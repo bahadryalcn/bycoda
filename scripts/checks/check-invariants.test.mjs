@@ -35,7 +35,10 @@ function fixtureRoot(t) {
   });
   cpSync(join(repoRoot, oxlintConfig), join(root, oxlintConfig));
   mkdirSync(join(root, "scripts", "checks"), { recursive: true });
-  cpSync(join(repoRoot, "scripts", "checks", "privacy-writer-exceptions.json"), join(root, "scripts", "checks", "privacy-writer-exceptions.json"));
+  cpSync(
+    join(repoRoot, "scripts", "checks", "privacy-writer-exceptions.json"),
+    join(root, "scripts", "checks", "privacy-writer-exceptions.json"),
+  );
   symlinkSync(
     join(repoRoot, "node_modules"),
     join(root, "node_modules"),

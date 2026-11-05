@@ -1,17 +1,17 @@
 import { Button } from "../../../shared/ui/Button";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useSyncExternalStore } from "react";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import {
   GIT_ACTIONS,
   HOST_UPDATE_NOTICE,
   useRemoteSupports,
-} from "../../connections/model/remoteCapabilities";
+} from "../../connections/public/remoteCapabilities";
 import {
   loadInlineBlame,
   saveInlineBlame,
   subscribeInlineBlame,
-} from "../../settings/model/settings";
+} from "../../settings/public/settings";
 import { displayPath } from "../../../shared/lib/paths";
 
 /** The inline blame preference, shared by every open editor. */

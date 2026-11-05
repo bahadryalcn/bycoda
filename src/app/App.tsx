@@ -1101,20 +1101,31 @@ function Workspace({
   });
 
   // Idle tabs close without prompts: the active, moving, dirty and terminal tabs stay.
-  const idleTabIds = useCallback((selectedId = activeTabIdRef.current, dirtyIds = dirtyFilesRef.current) =>
-    idleWorkspaceTabIds({
+  const idleTabIds = useCallback(
+    (selectedId = activeTabIdRef.current, dirtyIds = dirtyFilesRef.current) =>
+      idleWorkspaceTabIds({
+        tabs,
+        sessions,
+        activeTabId: selectedId,
+        busySessionIds,
+        unseenFinishedIds,
+        dirtyFileIds: dirtyIds,
+        movingTabIds: movingTabIds.current,
+        hasComposerDraft: (sessionId) => {
+          const draft = composerDraftOf(sessionId);
+          return draft.text.trim().length > 0 || draft.attachments.length > 0;
+        },
+      }),
+    [
       tabs,
       sessions,
-      activeTabId: selectedId,
       busySessionIds,
       unseenFinishedIds,
-      dirtyFileIds: dirtyIds,
-      movingTabIds: movingTabIds.current,
-      hasComposerDraft: (sessionId) => {
-        const draft = composerDraftOf(sessionId);
-        return draft.text.trim().length > 0 || draft.attachments.length > 0;
-      },
-    }), [tabs, sessions, busySessionIds, unseenFinishedIds, activeTabIdRef, dirtyFilesRef, movingTabIds]);
+      activeTabIdRef,
+      dirtyFilesRef,
+      movingTabIds,
+    ],
+  );
   // Read cheap mutable revisions without subscribing the entire app to typing.
   const draftRevision = composerDraftRevision();
   const movingTabsKey = [...movingTabIds.current].join("\0");
@@ -1515,8 +1526,13 @@ function Workspace({
   });
 
   const { onRegenerateHistorySessionTitle } = useSessionTitleRegeneration({
-    sessionsRef, setSessions, loadedSessionCache, lastPersisted,
-    invalidateLoadedSession, refreshHistory, sidebarCwd,
+    sessionsRef,
+    setSessions,
+    loadedSessionCache,
+    lastPersisted,
+    invalidateLoadedSession,
+    refreshHistory,
+    sidebarCwd,
   });
 
   const { checkOpenWorktreeFiles, onCheckWorktreeRemoval, onRemoveWorktree } = useWorktreeRemoval({
@@ -1615,19 +1631,24 @@ function Workspace({
     whatsNewVersionRef,
   });
 
-  const { onPinHistorySession, onPinHistorySessions, onConfirmedPin, onPreparePin, onSetHistorySessionLinkedWorkItem } =
-    useHistorySessionMeta({
-      sessionsRef,
-      setSessions,
-      history,
-      setHistory,
-      setStoredLinkedSessions,
-      loadedSessionCache,
-      invalidateLoadedSession,
-      setLinkedWorkItemPanels,
-      refreshHistory,
-      sidebarCwd,
-    });
+  const {
+    onPinHistorySession,
+    onPinHistorySessions,
+    onConfirmedPin,
+    onPreparePin,
+    onSetHistorySessionLinkedWorkItem,
+  } = useHistorySessionMeta({
+    sessionsRef,
+    setSessions,
+    history,
+    setHistory,
+    setStoredLinkedSessions,
+    loadedSessionCache,
+    invalidateLoadedSession,
+    setLinkedWorkItemPanels,
+    refreshHistory,
+    sidebarCwd,
+  });
 
   const { onArchiveTitleTab, onDeleteTitleTab } = useTitleTabActions({
     tabsRef,
@@ -1923,7 +1944,9 @@ function Workspace({
   submitAfterProjectSyncRef.current = submitSession;
 
   const onStopRef = useRef<(sessionId: string) => void>(() => undefined);
-  const onStopForRoomRef = useRef<(sessionId: string) => Promise<void>>(async () => { throw new Error("Session stop owner unavailable."); });
+  const onStopForRoomRef = useRef<(sessionId: string) => Promise<void>>(async () => {
+    throw new Error("Session stop owner unavailable.");
+  });
   const { launchAutomation } = useAutomationLaunch({
     setServersViewOpen,
     appendTab,
@@ -3106,14 +3129,14 @@ function Workspace({
       <LocalSessionReferenceProvider value={localSessionReferences}>
         <OrchestrationActions.Provider value={orchestrationActions}>
           <OrchestrationWorkers.Provider value={orchestrationWorkers}>
-            <div
-              className="app-canvas flex h-full flex-col text-content"
-            >
+            <div className="app-canvas flex h-full flex-col text-content">
               {compactTitleBar ? workspaceTitleBar : null}
               {!detachedSessionWindow && <DesktopControlStrip />}
               <RemoteConnectionNotices />
               {!detachedSessionWindow && <AssistantNotifications />}
-              {!detachedSessionWindow && !toolWindow && !windowTransfer && <AssistantBackgroundRoom />}
+              {!detachedSessionWindow && !toolWindow && !windowTransfer && (
+                <AssistantBackgroundRoom />
+              )}
               <VoiceCompanionGate
                 {...voiceApp}
                 activeId={activeSessionId}

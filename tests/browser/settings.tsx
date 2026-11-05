@@ -35,20 +35,32 @@ function canonicalFixture(command: string, args: Record<string, unknown>): unkno
   if (command === "canonical_store_page_token") return canonicalPage;
   if (command === "canonical_store_session_guard_ready") return true;
   const scope = String(args.scope);
-  const store = canonicalScopes.get(scope) ?? { revision: 0, entries: new Map<string, FixtureEntry>() };
+  const store = canonicalScopes.get(scope) ?? {
+    revision: 0,
+    entries: new Map<string, FixtureEntry>(),
+  };
   canonicalScopes.set(scope, store);
   const entry = (key: string) => store.entries.get(key) ?? null;
   if (command === "canonical_store_get") return structuredClone(entry(String(args.key)));
-  if (command === "canonical_store_read") return structuredClone({ revision: store.revision,
-    entries: (args.keys as string[]).flatMap((key) => entry(key) ? [entry(key)] : []) });
+  if (command === "canonical_store_read")
+    return structuredClone({
+      revision: store.revision,
+      entries: (args.keys as string[]).flatMap((key) => (entry(key) ? [entry(key)] : [])),
+    });
   if (command === "canonical_store_list") {
-    if (args.expectedRevision != null && args.expectedRevision !== store.revision) throw new Error("Fixture canonical snapshot changed");
-    return structuredClone({ revision: store.revision, entries: [...store.entries.values()]
-      .filter((value) => args.after == null || value.key > String(args.after))
-      .sort((a, b) => a.key.localeCompare(b.key)).slice(0, Number(args.limit ?? 128)) });
+    if (args.expectedRevision != null && args.expectedRevision !== store.revision)
+      throw new Error("Fixture canonical snapshot changed");
+    return structuredClone({
+      revision: store.revision,
+      entries: [...store.entries.values()]
+        .filter((value) => args.after == null || value.key > String(args.after))
+        .sort((a, b) => a.key.localeCompare(b.key))
+        .slice(0, Number(args.limit ?? 128)),
+    });
   }
   const receiptKey = JSON.stringify([scope, args.operationId]);
-  if (command === "canonical_store_receipt") return structuredClone(canonicalReceipts.get(receiptKey)?.result ?? null);
+  if (command === "canonical_store_receipt")
+    return structuredClone(canonicalReceipts.get(receiptKey)?.result ?? null);
   if (command === "canonical_store_transaction") {
     if (args.pageToken !== canonicalPage) throw new Error("Fixture canonical page changed");
     if (args.claim != null) throw new Error("Claimed effects unavailable in Settings fixture");
@@ -60,15 +72,24 @@ function canonicalFixture(command: string, args: Record<string, unknown>): unkno
     }
     const checks = (args.checks ?? []) as Array<{ key: string; version: number | null }>;
     const writes = (args.writes ?? []) as Array<{ key: string; value: unknown }>;
-    const applied = (args.expectedRevision == null || args.expectedRevision === store.revision) &&
+    const applied =
+      (args.expectedRevision == null || args.expectedRevision === store.revision) &&
       checks.every((check) => (entry(check.key)?.version ?? null) === check.version);
     if (applied && writes.length) {
       store.revision++;
-      for (const write of writes) store.entries.set(write.key, { key: write.key,
-        version: (entry(write.key)?.version ?? 0) + 1, value: structuredClone(write.value) });
+      for (const write of writes)
+        store.entries.set(write.key, {
+          key: write.key,
+          version: (entry(write.key)?.version ?? 0) + 1,
+          value: structuredClone(write.value),
+        });
     }
-    const result = { applied, revision: store.revision, compacted: false,
-      entries: writes.flatMap((write) => entry(write.key) ? [entry(write.key)] : []) };
+    const result = {
+      applied,
+      revision: store.revision,
+      compacted: false,
+      entries: writes.flatMap((write) => (entry(write.key) ? [entry(write.key)] : [])),
+    };
     canonicalReceipts.set(receiptKey, { request, result: structuredClone(result) });
     return structuredClone(result);
   }

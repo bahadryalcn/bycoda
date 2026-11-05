@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, type RefObject } from "react";
-import { scrollTopToCenter, type RulerMark } from "../../files/editor/overviewRuler";
-import { OverviewRuler, scrollbarGutter } from "../../files/editor/overviewRulerView";
+import { scrollTopToCenter, type RulerMark } from "../../files/public/overviewRuler";
+
+import { OverviewRuler, scrollbarGutter } from "../../files/public/overviewRulerView";
 
 /**
  * Each file's rows publish their change marks (pixels from the top of an

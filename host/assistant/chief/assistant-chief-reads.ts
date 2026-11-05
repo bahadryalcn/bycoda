@@ -2,12 +2,18 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { HostStore } from "../../store";
 import type { HostSession } from "../../../src/features/connections/model/protocol";
-import type { AssistantJob, AssistantProfile } from "../../../src/shared/model/host-contracts/assistant";
+import type {
+  AssistantJob,
+  AssistantProfile,
+} from "../../../src/shared/model/host-contracts/assistant";
 import type { HostGoal } from "../../../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../../../src/features/tasks/model/hostTasks";
 import type { AsyncHostNotes } from "../../host-notes-async";
 import { assistantJobProjectIds } from "../../../src/shared/model/assistantProjects";
-import { assertAssistantGoalProjects, assistantJobSessionBelongs } from "../work/assistant-job-scope";
+import {
+  assertAssistantGoalProjects,
+  assistantJobSessionBelongs,
+} from "../work/assistant-job-scope";
 import { readAssistantQuestionStatus } from "../core/assistant-questions";
 import {
   AssistantChiefProjectReads,

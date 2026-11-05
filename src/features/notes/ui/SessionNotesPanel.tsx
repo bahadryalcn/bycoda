@@ -4,6 +4,7 @@ import { EmptyState } from "../../../shared/ui/EmptyState";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Sash } from "../../../shared/ui/Sash";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { InlineEdit } from "../../../shared/ui/InlineEdit";
@@ -29,7 +30,6 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useDragResize } from "../../../shared/hooks/useDragResize";
-import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { formatRelativeTime } from "../../inbox/model/githubTasks";
 import { looksLikeProject } from "../../projects/model/recents";
 import { requestAddToChat } from "../../sessions/model/quoteDraft";
@@ -159,7 +159,6 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
     initial: loadNotesPanelWidth(),
     onCommit: saveNotesPanelWidth,
   });
-  const listLock = useLockOverscroll<HTMLDivElement>();
   const [notes, setNotes] = useState<NoteSummary[]>(() => peekNoteSummaries() ?? []);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -169,7 +168,6 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
   const [listOpen, setListOpen] = useState(false);
   const listButton = useRef<HTMLButtonElement>(null);
   const [query, setQuery] = useRetainedState(`session-notes:${sessionId}:query`, "");
-  const [listLimit, setListLimit] = useState(40);
   const [creating, setCreating] = useState(false);
   const [wantFocus, setWantFocus] = useState(notesPanelFocusRequested);
   const focused = useCallback(() => {
@@ -219,8 +217,15 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
       project: offered.project.filter(matches),
     };
   }, [offered, query]);
-  const visibleSession = filtered.session.slice(0, listLimit);
-  const visibleProject = filtered.project.slice(0, Math.max(0, listLimit - visibleSession.length));
+  const pickerRows = useMemo(
+    () => [
+      ...(filtered.session.length ? [{ kind: "heading" as const, id: "session" }] : []),
+      ...filtered.session.map((note) => ({ kind: "note" as const, group: "session", note })),
+      ...(filtered.project.length ? [{ kind: "heading" as const, id: "project" }] : []),
+      ...filtered.project.map((note) => ({ kind: "note" as const, group: "project", note })),
+    ],
+    [filtered],
+  );
 
   useEffect(() => {
     if (!selected) return;
@@ -313,7 +318,7 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
       aria-label={t("Session notes")}
       data-notes-panel
       onKeyDown={onKeyDown}
-      className="relative flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-(--ui-pane-border) bg-(--ui-workspace-panel) text-content"
+      className="relative flex h-full min-h-0 min-w-0 shrink-0 flex-col border-l border-(--ui-pane-border) bg-transparent text-content"
     >
       <Sash
         {...sashProps}
@@ -334,7 +339,6 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
           onClick={(event) => {
             event.currentTarget.focus();
             setListOpen((open) => !open);
-            setListLimit(40);
           }}
           className="min-w-0 flex-1"
         >
@@ -388,50 +392,74 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
-              setListLimit(40);
             }}
             containerClassName="mb-1 w-full"
           />
-          <div ref={listLock} className="session-note-picker-list">
-            <NoteGroup
-              label={t("This session")}
-              notes={visibleSession}
-              activeId={selected?.id}
-              onSelect={(id) => {
-                setSelectedId(id);
-                setListOpen(false);
-                setWantFocus(true);
-              }}
-            />
-            <NoteGroup
-              label={t("Project notes")}
-              notes={visibleProject}
-              activeId={selected?.id}
-              onSelect={(id) => {
-                setSelectedId(id);
-                setListOpen(false);
-                setWantFocus(true);
-              }}
-            />
-            {filtered.session.length + filtered.project.length > listLimit ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                type="button"
-                className="w-full"
-                onClick={() => setListLimit((limit) => limit + 40)}
-              >
-                {t("Show more")}
-              </Button>
-            ) : null}
-            {filtered.session.length + filtered.project.length === 0 && loaded && !error ? (
-              <EmptyState
-                size="inline"
-                kind={query.trim() ? "filtered" : "empty"}
-                description={query.trim() ? t("No matching notes") : t("No notes yet.")}
+          {pickerRows.length ? (
+            <div className="flex min-h-0 flex-1 flex-col">
+              <ContinuousList
+                fill
+                className="session-note-picker-list"
+                label={t("Switch note")}
+                items={pickerRows}
+                stateKey={`session-notes:${sessionId}:${project}:${query.trim()}`}
+                itemKey={(row) =>
+                  row.kind === "heading" ? `heading:${row.id}` : `note:${row.group}:${row.note.id}`
+                }
+                requiredKey={
+                  selected
+                    ? `note:${offered.session.some((note) => note.id === selected.id) ? "session" : "project"}:${selected.id}`
+                    : null
+                }
+                estimateSize={38}
+                renderItem={(row) => {
+                  if (row.kind === "heading")
+                    return (
+                      <div role="listitem">
+                        <SectionLabel className="px-2">
+                          {row.id === "session" ? t("This session") : t("Project notes")}
+                        </SectionLabel>
+                      </div>
+                    );
+                  const time = formatRelativeTime(new Date(row.note.updatedAt).toISOString());
+                  return (
+                    <div role="listitem">
+                      <Button
+                        variant="item"
+                        size="sm"
+                        type="button"
+                        tooltip={row.note.title}
+                        tooltipWhen="overflow"
+                        aria-current={row.note.id === selected?.id ? "true" : undefined}
+                        onClick={() => {
+                          setSelectedId(row.note.id);
+                          setListOpen(false);
+                          setWantFocus(true);
+                        }}
+                        motion="none"
+                        selected={row.note.id === selected?.id}
+                        className="flex w-full items-center gap-2"
+                      >
+                        <span className="min-w-0 flex-1 truncate">{row.note.title}</span>
+                        {time ? (
+                          <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
+                            {time}
+                          </span>
+                        ) : null}
+                      </Button>
+                    </div>
+                  );
+                }}
               />
-            ) : null}
-          </div>
+            </div>
+          ) : null}
+          {filtered.session.length + filtered.project.length === 0 && loaded && !error ? (
+            <EmptyState
+              size="inline"
+              kind={query.trim() ? "filtered" : "empty"}
+              description={query.trim() ? t("No matching notes") : t("No notes yet.")}
+            />
+          ) : null}
           <Button
             variant="ghost"
             fullWidth
@@ -509,54 +537,6 @@ function SessionNotesContent({ sessionId, cwd }: Props) {
         </Button>
       </div>
     </aside>
-  );
-}
-
-function NoteGroup({
-  label,
-  notes,
-  activeId,
-  onSelect,
-}: {
-  label: string;
-  notes: NoteSummary[];
-  activeId?: string;
-  onSelect: (id: string) => void;
-}) {
-  useLocale();
-  if (notes.length === 0) return null;
-  return (
-    <section aria-label={label} className="mb-1 last:mb-0">
-      <SectionLabel className="px-2">{label}</SectionLabel>
-      <ul className="flex flex-col gap-0.5">
-        {notes.map((note) => {
-          const time = formatRelativeTime(new Date(note.updatedAt).toISOString());
-          return (
-            <li key={note.id}>
-              <Button
-                variant="item"
-                size="sm"
-                type="button"
-                tooltip={note.title}
-                tooltipWhen="overflow"
-                aria-current={note.id === activeId ? "true" : undefined}
-                onClick={() => onSelect(note.id)}
-                motion="none"
-                selected={note.id === activeId}
-                className="flex w-full items-center gap-2"
-              >
-                <span className="min-w-0 flex-1 truncate">{note.title}</span>
-                {time ? (
-                  <span className="shrink-0 text-ui-micro tabular-nums text-(--ui-text-secondary)">
-                    {time}
-                  </span>
-                ) : null}
-              </Button>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
   );
 }
 

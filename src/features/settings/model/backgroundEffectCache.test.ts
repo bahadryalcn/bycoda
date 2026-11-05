@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { BackgroundEffectCache, BACKGROUND_SOURCE_BYTES, BACKGROUND_MAX_EDGE } from "./backgroundEffectCache";
+import {
+  BackgroundEffectCache,
+  BACKGROUND_SOURCE_BYTES,
+  BACKGROUND_MAX_EDGE,
+} from "./backgroundEffectCache";
 
 it("bounds actual pixel bytes across projects sharing one image revision", () => {
   const cache = new BackgroundEffectCache<Uint8Array>(64, (value) => value.byteLength);
@@ -13,8 +17,10 @@ it("bounds actual pixel bytes across projects sharing one image revision", () =>
 it("uses access recency and releases cache references without destroying current owners", () => {
   const cache = new BackgroundEffectCache<Uint8Array>(8, (value) => value.byteLength);
   const current = new Uint8Array([1, 2, 3, 4]);
-  cache.set("current", current); cache.set("other", new Uint8Array(4));
-  cache.get("current"); cache.set("new", new Uint8Array(4));
+  cache.set("current", current);
+  cache.set("other", new Uint8Array(4));
+  cache.get("current");
+  cache.set("new", new Uint8Array(4));
   expect(cache.get("other")).toBeUndefined();
   cache.clear();
   expect(cache.retainedBytes).toBe(0);

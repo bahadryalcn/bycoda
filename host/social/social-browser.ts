@@ -251,16 +251,19 @@ async function profileInUse(profile: string): Promise<boolean> {
 }
 
 function profileUnlock(profile: string, exited: Promise<void>) {
-  return waitForProfileUnlock({
-    inUse: () => profileInUse(profile),
-    observe: (changed, failed) => {
-      const original = watch(profile, { persistent: false }, (_type, name) => {
-        if (!name || ["SingletonLock", "lockfile"].includes(name.toString())) changed();
-      });
-      original.on("error", failed);
-      return () => original.close();
+  return waitForProfileUnlock(
+    {
+      inUse: () => profileInUse(profile),
+      observe: (changed, failed) => {
+        const original = watch(profile, { persistent: false }, (_type, name) => {
+          if (!name || ["SingletonLock", "lockfile"].includes(name.toString())) changed();
+        });
+        original.on("error", failed);
+        return () => original.close();
+      },
     },
-  }, exited);
+    exited,
+  );
 }
 
 export function systemPlainLauncher(executable = findBrowser()): PlainBrowserLauncher | undefined {
@@ -269,8 +272,12 @@ export function systemPlainLauncher(executable = findBrowser()): PlainBrowserLau
     const original = await SocialBrowserLaunch.reserve(profile, { inUse: profileInUse });
     try {
       await original.start(executable, [
-        `--user-data-dir=${original.profile}`, "--no-first-run", "--no-default-browser-check",
-        "--disable-sync", "--new-window", url,
+        `--user-data-dir=${original.profile}`,
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-sync",
+        "--new-window",
+        url,
       ]);
       original.markEstablished();
       const closed = (async () => {
@@ -300,20 +307,38 @@ export function systemBrowserLauncher(executable = findBrowser()): BrowserLaunch
     const portFile = join(original.profile, "DevToolsActivePort");
     let cdp: Cdp | undefined;
     let released: Promise<void> | undefined;
-    const releaseProfile = () => released ??= original.releaseProfile(() => profileUnlock(original.profile, original.exit));
+    const releaseProfile = () =>
+      (released ??= original.releaseProfile(() => profileUnlock(original.profile, original.exit)));
     try {
       await rm(portFile, { force: true });
       await original.start(executable, [
         `--user-data-dir=${original.profile}`,
-        "--remote-debugging-port=0", "--no-first-run", "--no-default-browser-check", "--disable-sync",
-        "--disable-blink-features=AutomationControlled", "--window-size=1100,860",
-        ...(background ? ["--start-minimized", "--disable-renderer-backgrounding", "--disable-backgrounding-occluded-windows"] : []),
+        "--remote-debugging-port=0",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-sync",
+        "--disable-blink-features=AutomationControlled",
+        "--window-size=1100,860",
+        ...(background
+          ? [
+              "--start-minimized",
+              "--disable-renderer-backgrounding",
+              "--disable-backgrounding-occluded-windows",
+            ]
+          : []),
         "about:blank",
       ]);
       let endpoint: string | undefined;
       for (let attempt = 0; attempt < 100 && !endpoint && !original.failed; attempt++) {
-        const [port, path] = (await readFile(portFile, "utf8").catch(() => "")).split(/\r?\n/).map((line) => line.trim());
-        if (/^\d+$/.test(port ?? "") && Number(port) > 0 && Number(port) <= 65535 && /^\/devtools\/browser\/[A-Za-z0-9-]+$/.test(path ?? ""))
+        const [port, path] = (await readFile(portFile, "utf8").catch(() => ""))
+          .split(/\r?\n/)
+          .map((line) => line.trim());
+        if (
+          /^\d+$/.test(port ?? "") &&
+          Number(port) > 0 &&
+          Number(port) <= 65535 &&
+          /^\/devtools\/browser\/[A-Za-z0-9-]+$/.test(path ?? "")
+        )
           endpoint = `ws://127.0.0.1:${port}${path}`;
         if (!endpoint) await sleep(200);
       }
@@ -323,10 +348,17 @@ export function systemBrowserLauncher(executable = findBrowser()): BrowserLaunch
       const close = async () => {
         await Promise.race([connected.send("Browser.close").catch(() => undefined), sleep(3000)]);
         // Preserve graceful cookie flushing before requesting exact owned retirement.
-        await Promise.race([original.exit, connected.closed.then(() => sleep(2000)), sleep(15_000)]);
+        await Promise.race([
+          original.exit,
+          connected.closed.then(() => sleep(2000)),
+          sleep(15_000),
+        ]);
         connected.close();
-        try { await original.stop(); }
-        finally { void releaseProfile().catch(() => {}); }
+        try {
+          await original.stop();
+        } finally {
+          void releaseProfile().catch(() => {});
+        }
       };
       const { targetInfos } = await connected.send<{
         targetInfos: { targetId: string; type: string }[];
@@ -373,7 +405,10 @@ export function systemBrowserLauncher(executable = findBrowser()): BrowserLaunch
       try {
         await original.startupFailed(() => profileUnlock(original.profile, original.exit));
       } catch (cleanup) {
-        throw new Error("Browser startup cleanup is unconfirmed; its original profile remains reserved.", { cause: cleanup });
+        throw new Error(
+          "Browser startup cleanup is unconfirmed; its original profile remains reserved.",
+          { cause: cleanup },
+        );
       }
       throw error;
     }
@@ -839,10 +874,12 @@ export class XBrowserSessions {
     retainRead = false,
   ): Promise<T> {
     const previous = this.locks.get(accountId) ?? Promise.resolve();
-    const next = previous.catch(() => undefined).then(async () => {
-      if (!retainRead) await this.closeRead(accountId);
-      return await action();
-    });
+    const next = previous
+      .catch(() => undefined)
+      .then(async () => {
+        if (!retainRead) await this.closeRead(accountId);
+        return await action();
+      });
     const settled = next.catch(() => undefined);
     this.locks.set(accountId, settled);
     void settled.then(() => {
@@ -883,8 +920,12 @@ export class XBrowserSessions {
         owner.session = session;
         const captured = owner;
         void session.closed.then(
-          () => { captured.usable = false; },
-          () => { captured.usable = false; },
+          () => {
+            captured.usable = false;
+          },
+          () => {
+            captured.usable = false;
+          },
         );
         if (this.stopped) {
           await this.closeRead(accountId);
@@ -913,7 +954,10 @@ export class XBrowserSessions {
       await this.closeRead(accountId);
       return;
     }
-    const delay = Math.min(READ_IDLE_TIMEOUT, Math.max(0, READ_MAX_AGE - elapsedSince(owner.started, this.readNow())));
+    const delay = Math.min(
+      READ_IDLE_TIMEOUT,
+      Math.max(0, READ_MAX_AGE - elapsedSince(owner.started, this.readNow())),
+    );
     owner.timer = setTimeout(() => {
       if (this.reads.get(accountId) !== owner) return;
       void this.exclusive(accountId, async () => {}).catch(() => undefined);

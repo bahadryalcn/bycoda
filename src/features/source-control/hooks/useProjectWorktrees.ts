@@ -15,7 +15,10 @@ type Entry = {
 };
 
 const EMPTY: Snapshot = {};
-const entries = new CheckoutCache<string, Entry>((entry) => entry.listeners.size > 0 || !!entry.inFlight, (entry) => entry.snapshot);
+const entries = new CheckoutCache<string, Entry>(
+  (entry) => entry.listeners.size > 0 || !!entry.inFlight,
+  (entry) => entry.snapshot,
+);
 
 function entryFor(cwd: string): Entry {
   const key = pathKey(cwd);

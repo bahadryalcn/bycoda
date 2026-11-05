@@ -660,9 +660,16 @@ describe("Host HTTP/WS read composition", () => {
   });
   it("shares pipe-shell creation and output across HTTP and WS without replaying writes", async () => {
     let emit!: (data: string) => void;
-    const child = { write: vi.fn(async () => {}), stop: vi.fn(async () => {}) };
-    const launch = vi.fn((_profile, _cwd, output) => {
+    let exit!: (code: number | null) => void;
+    const child = {
+      write: vi.fn(async () => {}),
+      stop: vi.fn(async () => {
+        exit(0);
+      }),
+    };
+    const launch = vi.fn((_profile, _cwd, output, onExit) => {
       emit = output;
+      exit = onExit;
       return child;
     });
     const terminals = new HostTerminals(

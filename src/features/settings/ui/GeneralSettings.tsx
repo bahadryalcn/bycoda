@@ -26,7 +26,7 @@ import { ArrowDownCircle, Check, Copy, RefreshCw } from "../../../shared/ui/icon
 import { OPEN_ONBOARDING_EVENT } from "../../onboarding/model/onboarding";
 import { openUsageGuide } from "../../onboarding/model/usageGuide";
 import { getTourSnapshot, startTour, subscribeTour } from "../../onboarding/model/tourState";
-import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/import/importModel";
+import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/public/importModel";
 import {
   CLOSE_TO_TRAY_DEFAULT,
   KEEP_AWAKE_DEFAULT,
@@ -436,13 +436,17 @@ export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string
 
   useEffect(() => {
     let cancelled = false;
-    void readAppVersion().then((currentVersion) => {
-      if (cancelled) return;
-      setSnapshot((current) => ({ ...current, currentVersion }));
-    }).catch(() => {});
-    void isUpdaterEnabled().then((enabled) => {
-      if (!cancelled) setUpdatesEnabled(enabled);
-    }).catch(() => {});
+    void readAppVersion()
+      .then((currentVersion) => {
+        if (cancelled) return;
+        setSnapshot((current) => ({ ...current, currentVersion }));
+      })
+      .catch(() => {});
+    void isUpdaterEnabled()
+      .then((enabled) => {
+        if (!cancelled) setUpdatesEnabled(enabled);
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };

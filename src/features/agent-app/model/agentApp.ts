@@ -20,8 +20,14 @@ import {
   placeSessionInFolder,
   saveSessionFolders,
 } from "../../sessions/model/sessionFolders";
-import { executeOrganizationOperation, organizationFoldersForProject } from "../../sessions/model/sessionOrganizationOperations";
-import { hydrateSessionOrganization, NATIVE_SESSION_ORGANIZATION_ACTIVE } from "../../sessions/model/sessionOrganizationStore";
+import {
+  executeOrganizationOperation,
+  organizationFoldersForProject,
+} from "../../sessions/model/sessionOrganizationOperations";
+import {
+  hydrateSessionOrganization,
+  NATIVE_SESSION_ORGANIZATION_ACTIVE,
+} from "../../sessions/model/sessionOrganizationStore";
 import { normalizeNoteTags, noteTitle, type Note, type NoteUpsert } from "../../notes";
 import type { QuickLaunch } from "../../quick-composer/model/quickComposer";
 import type { Worktree, Worktrees } from "../../source-control/model/worktrees";
@@ -452,15 +458,36 @@ export async function handleAgentApp(
         throw new Error("Session was not found in this project");
       if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
         const createdId = crypto.randomUUID();
-        const result = await executeOrganizationOperation(crypto.randomUUID(), folderId
-          ? { kind: "batch", cwd, operations: [
-              { kind: "assign", cwd, folderId, sessionIds: [sessionId] },
-              { kind: "folderCollapsed", cwd, folderId, collapsed: false },
-            ] }
-          : { kind: "create", cwd, folderId: createdId, sessionIds: [sessionId], name: newFolderName! });
+        const result = await executeOrganizationOperation(
+          crypto.randomUUID(),
+          folderId
+            ? {
+                kind: "batch",
+                cwd,
+                operations: [
+                  { kind: "assign", cwd, folderId, sessionIds: [sessionId] },
+                  { kind: "folderCollapsed", cwd, folderId, collapsed: false },
+                ],
+              }
+            : {
+                kind: "create",
+                cwd,
+                folderId: createdId,
+                sessionIds: [sessionId],
+                name: newFolderName!,
+              },
+        );
         if (result.state !== "applied")
-          throw new Error(result.state === "unknown" ? `Folder change outcome is unknown: ${result.operationId}` : result.state === "applied-unavailable" ? `Folder change was applied, but refresh failed: ${result.operationId}` : "Folder change conflicted; refresh before retrying.");
-        const folder = organizationFoldersForProject(result.value, cwd).find((entry) => entry.sessionIds.includes(sessionId));
+          throw new Error(
+            result.state === "unknown"
+              ? `Folder change outcome is unknown: ${result.operationId}`
+              : result.state === "applied-unavailable"
+                ? `Folder change was applied, but refresh failed: ${result.operationId}`
+                : "Folder change conflicted; refresh before retrying.",
+          );
+        const folder = organizationFoldersForProject(result.value, cwd).find((entry) =>
+          entry.sessionIds.includes(sessionId),
+        );
         return { sessionId, folderId: folder?.id, folderName: folder?.name };
       }
       const folders = loadSessionFolders(cwd);

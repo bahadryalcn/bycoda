@@ -3,7 +3,11 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { withHostGitMutation } from "../git/git-mutations";
 import { durableWrite, GitTurnHistory, refComponent } from "../git/turn-git-history";
-import type { ManagedWorkspace, TurnGitRecord, WorkspaceActivity } from "../workspaces/workspace-contracts";
+import type {
+  ManagedWorkspace,
+  TurnGitRecord,
+  WorkspaceActivity,
+} from "../workspaces/workspace-contracts";
 import type {
   ExecutionActivityReservations,
   WorkspaceOwnerAuthorization,

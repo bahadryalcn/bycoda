@@ -16,13 +16,13 @@ import {
 } from "../../../platform/tauri/fs";
 import { ChevronDown, ChevronRight, FolderTree, RefreshCw } from "../../../shared/ui/icons";
 import { GitChangesPanel } from "./GitChangesPanel";
-import type { HarnessId } from "../../sessions/model/session";
+import type { HarnessId } from "../../sessions";
 import type { RepositoryReviewRequest } from "../model/workspaceRepositories";
 import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
 import { isEqualOrInside, projectKey } from "../../../shared/lib/paths";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { loadRepositorySelection, saveRepositorySelection } from "../model/repositorySelection";
-import { subscribeProjectPathsChanged } from "../../projects/model/recents";
+import { subscribeProjectPathsChanged } from "../../projects/public/recents";
 import type { Worktree } from "../model/worktrees";
 import { Button } from "../../../shared/ui/Button";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";

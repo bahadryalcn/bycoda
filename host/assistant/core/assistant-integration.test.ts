@@ -632,15 +632,43 @@ it("prepares daily summaries once per date while away without treating preparati
 });
 
 it("admits opted-in task notifications once, fences revocation and hides them without delivery admission", async () => {
-  let visible = true, delivery = false;
-  const f = await fixture({ manualProjectVisible: async () => visible, taskNotificationAllowed: async () => delivery, readPresence: async () => ({ supported: true, locked: false, idleMs: 0 }) });
+  let visible = true,
+    delivery = false;
+  const f = await fixture({
+    manualProjectVisible: async () => visible,
+    taskNotificationAllowed: async () => delivery,
+    readPresence: async () => ({ supported: true, locked: false, idleMs: 0 }),
+  });
   const { task } = await f.seed();
   await f.saveTask({ ...task, status: "done", projectId: f.project.id });
-  await f.store.db.exec("CREATE TABLE assistant_observation_source_revisions(source TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(source,source_id))");
-  await f.store.db.prepare("INSERT INTO assistant_observation_source_revisions VALUES('task',?,1)").run(task.id);
-  const policy = { id: "manualPolicy", version: 1, createdAt: f.clock.now, updatedAt: f.clock.now, value: { enabled: true, version: 1, projectIds: [f.project.id] } };
-  await f.store.db.prepare("INSERT OR REPLACE INTO assistant_runtime(id,value,version,updated_at) VALUES(?,?,?,?)").run(policy.id, JSON.stringify(policy), 1, f.clock.now);
-  const event = { id: "event-a", sequence: 1, source: "task" as const, sourceId: task.id, sourceRevision: "db:1", change: "updated" as const, projectIds: [f.project.id], occurredAt: f.clock.now };
+  await f.store.db.exec(
+    "CREATE TABLE assistant_observation_source_revisions(source TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(source,source_id))",
+  );
+  await f.store.db
+    .prepare("INSERT INTO assistant_observation_source_revisions VALUES('task',?,1)")
+    .run(task.id);
+  const policy = {
+    id: "manualPolicy",
+    version: 1,
+    createdAt: f.clock.now,
+    updatedAt: f.clock.now,
+    value: { enabled: true, version: 1, projectIds: [f.project.id] },
+  };
+  await f.store.db
+    .prepare(
+      "INSERT OR REPLACE INTO assistant_runtime(id,value,version,updated_at) VALUES(?,?,?,?)",
+    )
+    .run(policy.id, JSON.stringify(policy), 1, f.clock.now);
+  const event = {
+    id: "event-a",
+    sequence: 1,
+    source: "task" as const,
+    sourceId: task.id,
+    sourceRevision: "db:1",
+    change: "updated" as const,
+    projectIds: [f.project.id],
+    occurredAt: f.clock.now,
+  };
   await f.configure("report", { observationTaskDone: false });
   expect(await f.service.acceptObservedTaskEvent(event, () => true)).toBe(false);
   await f.configure("report", { observationTaskDone: true });
@@ -649,10 +677,17 @@ it("admits opted-in task notifications once, fences revocation and hides them wi
   expect((await f.snapshot()).notifications.filter((n) => n.kind === "task.done")).toHaveLength(0);
   delivery = true;
   expect((await f.snapshot()).notifications.filter((n) => n.kind === "task.done")).toHaveLength(1);
-  await f.saveTask({ ...task, status: "done", projectId: f.project.id, createdAt: task.createdAt + 1 });
+  await f.saveTask({
+    ...task,
+    status: "done",
+    projectId: f.project.id,
+    createdAt: task.createdAt + 1,
+  });
   expect((await f.snapshot()).notifications.filter((n) => n.kind === "task.done")).toHaveLength(0);
   visible = false;
-  expect(await f.service.acceptObservedTaskEvent({ ...event, id: "event-b", sequence: 2 }, () => true)).toBe(false);
+  expect(
+    await f.service.acceptObservedTaskEvent({ ...event, id: "event-b", sequence: 2 }, () => true),
+  ).toBe(false);
   delivery = false;
   expect((await f.snapshot()).notifications.filter((n) => n.kind === "task.done")).toHaveLength(0);
 });
@@ -661,58 +696,176 @@ it("authorizes the exact native task handoff only while source, policy, device a
   const f = await fixture({ manualProjectVisible: async () => true });
   const { task } = await f.seed();
   await f.saveTask({ ...task, status: "done", projectId: f.project.id });
-  await f.store.db.exec("CREATE TABLE assistant_observation_source_revisions(source TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(source,source_id))");
-  await f.store.db.prepare("INSERT INTO assistant_observation_source_revisions VALUES('task',?,1)").run(task.id);
-  const policy = { id: "manualPolicy", version: 1, createdAt: f.clock.now, updatedAt: f.clock.now, value: { enabled: true, version: 1, projectIds: [f.project.id] } };
-  await f.store.db.prepare("INSERT OR REPLACE INTO assistant_runtime(id,value,version,updated_at) VALUES(?,?,?,?)").run(policy.id, JSON.stringify(policy), 1, f.clock.now);
-  await f.configure("report", { observationTaskDone: true, notificationAway: "all", quietStart: 0, quietEnd: 0 });
+  await f.store.db.exec(
+    "CREATE TABLE assistant_observation_source_revisions(source TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(source,source_id))",
+  );
+  await f.store.db
+    .prepare("INSERT INTO assistant_observation_source_revisions VALUES('task',?,1)")
+    .run(task.id);
+  const policy = {
+    id: "manualPolicy",
+    version: 1,
+    createdAt: f.clock.now,
+    updatedAt: f.clock.now,
+    value: { enabled: true, version: 1, projectIds: [f.project.id] },
+  };
+  await f.store.db
+    .prepare(
+      "INSERT OR REPLACE INTO assistant_runtime(id,value,version,updated_at) VALUES(?,?,?,?)",
+    )
+    .run(policy.id, JSON.stringify(policy), 1, f.clock.now);
+  await f.configure("report", {
+    observationTaskDone: true,
+    notificationAway: "all",
+    quietStart: 0,
+    quietEnd: 0,
+  });
   await f.request({ op: "presence.set", state: "away" });
   const room = (await f.service.globalRoomBinding())!;
-  const event = { id: "native-task", sequence: 1, source: "task" as const, sourceId: task.id, sourceRevision: "db:1", change: "updated" as const, projectIds: [f.project.id], occurredAt: f.clock.now };
+  const event = {
+    id: "native-task",
+    sequence: 1,
+    source: "task" as const,
+    sourceId: task.id,
+    sourceRevision: "db:1",
+    change: "updated" as const,
+    projectIds: [f.project.id],
+    occurredAt: f.clock.now,
+  };
   expect(await f.service.acceptObservedTaskEvent(event, () => true)).toBe(true);
-  const intent = await f.service.prepareObservedNotification(room.id, "observation:native-task", f.project.id, "device", () => true);
+  const intent = await f.service.prepareObservedNotification(
+    room.id,
+    "observation:native-task",
+    f.project.id,
+    "device",
+    () => true,
+  );
   expect(intent).not.toBeNull();
   expect(await f.service.authorizeObservedNotification(intent!, "device")).toBe(false);
   expect(await f.service.armObservedNotification(intent!, () => true)).toBe(true);
   expect(await f.service.authorizeObservedNotification(intent!, "other-device")).toBe(false);
   expect(await f.service.authorizeObservedNotification(intent!, "device")).toBe(true);
-  await f.store.db.prepare("UPDATE assistant_observation_source_revisions SET version=2 WHERE source='task' AND source_id=?").run(task.id);
+  await f.store.db
+    .prepare(
+      "UPDATE assistant_observation_source_revisions SET version=2 WHERE source='task' AND source_id=?",
+    )
+    .run(task.id);
   expect(await f.service.authorizeObservedNotification(intent!, "device")).toBe(false);
   await f.service.settleObservedNotification(intent!, "unknown");
-  expect(await f.service.prepareObservedNotification(room.id, intent!.notificationId, f.project.id, "device", () => true)).toBeNull();
+  expect(
+    await f.service.prepareObservedNotification(
+      room.id,
+      intent!.notificationId,
+      f.project.id,
+      "device",
+      () => true,
+    ),
+  ).toBeNull();
 });
 
 it("rolls back an observed task notification when visibility is revoked before commit", async () => {
-  const f = await fixture({ manualProjectVisible: async () => true, taskNotificationAllowed: async () => true });
+  const f = await fixture({
+    manualProjectVisible: async () => true,
+    taskNotificationAllowed: async () => true,
+  });
   const { task } = await f.seed();
   await f.saveTask({ ...task, status: "done", projectId: f.project.id });
-  await f.store.db.exec("CREATE TABLE assistant_observation_source_revisions(source TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(source,source_id))");
-  await f.store.db.prepare("INSERT INTO assistant_observation_source_revisions VALUES('task',?,1)").run(task.id);
-  const policy = { id: "manualPolicy", version: 1, createdAt: f.clock.now, updatedAt: f.clock.now, value: { enabled: true, version: 1, projectIds: [f.project.id] } };
-  await f.store.db.prepare("INSERT OR REPLACE INTO assistant_runtime(id,value,version,updated_at) VALUES(?,?,?,?)").run(policy.id, JSON.stringify(policy), 1, f.clock.now);
+  await f.store.db.exec(
+    "CREATE TABLE assistant_observation_source_revisions(source TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(source,source_id))",
+  );
+  await f.store.db
+    .prepare("INSERT INTO assistant_observation_source_revisions VALUES('task',?,1)")
+    .run(task.id);
+  const policy = {
+    id: "manualPolicy",
+    version: 1,
+    createdAt: f.clock.now,
+    updatedAt: f.clock.now,
+    value: { enabled: true, version: 1, projectIds: [f.project.id] },
+  };
+  await f.store.db
+    .prepare(
+      "INSERT OR REPLACE INTO assistant_runtime(id,value,version,updated_at) VALUES(?,?,?,?)",
+    )
+    .run(policy.id, JSON.stringify(policy), 1, f.clock.now);
   await f.configure("report", { observationTaskDone: true });
-  const event = { id: "event-revoked", sequence: 1, source: "task" as const, sourceId: task.id, sourceRevision: "db:1", change: "updated" as const, projectIds: [f.project.id], occurredAt: f.clock.now };
+  const event = {
+    id: "event-revoked",
+    sequence: 1,
+    source: "task" as const,
+    sourceId: task.id,
+    sourceRevision: "db:1",
+    change: "updated" as const,
+    projectIds: [f.project.id],
+    occurredAt: f.clock.now,
+  };
   let checks = 0;
-  await expect(f.service.acceptObservedTaskEvent(event, () => ++checks < 5)).rejects.toThrow("revoked before commit");
+  await expect(f.service.acceptObservedTaskEvent(event, () => ++checks < 5)).rejects.toThrow(
+    "revoked before commit",
+  );
   expect((await f.snapshot()).notifications.filter((n) => n.kind === "task.done")).toHaveLength(0);
-  expect(await f.store.db.prepare("SELECT id FROM assistant_runtime WHERE id=?").get("observation-task-event:event-revoked")).toBeUndefined();
+  expect(
+    await f.store.db
+      .prepare("SELECT id FROM assistant_runtime WHERE id=?")
+      .get("observation-task-event:event-revoked"),
+  ).toBeUndefined();
 });
 
 it("polls admitted task observations through the existing notification outbox in report mode", async () => {
-  let event: Parameters<NonNullable<AssistantPorts["pollObservedTasks"]>>[1] extends (event: infer E, guard: () => boolean) => Promise<boolean> ? E : never;
-  const poll = vi.fn<NonNullable<AssistantPorts["pollObservedTasks"]>>(async (_projects, accept) => { await accept(event, () => true); });
-  const f = await fixture({ manualProjectVisible: async () => true, taskNotificationAllowed: async () => true, observationTasksReady: () => true, pollObservedTasks: poll, readPresence: async () => ({ supported: true, locked: false, idleMs: 0 }) });
+  let event: Parameters<NonNullable<AssistantPorts["pollObservedTasks"]>>[1] extends (
+    event: infer E,
+    guard: () => boolean,
+  ) => Promise<boolean>
+    ? E
+    : never;
+  const poll = vi.fn<NonNullable<AssistantPorts["pollObservedTasks"]>>(
+    async (_projects, accept) => {
+      await accept(event, () => true);
+    },
+  );
+  const f = await fixture({
+    manualProjectVisible: async () => true,
+    taskNotificationAllowed: async () => true,
+    observationTasksReady: () => true,
+    pollObservedTasks: poll,
+    readPresence: async () => ({ supported: true, locked: false, idleMs: 0 }),
+  });
   const { task } = await f.seed();
   await f.saveTask({ ...task, needsInput: true, projectId: f.project.id });
-  await f.store.db.exec("CREATE TABLE assistant_observation_source_revisions(source TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(source,source_id))");
-  await f.store.db.prepare("INSERT INTO assistant_observation_source_revisions VALUES('task',?,1)").run(task.id);
-  const policy = { id: "manualPolicy", version: 1, createdAt: f.clock.now, updatedAt: f.clock.now, value: { enabled: true, version: 1, projectIds: [f.project.id] } };
-  await f.store.db.prepare("INSERT OR REPLACE INTO assistant_runtime(id,value,version,updated_at) VALUES(?,?,?,?)").run(policy.id, JSON.stringify(policy), 1, f.clock.now);
-  event = { id: "question-event", sequence: 1, source: "task", sourceId: task.id, sourceRevision: "db:1", change: "updated", projectIds: [f.project.id], occurredAt: f.clock.now };
+  await f.store.db.exec(
+    "CREATE TABLE assistant_observation_source_revisions(source TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(source,source_id))",
+  );
+  await f.store.db
+    .prepare("INSERT INTO assistant_observation_source_revisions VALUES('task',?,1)")
+    .run(task.id);
+  const policy = {
+    id: "manualPolicy",
+    version: 1,
+    createdAt: f.clock.now,
+    updatedAt: f.clock.now,
+    value: { enabled: true, version: 1, projectIds: [f.project.id] },
+  };
+  await f.store.db
+    .prepare(
+      "INSERT OR REPLACE INTO assistant_runtime(id,value,version,updated_at) VALUES(?,?,?,?)",
+    )
+    .run(policy.id, JSON.stringify(policy), 1, f.clock.now);
+  event = {
+    id: "question-event",
+    sequence: 1,
+    source: "task",
+    sourceId: task.id,
+    sourceRevision: "db:1",
+    change: "updated",
+    projectIds: [f.project.id],
+    occurredAt: f.clock.now,
+  };
   await f.configure("report", { observationTaskNeedsInput: true, quietStart: 0, quietEnd: 0 });
   await f.service.tick();
   expect(poll).toHaveBeenCalledWith([f.project.id], expect.any(Function), expect.any(Function));
-  const notices = (await f.snapshot()).notifications.filter((item) => item.kind === "task.needsInput");
+  const notices = (await f.snapshot()).notifications.filter(
+    (item) => item.kind === "task.needsInput",
+  );
   expect(notices).toHaveLength(1);
   expect(notices[0]).toMatchObject({ taskId: task.id, eligible: true });
   expect(f.engine.command).not.toHaveBeenCalled();
@@ -721,17 +874,51 @@ it("polls admitted task observations through the existing notification outbox in
 it("honors task-observation opt-out while project visibility is pending", async () => {
   let release!: () => void;
   let entered!: () => void;
-  const waiting = new Promise<void>((resolve) => { release = resolve; });
-  const started = new Promise<void>((resolve) => { entered = resolve; });
-  const f = await fixture({ manualProjectVisible: async () => { entered(); await waiting; return true; }, taskNotificationAllowed: async () => true });
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const f = await fixture({
+    manualProjectVisible: async () => {
+      entered();
+      await waiting;
+      return true;
+    },
+    taskNotificationAllowed: async () => true,
+  });
   const { task } = await f.seed();
   await f.saveTask({ ...task, status: "done", projectId: f.project.id });
-  await f.store.db.exec("CREATE TABLE assistant_observation_source_revisions(source TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(source,source_id))");
-  await f.store.db.prepare("INSERT INTO assistant_observation_source_revisions VALUES('task',?,1)").run(task.id);
-  const policy = { id: "manualPolicy", version: 1, createdAt: f.clock.now, updatedAt: f.clock.now, value: { enabled: true, version: 1, projectIds: [f.project.id] } };
-  await f.store.db.prepare("INSERT OR REPLACE INTO assistant_runtime(id,value,version,updated_at) VALUES(?,?,?,?)").run(policy.id, JSON.stringify(policy), 1, f.clock.now);
+  await f.store.db.exec(
+    "CREATE TABLE assistant_observation_source_revisions(source TEXT NOT NULL,source_id TEXT NOT NULL,version INTEGER NOT NULL,PRIMARY KEY(source,source_id))",
+  );
+  await f.store.db
+    .prepare("INSERT INTO assistant_observation_source_revisions VALUES('task',?,1)")
+    .run(task.id);
+  const policy = {
+    id: "manualPolicy",
+    version: 1,
+    createdAt: f.clock.now,
+    updatedAt: f.clock.now,
+    value: { enabled: true, version: 1, projectIds: [f.project.id] },
+  };
+  await f.store.db
+    .prepare(
+      "INSERT OR REPLACE INTO assistant_runtime(id,value,version,updated_at) VALUES(?,?,?,?)",
+    )
+    .run(policy.id, JSON.stringify(policy), 1, f.clock.now);
   await f.configure("report", { observationTaskDone: true });
-  const event = { id: "pending-opt-out", sequence: 1, source: "task" as const, sourceId: task.id, sourceRevision: "db:1", change: "updated" as const, projectIds: [f.project.id], occurredAt: f.clock.now };
+  const event = {
+    id: "pending-opt-out",
+    sequence: 1,
+    source: "task" as const,
+    sourceId: task.id,
+    sourceRevision: "db:1",
+    change: "updated" as const,
+    projectIds: [f.project.id],
+    occurredAt: f.clock.now,
+  };
   const pending = f.service.acceptObservedTaskEvent(event, () => true);
   await started;
   await f.configure("report", { observationTaskDone: false });

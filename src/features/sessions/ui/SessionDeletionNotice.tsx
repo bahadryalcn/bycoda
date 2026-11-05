@@ -2,7 +2,7 @@ import { Spinner } from "../../../shared/ui/Spinner";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Alert } from "../../../shared/ui/Alert";
 import { useT } from "../../../shared/i18n";
-import { sameProjectPath } from "../../projects/model/recents";
+import { sameProjectPath } from "../../projects/public/recents";
 import {
   dismissSessionDeletionStatus,
   getSessionDeletionStatus,

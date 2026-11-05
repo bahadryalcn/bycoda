@@ -5,10 +5,13 @@ import { Alert } from "../../../shared/ui/Alert";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Checkbox } from "../../../shared/ui/Checkbox";
 import { Button } from "../../../shared/ui/Button";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
+import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { useEffect, useState } from "react";
 import { XMediaFields } from "./XMediaFields";
 import { SocialUploadImagePreview } from "./SocialUploadImagePreview";
 import { socialRows } from "../model/socialWorkspace";
+import { socialQueryScope } from "../model/socialQuery";
 import type {
   SocialDraft,
   SocialDraftApprovalInput,
@@ -35,16 +38,22 @@ export function DraftList({
   run,
   snapshot,
   recipientInParent = false,
+  scopeKey = "collection",
 }: {
   drafts: SocialDraft[];
   client: SocialClient;
   run: Run;
   snapshot?: SocialSnapshot;
   recipientInParent?: boolean;
+  scopeKey?: string;
 }) {
   return (
-    <div>
-      {drafts.map((draft) => (
+    <ContinuousList
+      items={drafts}
+      itemKey={(draft) => draft.id}
+      stateKey={`social-drafts:${socialQueryScope(client).join(":")}:${snapshot?.executorId ?? "unknown"}:${snapshot?.programProjectId ?? "all"}:${scopeKey}:${recipientInParent ? "parent" : "detail"}`}
+      estimateSize={176}
+      renderItem={(draft) => (
         <Draft
           key={draft.id}
           draft={draft}
@@ -53,8 +62,8 @@ export function DraftList({
           snapshot={snapshot}
           recipientInParent={recipientInParent}
         />
-      ))}
-    </div>
+      )}
+    />
   );
 }
 
@@ -74,10 +83,11 @@ function Draft({
   const pendingUi = useSocialPending();
   const socialLocked = useSocialContext(SocialLockContext);
   useLocale();
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState(draft.text);
-  const [factIds, setFactIds] = useState(draft.factIds);
-  const [media, setMedia] = useState(draft.media ?? []);
+  const editorStateKey = `social-draft-editor:${socialQueryScope(client).join(":")}:${snapshot?.executorId ?? "unknown"}:${snapshot?.programProjectId ?? "all"}:${draft.id}`;
+  const [editing, setEditing] = useRetainedState(`${editorStateKey}:editing`, false);
+  const [text, setText] = useRetainedState(`${editorStateKey}:text`, draft.text);
+  const [factIds, setFactIds] = useRetainedState(`${editorStateKey}:facts`, draft.factIds);
+  const [media, setMedia] = useRetainedState(`${editorStateKey}:media`, draft.media ?? []);
   const [mediaBusy, setMediaBusy] = useState(false);
   const [showAttachments, setShowAttachments] = useState(false);
   const [editPolicy, setEditPolicy] = useState<SocialPolicy>();

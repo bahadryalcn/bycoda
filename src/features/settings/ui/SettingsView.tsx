@@ -6,7 +6,7 @@ import { useConfirm } from "../../../shared/ui/ConfirmDialog";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import { CrewsSettings } from "../../crews/ui/CrewsSettings";
 import { t, useLocale } from "../../../shared/i18n";
-import { ConnectionsSettings } from "../../connections/ui/ConnectionsSettings";
+import { ConnectionsSettings } from "../../connections/public/ConnectionsSettings";
 
 import { ArrowLeft, Maximize2, Minimize2, RotateCcw } from "../../../shared/ui/icons";
 import { useCallback, useEffect, useId, useRef, useState, type ComponentProps } from "react";
@@ -21,9 +21,9 @@ import { SidebarUpdateFooter } from "../../../app/shell/SidebarUpdate";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 
 import { IS_MAC } from "../../../platform/tauri/platform";
-import { type RecentProject } from "../../projects/model/recents";
+import { type RecentProject } from "../../projects";
 
-import type { SessionSummary } from "../../sessions/data/sessionStore";
+import type { SessionSummary, Session } from "../../sessions";
 
 import {
   settingsSectionsByGroup,
@@ -35,9 +35,9 @@ import {
 
 import { SkillsPage } from "../../skills/ui/SkillsPage";
 
-import { WorktreesPage } from "../../source-control/ui/WorktreesPage";
-import { removeWorktree, type RemoveWorktree } from "../../source-control/model/worktrees";
-import type { Session } from "../../sessions/model/session";
+import { WorktreesPage } from "../../source-control/public/WorktreesPage";
+import { removeWorktree, type RemoveWorktree } from "../../source-control/public/worktrees";
+
 import {
   settingDomId,
   RevealedSetting,

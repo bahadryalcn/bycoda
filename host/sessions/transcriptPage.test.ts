@@ -31,14 +31,21 @@ it("caps truncation search serialization at the preview budget for huge escaped 
     return stringify(value, replacer, space);
   });
   let result: Block;
-  try { result = previewBlock(block, 7); } finally { spy.mockRestore(); }
+  try {
+    result = previewBlock(block, 7);
+  } finally {
+    spy.mockRestore();
+  }
   expect(stringSizes.length).toBeGreaterThan(1);
   expect(Math.max(...stringSizes)).toBeLessThanOrEqual(64 * 1024);
   expect(Buffer.byteLength(stringify(result.text))).toBeLessThanOrEqual(32 * 1024);
   expect(result.text.endsWith("…")).toBe(true);
   expect(text.startsWith(result.text.slice(0, -1))).toBe(true);
   expect(result.text).not.toMatch(/[\uD800-\uDBFF]…$/);
-  expect(result.remoteContent).toMatchObject({ revision: 7, bytes: Buffer.byteLength(stringify(block)) });
+  expect(result.remoteContent).toMatchObject({
+    revision: 7,
+    bytes: Buffer.byteLength(stringify(block)),
+  });
 });
 it("opens a bounded tail then reconstructs every block in order", () => {
   const value = snapshot();

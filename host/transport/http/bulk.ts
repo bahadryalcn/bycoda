@@ -122,16 +122,30 @@ export class HostBulkTransfers {
   encodeNormalized(lease: BulkLease, capture: NormalizedJsonWire, inlineBytes: number): JsonValue {
     return this.encodeCaptured(lease, capture, inlineBytes);
   }
-  private encodeCaptured(lease: BulkLease, capture: NormalizedJsonWire, inlineBytes: number): JsonValue {
+  private encodeCaptured(
+    lease: BulkLease,
+    capture: NormalizedJsonWire,
+    inlineBytes: number,
+  ): JsonValue {
     if (!this.leases.has(lease) || this.stopped)
       throw new HostBulkError(409, "Transfer context changed; refresh the resource.");
     if (!Number.isSafeInteger(inlineBytes) || inlineBytes < 1)
       throw new Error("Invalid inline bulk budget.");
     const normalized = readNormalizedJsonWire(capture);
     if (normalized.byteLength <= inlineBytes) return normalized.wire as JsonValue;
-    return this.encodeBytes(lease, Buffer.from(normalized.serialized, "utf8"), inlineBytes, normalized.wire as JsonValue);
+    return this.encodeBytes(
+      lease,
+      Buffer.from(normalized.serialized, "utf8"),
+      inlineBytes,
+      normalized.wire as JsonValue,
+    );
   }
-  private encodeBytes(lease: BulkLease, bytes: Buffer, inlineBytes: number, value: JsonValue): JsonValue {
+  private encodeBytes(
+    lease: BulkLease,
+    bytes: Buffer,
+    inlineBytes: number,
+    value: JsonValue,
+  ): JsonValue {
     if (bytes.length <= inlineBytes) return value;
     if (bytes.length > this.limits.maxSnapshotBytes || bytes.length > this.limits.maxBytes)
       throw new HostBulkError(

@@ -30,8 +30,8 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { FilePreview } from "../../files/ui/FilePreview";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FilePreview } from "../../files/public/FilePreview";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { ToolDiffPreview } from "./ToolDiffPreview";
 import { hasToolInspection, ToolInspectionPanel } from "./ToolInspectionPanel";
 import { Spinner } from "../../../shared/ui/Spinner";
@@ -42,7 +42,7 @@ import { ActionHost, InlineAction } from "../../../shared/ui/ActionHost";
 import { Alert } from "../../../shared/ui/Alert";
 import { useApprovalDecisionContext } from "./ApprovalDecisionContext";
 import { useApprovalDecisionControl } from "./useApprovalDecisionControl";
-import { ProjectMascot } from "../../projects/ui/ProjectMascot";
+import { ProjectMascot } from "../../projects/public/ProjectMascot";
 import type { ApprovalDecision } from "../../../integrations/harness";
 import {
   isEditTool,

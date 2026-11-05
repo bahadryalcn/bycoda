@@ -5,6 +5,7 @@ import type { AddressInfo } from "node:net";
 import { WebSocket } from "ws";
 import { afterEach, expect, it, vi } from "vitest";
 import { HostEngine } from "../../engine";
+import * as voiceTools from "../../voice/voice-tools";
 import { HostStore } from "../../store";
 import { createHostServer } from "../../server";
 import { ConversationDesktopRelay } from "../../conversation/conversation-tools";
@@ -359,6 +360,9 @@ it("changes only canonical owner presence through finite authenticated native ro
   expect((await f.http(get)).error).toBeDefined();
 });
 it("finishes causal Voice tool proof over actual scoped HTTP before returning a conditional result envelope", async () => {
+  // Keep this HTTP provenance fixture within the documented proof scan budget.
+  const catalog = voiceTools.voiceToolCatalog().filter((tool) => tool.action === "tools.list");
+  vi.spyOn(voiceTools, "voiceToolCatalog").mockReturnValue(catalog);
   const f = await fixture();
   const { thread } = await f.callHttp("assistant.request", { op: "threads.open" });
   const { message } = await f.callHttp("assistant.request", {
@@ -383,7 +387,7 @@ it("finishes causal Voice tool proof over actual scoped HTTP before returning a 
   const request = {
     threadId: thread.id,
     family: "conversation",
-    action: "environment.describe",
+    action: "tools.list",
     input: {},
     requestId: "http-read",
     causalContextId: voiceContext.id,
@@ -412,7 +416,7 @@ it("finishes causal Voice tool proof over actual scoped HTTP before returning a 
     {
       id: result.voiceDisclosure.id,
       family: "conversation",
-      action: "environment.describe",
+      action: "tools.list",
       status: "completed",
       createdAt: expect.any(Number),
     },
@@ -427,7 +431,7 @@ it("finishes causal Voice tool proof over actual scoped HTTP before returning a 
   const legacy = await f.callHttp("voice.tools.call", {
     threadId: thread.id,
     family: "conversation",
-    action: "environment.describe",
+    action: "tools.list",
     input: {},
   });
   expect(legacy).not.toHaveProperty("voiceContext");
@@ -436,9 +440,11 @@ it("finishes causal Voice tool proof over actual scoped HTTP before returning a 
   expect(repeated.error).toBeDefined();
 });
 it("returns a verified current Voice disclosure without promoting an already unknown generation", async () => {
+  // Keep this HTTP provenance fixture within the documented proof scan budget.
+  const catalog = voiceTools.voiceToolCatalog().filter((tool) => tool.action === "tools.list");
+  vi.spyOn(voiceTools, "voiceToolCatalog").mockReturnValue(catalog);
   const f = await fixture();
-  // Global Room owns this synthetic voice turn; project reads below still
-  // require explicit native-scoped project provenance.
+  // Global Room owns this synthetic voice turn and its owner-scoped catalog read.
   const { thread } = await f.callHttp("assistant.request", { op: "threads.open" });
   const { message } = await f.callHttp("assistant.request", {
     op: "threads.append",
@@ -467,7 +473,7 @@ it("returns a verified current Voice disclosure without promoting an already unk
   const result = await f.callHttp("voice.tools.call", {
     threadId: thread.id,
     family: "conversation",
-    action: "environment.describe",
+    action: "tools.list",
     input: {},
     requestId: "unknown-http-read",
     causalContextId: voiceContext.id,

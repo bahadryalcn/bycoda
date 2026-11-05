@@ -141,9 +141,9 @@ describe("ActivityDock", () => {
     const row = dock()!.querySelector('[data-dock-agent="a1"]')!;
     expect(row.getAttribute("aria-label")).toContain("Running");
     const failed = [...row.querySelectorAll("span")].find(
-      (span) => span.textContent === "1 failed" && span.className.includes("--ui-tone-danger-fg"),
+      (span) => span.textContent === "1 failed" && span.getAttribute("data-tone") === "danger",
     );
-    expect(failed?.className).toContain("--ui-tone-danger-fg");
+    expect(failed?.getAttribute("data-tone")).toBe("danger");
     expect(row.textContent).toContain("2 steps, 1 failed");
 
     act(() =>
@@ -157,11 +157,11 @@ describe("ActivityDock", () => {
     );
     const state = container.querySelector("[data-subagent-state]")!;
     expect(state.textContent).toContain("Done");
-    expect(state.querySelector(".font-medium")?.className).toContain("--ui-tone-success-fg");
+    expect(state.querySelector('[data-tone="success"]')?.textContent).toBe("Done");
     const completedFailure = [...state.querySelectorAll("span")].find(
-      (span) => span.textContent === "1 failed" && span.className.includes("--ui-tone-danger-fg"),
+      (span) => span.textContent === "1 failed" && span.getAttribute("data-tone") === "danger",
     );
-    expect(completedFailure?.className).toContain("--ui-tone-danger-fg");
+    expect(completedFailure?.getAttribute("data-tone")).toBe("danger");
   });
 
   it("renders nothing for a session that was idle when opened", () => {

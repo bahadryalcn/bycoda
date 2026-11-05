@@ -15,7 +15,8 @@ export class HttpStreamScope {
     private readonly budget: { firstMs: number; idleMs: number; totalMs: number; label: string },
   ) {
     this.signal.addEventListener("abort", () => this.cancelReader(), { once: true });
-    const expire = (phase: string) => this.controller.abort(new Error(`${budget.label} ${phase} timed out.`));
+    const expire = (phase: string) =>
+      this.controller.abort(new Error(`${budget.label} ${phase} timed out.`));
     this.total = setTimeout(() => expire("total stream"), budget.totalMs);
     this.idle = setTimeout(() => expire("first response"), budget.firstMs);
     this.total.unref?.();
@@ -29,10 +30,15 @@ export class HttpStreamScope {
     const pending = start(this.signal);
     // A custom transport can ignore abort and return later. Its original body
     // still gets disposed; a timeout must not disclose or consume late output.
-    void pending.then((response) => {
-      this.response = response;
-      if (this.signal.aborted) this.cancelReader();
-    }, () => {}).catch(() => {});
+    void pending
+      .then(
+        (response) => {
+          this.response = response;
+          if (this.signal.aborted) this.cancelReader();
+        },
+        () => {},
+      )
+      .catch(() => {});
     const response = await this.wait(pending);
     this.response = response;
     this.signal.throwIfAborted();
@@ -44,7 +50,10 @@ export class HttpStreamScope {
     if (!response.body) throw new Error(`${this.budget.label} returned no body.`);
     this.reader = response.body.getReader();
     clearTimeout(this.idle);
-    this.idle = setTimeout(() => this.controller.abort(new Error(`${this.budget.label} body timed out.`)), this.budget.idleMs);
+    this.idle = setTimeout(
+      () => this.controller.abort(new Error(`${this.budget.label} body timed out.`)),
+      this.budget.idleMs,
+    );
     this.idle.unref?.();
   }
 
@@ -66,23 +75,29 @@ export class HttpStreamScope {
         reject(this.signal.reason);
       };
       this.signal.addEventListener("abort", abort, { once: true });
-      void pending.then((value) => {
-        this.signal.removeEventListener("abort", abort);
-        if (this.signal.aborted) reject(this.signal.reason);
-        else resolve(value);
-      }, (error: unknown) => {
-        this.signal.removeEventListener("abort", abort);
-        reject(error);
-      });
+      void pending.then(
+        (value) => {
+          this.signal.removeEventListener("abort", abort);
+          if (this.signal.aborted) reject(this.signal.reason);
+          else resolve(value);
+        },
+        (error: unknown) => {
+          this.signal.removeEventListener("abort", abort);
+          reject(error);
+        },
+      );
       if (this.signal.aborted) abort();
     });
   }
 
   private cancelReader(): void {
     if (this.cancellation) return;
-    const reader = this.reader, body = this.response?.body;
+    const reader = this.reader,
+      body = this.response?.body;
     if (reader) {
-      this.cancellation = Promise.resolve().then(() => reader.cancel(this.signal.reason)).finally(() => reader.releaseLock());
+      this.cancellation = Promise.resolve()
+        .then(() => reader.cancel(this.signal.reason))
+        .finally(() => reader.releaseLock());
     } else if (body) {
       this.cancellation = Promise.resolve().then(() => body.cancel(this.signal.reason));
     }
@@ -99,7 +114,11 @@ export class HttpStreamScope {
 }
 
 /** Enforce wire-byte limits before retaining or decoding the next body chunk. */
-export async function readHttpBytes(scope: HttpStreamScope, response: Response, limit: number): Promise<Uint8Array> {
+export async function readHttpBytes(
+  scope: HttpStreamScope,
+  response: Response,
+  limit: number,
+): Promise<Uint8Array> {
   scope.body(response);
   const length = response.headers.get("content-length");
   if (length && /^\d+$/.test(length) && Number(length) > limit)

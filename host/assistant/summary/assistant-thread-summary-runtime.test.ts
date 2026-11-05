@@ -2,7 +2,10 @@ import { expect, it, vi } from "vitest";
 const utility = vi.hoisted(() => ({
   text: vi.fn(async (..._args: unknown[]) => ({ text: "Compact verified summary", tokens: 19 })),
 }));
-vi.mock("../core/assistant-text", () => ({ assistantText: () => utility.text, chiefActions: () => [] }));
+vi.mock("../core/assistant-text", () => ({
+  assistantText: () => utility.text,
+  chiefActions: () => [],
+}));
 vi.mock("../chief/assistant-chief-context", () => ({
   createAssistantChiefContext: () => ({ wake: async () => ({ actions: [] }) }),
 }));

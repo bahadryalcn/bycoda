@@ -7,7 +7,7 @@ import { useRef, useState } from "react";
 import { Spinner } from "../../../shared/ui/Spinner";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
-import type { RemoteMachine } from "../../connections/model/protocol";
+import type { RemoteMachine } from "../../connections";
 import {
   DAILY_LIMIT_CHOICES,
   formatAgentMinutes,

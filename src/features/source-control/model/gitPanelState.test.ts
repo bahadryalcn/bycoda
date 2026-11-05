@@ -12,7 +12,13 @@ it("retains clean original runtime while an actual confirmation/preflight is pen
   resetGitPanelState();
   const original = gitPanelRuntime("/confirmation");
   let release!: () => void;
-  const work = withGitPanelRuntime("/confirmation", () => new Promise<void>((resolve) => { release = resolve; }));
+  const work = withGitPanelRuntime(
+    "/confirmation",
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
   for (let i = 0; i <= CHECKOUT_CACHE_ENTRIES; i++) gitPanelRuntime(`/other-${i}`);
   expect(gitPanelRuntime("/confirmation")).toBe(original);
   release();
@@ -29,14 +35,23 @@ it("evicts clean idle runtimes while retaining drafts, selection and original op
   draft.state.amendTarget = { branch: "main", head: "original" };
   let release!: () => void;
   const original = gitPanelRuntime("/busy");
-  const work = withGitOperation("/busy", "Staging", () => new Promise<void>((resolve) => { release = resolve; }));
+  const work = withGitOperation(
+    "/busy",
+    "Staging",
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      }),
+  );
   for (let i = 0; i <= CHECKOUT_CACHE_ENTRIES; i++) gitPanelRuntime(`/other-${i}`);
   expect(gitPanelRuntime("/idle")).not.toBe(idle);
   expect(gitPanelRuntime("/draft")).toBe(draft);
   expect(draft.state.message).toBe("Owner draft");
   expect(draft.state.amendTarget?.head).toBe("original");
   expect(gitPanelRuntime("/busy")).toBe(original);
-  await expect(withGitOperation("/busy", "Reset", async () => {})).rejects.toThrow("Another Git operation");
+  await expect(withGitOperation("/busy", "Reset", async () => {})).rejects.toThrow(
+    "Another Git operation",
+  );
   release();
   await work;
   expect(original.state.busy).toBeNull();

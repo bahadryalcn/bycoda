@@ -1,4 +1,6 @@
 import { Alert } from "../../shared/ui/Alert";
+import { Badge } from "../../shared/ui/Badge";
+import { RecoveryStatusBadge } from "../../features/workspace/ui/RecoveryStatusBadge";
 import { SegmentedControl } from "../../shared/ui/SegmentedControl";
 import { Checkbox } from "../../shared/ui/Checkbox";
 import { Button } from "../../shared/ui/Button";
@@ -41,18 +43,6 @@ import "./session-recovery.css";
 const stubPath = (stub: WorkspaceSessionStub) => stub.cwd;
 /** A short list is scanned by eye; search appears only when it stops fitting. */
 const SEARCH_MIN_ROWS = 8;
-
-const labels: Record<RecoveryStatus, string> = {
-  working: "Working",
-  input: "Needs input",
-  interrupted: "Interrupted",
-  done: "Done",
-  idle: "Idle",
-  unknown: "Status not verified",
-  unavailable: "Session unavailable",
-  failed: "Failed",
-  retrying: "Retrying",
-};
 
 type Props = {
   recovery: SessionRecovery;
@@ -376,8 +366,24 @@ export function SessionRecoveryPanel({
               value={filter}
               onValueChange={(value) => setFilterChoice(value as "attention" | "all")}
               options={[
-                { value: "attention", label: t("Needs attention"), accessory: attentionCount },
-                { value: "all", label: t("All sessions"), accessory: rows.length },
+                {
+                  value: "attention",
+                  label: t("Needs attention"),
+                  accessory: (
+                    <Badge variant="count" size="xs">
+                      {attentionCount}
+                    </Badge>
+                  ),
+                },
+                {
+                  value: "all",
+                  label: t("All sessions"),
+                  accessory: (
+                    <Badge variant="count" size="xs">
+                      {rows.length}
+                    </Badge>
+                  ),
+                },
               ]}
             />
           ) : null}
@@ -445,24 +451,7 @@ export function SessionRecoveryPanel({
                       </p>
                     </details>
                     <div className="text-ui-caption text-(--ui-text-secondary)">
-                      <span
-                        className={
-                          status === "failed"
-                            ? "font-medium text-danger"
-                            : status === "interrupted" ||
-                                status === "input" ||
-                                status === "retrying"
-                              ? "font-medium text-warning"
-                              : status === "working"
-                                ? "font-medium text-(--ui-tone-info-fg)"
-                                : status === "done"
-                                  ? "text-success"
-                                  : ""
-                        }
-                      >
-                        {t(labels[status])}
-                      </span>{" "}
-                      ·{" "}
+                      <RecoveryStatusBadge key={status} status={status} /> ·{" "}
                       {activityAt
                         ? t("Last activity {p0}", { p0: formatRelative(activityAt, Date.now()) })
                         : t("Recovered {p0}", {

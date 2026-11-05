@@ -24,7 +24,9 @@ const contexts: any[] = [];
 const playback: any[] = [];
 function setup() {
   Reflect.set(track, "readyState", "live");
-  track.stop.mockImplementation(() => { Reflect.set(track, "readyState", "ended"); });
+  track.stop.mockImplementation(() => {
+    Reflect.set(track, "readyState", "ended");
+  });
   vi.stubGlobal(
     "AudioContext",
     class {
@@ -111,9 +113,13 @@ it("retirement waits actual local backend lease release", async () => {
   const released = Promise.withResolvers<void>();
   backend.release.mockImplementationOnce(() => released.promise);
   Object.defineProperty(track, "readyState", { configurable: true, value: "live", writable: true });
-  track.stop.mockImplementation(() => { Reflect.set(track, "readyState", "ended"); });
+  track.stop.mockImplementation(() => {
+    Reflect.set(track, "readyState", "ended");
+  });
   let retired = false;
-  const retirement = voice.retire().then(() => { retired = true; });
+  const retirement = voice.retire().then(() => {
+    retired = true;
+  });
   try {
     await Promise.resolve();
     expect(retired).toBe(false);
@@ -122,8 +128,10 @@ it("retirement waits actual local backend lease release", async () => {
     await retirement;
     expect(retired).toBe(true);
   } finally {
-    released.resolve(); await retirement;
-    track.stop.mockReset(); Reflect.deleteProperty(track, "readyState");
+    released.resolve();
+    await retirement;
+    track.stop.mockReset();
+    Reflect.deleteProperty(track, "readyState");
   }
 });
 
@@ -134,7 +142,9 @@ it("cannot certify retirement while native speech still reports pending output",
   await voice.connect();
   Reflect.set(globalThis.speechSynthesis, "speaking", true);
   let retired = false;
-  const retirement = voice.retire().then(() => { retired = true; });
+  const retirement = voice.retire().then(() => {
+    retired = true;
+  });
   try {
     await vi.advanceTimersByTimeAsync(40);
     expect(retired).toBe(false);

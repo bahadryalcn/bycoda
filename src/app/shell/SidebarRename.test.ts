@@ -47,6 +47,10 @@ function card(): HTMLElement {
   return container.querySelector('[data-session-card="session-1"]')!;
 }
 
+function listRow(id: string) {
+  return container.querySelector<HTMLElement>(`[data-session-card="${id}"]`)?.closest("li");
+}
+
 /** A group header by its name; the name rides in the shared tooltip, not a native title. */
 function folderButton(name: string, scope: ParentNode = container): HTMLButtonElement {
   return [...scope.querySelectorAll<HTMLButtonElement>("[data-folder-row]")].find(
@@ -373,29 +377,16 @@ describe("sidebar session multiselection", () => {
     },
   );
 
-  it("starts a range at the active session when pagination hides the anchor", () => {
+  it("keeps active range anchor reachable when virtualization hides its row", () => {
     props.sessions = Array.from({ length: 80 }, (_, index) => ({
       ...props.sessions[0],
       id: `session-${index + 1}`,
       updatedAt: 100 - index,
     }));
-    props.activeSessionId = "session-80";
+    props.activeSessionId = "session-40";
     act(() => render());
-    act(() => container.querySelector<HTMLElement>('[data-session-card="session-40"]')!.click());
-
-    // Switching panes does not discard the last plain-click anchor.
-    props.activeSessionId = "session-1";
-    act(() => render());
-    const search = container.querySelector<HTMLInputElement>(
-      'input[placeholder="Search conversations..."]',
-    )!;
-    // All sessions still match, but the list returns to its first page.
-    typeTitle(search, "Original conversation");
-    expect(container.querySelector('[data-session-card="session-40"]')).toBeNull();
-    expect(container.querySelectorAll("[data-session-card]")).toHaveLength(32);
-
     act(() =>
-      container.querySelector('[data-session-card="session-3"]')!.dispatchEvent(
+      container.querySelector('[data-session-card="session-1"]')!.dispatchEvent(
         new MouseEvent("click", {
           bubbles: true,
           shiftKey: true,
@@ -403,12 +394,16 @@ describe("sidebar session multiselection", () => {
       ),
     );
     expect(
-      Array.from(container.querySelectorAll('[data-session-selected="true"]'), (el) =>
-        el.getAttribute("data-session-card"),
-      ),
-    ).toEqual(["session-1", "session-2", "session-3"]);
-    expect(props.onSelectSession).toHaveBeenCalledTimes(1);
-    expect(props.onSelectSession).toHaveBeenCalledWith("session-40", { keepOpen: false });
+      container.querySelector('[data-session-card="session-1"][data-session-selected="true"]'),
+    ).not.toBeNull();
+    expect(
+      container.querySelector('[data-session-card="session-40"][data-session-selected="true"]'),
+    ).not.toBeNull();
+    expect(container.querySelector("[data-session-bulk-bar]")?.textContent).toContain(
+      "40 selected",
+    );
+    expect(container.querySelectorAll("[data-session-card]").length).toBeLessThan(32);
+    expect(props.onSelectSession).not.toHaveBeenCalled();
   });
 
   it.each(["ctrlKey", "metaKey"] as const)(
@@ -1200,9 +1195,13 @@ describe("sidebar new session rows", () => {
   it("grows in only for a session that arrives after the list has rendered", () => {
     // Both rows are working so recency still puts the new row first.
     props.busySessionIds = new Set(["session-1", "session-2"]);
-    const animate = vi
-      .spyOn(HTMLElement.prototype, "animate")
-      .mockImplementation(() => ({ cancel: vi.fn() }) as unknown as Animation);
+    const animate = vi.spyOn(HTMLElement.prototype, "animate").mockImplementation(
+      () =>
+        ({
+          cancel: vi.fn(),
+          finished: Promise.resolve(),
+        }) as unknown as Animation,
+    );
     const animated = (property: string) =>
       animate.mock.calls.flatMap(([keyframes], index) =>
         Array.isArray(keyframes) && keyframes[0] && property in keyframes[0]
@@ -1228,7 +1227,6 @@ describe("sidebar new session rows", () => {
       ],
     };
     act(() => render());
-    // The new card fades in where it lands; the row below slides down.
     expect(animated("opacity")).toHaveLength(1);
     expect(
       animated("opacity")[0].closest("li")?.querySelector('[data-session-card="session-2"]'),
@@ -1246,7 +1244,6 @@ describe("sidebar new session rows", () => {
     act(() => render());
     expect(animate).toHaveBeenCalledTimes(calls);
 
-    // Reordering existing rows must not replay their entrance.
     props = { ...props, sessions: [...props.sessions].reverse() };
     act(() => render());
     expect(animate).toHaveBeenCalledTimes(calls);
@@ -1302,12 +1299,12 @@ describe("sidebar pinned sessions", () => {
     const group = container.querySelector<HTMLElement>("[data-pinned-sessions]")!;
     const toggle = folderButton("Pinned", group);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
-    expect(group.querySelector('[data-session-card="session-1"]')).not.toBeNull();
-    expect(container.querySelector("li[aria-hidden]")).toBeNull();
+    expect(group.parentElement).toBe(container.querySelector("ul[data-session-list]"));
+    expect(listRow("session-1")?.getAttribute("data-session-section")).toBe("pinned");
 
     act(() => toggle.click());
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(group.querySelector('[data-session-card="session-1"]')).toBeNull();
+    expect(container.querySelector('[data-session-card="session-1"]')).toBeNull();
     expect(JSON.parse(localStorage.getItem("bycoda.pinnedSessionsCollapsed") ?? "{}")).toEqual({
       "/workspace/project": true,
     });
@@ -1778,7 +1775,8 @@ describe("sidebar session reminders", () => {
     act(() => render());
     const group = container.querySelector<HTMLElement>("[data-reminder-sessions]")!;
     expect(group.parentElement!.firstElementChild).toBe(group);
-    expect(group.querySelector('[data-session-card="session-1"]')).toBe(card());
+    expect(group.parentElement).toBe(card().closest("li")?.parentElement);
+    expect(listRow("session-1")?.getAttribute("data-session-section")).toBe("reminders");
     expect(container.querySelectorAll('[data-session-card="session-1"]')).toHaveLength(1);
     expect(group.hasAttribute("data-session-folder")).toBe(false);
     expect(folderButton("Reminders", group).className).not.toContain("cursor-grab");
@@ -1798,9 +1796,7 @@ describe("sidebar session reminders", () => {
     props.reminders = [];
     act(() => render());
     expect(container.querySelector("[data-reminder-sessions]")).toBeNull();
-    expect(container.querySelector('[data-pinned-sessions] [data-session-card="session-1"]')).toBe(
-      card(),
-    );
+    expect(card().closest("li")?.getAttribute("data-session-section")).toBe("pinned");
   });
 });
 
@@ -1904,7 +1900,9 @@ describe("collapsed rail Inbox actions", () => {
     expect(inbox.textContent).toBe("");
     expect(inbox.title).toBe("");
     expect(inbox.getAttribute("aria-label")).toBe("Inbox, new items");
-    expect(inbox.querySelector("span.bg-accent")).not.toBeNull();
+    expect(
+      inbox.querySelector('[role="img"][aria-label="Inbox, new items"]')?.getAttribute("data-tone"),
+    ).toBe("accent");
     expect(document.querySelector("[data-compact-tools-flyout]")).toBeNull();
   });
 
@@ -2013,7 +2011,11 @@ describe("collapsed rail Inbox actions", () => {
   it("opens the temporary workspace panel while keeping tabs horizontal and preserving dismissal", async () => {
     const animations: { keyframes: Keyframe[]; animation: Animation }[] = [];
     vi.spyOn(HTMLElement.prototype, "animate").mockImplementation((keyframes) => {
-      const animation = { cancel: vi.fn(), onfinish: null } as unknown as Animation;
+      const animation = {
+        cancel: vi.fn(),
+        onfinish: null,
+        finished: Promise.resolve(),
+      } as unknown as Animation;
       animations.push({ keyframes: keyframes as Keyframe[], animation });
       return animation;
     });
@@ -2555,8 +2557,6 @@ describe("dragging sessions within the list", () => {
     from.setPointerCapture = vi.fn();
     from.releasePointerCapture = vi.fn();
     const over = cardOf(overId);
-    // The drag decides its target from the list layout measured when it begins (not from
-    // elementFromPoint), and happy-dom has no layout: give the scroller and target card boxes.
     over.getBoundingClientRect = () => new DOMRect(0, 100, 200, 40);
     const scroller = container.querySelector<HTMLElement>(".sidebar-session-scroll")!;
     scroller.getBoundingClientRect = () => new DOMRect(0, 0, 300, 600);
@@ -2613,10 +2613,7 @@ describe("dragging sessions within the list", () => {
     const sub = folders.find((folder) => folder.parentId === "work");
     expect(sub?.sessionIds).toEqual(["first", "third"]);
     expect(folders.find((folder) => folder.id === "work")?.sessionIds).toEqual(["second"]);
-    const work = container.querySelector('[data-session-folder="work"]')!;
-    expect(
-      work.querySelector(`[data-session-folder="${sub!.id}"] [data-session-card="third"]`),
-    ).not.toBeNull();
+    expect(listRow("third")?.getAttribute("data-session-folder-owner")).toBe(sub!.id);
   });
 
   it("drags a folder into another folder, then back to the top level", () => {
@@ -2660,7 +2657,6 @@ describe("dragging sessions within the list", () => {
       "work",
     );
     expect(document.body.textContent).toContain("Moved to Work");
-    // A folder cannot go inside itself.
     dragFolder("work", cardOf("second"));
     expect(loadSessionFolders("/workspace/project").find((f) => f.id === "work")?.parentId).toBe(
       undefined,
@@ -2705,7 +2701,6 @@ it("deletes only its own card by key", () => {
   props.onDeleteSession = vi.fn();
   props.sessions = [props.sessions[0], { ...props.sessions[0], id: "other" }];
   act(render);
-  // Another card is selected; this card is not part of that selection.
   act(() =>
     container
       .querySelector<HTMLElement>('[data-session-card="other"]')!
@@ -2782,7 +2777,7 @@ describe("opening a session", () => {
   });
 });
 
-it("reports keyboard navigation IDs only for the mounted session page", () => {
+it("keeps full keyboard navigation order while mounting a bounded row window", () => {
   props.sessions = Array.from({ length: 100 }, (_, index) => ({
     ...props.sessions[0],
     id: `paged-${index}`,
@@ -2795,8 +2790,13 @@ it("reports keyboard navigation IDs only for the mounted session page", () => {
     container.querySelectorAll<HTMLElement>("[data-session-card]"),
     (row) => row.dataset.sessionCard,
   );
-  expect(mounted).toHaveLength(32);
-  expect(props.onSessionNavigationOrder).toHaveBeenLastCalledWith(mounted);
+  expect(mounted.length).toBeLessThan(32);
+  expect(props.onSessionNavigationOrder).toHaveBeenLastCalledWith(
+    Array.from({ length: 100 }, (_, index) => `paged-${index}`),
+  );
+  props.activeSessionId = "paged-99";
+  act(render);
+  expect(container.querySelector('[data-session-card="paged-99"]')).not.toBeNull();
 });
 
 it("opens a project selector for an explicit global New request without creating a session", async () => {

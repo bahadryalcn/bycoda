@@ -9,7 +9,7 @@ import {
   NEW_THREAD_BACKGROUND_EFFECTS,
   type ChatBackgroundScope,
   type NewThreadBackgroundEffect,
-} from "../../settings/model/appearance";
+} from "../../settings/public/appearance";
 
 const KEY = "bycoda:project-chat-backgrounds";
 

@@ -17,7 +17,14 @@ if (globalRoomFixture) {
     invoke: async (command: string, input: unknown) => {
       (window as any).__globalRoomNativeRequests.push(structuredClone({ command, input }));
       if (desktopParams.has("remote-access") && command === "remote_machines")
-        return [{ id: "fixture-remote", name: "Office", endpoint: "https://fixture.invalid", environmentId: "fixture-remote-host" }];
+        return [
+          {
+            id: "fixture-remote",
+            name: "Office",
+            endpoint: "https://fixture.invalid",
+            environmentId: "fixture-remote-host",
+          },
+        ];
       if (command !== "control_assistant_source" && command !== "control_assistant_source_v2")
         throw new Error("Native effects are forbidden in the global Room fixture.");
     },
@@ -593,10 +600,23 @@ const messages: AssistantMessage[] = [
     jobIds: ["job-one", "job-two"],
   },
 ];
-if (globalRoomFixture) messages[0].toolActions = [
-  { id: "room-fixture-read", family: "conversation", action: "servers.list", status: "completed", createdAt: now - 1000 },
-  { id: "room-fixture-held", family: "conversation", action: "preferences.patch", status: "unknown", createdAt: now },
-];
+if (globalRoomFixture)
+  messages[0].toolActions = [
+    {
+      id: "room-fixture-read",
+      family: "conversation",
+      action: "servers.list",
+      status: "completed",
+      createdAt: now - 1000,
+    },
+    {
+      id: "room-fixture-held",
+      family: "conversation",
+      action: "preferences.patch",
+      status: "unknown",
+      createdAt: now,
+    },
+  ];
 if (privacyFixture)
   messages.push(
     {

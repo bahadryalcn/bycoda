@@ -5,7 +5,10 @@ export const AssistantVoiceRuntimeRegisterSchema = z.strictObject({
   op: z.literal("voice.runtime.register"),
   threadId: id,
   generationKey: id,
-  seedMessageIds: z.array(id).max(6).refine(value => new Set(value).size === value.length),
+  seedMessageIds: z
+    .array(id)
+    .max(6)
+    .refine((value) => new Set(value).size === value.length),
   summaryProofId: id.optional(),
 });
 export const AssistantVoiceContextReasonSchema = z.enum([

@@ -1,5 +1,5 @@
 import type { GitOperation } from "../../../platform/tauri/fs";
-import type { ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
+import type { ExplorerMenuItem } from "../../files";
 import { operationLabel } from "./commitActions";
 
 /** What the Changes header menu needs to know to enable and label its items. */

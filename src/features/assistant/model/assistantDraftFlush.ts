@@ -5,9 +5,14 @@ const operations = new Set<Promise<void>>();
 /** Admission is synchronous; release only after durable handoff or completion. */
 export function beginAssistantDraftOperation(): () => void {
   let release!: () => void;
-  const operation = new Promise<void>((resolve) => { release = resolve; });
+  const operation = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   operations.add(operation);
-  return () => { operations.delete(operation); release(); };
+  return () => {
+    operations.delete(operation);
+    release();
+  };
 }
 
 /** Keep a failed, unmounted owner's draft until a later verified flush/recovery. */
@@ -16,7 +21,10 @@ export function registerAssistantDraftFlusher(flush: () => Promise<void>): () =>
   owners.add(owner);
   return () => {
     owner.active = false;
-    void owner.flush().then(() => owners.delete(owner), () => {});
+    void owner.flush().then(
+      () => owners.delete(owner),
+      () => {},
+    );
   };
 }
 

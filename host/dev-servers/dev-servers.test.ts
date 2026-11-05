@@ -1398,7 +1398,6 @@ it("starts, logs, stops, and restarts a real dedicated test-owned command", asyn
   } while (Date.now() < restartUntil);
 }, 60_000);
 
-
 it("evicts only verified retired metadata and preserves held lease ownership", async () => {
   const f = fixture();
   const maps = f.service as unknown as {
@@ -1408,7 +1407,11 @@ it("evicts only verified retired metadata and preserves held lease ownership", a
   };
   for (let index = 0; index < 100; index++) {
     const id = `retired-${index}`;
-    maps.managed.set(id, { exitCode: 0, server: { id, state: "stopped" }, guardian: { retirementVerified: true } });
+    maps.managed.set(id, {
+      exitCode: 0,
+      server: { id, state: "stopped" },
+      guardian: { retirementVerified: true },
+    });
     maps.workspaceLaunches.set(id, { workspaceId: id });
   }
   maps.serverLeases.set("retired-0", "held-exact-lease");

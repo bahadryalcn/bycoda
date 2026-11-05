@@ -6,7 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { relativeDirname as dirname } from "../../../shared/lib/paths";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { basename } from "../../../platform/tauri/fs";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import {
   conflictCanCompare,
   conflictChoices,

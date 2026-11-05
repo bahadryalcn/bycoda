@@ -4,8 +4,8 @@ import { Popover } from "../../../shared/ui/Popover";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
 import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useRef, useState } from "react";
-import type { Session } from "../../sessions/model/session";
-import { getSessions, setSessions } from "../../sessions/model/sessionsStore";
+import type { Session } from "../../sessions";
+import { getSessions, setSessions } from "../../sessions/public/sessionsStore";
 import {
   ADOPTED_CHOICE_CONSEQUENCES,
   ADOPTED_CHOICE_MESSAGE,

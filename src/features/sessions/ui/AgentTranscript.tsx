@@ -96,12 +96,15 @@ import { copyMessage } from "../../../platform/tauri/clipboard";
 import type { Attachment } from "../model/session";
 import type { ShellRun } from "../model/shellRun";
 import { visibleUserPrompt } from "../../orchestration/model/orchestration";
-import { playCue } from "../../settings/model/sounds";
+import { playCue } from "../../settings/public/sounds";
 import { legacyTaskListFromText } from "../model/taskList";
 import { useResolvedModelName } from "../model/reactiveReads";
 import { harnessesForTurns } from "../model/secondOpinion";
 import { sameBlocksIgnoringStreamingText, streamingTextUpdate } from "../model/stableBlocks";
-import { projectTranslatedBlocks, type TranslationProjection } from "../model/translationProjection";
+import {
+  projectTranslatedBlocks,
+  type TranslationProjection,
+} from "../model/translationProjection";
 import { TranscriptTurnCache } from "../model/transcriptTurnCache";
 import { Shimmer } from "../../../shared/ui/Shimmer";
 import {
@@ -123,7 +126,7 @@ import { useStableCallback } from "../../../shared/hooks/useStableCallback";
 import { useTranscriptLayout } from "../hooks/useTranscriptLayout";
 import { useTranscriptAnchor } from "../hooks/useTranscriptAnchor";
 import { useTranscriptSelection } from "../hooks/useTranscriptSelection";
-import type { TranscriptLayout } from "../../settings/model/appearance";
+import type { TranscriptLayout } from "../../settings";
 import { AgentMarkdown } from "./AgentMarkdown";
 import { TranscriptSelectionMenu } from "./TranscriptSelectionMenu";
 import { parseUserMessageLink } from "../model/linkPreview";
@@ -160,7 +163,6 @@ import {
   InterjectionDivider,
 } from "./AgentTranscriptActivity";
 export { ActivityRow, agentStepBlock } from "./AgentTranscriptActivity";
-
 type Props = {
   /** Travels with the element when TranscriptPool renders it in its outlet. */
   approvalContext?: {
@@ -216,7 +218,6 @@ type Props = {
   onJumpToBottomChange?: (show: boolean) => void;
   /** The reader scrolled away from the end (latched), as opposed to content growing. */
   onReadingChange?: (reading: boolean) => void;
-
   onJumpToBottomReady?: (jump: (() => void) | null) => void;
   /** Passes a function that renders the turn that holds a block. The render completes before the function returns. */
   onRevealReady?: (reveal: ((blockId: string) => boolean) | null) => void;
@@ -233,7 +234,6 @@ type Props = {
   /** A worker's transcript: show the orchestrator's turns instead of hiding them. */
   managed?: boolean;
 };
-
 function filterAuthErrors(harness: HarnessId | undefined, sourceBlocks: Block[]): Block[] {
   if (!harness || !supportsHarnessLogin(harness)) return sourceBlocks;
   const visibleBlocks = sourceBlocks.filter((block) => !isHarnessAuthBlock(block));
@@ -591,9 +591,16 @@ function AgentTranscriptComponent({
     let frame: number | undefined;
     const observer = new MutationObserver((records) => {
       if (frame !== undefined || !retention.read().disclosures) return;
-      if (!records.some((record) => [...record.addedNodes].some((node) =>
-        node instanceof Element && (node.matches(".markdown-code-shell") || node.querySelector(".markdown-code-shell")),
-      ))) return;
+      if (
+        !records.some((record) =>
+          [...record.addedNodes].some(
+            (node) =>
+              node instanceof Element &&
+              (node.matches(".markdown-code-shell") || node.querySelector(".markdown-code-shell")),
+          ),
+        )
+      )
+        return;
       frame = requestAnimationFrame(() => {
         frame = undefined;
         restoreCodeFolds();
@@ -2403,7 +2410,9 @@ function UserMessageBlock({
       <SessionMessageAuthor
         author={block.author}
         onOpen={
-          block.author?.kind === "assistant" || block.author?.kind === "assistant-manual" || block.author?.kind === "assistant-room"
+          block.author?.kind === "assistant" ||
+          block.author?.kind === "assistant-manual" ||
+          block.author?.kind === "assistant-room"
             ? () =>
                 window.dispatchEvent(
                   new CustomEvent("bycoda:open-assistant", {
@@ -2824,46 +2833,50 @@ function riseIntoAnchor(scroller: HTMLElement | null, blockId: string) {
 }
 
 /** Selection gestures update the floating actions, never regroup the transcript. */
-const TranscriptSelectionActions = memo(function TranscriptSelectionActions({
-  root,
-  enabled,
-  onAddToChat,
-  onAddToNotes,
-  onTranslate,
-  sessionId,
-  blocks,
-}: {
-  root: HTMLElement | null;
-  enabled: boolean;
-  sessionId?: string;
-  blocks: Block[];
-  onAddToChat?: (text: string) => void;
-  onAddToNotes?: (text: string) => void | Promise<void>;
-  onTranslate?: (selection: TranscriptSelection, target: TextActionTarget) => void;
-}) {
-  const { selection, dismissSelection } = useTranscriptSelection(root, enabled);
-  const translate = useStableCallback(
-    onTranslate && selection ? (target: TextActionTarget) => onTranslate(selection, target) : undefined,
-  );
-  return (
-    <TranscriptSelectionMenu
-      selection={selection}
-      sessionId={sessionId}
-      allowReprompt={blocks.some(
-        (block) => block.id === selection?.responseId && block.role === "user",
-      )}
-      onDismiss={dismissSelection}
-      onAddToChat={onAddToChat}
-      onAddToNotes={onAddToNotes}
-      onTranslate={translate}
-    />
-  );
-}, (previous, next) =>
-  previous.root === next.root &&
-  previous.enabled === next.enabled &&
-  previous.sessionId === next.sessionId &&
-  previous.onAddToChat === next.onAddToChat &&
-  previous.onAddToNotes === next.onAddToNotes &&
-  previous.onTranslate === next.onTranslate &&
-  sameBlocksIgnoringStreamingText(previous.blocks, next.blocks),
+const TranscriptSelectionActions = memo(
+  function TranscriptSelectionActions({
+    root,
+    enabled,
+    onAddToChat,
+    onAddToNotes,
+    onTranslate,
+    sessionId,
+    blocks,
+  }: {
+    root: HTMLElement | null;
+    enabled: boolean;
+    sessionId?: string;
+    blocks: Block[];
+    onAddToChat?: (text: string) => void;
+    onAddToNotes?: (text: string) => void | Promise<void>;
+    onTranslate?: (selection: TranscriptSelection, target: TextActionTarget) => void;
+  }) {
+    const { selection, dismissSelection } = useTranscriptSelection(root, enabled);
+    const translate = useStableCallback(
+      onTranslate && selection
+        ? (target: TextActionTarget) => onTranslate(selection, target)
+        : undefined,
+    );
+    return (
+      <TranscriptSelectionMenu
+        selection={selection}
+        sessionId={sessionId}
+        allowReprompt={blocks.some(
+          (block) => block.id === selection?.responseId && block.role === "user",
+        )}
+        onDismiss={dismissSelection}
+        onAddToChat={onAddToChat}
+        onAddToNotes={onAddToNotes}
+        onTranslate={translate}
+      />
+    );
+  },
+  (previous, next) =>
+    previous.root === next.root &&
+    previous.enabled === next.enabled &&
+    previous.sessionId === next.sessionId &&
+    previous.onAddToChat === next.onAddToChat &&
+    previous.onAddToNotes === next.onAddToNotes &&
+    previous.onTranslate === next.onTranslate &&
+    sameBlocksIgnoringStreamingText(previous.blocks, next.blocks),
 );

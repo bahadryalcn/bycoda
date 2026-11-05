@@ -16,7 +16,7 @@ import {
   type TransactionSpec,
 } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { mergeResolutionField } from "../../source-control/model/mergeResolution";
+import { mergeResolutionField } from "../../source-control/public/mergeResolution";
 
 /** Public instance boundaries are installed before the owned view is exposed.
  * Dispatch rejection precedes MergeView's chunk mutation; aliases/prototype

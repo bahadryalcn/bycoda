@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useConfirm } from "../../../shared/ui/ConfirmDialog";
-import type { RemoteDataState } from "../../connections/model/remoteDataState";
+import type { RemoteDataState } from "../../connections";
 import type { BoardTask } from "../model/taskClient";
 import type { useTaskBoardQueries } from "../model/useTaskBoardQueries";
 

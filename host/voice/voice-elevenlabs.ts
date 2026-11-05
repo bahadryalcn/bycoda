@@ -27,28 +27,32 @@ export async function streamElevenLabs(
   chunk: (pcm: Buffer) => void,
 ): Promise<void> {
   const scope = new HttpStreamScope(options.signal, {
-    firstMs: 30_000, idleMs: 15_000,
-    totalMs: 30_000 + voicePlaybackTimeoutMs(options.text), label: "ElevenLabs",
+    firstMs: 30_000,
+    idleMs: 15_000,
+    totalMs: 30_000 + voicePlaybackTimeoutMs(options.text),
+    label: "ElevenLabs",
   });
   try {
     const voice = options.voiceId || ELEVENLABS_DEFAULT_VOICE;
     let response: Response;
     try {
-      response = await scope.request((signal) => (options.request ?? fetch)(
-        `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}/stream?output_format=pcm_24000`,
-        {
-          method: "POST",
-          headers: { "xi-api-key": options.key, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: options.text,
-            model_id: ELEVENLABS_MODEL,
-            ...(options.language && LANGUAGES.has(options.language)
-              ? { language_code: options.language }
-              : {}),
-          }),
-          signal,
-        },
-      ));
+      response = await scope.request((signal) =>
+        (options.request ?? fetch)(
+          `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voice)}/stream?output_format=pcm_24000`,
+          {
+            method: "POST",
+            headers: { "xi-api-key": options.key, "Content-Type": "application/json" },
+            body: JSON.stringify({
+              text: options.text,
+              model_id: ELEVENLABS_MODEL,
+              ...(options.language && LANGUAGES.has(options.language)
+                ? { language_code: options.language }
+                : {}),
+            }),
+            signal,
+          },
+        ),
+      );
     } catch (error) {
       if (options.signal.aborted) return;
       throw new Error("ElevenLabs could not be reached. Check the connection and try again.", {

@@ -1,44 +1,63 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
 /** Canonical owner evidence. Legacy source bytes remain available for recovery. */
-export type StoredBindingEvidence = { shellId: string; raw: string; legacyRaw: string | null; version?: number };
+export type StoredBindingEvidence = {
+  shellId: string;
+  raw: string;
+  legacyRaw: string | null;
+  version?: number;
+};
 const NATIVE_SCOPE = "host-session-bindings.v2";
 type NativeEntry = { key: string; version: number; value: StoredBindingEvidence | null };
 type NativeResult = { applied: boolean; entries: NativeEntry[]; compacted?: boolean };
 const nativeOperation = () => crypto.randomUUID();
 let pageToken: Promise<string> | undefined;
 function nativePageToken(): Promise<string> {
-  return pageToken ??= invoke<string>("canonical_store_page_token").catch((error: unknown) => {
+  return (pageToken ??= invoke<string>("canonical_store_page_token").catch((error: unknown) => {
     pageToken = undefined;
     throw error;
-  });
+  }));
 }
 let nativeImport: Promise<void> | undefined;
 let nativeLegacyImported = false;
 /** A durable migration marker was read from native authority. */
-export function skipImportedNativeBindingLegacy(): void { nativeLegacyImported = true; }
+export function skipImportedNativeBindingLegacy(): void {
+  nativeLegacyImported = true;
+}
 const nativeCursors = new Map<string, number>();
 
 async function importNativeBindings(): Promise<void> {
   if (nativeLegacyImported) return;
-  if (!nativeImport) nativeImport = (async () => {
-    let after: string | undefined;
-    for (;;) {
-      const page = await readIndexedBindingEvidencePage(after);
-      for (const row of page) {
-        const current = await invoke<NativeEntry | null>("canonical_store_get", { scope: NATIVE_SCOPE, key: row.shellId });
-        const result = await invoke<NativeResult>("canonical_store_transaction", {
-          scope: NATIVE_SCOPE, operationId: nativeOperation(), pageToken: await nativePageToken(), claim: null, expectedRevision: null,
-          checks: [{ key: row.shellId, version: current?.version ?? null }],
-          writes: current ? [] : [{ key: row.shellId, value: row }],
-          legacy: [{ key: row.shellId, raw: JSON.stringify(row) }],
-        });
-        if (!result.applied) throw new Error("Session owner migration changed in another window. Retry loading.");
+  if (!nativeImport)
+    nativeImport = (async () => {
+      let after: string | undefined;
+      for (;;) {
+        const page = await readIndexedBindingEvidencePage(after);
+        for (const row of page) {
+          const current = await invoke<NativeEntry | null>("canonical_store_get", {
+            scope: NATIVE_SCOPE,
+            key: row.shellId,
+          });
+          const result = await invoke<NativeResult>("canonical_store_transaction", {
+            scope: NATIVE_SCOPE,
+            operationId: nativeOperation(),
+            pageToken: await nativePageToken(),
+            claim: null,
+            expectedRevision: null,
+            checks: [{ key: row.shellId, version: current?.version ?? null }],
+            writes: current ? [] : [{ key: row.shellId, value: row }],
+            legacy: [{ key: row.shellId, raw: JSON.stringify(row) }],
+          });
+          if (!result.applied)
+            throw new Error("Session owner migration changed in another window. Retry loading.");
+        }
+        if (page.length < 128) break;
+        after = page[page.length - 1].shellId;
       }
-      if (page.length < 128) break;
-      after = page[page.length - 1].shellId;
-    }
-  })().catch((error: unknown) => { nativeImport = undefined; throw error; });
+    })().catch((error: unknown) => {
+      nativeImport = undefined;
+      throw error;
+    });
   return nativeImport;
 }
 let opening: Promise<IDBDatabase> | undefined;
@@ -82,15 +101,27 @@ export async function readBindingEvidencePage(after?: string): Promise<StoredBin
   if (isTauri()) {
     await importNativeBindings();
     const expectedRevision = after === undefined ? null : nativeCursors.get(after);
-    if (expectedRevision === undefined) throw new Error("Session owner cursor expired. Retry loading.");
-    const page = await invoke<{ entries: NativeEntry[]; revision: number }>("canonical_store_list", {
-      scope: NATIVE_SCOPE, after: after ?? null, limit: 128, expectedRevision,
-    });
-    if (page.entries.length) nativeCursors.set(page.entries[page.entries.length - 1].key, page.revision);
+    if (expectedRevision === undefined)
+      throw new Error("Session owner cursor expired. Retry loading.");
+    const page = await invoke<{ entries: NativeEntry[]; revision: number }>(
+      "canonical_store_list",
+      {
+        scope: NATIVE_SCOPE,
+        after: after ?? null,
+        limit: 128,
+        expectedRevision,
+      },
+    );
+    if (page.entries.length)
+      nativeCursors.set(page.entries[page.entries.length - 1].key, page.revision);
     return page.entries.map((entry) => {
       const value = entry.value;
-      if (!value || value.shellId !== entry.key || typeof value.raw !== "string" ||
-          (value.legacyRaw !== null && typeof value.legacyRaw !== "string"))
+      if (
+        !value ||
+        value.shellId !== entry.key ||
+        typeof value.raw !== "string" ||
+        (value.legacyRaw !== null && typeof value.legacyRaw !== "string")
+      )
         throw new Error("Invalid session owner evidence.");
       return { ...value, version: entry.version };
     });
@@ -128,14 +159,23 @@ async function readIndexedBindingEvidencePage(after?: string): Promise<StoredBin
   });
 }
 
-export async function readBindingEvidence(shellId: string): Promise<StoredBindingEvidence | undefined> {
+export async function readBindingEvidence(
+  shellId: string,
+): Promise<StoredBindingEvidence | undefined> {
   if (isTauri()) {
     await importNativeBindings();
-    const row = await invoke<NativeEntry | null>("canonical_store_get", { scope: NATIVE_SCOPE, key: shellId });
+    const row = await invoke<NativeEntry | null>("canonical_store_get", {
+      scope: NATIVE_SCOPE,
+      key: shellId,
+    });
     if (!row) return undefined;
     const value = row.value;
-    if (!value || value.shellId !== shellId || typeof value.raw !== "string" ||
-        (value.legacyRaw !== null && typeof value.legacyRaw !== "string"))
+    if (
+      !value ||
+      value.shellId !== shellId ||
+      typeof value.raw !== "string" ||
+      (value.legacyRaw !== null && typeof value.legacyRaw !== "string")
+    )
       throw new Error("Invalid session owner evidence.");
     return { ...value, version: row.version };
   }
@@ -145,8 +185,12 @@ export async function readBindingEvidence(shellId: string): Promise<StoredBindin
     const request = tx.objectStore("owners").get(shellId);
     tx.oncomplete = () => {
       const value = request.result as StoredBindingEvidence | undefined;
-      if (value && (value.shellId !== shellId || typeof value.raw !== "string" ||
-          (value.legacyRaw !== null && typeof value.legacyRaw !== "string"))) {
+      if (
+        value &&
+        (value.shellId !== shellId ||
+          typeof value.raw !== "string" ||
+          (value.legacyRaw !== null && typeof value.legacyRaw !== "string"))
+      ) {
         reject(new Error("Invalid session owner evidence."));
         return;
       }
@@ -156,15 +200,30 @@ export async function readBindingEvidence(shellId: string): Promise<StoredBindin
   });
 }
 
-export type NativeSessionClaim = Readonly<{ shellId: string; operationId: string; pageToken: string }>;
+export type NativeSessionClaim = Readonly<{
+  shellId: string;
+  operationId: string;
+  pageToken: string;
+}>;
 
 /** Caller hydrates and flushes this shell before atomically claiming absent ownership. */
-export async function acquireNativeSessionClaim(shellId: string): Promise<NativeSessionClaim | null> {
+export async function acquireNativeSessionClaim(
+  shellId: string,
+): Promise<NativeSessionClaim | null> {
   if (!isTauri()) return null;
-  const capability = Object.freeze({ shellId, operationId: nativeOperation(), pageToken: await nativePageToken() });
+  const capability = Object.freeze({
+    shellId,
+    operationId: nativeOperation(),
+    pageToken: await nativePageToken(),
+  });
   const result = await invoke<NativeResult>("canonical_store_transaction", {
-    scope: NATIVE_SCOPE, operationId: nativeOperation(), pageToken: capability.pageToken,
-    checks: [{ key: shellId, version: null }], writes: [], legacy: [], expectedRevision: null,
+    scope: NATIVE_SCOPE,
+    operationId: nativeOperation(),
+    pageToken: capability.pageToken,
+    checks: [{ key: shellId, version: null }],
+    writes: [],
+    legacy: [],
+    expectedRevision: null,
     claim: { key: shellId, operationId: capability.operationId, mode: "acquire" },
   });
   if (!result.applied) throw new Error("This conversation has a durable Host owner.");
@@ -174,25 +233,41 @@ export async function acquireNativeSessionClaim(shellId: string): Promise<Native
 export async function markNativeSessionClaim(capability: NativeSessionClaim | null): Promise<void> {
   if (!capability) return;
   await invoke("canonical_store_mark_submitted", {
-    scope: NATIVE_SCOPE, key: capability.shellId, operationId: capability.operationId, pageToken: capability.pageToken,
+    scope: NATIVE_SCOPE,
+    key: capability.shellId,
+    operationId: capability.operationId,
+    pageToken: capability.pageToken,
   });
 }
 
 /** Caller must first prove retirement of the original physical writer cohort. */
-export async function settleNativeSessionClaim(capability: NativeSessionClaim | null): Promise<void> {
+export async function settleNativeSessionClaim(
+  capability: NativeSessionClaim | null,
+): Promise<void> {
   if (!capability) return;
   const settled = await invoke<boolean>("canonical_store_settle", {
-    scope: NATIVE_SCOPE, key: capability.shellId, operationId: capability.operationId, pageToken: capability.pageToken,
+    scope: NATIVE_SCOPE,
+    key: capability.shellId,
+    operationId: capability.operationId,
+    pageToken: capability.pageToken,
   });
   if (!settled) throw new Error("Native session writer retirement was not confirmed.");
 }
 
 export async function preserveBindingSource(shellId: string, raw: string): Promise<void> {
   if (isTauri()) {
-    const current = await invoke<NativeEntry | null>("canonical_store_get", { scope: NATIVE_SCOPE, key: shellId });
+    const current = await invoke<NativeEntry | null>("canonical_store_get", {
+      scope: NATIVE_SCOPE,
+      key: shellId,
+    });
     const result = await invoke<NativeResult>("canonical_store_transaction", {
-      scope: NATIVE_SCOPE, operationId: nativeOperation(), pageToken: await nativePageToken(), claim: null, expectedRevision: null,
-      checks: [{ key: shellId, version: current?.version ?? null }], writes: [],
+      scope: NATIVE_SCOPE,
+      operationId: nativeOperation(),
+      pageToken: await nativePageToken(),
+      claim: null,
+      expectedRevision: null,
+      checks: [{ key: shellId, version: current?.version ?? null }],
+      writes: [],
       legacy: [{ key: shellId, raw }],
     });
     if (!result.applied) throw new Error("Session owner source changed. Retry loading.");
@@ -215,19 +290,42 @@ export async function writeBindingEvidence(
 ): Promise<void> {
   if (isTauri()) {
     const result = await invoke<NativeResult>("canonical_store_transaction", {
-      scope: NATIVE_SCOPE, operationId: nativeOperation(), pageToken: await nativePageToken(), claim: null, expectedRevision: null,
+      scope: NATIVE_SCOPE,
+      operationId: nativeOperation(),
+      pageToken: await nativePageToken(),
+      claim: null,
+      expectedRevision: null,
       checks: [{ key: next.shellId, version: expected?.version ?? null }],
-      writes: [{ key: next.shellId, value: { shellId: next.shellId, raw: next.raw, legacyRaw: next.legacyRaw } }],
+      writes: [
+        {
+          key: next.shellId,
+          value: { shellId: next.shellId, raw: next.raw, legacyRaw: next.legacyRaw },
+        },
+      ],
       legacy: next.legacyRaw === null ? [] : [{ key: next.shellId, raw: next.legacyRaw }],
     });
-    if (!result.applied) throw new Error("The session owner changed in another window. Reload before continuing.");
+    if (!result.applied)
+      throw new Error("The session owner changed in another window. Reload before continuing.");
     const entry = result.entries.find((row) => row.key === next.shellId);
     if (!entry) throw new Error("Session owner publication was not confirmed.");
     if (result.compacted) {
       let current: NativeEntry | null;
-      try { current = await invoke<NativeEntry | null>("canonical_store_get", { scope: NATIVE_SCOPE, key: next.shellId }); }
-      catch { throw new Error("The session owner was saved, but its current state could not be verified."); }
-      if (!current || current.version !== entry.version || current.value?.raw !== next.raw || current.value?.legacyRaw !== next.legacyRaw)
+      try {
+        current = await invoke<NativeEntry | null>("canonical_store_get", {
+          scope: NATIVE_SCOPE,
+          key: next.shellId,
+        });
+      } catch {
+        throw new Error(
+          "The session owner was saved, but its current state could not be verified.",
+        );
+      }
+      if (
+        !current ||
+        current.version !== entry.version ||
+        current.value?.raw !== next.raw ||
+        current.value?.legacyRaw !== next.legacyRaw
+      )
         throw new Error("The session owner changed in another window. Reload before continuing.");
     }
     next.version = entry.version;

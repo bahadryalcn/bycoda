@@ -115,7 +115,7 @@ it("retains native device revocation and never treats a thread as an owner socia
   await s.store.revokeDevice(s.device.id);
   expect(await s.social.principalForToken(grant.token)).toBeUndefined();
 });
-it("allows narrow thread notes but requires a real focused session for working-copy tools", async () => {
+it("keeps thread notes and Room file dispatch bound to the exact project without inventing a focused session", async () => {
   const s = await fixture();
   const ports = {
     authorized: async () => true,
@@ -141,10 +141,27 @@ it("allows narrow thread notes but requires a real focused session for working-c
   });
   dispatch.release();
   expect(await s.access.principalForToken(dispatch.token)).toBeUndefined();
+  const files = await prepareVoiceToolDispatch(
+    {
+      projectId: s.project.id,
+      threadId: "thread-a",
+      family: "conversation",
+      action: "files.list",
+      input: {},
+    },
+    ports,
+  );
+  expect(await s.access.principalForToken(files.token)).toMatchObject({
+    kind: "assistant-thread",
+    threadId: "thread-a",
+    projectId: s.project.id,
+  });
+  files.release();
+  expect(await s.access.principalForToken(files.token)).toBeUndefined();
   await expect(
     prepareVoiceToolDispatch(
       {
-        projectId: s.project.id,
+        projectId: s.other.id,
         threadId: "thread-a",
         family: "conversation",
         action: "files.list",
@@ -152,6 +169,6 @@ it("allows narrow thread notes but requires a real focused session for working-c
       },
       ports,
     ),
-  ).rejects.toThrow(/real focused session/);
+  ).rejects.toThrow(/another project/);
   expect(s.session).not.toHaveBeenCalled();
 });

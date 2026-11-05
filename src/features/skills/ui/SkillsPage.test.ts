@@ -818,6 +818,7 @@ describe("Skills on connected machines", () => {
     expect(text).toContain("mac-notes");
     expect(text).toContain("kit:plan");
     expect(text).toContain("Personal guide");
+    expect(container.querySelectorAll("[data-continuous-list]")).toHaveLength(2);
     // 1 on this computer + 2 on the Mac.
     expect(text).toContain("3 skills");
     // Names only: no description line, no catalog switch on the other machine's rows.

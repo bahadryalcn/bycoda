@@ -51,11 +51,20 @@ import { fileRevertGeneration } from "../sessions/session-file-revert";
 import { browseHostFolder } from "../browser/browse";
 import { formatWorkspaceText } from "../files/editor-format";
 import { listHostClaudeCommands } from "../providers/claude-commands";
-import { deleteHostSkill, exportHostSkill, importHostSkill, listHostSkills } from "../skills/skills";
+import {
+  deleteHostSkill,
+  exportHostSkill,
+  importHostSkill,
+  listHostSkills,
+} from "../skills/skills";
 import { withWorkspaceMutation } from "./workspace-mutations";
 import { inspectConversationPath } from "../conversation/conversation-file-mutations";
 import { migrateSkillPolicy, setSkillEnabled } from "../skills/skill-policy";
-import { installCatalogSkill, parseSkillInstallRequest, skillInstallStatus } from "../skills/skill-install";
+import {
+  installCatalogSkill,
+  parseSkillInstallRequest,
+  skillInstallStatus,
+} from "../skills/skill-install";
 import {
   createHostPath,
   existingPath,
@@ -224,7 +233,12 @@ export class WorkspaceCommands {
     return this.delivery.service;
   }
 
-  async run(command: unknown, args: unknown, owner = "local", authorized?: () => Promise<boolean>): Promise<Awaited<Promise<unknown>>> {
+  async run(
+    command: unknown,
+    args: unknown,
+    owner = "local",
+    authorized?: () => Promise<boolean>,
+  ): Promise<Awaited<Promise<unknown>>> {
     const input =
       args && typeof args === "object" && !Array.isArray(args)
         ? (args as Record<string, unknown>)
@@ -260,7 +274,12 @@ export class WorkspaceCommands {
     }
   }
 
-  private async dispatch(command: unknown, args: unknown, owner: string, authorized?: () => Promise<boolean>): Promise<unknown> {
+  private async dispatch(
+    command: unknown,
+    args: unknown,
+    owner: string,
+    authorized?: () => Promise<boolean>,
+  ): Promise<unknown> {
     if (!WORKSPACE_COMMANDS.includes(command as WorkspaceCommand))
       throw new Error("Unsupported workspace command");
     const input =
@@ -291,7 +310,8 @@ export class WorkspaceCommands {
         async ({ root }) =>
           await withWorkspaceMutation(
             root,
-            async () => await this.runCommand(command as WorkspaceCommand, input, owner, authorized),
+            async () =>
+              await this.runCommand(command as WorkspaceCommand, input, owner, authorized),
           ),
       );
     }
@@ -934,7 +954,12 @@ export class WorkspaceCommands {
       throw new Error("Path changed before commit; inspect it again.");
   }
 
-  private async rename(input: unknown, name: unknown, expectedHash?: unknown, authorized?: () => Promise<boolean>): Promise<string> {
+  private async rename(
+    input: unknown,
+    name: unknown,
+    expectedHash?: unknown,
+    authorized?: () => Promise<boolean>,
+  ): Promise<string> {
     if (typeof name !== "string" || !name.trim() || /^[\\/]/.test(name) || name.includes("\0"))
       throw new Error("A file or folder name must be provided.");
     const { root, path: from } = await this.existing(input);
@@ -953,8 +978,10 @@ export class WorkspaceCommands {
     if (destination) {
       const source = await lstat(from, { bigint: true });
       spellingAlias =
-        dirname(from) === dirname(to) && source.ino !== 0n &&
-        source.dev === destination.dev && source.ino === destination.ino &&
+        dirname(from) === dirname(to) &&
+        source.ino !== 0n &&
+        source.dev === destination.dev &&
+        source.ino === destination.ino &&
         !(await readdir(dirname(to))).includes(basename(to));
       // Only a proven filesystem spelling alias may reuse an existing target.
       // A distinct directory entry (even a hard link) must never be overwritten.
@@ -971,7 +998,11 @@ export class WorkspaceCommands {
     return target;
   }
 
-  private async delete(input: unknown, expectedHash?: unknown, authorized?: () => Promise<boolean>): Promise<void> {
+  private async delete(
+    input: unknown,
+    expectedHash?: unknown,
+    authorized?: () => Promise<boolean>,
+  ): Promise<void> {
     const { root, path } = await this.existing(input);
     await this.verifyExpectedPath(root, input, path, expectedHash);
     if (authorized && !(await authorized())) throw new Error("Room file authority revoked.");
@@ -992,7 +1023,12 @@ export class WorkspaceCommands {
     return { root: parent.root, source: source.path, parent: parent.path };
   }
 
-  private async copy(from: unknown, destParent: unknown, expectedHash?: unknown, authorized?: () => Promise<boolean>): Promise<string> {
+  private async copy(
+    from: unknown,
+    destParent: unknown,
+    expectedHash?: unknown,
+    authorized?: () => Promise<boolean>,
+  ): Promise<string> {
     const { root, source, parent } = await this.destination(from, destParent);
     const name = basename(source);
     const ext = extname(name);
@@ -1017,7 +1053,12 @@ export class WorkspaceCommands {
     }
   }
 
-  private async move(from: unknown, destParent: unknown, expectedHash?: unknown, authorized?: () => Promise<boolean>): Promise<string> {
+  private async move(
+    from: unknown,
+    destParent: unknown,
+    expectedHash?: unknown,
+    authorized?: () => Promise<boolean>,
+  ): Promise<string> {
     const { root, source, parent } = await this.destination(from, destParent);
     const name = basename(source);
     const to = resolve(parent, name);

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { roomManagementDiscovery, roomManagementToolAllowed } from "../management/assistant-management-dispatch";
+import {
+  roomManagementDiscovery,
+  roomManagementToolAllowed,
+} from "../management/assistant-management-dispatch";
 import { MANAGEMENT_CONVERSATION_TOOLS } from "../../conversation/conversation-management-tools";
 import { voiceToolCatalog } from "../../voice/voice-tools";
 
@@ -8,15 +11,30 @@ const catalog = voiceToolCatalog();
 describe("Room management capability contract", () => {
   it("can discover global settings and Servers without a placeholder project", () => {
     const actions = [
-      "tools.search", "tools.describe", "tools.status", "projects.organization.read",
-      "preferences.read", "preferences.patch", "preferences.status",
-      "providers.status", "providers.quota.refresh", "providers.operation.status",
-      "servers.list", "servers.get", "servers.ssh.save", "servers.ssh.remove",
-      "servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel",
+      "tools.search",
+      "tools.describe",
+      "tools.status",
+      "projects.organization.read",
+      "preferences.read",
+      "preferences.patch",
+      "preferences.status",
+      "providers.status",
+      "providers.quota.refresh",
+      "providers.operation.status",
+      "servers.list",
+      "servers.get",
+      "servers.ssh.save",
+      "servers.ssh.remove",
+      "servers.ssh.execute",
+      "servers.ssh.status",
+      "servers.ssh.cancel",
     ];
     for (const action of actions) {
       expect(roomManagementToolAllowed("conversation", action), action).toBe(true);
-      const described = roomManagementDiscovery("tools.describe", { ids: [`conversation:${action}`], maxChars: 24000 });
+      const described = roomManagementDiscovery("tools.describe", {
+        ids: [`conversation:${action}`],
+        maxChars: 24000,
+      });
       expect(described.tools[0], action).toHaveProperty("inputSchema");
     }
   });
@@ -28,15 +46,34 @@ describe("Room management capability contract", () => {
     // must not borrow that session or claim its receipt until a separate owner port exists.
     const sessionOwned = new Set(["history.import.status"]);
     for (const action of Object.keys(MANAGEMENT_CONVERSATION_TOOLS)) {
-      expect(roomManagementToolAllowed("conversation", action, "verified-project"), action).toBe(!sessionOwned.has(action));
-      expect(catalog.some((tool) => tool.family === "conversation" && tool.action === action), action).toBe(true);
+      expect(roomManagementToolAllowed("conversation", action, "verified-project"), action).toBe(
+        !sessionOwned.has(action),
+      );
+      expect(
+        catalog.some((tool) => tool.family === "conversation" && tool.action === action),
+        action,
+      ).toBe(true);
     }
   });
 
   it("retains project work, Crew and granted account/log discovery", () => {
-    for (const action of ["tasks.create", "tasks.start", "goals.create", "automations.create", "crews.save", "crews.start", "crews.resolve"]) {
-      expect(roomManagementToolAllowed("conversation", action, "verified-project"), action).toBe(true);
-      const described = roomManagementDiscovery("tools.describe", { ids: [`conversation:${action}`], maxChars: 24000 }, "verified-project");
+    for (const action of [
+      "tasks.create",
+      "tasks.start",
+      "goals.create",
+      "automations.create",
+      "crews.save",
+      "crews.start",
+      "crews.resolve",
+    ]) {
+      expect(roomManagementToolAllowed("conversation", action, "verified-project"), action).toBe(
+        true,
+      );
+      const described = roomManagementDiscovery(
+        "tools.describe",
+        { ids: [`conversation:${action}`], maxChars: 24000 },
+        "verified-project",
+      );
       expect(described.tools[0], action).toHaveProperty("inputSchema");
     }
     for (const family of ["social", "runtime-logs"]) {
@@ -48,12 +85,32 @@ describe("Room management capability contract", () => {
   });
 
   it("does not turn catalog discovery into owner or cross-project authority", () => {
-    for (const action of ["git.push", "git.merge", "crews.respond", "workspaces.cleanup.apply", "providers.signIn", "credentials.read"]) {
+    for (const action of [
+      "git.push",
+      "git.merge",
+      "crews.respond",
+      "workspaces.cleanup.apply",
+      "providers.signIn",
+      "credentials.read",
+    ]) {
       expect(roomManagementToolAllowed("conversation", action), action).toBe(false);
-      expect(roomManagementToolAllowed("conversation", action, "verified-project"), action).toBe(false);
-      expect(roomManagementDiscovery("tools.describe", { ids: [`conversation:${action}`] }, "verified-project").missing).toContain(`conversation:${action}`);
+      expect(roomManagementToolAllowed("conversation", action, "verified-project"), action).toBe(
+        false,
+      );
+      expect(
+        roomManagementDiscovery(
+          "tools.describe",
+          { ids: [`conversation:${action}`] },
+          "verified-project",
+        ).missing,
+      ).toContain(`conversation:${action}`);
     }
-    for (const action of ["tasks.start", "crews.start", "sessions.contextual.create", "notes.list"]) {
+    for (const action of [
+      "tasks.start",
+      "crews.start",
+      "sessions.contextual.create",
+      "notes.list",
+    ]) {
       expect(roomManagementToolAllowed("conversation", action), action).toBe(false);
     }
   });

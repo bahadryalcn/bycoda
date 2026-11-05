@@ -1,5 +1,5 @@
 import { projectKey } from "../../../shared/lib/paths";
-import type { RemoteMachine } from "../../connections/model/protocol";
+import type { RemoteMachine } from "../../connections";
 import type { BoardTask } from "./taskClient";
 
 /** Host identities are authoritative. A path is only a bootstrap for an open tab. */

@@ -101,9 +101,12 @@ async function fetchMcpSettings(cwd: string): Promise<McpSettingsSnapshot> {
   } catch (cause) {
     const previous = snapshots.get(cwd);
     return {
-      servers: previous?.servers ?? [],
+      servers: (previous?.servers ?? []).map(({ auth: _auth, ...server }) => ({
+        ...server,
+        status: server.enabled === false ? "Disabled" : "Configured",
+      })),
       error: String(cause),
-      claudeError: previous?.claudeError ?? "",
+      claudeError: "",
     };
   }
 }
@@ -153,8 +156,14 @@ function loadClaudeHealth(cwd: string, discovery: Promise<McpSettingsSnapshot>) 
     })
     .catch((cause) => {
       if (requests.get(cwd) !== discovery) return;
+      const snapshot = snapshots.get(cwd)!;
       publish(cwd, {
-        ...snapshots.get(cwd)!,
+        ...snapshot,
+        servers: snapshot.servers.map((server) =>
+          server.provider === "claude"
+            ? { ...server, status: server.enabled === false ? "Disabled" : "Configured" }
+            : server,
+        ),
         claudeError: String(cause),
         claudeChecking: false,
         claudePartial: false,

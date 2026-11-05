@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
-import { remoteRequest } from "../../connections/model/connections";
-import type { RemoteMachine } from "../../connections/model/protocol";
+import { remoteRequest } from "../../connections/public/connections";
+import type { RemoteMachine } from "../../connections";
 import { t } from "../../../shared/i18n";
 
 /** Every send reads this policy; a short memory avoids two Host round trips per message. */

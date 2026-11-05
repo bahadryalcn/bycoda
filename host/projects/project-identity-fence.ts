@@ -18,14 +18,29 @@ export class ProjectIdentityFence {
     }
   }
   async read<T>(effect: (valid: () => boolean) => Promise<T>): Promise<T> {
-    await new Promise<void>(grant => { this.queue.push({ kind: "read", grant }); this.drain(); });
+    await new Promise<void>((grant) => {
+      this.queue.push({ kind: "read", grant });
+      this.drain();
+    });
     let active = true;
-    try { return await effect(() => active); }
-    finally { active = false; this.readers--; this.drain(); }
+    try {
+      return await effect(() => active);
+    } finally {
+      active = false;
+      this.readers--;
+      this.drain();
+    }
   }
   async write<T>(effect: () => Promise<T>): Promise<T> {
-    await new Promise<void>(grant => { this.queue.push({ kind: "write", grant }); this.drain(); });
-    try { return await effect(); }
-    finally { this.writer = false; this.drain(); }
+    await new Promise<void>((grant) => {
+      this.queue.push({ kind: "write", grant });
+      this.drain();
+    });
+    try {
+      return await effect();
+    } finally {
+      this.writer = false;
+      this.drain();
+    }
   }
 }

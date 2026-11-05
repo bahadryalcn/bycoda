@@ -21,7 +21,10 @@ import {
 import type { orchestrator } from "../../../features/orchestration/model/orchestration";
 import { type Session } from "../../../features/sessions/model/session";
 import { type LinkedSessionUpdate } from "../../../features/inbox/model/linkedSessionUpdates";
-import { withRoomPrivacyMutation, type PrivacyMutationToken } from "../../../features/group-lock/model/roomPrivacyProjection";
+import {
+  withRoomPrivacyMutation,
+  type PrivacyMutationToken,
+} from "../../../features/group-lock/model/roomPrivacyProjection";
 import { newTab, type WorkspaceTab } from "../../../features/workspace/model/layout";
 import {
   planOpenSessionsSideBySide,
@@ -102,9 +105,25 @@ export function useOpenSessionActions({
   }, [sessions, onKeepSession, tabsRef]);
 
   const onSelectHistorySession = useCallback(
-    async (sessionId: string, options?: { preview?: boolean; isCurrent?: () => boolean; workspaceRequestId?: string; privacyToken?: PrivacyMutationToken }): Promise<void> => {
+    async (
+      sessionId: string,
+      options?: {
+        preview?: boolean;
+        isCurrent?: () => boolean;
+        workspaceRequestId?: string;
+        privacyToken?: PrivacyMutationToken;
+      },
+    ): Promise<void> => {
       if (options?.workspaceRequestId && !options.privacyToken)
-        return withRoomPrivacyMutation(token => onSelectHistorySession(sessionId, { ...options, workspaceRequestId: undefined, privacyToken: token }), options.workspaceRequestId);
+        return withRoomPrivacyMutation(
+          (token) =>
+            onSelectHistorySession(sessionId, {
+              ...options,
+              workspaceRequestId: undefined,
+              privacyToken: token,
+            }),
+          options.workspaceRequestId,
+        );
       const request = ++openRequest.current;
       workspaceNavigation.cancel();
       const navigationCurrent = workspaceNavigation.captureRequest?.() ?? (() => true);
@@ -125,8 +144,13 @@ export function useOpenSessionActions({
         inspectedWorkerId = sessionId;
       }
       const linkedUpdate = linkedSessionUpdatesRef.current.get(session.id);
-      const follow = (cwd: string) => options?.privacyToken ? followProject(cwd, options.privacyToken) : followProject(cwd);
-      if (options?.privacyToken ? focusOpenSession(session.id, options.privacyToken) : focusOpenSession(session.id)) {
+      const follow = (cwd: string) =>
+        options?.privacyToken ? followProject(cwd, options.privacyToken) : followProject(cwd);
+      if (
+        options?.privacyToken
+          ? focusOpenSession(session.id, options.privacyToken)
+          : focusOpenSession(session.id)
+      ) {
         if (inspectedWorkerId) setInspectedWorkerId(inspectedWorkerId);
         if (!options?.preview) onKeepSession(session.id);
         if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);

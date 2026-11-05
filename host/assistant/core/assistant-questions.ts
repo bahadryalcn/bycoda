@@ -1,7 +1,10 @@
 import { hostQuestionToken } from "../../sessions/question-source";
 import type { HostStore } from "../../store";
 import type { HostSession } from "../../../src/features/connections/model/protocol";
-import type { UserQuestion, UserQuestionReply } from "../../../src/features/sessions/model/userQuestion";
+import type {
+  UserQuestion,
+  UserQuestionReply,
+} from "../../../src/features/sessions/model/userQuestion";
 import type { AssistantJob } from "../../../src/shared/model/host-contracts/assistant";
 import { assistantJobSessionBelongs } from "../work/assistant-job-scope";
 import { workerContextAction } from "../../../src/shared/model/assistantContext";
@@ -10,6 +13,7 @@ export type AssistantQuestionAnswer = {
   questionToken: string;
   answers: Record<string, string[]>;
   custom?: Record<string, string>;
+  notes?: Record<string, string>;
 };
 export type AssistantQuestionStatus = {
   sessionId: string;
@@ -210,12 +214,14 @@ export function validateAssistantQuestionReply(
   const ids = new Set(question.questions.map((item) => item.id));
   if (
     Object.keys(input.answers).some((id) => !ids.has(id)) ||
-    Object.keys(input.custom ?? {}).some((id) => !ids.has(id))
+    Object.keys(input.custom ?? {}).some((id) => !ids.has(id)) ||
+    Object.keys(input.notes ?? {}).some((id) => !ids.has(id))
   )
     throw new Error("The answer contains a different question identity.");
   for (const item of question.questions) {
     const selected = input.answers[item.id] ?? [],
-      custom = input.custom?.[item.id];
+      custom = input.custom?.[item.id],
+      note = input.notes?.[item.id];
     if (
       new Set(selected).size !== selected.length ||
       (!item.multiSelect && selected.length > 1) ||
@@ -227,6 +233,15 @@ export function validateAssistantQuestionReply(
       (!item.allowCustom || !custom.trim() || custom.length > 1000 || ownerTopic.test(custom))
     )
       throw new Error("This custom answer needs owner review.");
+    if (
+      note !== undefined &&
+      (!item.allowCustom ||
+        !selected.length ||
+        !note.trim() ||
+        note.length > 1000 ||
+        ownerTopic.test(note))
+    )
+      throw new Error("This question note needs owner review.");
     if (!selected.length && !custom?.trim())
       throw new Error("Answer every canonical question before continuing.");
   }
@@ -234,5 +249,6 @@ export function validateAssistantQuestionReply(
     kind: "answered",
     answers: structuredClone(input.answers),
     ...(input.custom ? { custom: structuredClone(input.custom) } : {}),
+    ...(input.notes ? { notes: structuredClone(input.notes) } : {}),
   };
 }

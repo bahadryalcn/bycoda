@@ -5,16 +5,16 @@ Paths are repository-root relative. Search the named task/goal/sprint/steward ac
 - `src/features/tasks/ui/`: board/list, task creation/details/session sheet, `TasksView.tsx`, `TaskLimits.tsx`, `TaskWorkspacePicker.tsx`, `TaskWorkflowControls.tsx` and goal/sprint controls. Preserve stored filters, selection, creation drafts and review action state.
 - `src/features/tasks/model/`: `taskClient.ts`, `taskTransitions.ts`, `taskWorkspace.ts`, `goalClient.ts`, `hostTasks.ts`, task rules/bulk action and related schemas. Follow event/query cursors rather than treating loaded rows as the whole multi-machine board.
 - App/session/notification integration under `src/app/` and session UI opens retained background sessions, approvals and review results. Daily notification summaries consume work state; they do not own scheduler lifecycle.
-- `host/tasks/tasks.ts`, `host/goals/goals.ts`, `host/stewards/stewards.ts`, existing sprint/automation owners: state machine, persisted attempts, scheduling, budget/dependency/preflight and recovery. Conversation task/goal/steward tools keep separately scoped principals and approval gates.
+- `host/tasks/service.ts` composes the task service; `host/tasks/tasks.ts` preserves its public exports. `task-actions.ts` and `storage.ts` own board actions and persistence; `scheduler.ts` owns tick/work; `launch.ts` owns workspace preparation and launch; `verification.ts`, `review.ts` and `recovery.ts` own settlement, review and retry; `delivery.ts` owns merge/reconcile/cleanup; `assistant-recovery.ts`, `assistant-holds.ts` and `goal-budget.ts` own assistant recovery and admission/budget holds. `host/domains/tasks/service.ts` remains the thin wire layer. Goals, stewards and existing sprint/automation owners retain their lifecycle ownership. Conversation tools keep separately scoped principals and approval gates.
 - Stall diagnostics: `host/engine.ts` stamps current-run provider event receipt time;
   `host/sessions/session-run-activity.ts` excludes telemetry/metadata refreshes;
   `host/sessions/sessionRuns.ts` exposes only valid exact-run `lastActivityAt`.
-  `host/tasks/tasks.ts` persists `runStall` after 15 minutes without changing Task status,
+  `host/tasks/verification.ts` persists `runStall` after 15 minutes without changing Task status,
   clears it on new output/input waits/attempt changes, and checks the unchanged row
   across reads. `model/taskStatusLine.ts` supplies the warning to card/list/detail;
   unknown legacy timestamps do not prove stalled work.
 - Assistant follow-up badges: `host/assistant/work/assistant-task-metadata.ts` reads canonical
-  task/job/session delivery receipts; `host/tasks/tasks.ts` caches their projection by
+  task/job/session delivery receipts; `host/tasks/storage.ts` caches their projection by
   revision and source membership and includes it in the machine-change ETag.
   `AssistantTaskBadge.tsx` serves board and list. Unknown delivery stays separate;
   receipt-notification failure cannot invalidate an accepted action.

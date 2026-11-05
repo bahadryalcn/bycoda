@@ -56,9 +56,36 @@ export interface AssistantThreadSummaryPorts {
   message(id: string): Promise<AssistantMessage | null>;
   admission(): Promise<Admission | null>;
   visible(projectId: string): Promise<boolean>;
-  sourceProofs?(messages: AssistantMessage[], projectIds: string[], previous?: { projectProofs: { projectId: string; cwd: string }[]; accountProofs: { accountId: string; version: string }[]; nativeProofs?: NativeLibraryProof[] }): Promise<{ projectProofs: { projectId: string; cwd: string }[]; accountProofs: { accountId: string; version: string }[]; nativeProofs?: NativeLibraryProof[] }>;
-  validateSourceProofs?(threadId: string, proofs: { projectProofs: { projectId: string; cwd: string }[]; accountProofs: { accountId: string; version: string }[]; nativeProofs?: NativeLibraryProof[] }): Promise<boolean>;
-  withDisclosure?<T>(threadId: string, proofs: { projectProofs: { projectId: string; cwd: string }[]; accountProofs: { accountId: string; version: string }[]; nativeProofs?: NativeLibraryProof[] }, effect: (valid: () => boolean) => Promise<T>): Promise<T>;
+  sourceProofs?(
+    messages: AssistantMessage[],
+    projectIds: string[],
+    previous?: {
+      projectProofs: { projectId: string; cwd: string }[];
+      accountProofs: { accountId: string; version: string }[];
+      nativeProofs?: NativeLibraryProof[];
+    },
+  ): Promise<{
+    projectProofs: { projectId: string; cwd: string }[];
+    accountProofs: { accountId: string; version: string }[];
+    nativeProofs?: NativeLibraryProof[];
+  }>;
+  validateSourceProofs?(
+    threadId: string,
+    proofs: {
+      projectProofs: { projectId: string; cwd: string }[];
+      accountProofs: { accountId: string; version: string }[];
+      nativeProofs?: NativeLibraryProof[];
+    },
+  ): Promise<boolean>;
+  withDisclosure?<T>(
+    threadId: string,
+    proofs: {
+      projectProofs: { projectId: string; cwd: string }[];
+      accountProofs: { accountId: string; version: string }[];
+      nativeProofs?: NativeLibraryProof[];
+    },
+    effect: (valid: () => boolean) => Promise<T>,
+  ): Promise<T>;
   reserve(id: string, admission: Admission): Promise<void>;
   settle(
     id: string,
@@ -327,10 +354,34 @@ export class HostAssistantThreadSummaries {
     }
     return { ...artifact.proof, projectIds: [...artifact.proof.projectIds] };
   }
-  async sourceProofs(threadId: string, id: string): Promise<{ projectProofs: { projectId: string; cwd: string }[]; accountProofs: { accountId: string; version: string }[]; nativeProofs?: NativeLibraryProof[] } | undefined> {
+  async sourceProofs(
+    threadId: string,
+    id: string,
+  ): Promise<
+    | {
+        projectProofs: { projectId: string; cwd: string }[];
+        accountProofs: { accountId: string; version: string }[];
+        nativeProofs?: NativeLibraryProof[];
+      }
+    | undefined
+  > {
     const artifact = await this.artifact(id);
-    if (!artifact || artifact.threadId !== threadId || artifact.textHash !== hash(artifact.text) || !artifact.projectProofs || !artifact.accountProofs || artifact.proof.projectIds.some(projectId => !artifact.projectProofs!.some(proof => proof.projectId === projectId))) return undefined;
-    return { projectProofs: artifact.projectProofs, accountProofs: artifact.accountProofs, ...(artifact.nativeProofs?.length ? { nativeProofs: artifact.nativeProofs } : {}) };
+    if (
+      !artifact ||
+      artifact.threadId !== threadId ||
+      artifact.textHash !== hash(artifact.text) ||
+      !artifact.projectProofs ||
+      !artifact.accountProofs ||
+      artifact.proof.projectIds.some(
+        (projectId) => !artifact.projectProofs!.some((proof) => proof.projectId === projectId),
+      )
+    )
+      return undefined;
+    return {
+      projectProofs: artifact.projectProofs,
+      accountProofs: artifact.accountProofs,
+      ...(artifact.nativeProofs?.length ? { nativeProofs: artifact.nativeProofs } : {}),
+    };
   }
   async projection(thread: AssistantThread): Promise<AssistantThread> {
     const { summaryProof: _, summaryState: __, ...raw } = thread;
@@ -339,7 +390,14 @@ export class HostAssistantThreadSummaries {
     if (thread.summary && this.ports.validateSourceProofs) {
       const sources = proof ? await this.sourceProofs(thread.id, proof.id) : undefined;
       if (!sources || !(await this.ports.validateSourceProofs(thread.id, sources)))
-        return { ...raw, summary: "", summaryState: this.status("blocked", "Summary source access changed or needs a verified rebuild.") };
+        return {
+          ...raw,
+          summary: "",
+          summaryState: this.status(
+            "blocked",
+            "Summary source access changed or needs a verified rebuild.",
+          ),
+        };
     }
     return {
       ...raw,
@@ -488,14 +546,28 @@ export class HostAssistantThreadSummaries {
         );
         return;
       }
-      const priorProofs = previous ? await this.sourceProofs(threadId, previous.proof.id) : undefined;
+      const priorProofs = previous
+        ? await this.sourceProofs(threadId, previous.proof.id)
+        : undefined;
       if (previous && this.ports.sourceProofs && !priorProofs) {
-        await this.block(threadId, state, "source", "The existing summary has no complete source identity proof. Clear or rebuild it explicitly.");
+        await this.block(
+          threadId,
+          state,
+          "source",
+          "The existing summary has no complete source identity proof. Clear or rebuild it explicitly.",
+        );
         return;
       }
-      let sourceProofs: { projectProofs: { projectId: string; cwd: string }[]; accountProofs: { accountId: string; version: string }[]; nativeProofs?: NativeLibraryProof[] } | undefined;
-      try { sourceProofs = await this.ports.sourceProofs?.(messages, [...projects], priorProofs); }
-      catch {
+      let sourceProofs:
+        | {
+            projectProofs: { projectId: string; cwd: string }[];
+            accountProofs: { accountId: string; version: string }[];
+            nativeProofs?: NativeLibraryProof[];
+          }
+        | undefined;
+      try {
+        sourceProofs = await this.ports.sourceProofs?.(messages, [...projects], priorProofs);
+      } catch {
         await this.block(threadId, state, "privacy", "Conversation source access is unavailable.");
         return;
       }
@@ -570,11 +642,20 @@ export class HostAssistantThreadSummaries {
         const generate = async (valid: () => boolean) => {
           if (!valid()) throw new Error("Summary source access changed.");
           invoked = true;
-          return this.ports.generate({ profile: admission.profile, thread: { ...thread, summary: previousText }, messages: input, instructions, tokenCap: admission.tokenCap, operationId: id, signal: controller.signal });
+          return this.ports.generate({
+            profile: admission.profile,
+            thread: { ...thread, summary: previousText },
+            messages: input,
+            instructions,
+            tokenCap: admission.tokenCap,
+            operationId: id,
+            signal: controller.signal,
+          });
         };
-        const result = sourceProofs && this.ports.withDisclosure
-          ? await this.ports.withDisclosure(threadId, sourceProofs, generate)
-          : await generate(() => true);
+        const result =
+          sourceProofs && this.ports.withDisclosure
+            ? await this.ports.withDisclosure(threadId, sourceProofs, generate)
+            : await generate(() => true);
         observedTokens =
           result.tokens !== undefined && Number.isFinite(result.tokens)
             ? Math.max(0, Math.ceil(result.tokens))
@@ -589,92 +670,100 @@ export class HostAssistantThreadSummaries {
           if (!current || sourceHash(current) !== intent.sourceHashes[index])
             throw new Error("Summary source changed before commit.");
         }
-        const commit = async (valid: () => boolean) => this.store.transaction(async () => {
-          if (!valid()) throw new Error("Summary source access changed.");
-          controller.signal.throwIfAborted();
-          for (let index = 0; index < messages.length; index++) {
-            const source = await this.ports.message(messages[index].id);
-            if (!source || sourceHash(source) !== intent.sourceHashes[index])
-              throw new Error("Summary source changed at commit.");
-          }
-          const current = await this.state(threadId),
-            currentThreadRow = await this.store.db
-              .prepare(
-                "SELECT value,version FROM assistant_threads WHERE id=? AND deleted_at IS NULL",
-              )
-              .get(threadId);
-          if (
-            current.epoch !== intent.epoch ||
-            current.cursor !== state.cursor ||
-            current.artifactId !== state.artifactId ||
-            !currentThreadRow
-          )
-            throw new Error("Summary source changed before commit.");
-          const currentThread = JSON.parse(currentThreadRow.value) as AssistantThread;
-          if (
-            currentThread.projectId !== thread.projectId ||
-            currentThread.summary !== thread.summary
-          )
-            throw new Error("The current summary changed before commit.");
-          const proof: AssistantThreadSummaryProof = {
-              id,
-              version: (previous?.proof.version ?? 0) + 1,
-              projectIds: [...projects].sort(),
-              throughMessageId: messages.at(-1)?.id ?? previous!.proof.throughMessageId,
-              messageCount: (previous?.proof.messageCount ?? 0) + messages.length,
-              createdAt: this.now(),
-              inputTruncated: !!previous?.proof.inputTruncated || truncated,
-              omittedMessages: previous?.proof.omittedMessages ?? 0,
-            },
-            artifact: Artifact = {
-              proof,
-              threadId,
-              text,
-              textHash: hash(text),
-              throughSequence: intent.throughSequence,
-              sourceHashes: messages.map((message) =>
-                hash([hash(message.id), sourceHash(message)]),
-              ),
-              ...(sourceProofs ? { projectProofs: sourceProofs.projectProofs, accountProofs: sourceProofs.accountProofs, nativeProofs: sourceProofs.nativeProofs ?? [] } : {}),
-              ...(previous ? { previousArtifactId: previous.proof.id } : {}),
-            };
-          await this.store.db
-            .prepare("INSERT INTO assistant_summary_artifacts(id,value) VALUES(?,?)")
-            .run(id, JSON.stringify(artifact));
-          const updated = { ...currentThread, summary: text, version: currentThread.version + 1 };
-          delete updated.summaryProof;
-          delete updated.summaryState;
-          const saved = await this.store.db
-            .prepare(
-              "UPDATE assistant_threads SET value=?,version=? WHERE id=? AND version=? AND deleted_at IS NULL",
+        const commit = async (valid: () => boolean) =>
+          this.store.transaction(async () => {
+            if (!valid()) throw new Error("Summary source access changed.");
+            controller.signal.throwIfAborted();
+            for (let index = 0; index < messages.length; index++) {
+              const source = await this.ports.message(messages[index].id);
+              if (!source || sourceHash(source) !== intent.sourceHashes[index])
+                throw new Error("Summary source changed at commit.");
+            }
+            const current = await this.state(threadId),
+              currentThreadRow = await this.store.db
+                .prepare(
+                  "SELECT value,version FROM assistant_threads WHERE id=? AND deleted_at IS NULL",
+                )
+                .get(threadId);
+            if (
+              current.epoch !== intent.epoch ||
+              current.cursor !== state.cursor ||
+              current.artifactId !== state.artifactId ||
+              !currentThreadRow
             )
-            .run(JSON.stringify(updated), updated.version, threadId, currentThreadRow.version);
-          if (Number(saved.changes) !== 1)
-            throw new Error("The conversation changed before summary commit.");
-          const pending =
-            current.pending ||
-            (await this.rows(threadId, intent.throughSequence, interval)).length >= interval;
-          await this.writeState(threadId, {
-            ...current,
-            cursor: intent.throughSequence,
-            artifactId: id,
-            blocked: undefined,
-            retryAfter: undefined,
-            pending,
-            public: pending ? this.status("pending") : this.status("ready"),
-          });
-          await this.writeIntent({ ...intent, status: "complete" });
-          await this.ports.settle(
-            id,
-            intent.day,
-            intent.tokenCap,
-            tokens,
-            result.tokens === undefined,
-          );
-          await this.ports.event("conversation.summaryUpdated", tokens);
-          if (!valid()) throw new Error("Summary source access changed.");
-        }, "critical");
-        if (sourceProofs && this.ports.withDisclosure) await this.ports.withDisclosure(threadId, sourceProofs, commit);
+              throw new Error("Summary source changed before commit.");
+            const currentThread = JSON.parse(currentThreadRow.value) as AssistantThread;
+            if (
+              currentThread.projectId !== thread.projectId ||
+              currentThread.summary !== thread.summary
+            )
+              throw new Error("The current summary changed before commit.");
+            const proof: AssistantThreadSummaryProof = {
+                id,
+                version: (previous?.proof.version ?? 0) + 1,
+                projectIds: [...projects].sort(),
+                throughMessageId: messages.at(-1)?.id ?? previous!.proof.throughMessageId,
+                messageCount: (previous?.proof.messageCount ?? 0) + messages.length,
+                createdAt: this.now(),
+                inputTruncated: !!previous?.proof.inputTruncated || truncated,
+                omittedMessages: previous?.proof.omittedMessages ?? 0,
+              },
+              artifact: Artifact = {
+                proof,
+                threadId,
+                text,
+                textHash: hash(text),
+                throughSequence: intent.throughSequence,
+                sourceHashes: messages.map((message) =>
+                  hash([hash(message.id), sourceHash(message)]),
+                ),
+                ...(sourceProofs
+                  ? {
+                      projectProofs: sourceProofs.projectProofs,
+                      accountProofs: sourceProofs.accountProofs,
+                      nativeProofs: sourceProofs.nativeProofs ?? [],
+                    }
+                  : {}),
+                ...(previous ? { previousArtifactId: previous.proof.id } : {}),
+              };
+            await this.store.db
+              .prepare("INSERT INTO assistant_summary_artifacts(id,value) VALUES(?,?)")
+              .run(id, JSON.stringify(artifact));
+            const updated = { ...currentThread, summary: text, version: currentThread.version + 1 };
+            delete updated.summaryProof;
+            delete updated.summaryState;
+            const saved = await this.store.db
+              .prepare(
+                "UPDATE assistant_threads SET value=?,version=? WHERE id=? AND version=? AND deleted_at IS NULL",
+              )
+              .run(JSON.stringify(updated), updated.version, threadId, currentThreadRow.version);
+            if (Number(saved.changes) !== 1)
+              throw new Error("The conversation changed before summary commit.");
+            const pending =
+              current.pending ||
+              (await this.rows(threadId, intent.throughSequence, interval)).length >= interval;
+            await this.writeState(threadId, {
+              ...current,
+              cursor: intent.throughSequence,
+              artifactId: id,
+              blocked: undefined,
+              retryAfter: undefined,
+              pending,
+              public: pending ? this.status("pending") : this.status("ready"),
+            });
+            await this.writeIntent({ ...intent, status: "complete" });
+            await this.ports.settle(
+              id,
+              intent.day,
+              intent.tokenCap,
+              tokens,
+              result.tokens === undefined,
+            );
+            await this.ports.event("conversation.summaryUpdated", tokens);
+            if (!valid()) throw new Error("Summary source access changed.");
+          }, "critical");
+        if (sourceProofs && this.ports.withDisclosure)
+          await this.ports.withDisclosure(threadId, sourceProofs, commit);
         else await commit(() => true);
       } catch (error) {
         const preflight = !!(
@@ -723,4 +812,3 @@ export class HostAssistantThreadSummaries {
     }
   }
 }
-

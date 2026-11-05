@@ -1,5 +1,6 @@
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Button } from "../../../shared/ui/Button";
-import { useLocale, useT } from "../../../shared/i18n";
+import { t, useLocale, useT } from "../../../shared/i18n";
 import { memo, useEffect, useRef, useState } from "react";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { Shimmer } from "../../../shared/ui/Shimmer";
@@ -418,11 +419,10 @@ function DockMark({ state }: { state: ActivityDockModel["state"] }) {
     );
   }
   return (
-    <span
+    <StatusDot
+      label={t(state === "working" ? "Working" : "Waiting")}
       aria-hidden
-      className={`size-1.5 shrink-0 rounded-full bg-(--ui-tone-accent-subtle) ${
-        state === "working" ? "" : "activity-dock-waiting"
-      }`}
+      tone={state === "working" ? "accent" : "neutral"}
     />
   );
 }

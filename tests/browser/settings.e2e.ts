@@ -1,65 +1,100 @@
 import { test, expect } from "@playwright/test";
 
-for (const theme of ["dark", "light"]) for (const width of [1280, 800]) {
-  test(`workspace gradients retain custom designs and synchronize windows: ${theme} ${width}`, async ({ page, context, browserName }) => {
-    const key = "bycoda.workspaceBackground.v1";
-    const url = `/tests/browser/settings.html?section=appearance&theme=${theme}&lang=en`;
-    await page.setViewportSize({ width, height: 1000 });
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(url);
-    const group = page.locator('[data-setting-id="workspace-background"]');
-    await expect(group).toBeAttached();
-    await group.scrollIntoViewIfNeeded();
-    const stored = () => page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "null"), key);
-    const previousGlass = await page.evaluate(() => ["bycoda.bodyGlass", "bycoda.windowGlass"].map((key) => localStorage.getItem(key)));
-    await group.getByRole("radio", { name: "Ocean", exact: true }).click();
-    await expect.poll(stored).toMatchObject({ enabled: true });
-    await group.getByRole("button", { name: "Customize background", exact: true }).click();
-    await group.getByText("Soft blend", { exact: true }).click();
-    await group.getByRole("slider", { name: "Gradient angle", exact: true }).press("ArrowRight");
-    const angle = (await stored()).angle;
-    await group.getByText("Radial", { exact: true }).click();
-    await expect(group.getByRole("slider", { name: "Gradient angle", exact: true })).toHaveAttribute("aria-disabled", "true");
-    expect((await stored()).angle).toBe(angle);
-    await group.getByText("Soft blend", { exact: true }).click();
-    await group.getByRole("button", { name: "Color 1", exact: true }).click();
-    await page.getByRole("textbox", { name: "Hex color", exact: true }).fill("#2244aa");
-    await expect.poll(async () => (await stored()).colors[0]).toBe("#2244aa");
-    await page.keyboard.press("Escape");
-    const design = await stored();
-    const toggle = group.getByRole("switch", { name: "Show workspace background", exact: true });
-    await toggle.click();
-    await expect(page.locator("html")).not.toHaveClass(/has-workspace-background/);
-    expect((await stored()).colors).toEqual(design.colors);
-    await toggle.click();
-    await page.reload();
-    await expect(page.locator("html")).toHaveClass(/has-workspace-background/);
-    expect(await stored()).toEqual(design);
-    expect(await page.evaluate(() => ["bycoda.bodyGlass", "bycoda.windowGlass"].map((key) => localStorage.getItem(key)))).toEqual(previousGlass);
-    const sibling = await context.newPage();
-    try {
-      await sibling.goto(url);
-      await expect(sibling.locator("html")).toHaveClass(/has-workspace-background/);
+for (const theme of ["dark", "light"])
+  for (const width of [1280, 800]) {
+    test(`workspace gradients retain custom designs and synchronize windows: ${theme} ${width}`, async ({
+      page,
+      context,
+      browserName,
+    }) => {
+      const key = "bycoda.workspaceBackground.v1";
+      const url = `/tests/browser/settings.html?section=appearance&theme=${theme}&lang=en`;
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(url);
+      const group = page.locator('[data-setting-id="workspace-background"]');
+      await expect(group).toBeAttached();
+      await group.scrollIntoViewIfNeeded();
+      const stored = () =>
+        page.evaluate((key) => JSON.parse(localStorage.getItem(key) ?? "null"), key);
+      const previousGlass = await page.evaluate(() =>
+        ["bycoda.bodyGlass", "bycoda.windowGlass"].map((key) => localStorage.getItem(key)),
+      );
+      await group.getByRole("radio", { name: "Ocean", exact: true }).click();
+      await expect.poll(stored).toMatchObject({ enabled: true });
       await group.getByRole("button", { name: "Customize background", exact: true }).click();
+      await group.getByText("Soft blend", { exact: true }).click();
       await group.getByRole("slider", { name: "Gradient angle", exact: true }).press("ArrowRight");
-      const changed = await stored();
-      await expect.poll(() => sibling.evaluate(() => getComputedStyle(document.documentElement).backgroundImage)).toContain(`${changed.angle}deg`);
-      if (browserName === "chromium") {
-        const cdp = await context.newCDPSession(page);
-        try {
-          await cdp.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-transparency", value: "reduce" }] });
-          await expect.poll(() => page.evaluate(() => getComputedStyle(document.documentElement).backgroundImage)).toBe("none");
-          await expect(group.getByText("Your accessibility settings hide workspace backgrounds. Your design is still saved.", { exact: true })).toBeVisible();
-          expect((await stored()).enabled).toBe(true);
-        } finally {
-          await cdp.send("Emulation.setEmulatedMedia", { features: [] });
-          await cdp.detach();
+      const angle = (await stored()).angle;
+      await group.getByText("Radial", { exact: true }).click();
+      await expect(
+        group.getByRole("slider", { name: "Gradient angle", exact: true }),
+      ).toHaveAttribute("aria-disabled", "true");
+      expect((await stored()).angle).toBe(angle);
+      await group.getByText("Soft blend", { exact: true }).click();
+      await group.getByRole("button", { name: "Color 1", exact: true }).click();
+      await page.getByRole("textbox", { name: "Hex color", exact: true }).fill("#2244aa");
+      await expect.poll(async () => (await stored()).colors[0]).toBe("#2244aa");
+      await page.keyboard.press("Escape");
+      const design = await stored();
+      const toggle = group.getByRole("switch", { name: "Show workspace background", exact: true });
+      await toggle.click();
+      await expect(page.locator("html")).not.toHaveClass(/has-workspace-background/);
+      expect((await stored()).colors).toEqual(design.colors);
+      await toggle.click();
+      await page.reload();
+      await expect(page.locator("html")).toHaveClass(/has-workspace-background/);
+      expect(await stored()).toEqual(design);
+      expect(
+        await page.evaluate(() =>
+          ["bycoda.bodyGlass", "bycoda.windowGlass"].map((key) => localStorage.getItem(key)),
+        ),
+      ).toEqual(previousGlass);
+      const sibling = await context.newPage();
+      try {
+        await sibling.goto(url);
+        await expect(sibling.locator("html")).toHaveClass(/has-workspace-background/);
+        await group.getByRole("button", { name: "Customize background", exact: true }).click();
+        await group
+          .getByRole("slider", { name: "Gradient angle", exact: true })
+          .press("ArrowRight");
+        const changed = await stored();
+        await expect
+          .poll(() =>
+            sibling.evaluate(() => getComputedStyle(document.documentElement).backgroundImage),
+          )
+          .toContain(`${changed.angle}deg`);
+        if (browserName === "chromium") {
+          const cdp = await context.newCDPSession(page);
+          try {
+            await cdp.send("Emulation.setEmulatedMedia", {
+              features: [{ name: "prefers-reduced-transparency", value: "reduce" }],
+            });
+            await expect
+              .poll(() =>
+                page.evaluate(() => getComputedStyle(document.documentElement).backgroundImage),
+              )
+              .toBe("none");
+            await expect(
+              group.getByText(
+                "Your accessibility settings hide workspace backgrounds. Your design is still saved.",
+                { exact: true },
+              ),
+            ).toBeVisible();
+            expect((await stored()).enabled).toBe(true);
+          } finally {
+            await cdp.send("Emulation.setEmulatedMedia", { features: [] });
+            await cdp.detach();
+          }
         }
+      } finally {
+        await sibling.close();
       }
-    } finally { await sibling.close(); }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-  });
-}
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
+    });
+  }
 
 for (const theme of ["light", "dark"]) {
   for (const width of [390, 1440]) {

@@ -37,7 +37,9 @@ test("image preview opens and Escape returns focus", async ({ page }) => {
   await expect(image).toBeFocused();
 });
 
-test("persisted message images show thumbnails before opening and retain them after Escape", async ({ page }) => {
+test("persisted message images show thumbnails before opening and retain them after Escape", async ({
+  page,
+}) => {
   await page.goto("/tests/browser/attachment-cards.html");
   const message = page.getByRole("region", { name: "Message", exact: true });
   const trigger = message.getByRole("button", {
@@ -48,7 +50,9 @@ test("persisted message images show thumbnails before opening and retain them af
   const thumbnail = trigger.locator("img");
   await expect(thumbnail).toBeVisible();
   await expect(thumbnail).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
-  await expect.poll(() => thumbnail.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(400);
+  await expect
+    .poll(() => thumbnail.evaluate((element: HTMLImageElement) => element.naturalWidth))
+    .toBe(400);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const source = await thumbnail.getAttribute("src");
   await trigger.click();
@@ -96,7 +100,11 @@ test("attachment card themes and widths", async ({ page }) => {
         .getByRole("button", { name: "Open saved-mountain-reference.svg full screen", exact: true })
         .locator("img");
       await expect(persistedThumbnail).toBeVisible();
-      await expect.poll(() => persistedThumbnail.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBe(400);
+      await expect
+        .poll(() =>
+          persistedThumbnail.evaluate((element: HTMLImageElement) => element.naturalWidth),
+        )
+        .toBe(400);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
       );

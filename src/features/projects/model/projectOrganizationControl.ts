@@ -1,5 +1,6 @@
 import { withRoomPrivacyMutation } from "../../group-lock/model/roomPrivacyProjection";
-import { listSessionsByProject, type SessionSummary } from "../../sessions/data/sessionStore";
+import { listSessionsByProject, type SessionSummary } from "../../sessions/public/sessionStore";
+
 import { getGroupLockView } from "../../group-lock/model/groupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { pathKey, projectKey } from "../../../shared/lib/paths";
@@ -27,14 +28,24 @@ import {
   saveSessionFolders,
   type FolderMoveTarget,
   type SessionFolder,
-} from "../../sessions/model/sessionFolders";
+} from "../../sessions/public/sessionFolders";
 import {
   loadSessionOrder,
   saveSessionOrder,
   type SessionOrder,
-} from "../../sessions/model/sessionOrder";
-import { executeOrganizationOperation, organizationFoldersForProject, organizationOrderForProject, type OrganizationOperation } from "../../sessions/model/sessionOrganizationOperations";
-import { hydrateSessionOrganization, listSessionOrganizationGestures, NATIVE_SESSION_ORGANIZATION_ACTIVE, reconcileSessionOrganizationReceipt } from "../../sessions/model/sessionOrganizationStore";
+} from "../../sessions/public/sessionOrder";
+import {
+  executeOrganizationOperation,
+  organizationFoldersForProject,
+  organizationOrderForProject,
+  type OrganizationOperation,
+} from "../../sessions/public/sessionOrganizationOperations";
+import {
+  hydrateSessionOrganization,
+  listSessionOrganizationGestures,
+  NATIVE_SESSION_ORGANIZATION_ACTIVE,
+  reconcileSessionOrganizationReceipt,
+} from "../../sessions/public/sessionOrganizationStore";
 
 export type ProjectOrganizationContext = {
   environmentId: string;
@@ -180,7 +191,8 @@ async function reviewedMetadata() {
   if (!NATIVE_SESSION_ORGANIZATION_ACTIVE) return raw;
   const organization = await hydrateSessionOrganization();
   const combined = JSON.stringify([raw, organization.folders, organization.order]);
-  if (combined.length > 4 * 1024 * 1024) throw new Error("Organization metadata exceeds the review budget");
+  if (combined.length > 4 * 1024 * 1024)
+    throw new Error("Organization metadata exceeds the review budget");
   return combined;
 }
 
@@ -210,7 +222,7 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
     const lock = getGroupLockView().lock;
     if (
       !context.valid() ||
-      (!!context.sourceSessionId === !!context.sourceThreadId) ||
+      !!context.sourceSessionId === !!context.sourceThreadId ||
       (!!context.sourceThreadId && !context.projectId) ||
       context.projectCwd.startsWith("remote://") ||
       isProjectLockedIn(lock, context.projectCwd) ||
@@ -222,7 +234,9 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
     assert(context);
     const privacy = privacySignature();
     const raw = await reviewedMetadata();
-    const nativeOrganization = NATIVE_SESSION_ORGANIZATION_ACTIVE ? await hydrateSessionOrganization() : undefined;
+    const nativeOrganization = NATIVE_SESSION_ORGANIZATION_ACTIVE
+      ? await hydrateSessionOrganization()
+      : undefined;
     const stored = await deps.sessions(context.projectCwd);
     assert(context);
     if (stored.length > 500)
@@ -236,8 +250,12 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
       .filter((row) => !row.orchestrationLeadId && pathKey(row.cwd) === pathKey(context.projectCwd))
       .map((row) => ({ id: row.id, title: row.title.slice(0, 1000) }));
     const ownIds = new Set(sessions.map((row) => row.id));
-    const folders = nativeOrganization ? organizationFoldersForProject(nativeOrganization, context.projectCwd) : loadSessionFolders(context.projectCwd);
-    const sessionOrder = nativeOrganization ? organizationOrderForProject(nativeOrganization, context.projectCwd) : loadSessionOrder(context.projectCwd);
+    const folders = nativeOrganization
+      ? organizationFoldersForProject(nativeOrganization, context.projectCwd)
+      : loadSessionFolders(context.projectCwd);
+    const sessionOrder = nativeOrganization
+      ? organizationOrderForProject(nativeOrganization, context.projectCwd)
+      : loadSessionOrder(context.projectCwd);
     if (folders.length > 500 || folders.some((folder) => folder.sessionIds.length > 500))
       throw new Error("Project folders exceed the organization review budget");
     const groupIds = new Set(directory.groups.map((row) => row.id));
@@ -254,7 +272,7 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
       JSON.stringify([salt, scope(context), raw, privacy, sessions]),
     );
     assert(context);
-    if (await reviewedMetadata() !== raw || privacySignature() !== privacy)
+    if ((await reviewedMetadata()) !== raw || privacySignature() !== privacy)
       throw new Error("Desktop organization changed while reading; refresh it");
     const snapshot: ProjectOrganizationSnapshot = {
       environmentId: context.environmentId,
@@ -309,12 +327,21 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
       if (!id(input.operationId)) throw new Error("Invalid organization operation");
       const receipt = receipts.get(input.operationId);
       if ((!receipt || receipt.status.state === "unknown") && NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-        const saved = (await listSessionOrganizationGestures()).find((entry) => entry.id === input.operationId);
+        const saved = (await listSessionOrganizationGestures()).find(
+          (entry) => entry.id === input.operationId,
+        );
         const descriptor = saved?.descriptor;
-        if (saved && record(descriptor) && descriptor.kind === "reviewed" && descriptor.authorityScope === scope(context)) {
+        if (
+          saved &&
+          record(descriptor) &&
+          descriptor.kind === "reviewed" &&
+          descriptor.authorityScope === scope(context)
+        ) {
           if (saved.state === "applied") return { state: "applied" };
           if (saved.state === "rejected") return { state: "failed" };
-          const outcome = await reconcileSessionOrganizationReceipt(`${saved.id}:effect:${saved.attempt}`);
+          const outcome = await reconcileSessionOrganizationReceipt(
+            `${saved.id}:effect:${saved.attempt}`,
+          );
           return outcome ? { state: outcome.applied ? "applied" : "failed" } : { state: "unknown" };
         }
       }
@@ -323,7 +350,8 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
         : { state: "unknown" };
     }
     if (action !== "organization.patch") throw new Error("Unsupported organization action");
-    if (context.sourceThreadId && !context.authorize) throw new Error("Room effect authority is unavailable");
+    if (context.sourceThreadId && !context.authorize)
+      throw new Error("Room effect authority is unavailable");
     exact(input, ["expectedRevision", "operationId", "change"]);
     if (
       !id(input.operationId) ||
@@ -357,12 +385,23 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
       let verify: () => boolean | Promise<boolean>;
       const saveNative = async (operation: OrganizationOperation) => {
         const result = await executeOrganizationOperation(input.operationId as string, {
-          kind: "reviewed", cwd: context.projectCwd, authorityScope: scope(context),
-          expectedFolders: JSON.stringify(current.folders), expectedOrder: JSON.stringify(current.sessionOrder), operation,
+          kind: "reviewed",
+          cwd: context.projectCwd,
+          authorityScope: scope(context),
+          expectedFolders: JSON.stringify(current.folders),
+          expectedOrder: JSON.stringify(current.sessionOrder),
+          operation,
         });
-        if (result.state === "unknown") { nativeOutcome = "unknown"; throw new Error("Organization outcome is unknown."); }
-        if (result.state === "applied-unavailable") { nativeOutcome = "applied"; throw new Error("Organization was applied, but refresh failed."); }
-        if (result.state !== "applied") throw new Error("Desktop organization changed; review it again.");
+        if (result.state === "unknown") {
+          nativeOutcome = "unknown";
+          throw new Error("Organization outcome is unknown.");
+        }
+        if (result.state === "applied-unavailable") {
+          nativeOutcome = "applied";
+          throw new Error("Organization was applied, but refresh failed.");
+        }
+        if (result.state !== "applied")
+          throw new Error("Desktop organization changed; review it again.");
         nativeOutcome = "applied";
       };
       const folder = (value: unknown) => {
@@ -378,9 +417,17 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
         return chosen;
       };
       const saveFolders = (next: SessionFolder[], operation: OrganizationOperation) => {
-        save = NATIVE_SESSION_ORGANIZATION_ACTIVE ? () => saveNative(operation) : () => saveSessionFolders(context.projectCwd, next);
+        save = NATIVE_SESSION_ORGANIZATION_ACTIVE
+          ? () => saveNative(operation)
+          : () => saveSessionFolders(context.projectCwd, next);
         verify = NATIVE_SESSION_ORGANIZATION_ACTIVE
-          ? async () => JSON.stringify(organizationFoldersForProject(await hydrateSessionOrganization(), context.projectCwd)) === JSON.stringify(next)
+          ? async () =>
+              JSON.stringify(
+                organizationFoldersForProject(
+                  await hydrateSessionOrganization(),
+                  context.projectCwd,
+                ),
+              ) === JSON.stringify(next)
           : () => JSON.stringify(loadSessionFolders(context.projectCwd)) === JSON.stringify(next);
       };
       switch (change.kind) {
@@ -440,7 +487,10 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
           if (!groupId || !current.groupIds.has(groupId))
             throw new Error("Assign this project to an available group first");
           const label = name(change.name);
-          save = () => { if (!updateProjectGroup(groupId, (group) => ({ ...group, name: label }))) throw new Error("Could not save group name"); };
+          save = () => {
+            if (!updateProjectGroup(groupId, (group) => ({ ...group, name: label })))
+              throw new Error("Could not save group name");
+          };
           verify = () => loadProjectGroups().find((row) => row.id === groupId)?.name === label;
           break;
         }
@@ -468,15 +518,32 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
             throw new Error("Folder nesting limit reached");
           const label = name(change.name);
           const folderId = crypto.randomUUID();
-          saveFolders(createFolderWithSessions(current.folders, chosen, label, { parentId: parent?.id, id: folderId }).folders,
-            { kind: "create", cwd: context.projectCwd, folderId, sessionIds: chosen, name: label, parentId: parent?.id });
+          saveFolders(
+            createFolderWithSessions(current.folders, chosen, label, {
+              parentId: parent?.id,
+              id: folderId,
+            }).folders,
+            {
+              kind: "create",
+              cwd: context.projectCwd,
+              folderId,
+              sessionIds: chosen,
+              name: label,
+              parentId: parent?.id,
+            },
+          );
           break;
         }
         case "folderName": {
           exact(change, ["kind", "folderId", "name"]);
           const target = folder(change.folderId);
           const label = name(change.name);
-          saveFolders(renameFolder(current.folders, target.id, label), { kind: "rename", cwd: context.projectCwd, folderId: target.id, name: label });
+          saveFolders(renameFolder(current.folders, target.id, label), {
+            kind: "rename",
+            cwd: context.projectCwd,
+            folderId: target.id,
+            name: label,
+          });
           break;
         }
         case "folderMove": {
@@ -501,25 +568,43 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
             throw new Error("Invalid folder placement");
           if (!canMoveFolder(current.folders, targetFolder.id, target as FolderMoveTarget))
             throw new Error("Folder move would create a cycle or exceed nesting");
-          saveFolders(moveFolder(current.folders, targetFolder.id, target as FolderMoveTarget),
-            { kind: "moveFolder", cwd: context.projectCwd, folderId: targetFolder.id, target: target as FolderMoveTarget });
+          saveFolders(moveFolder(current.folders, targetFolder.id, target as FolderMoveTarget), {
+            kind: "moveFolder",
+            cwd: context.projectCwd,
+            folderId: targetFolder.id,
+            target: target as FolderMoveTarget,
+          });
           break;
         }
         case "folderOrder": {
           exact(change, ["kind", "folderIds"]);
           const selected = ids(change.folderIds);
           selected.forEach(folder);
-          saveFolders(reorderSessionFolders(current.folders, selected), { kind: "folderOrder", cwd: context.projectCwd, folderIds: selected });
+          saveFolders(reorderSessionFolders(current.folders, selected), {
+            kind: "folderOrder",
+            cwd: context.projectCwd,
+            folderIds: selected,
+          });
           break;
         }
         case "sessionMove": {
           exact(change, ["kind", "sessionId", "folderId"]);
           const [sessionId] = sessions([change.sessionId]);
           if (change.folderId === null) {
-            saveFolders(removeSessionFromFolder(current.folders, sessionId), { kind: "assign", cwd: context.projectCwd, folderId: null, sessionIds: [sessionId] });
+            saveFolders(removeSessionFromFolder(current.folders, sessionId), {
+              kind: "assign",
+              cwd: context.projectCwd,
+              folderId: null,
+              sessionIds: [sessionId],
+            });
           } else {
             const to = folder(change.folderId);
-            saveFolders(addSessionToFolder(current.folders, to.id, sessionId), { kind: "assign", cwd: context.projectCwd, folderId: to.id, sessionIds: [sessionId] });
+            saveFolders(addSessionToFolder(current.folders, to.id, sessionId), {
+              kind: "assign",
+              cwd: context.projectCwd,
+              folderId: to.id,
+              sessionIds: [sessionId],
+            });
           }
           break;
         }
@@ -528,8 +613,13 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
           const target = folder(change.folderId);
           const chosen = sessions(change.sessionIds);
           const unknown = target.sessionIds.filter((id) => !current.ownIds.has(id));
-          saveFolders(arrangeFolderSessions(current.folders, target.id, [...chosen, ...unknown]),
-            { kind: "reviewedFolderSessions", cwd: context.projectCwd, folderId: target.id, sessionIds: chosen, knownIds: [...current.ownIds] });
+          saveFolders(arrangeFolderSessions(current.folders, target.id, [...chosen, ...unknown]), {
+            kind: "reviewedFolderSessions",
+            cwd: context.projectCwd,
+            folderId: target.id,
+            sessionIds: chosen,
+            knownIds: [...current.ownIds],
+          });
           break;
         }
         case "sessionOrder": {
@@ -545,10 +635,22 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
             [list]: [...chosen, ...existing.filter((id) => !chosen.includes(id))],
           };
           save = NATIVE_SESSION_ORGANIZATION_ACTIVE
-            ? () => saveNative({ kind: "reviewedOrder", cwd: context.projectCwd, list, sessionIds: chosen })
+            ? () =>
+                saveNative({
+                  kind: "reviewedOrder",
+                  cwd: context.projectCwd,
+                  list,
+                  sessionIds: chosen,
+                })
             : () => saveSessionOrder(context.projectCwd, next);
           verify = NATIVE_SESSION_ORGANIZATION_ACTIVE
-            ? async () => JSON.stringify(organizationOrderForProject(await hydrateSessionOrganization(), context.projectCwd)) === JSON.stringify(next)
+            ? async () =>
+                JSON.stringify(
+                  organizationOrderForProject(
+                    await hydrateSessionOrganization(),
+                    context.projectCwd,
+                  ),
+                ) === JSON.stringify(next)
             : () => JSON.stringify(loadSessionOrder(context.projectCwd)) === JSON.stringify(next);
           break;
         }
@@ -556,11 +658,13 @@ export function createProjectOrganizationControl(overrides: Partial<Deps> = {}) 
           throw new Error("Unsupported organization change");
       }
       assert(context);
-      if (context.authorize && !(await context.authorize())) throw new Error("Organization authority revoked");
+      if (context.authorize && !(await context.authorize()))
+        throw new Error("Organization authority revoked");
       await withRoomPrivacyMutation(async () => {
-        if (context.authorize && !(await context.authorize())) throw new Error("Organization authority revoked");
+        if (context.authorize && !(await context.authorize()))
+          throw new Error("Organization authority revoked");
         assert(context);
-        if (await reviewedMetadata() !== current.raw || privacySignature() !== current.privacy)
+        if ((await reviewedMetadata()) !== current.raw || privacySignature() !== current.privacy)
           throw new Error("Desktop organization changed before saving");
         await save!();
         if (!(await verify!())) throw new Error("Organization save could not be verified");

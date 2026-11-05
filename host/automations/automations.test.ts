@@ -620,7 +620,6 @@ it("retains same-day usage above the history limit and resets allowance the next
   expect((await automations.runs("nightly"))[0].status).toBe("running");
 });
 
-
 it("selects only owned recovery candidates without reading full run history", async () => {
   const f = await setup();
   await f.automations.save(f.input({ enabled: false }));
@@ -637,12 +636,27 @@ it("selects only owned recovery candidates without reading full run history", as
     { id: "clean-failure", status: "failed" },
   ];
   for (const seed of seeds) {
-    const run = { ...seed, automationId: "nightly", createdAt: f.clock.now, trigger: "manual", scheduledFor: f.clock.now };
-    await f.store.db.prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)").run(run.id, "nightly", run.createdAt, JSON.stringify(run));
+    const run = {
+      ...seed,
+      automationId: "nightly",
+      createdAt: f.clock.now,
+      trigger: "manual",
+      scheduledFor: f.clock.now,
+    };
+    await f.store.db
+      .prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)")
+      .run(run.id, "nightly", run.createdAt, JSON.stringify(run));
   }
-  const history = vi.spyOn(f.automations, "runs").mockRejectedValue(new Error("Full history must not be read"));
+  const history = vi
+    .spyOn(f.automations, "runs")
+    .mockRejectedValue(new Error("Full history must not be read"));
   const queries = f.automations as unknown as { activeRuns(): Promise<Array<{ id: string }>> };
-  expect((await queries.activeRuns()).map((run) => run.id).sort()).toEqual(["array-workspace", "cleanup", "managed", "running"]);
+  expect((await queries.activeRuns()).map((run) => run.id).sort()).toEqual([
+    "array-workspace",
+    "cleanup",
+    "managed",
+    "running",
+  ]);
   expect(history).not.toHaveBeenCalled();
   history.mockRestore();
   expect(await f.automations.runs("nightly")).toHaveLength(seeds.length);
@@ -652,8 +666,15 @@ it("keeps legacy nonempty cleanup metadata as a deletion hold instead of SQLite 
   const f = await setup();
   await f.automations.save(f.input({ enabled: false }));
   await f.store.db.prepare("INSERT INTO automation_runs VALUES (?,?,?,?)").run(
-    "cleanup-text", "nightly", f.clock.now,
-    JSON.stringify({ id: "cleanup-text", automationId: "nightly", status: "failed", cleanupPending: "unknown" }),
+    "cleanup-text",
+    "nightly",
+    f.clock.now,
+    JSON.stringify({
+      id: "cleanup-text",
+      automationId: "nightly",
+      status: "failed",
+      cleanupPending: "unknown",
+    }),
   );
   await expect(f.automations.delete("nightly")).rejects.toThrow(/cleanup/i);
   expect(await f.automations.runs("nightly")).toHaveLength(1);
@@ -670,10 +691,23 @@ it("counts local-day starts without materializing history or counting skipped/se
     ["skipped", "skipped", f.clock.now],
     ["self", "running", f.clock.now],
   ] as const) {
-    await f.store.db.prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)").run(id, "nightly", startedAt, JSON.stringify({ id, status, startedAt }));
+    await f.store.db
+      .prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)")
+      .run(id, "nightly", startedAt, JSON.stringify({ id, status, startedAt }));
   }
-  const queries = f.automations as unknown as { dailyLimitSkip(input: typeof automation, runId: string, now: number): Promise<string | null> };
+  const queries = f.automations as unknown as {
+    dailyLimitSkip(input: typeof automation, runId: string, now: number): Promise<string | null>;
+  };
   expect(await queries.dailyLimitSkip(automation, "self", f.clock.now)).toBeNull();
-  await f.store.db.prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)").run("second", "nightly", f.clock.now, JSON.stringify({ id: "second", status: "succeeded", startedAt: f.clock.now }));
-  expect(await queries.dailyLimitSkip(automation, "self", f.clock.now)).toBe("Skipped: reached the limit of 2 runs per day.");
+  await f.store.db
+    .prepare("INSERT INTO automation_runs VALUES (?, ?, ?, ?)")
+    .run(
+      "second",
+      "nightly",
+      f.clock.now,
+      JSON.stringify({ id: "second", status: "succeeded", startedAt: f.clock.now }),
+    );
+  expect(await queries.dailyLimitSkip(automation, "self", f.clock.now)).toBe(
+    "Skipped: reached the limit of 2 runs per day.",
+  );
 });

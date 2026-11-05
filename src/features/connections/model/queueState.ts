@@ -1,6 +1,6 @@
 import { isLeaseHeld } from "../../sync/model/runLease";
-import { hasMissingAttachment } from "../../sessions/model/queuePersistence";
-import type { MessageQueueStatus, QueuedMessage } from "../../sessions/model/session";
+import { hasMissingAttachment } from "../../sessions/public/queuePersistence";
+import type { MessageQueueStatus, QueuedMessage } from "../../sessions";
 
 /**
  * One state machine for a message queue, used by the desktop dispatcher, the

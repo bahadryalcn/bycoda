@@ -488,7 +488,15 @@ export class OpenCodeClient {
       },
       onEnd,
     );
-    await openHarnessSse(sessionId, url, this.headers(), this.nativeAuthority, undefined, this.nativeSessionCapability, this.nativeOwnedService);
+    await openHarnessSse(
+      sessionId,
+      url,
+      this.headers(),
+      this.nativeAuthority,
+      undefined,
+      this.nativeSessionCapability,
+      this.nativeOwnedService,
+    );
   }
 
   async closeEvents(sessionId: string): Promise<void> {
@@ -687,7 +695,9 @@ export class OpenCodeClient {
     const hasBody = opts?.body !== undefined;
     const response = await (this.hostRequest ?? harnessHttp)({
       ...(this.nativeSessionId ? { sessionId: this.nativeSessionId } : {}),
-      ...(this.nativeSessionCapability ? { nativeSessionCapability: this.nativeSessionCapability } : {}),
+      ...(this.nativeSessionCapability
+        ? { nativeSessionCapability: this.nativeSessionCapability }
+        : {}),
       ...(this.nativeOwnedService ? { nativeOwnedService: this.nativeOwnedService } : {}),
       ...(this.nativeAuthority
         ? {

@@ -369,7 +369,12 @@ describe("desktop window ownership", () => {
     expect(observed.at(-1)?.running).toBe(false);
     const notifications = observed.length;
     live.beat({ clientId: "A", sessions: [] });
-    expect(observed).toHaveLength(notifications);
+    // Retiring the idle tombstone changes source ownership once; repeated
+    // empty heartbeats after that retirement remain silent.
+    expect(observed).toHaveLength(notifications + 1);
+    expect(observed.at(-1)).toEqual({ running: false, revision: undefined });
+    live.beat({ clientId: "A", sessions: [] });
+    expect(observed).toHaveLength(notifications + 1);
   });
 
   it("keeps other windows alive and routes cancel, approve and answer to their owner", () => {
@@ -718,10 +723,15 @@ describe("in-flight marks believed without a heartbeat", () => {
   });
 });
 
-
 it("drops omitted empty tab metadata while retaining reported command routes", () => {
   const live = new DesktopLive();
-  live.beat({ clientId: "owner", sessions: [{ id: "closed", busy: false }, { id: "open", busy: false }] });
+  live.beat({
+    clientId: "owner",
+    sessions: [
+      { id: "closed", busy: false },
+      { id: "open", busy: false },
+    ],
+  });
   live.beat({ clientId: "owner", sessions: [{ id: "open", busy: false }] });
   const cache = live as unknown as { sessions: Map<string, unknown> };
   expect(cache.sessions.has("closed")).toBe(false);

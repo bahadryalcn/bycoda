@@ -28,12 +28,12 @@ it("finds alternatives by description, ranks exact names and paginates without l
   skill("good-css", "---\ndescription: CSS layout techniques\n---\nprivate body");
   skill("layout", "---\ndescription: Layout design\n---\nbody");
   skill("responsive", "---\ndescription: Responsive layout\n---\nbody", home);
-  const result = (await searchHarnessSkills(cwd, { query: "layout", limit: 2 }, home));
+  const result = await searchHarnessSkills(cwd, { query: "layout", limit: 2 }, home);
   expect(result.skills.map((entry) => entry.name)).toEqual(["layout", "good-css"]);
   expect(JSON.stringify(result)).not.toContain("private body");
   expect(result.total).toBe(3);
   expect(result.nextOffset).toBe(2);
-  const next = (await searchHarnessSkills(cwd, { query: "layout", offset: 2, limit: 2 }, home));
+  const next = await searchHarnessSkills(cwd, { query: "layout", offset: 2, limit: 2 }, home);
   expect(next.skills.map((entry) => entry.name)).toEqual(["responsive"]);
   expect(next.nextOffset).toBeNull();
   expect((await searchHarnessSkills(cwd, { query: "missing" }, home)).skills).toEqual([]);
@@ -97,7 +97,7 @@ it("ranks by task coverage and exposes same-name alternatives for comparison", a
   );
   skill("review", "project review", cwd);
   skill("review", "personal review", home);
-  const ranked = (await searchHarnessSkills(cwd, { query: "responsive table overflow" }, home));
+  const ranked = await searchHarnessSkills(cwd, { query: "responsive table overflow" }, home);
   expect(ranked.skills[0]).toMatchObject({
     name: "table-overflow",
     matchedTerms: 3,

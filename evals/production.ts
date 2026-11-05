@@ -4,7 +4,10 @@ import {
 } from "../src/features/sessions/model/sessionTitle";
 import { SKILL_INVOCATION_GUIDANCE } from "../src/integrations/harness/core/skillGuidance";
 import { RUNTIME_READ_ACTIONS } from "../host/conversation/conversation-runtime-read-tools";
-import { conversationToolCatalog, validateConversationTool } from "../host/conversation/conversation-tools";
+import {
+  conversationToolCatalog,
+  validateConversationTool,
+} from "../host/conversation/conversation-tools";
 import { assertSessionGrantScope } from "../host/sessions/session-authority";
 import { HOST_RPC_METHODS } from "../src/shared/model/host-contracts/methods";
 import { SessionSyncSchema } from "../src/shared/model/host-contracts/session-reads";

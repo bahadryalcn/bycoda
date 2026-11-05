@@ -8,11 +8,11 @@ import {
   type DiffViewer,
 } from "../model/settings";
 import { Group, Row, Segmented, SettingsFeedback } from "./settingsControls";
-import { GitGenerationModelControl } from "../../source-control/ui/GitGenerationSettings";
+import { GitGenerationModelControl } from "../../source-control/public/GitGenerationSettings";
 import {
   saveDefaultGitGenerationChoice,
   useDefaultGitGenerationChoice,
-} from "../../source-control/model/gitGenerationPreferences";
+} from "../../source-control/public/gitGenerationPreferences";
 import { RotateCcw } from "../../../shared/ui/icons";
 import { Button } from "../../../shared/ui/Button";
 

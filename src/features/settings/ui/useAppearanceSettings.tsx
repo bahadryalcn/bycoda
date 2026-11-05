@@ -1,5 +1,8 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { saveWorkspaceBackground, WORKSPACE_BACKGROUND_DEFAULT } from "../model/workspaceBackground";
+import {
+  saveWorkspaceBackground,
+  WORKSPACE_BACKGROUND_DEFAULT,
+} from "../model/workspaceBackground";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   readAppearanceSaveIssues,
@@ -104,7 +107,7 @@ import {
 import {
   pickAndSaveChatBackground,
   removeChatBackground,
-} from "../../projects/model/chatBackground";
+} from "../../projects/public/chatBackground";
 import {
   applyUiScale,
   loadUiScale,

@@ -11,20 +11,47 @@ it("waits for Native voice closure before disabling its profile and preserves se
   const entered = Promise.withResolvers<void>();
   const closure = Promise.withResolvers<void>();
   let unknown = true;
-  const ports: AssistantPorts = { withNativeVoiceSourcesRetired: async effect => {
-    entered.resolve();
-    await closure.promise;
-    if (unknown) throw new Error("Original Native runtime closure is unknown.");
-    return effect(() => true);
-  } };
+  const ports: AssistantPorts = {
+    withNativeVoiceSourcesRetired: async (effect) => {
+      entered.resolve();
+      await closure.promise;
+      if (unknown) throw new Error("Original Native runtime closure is unknown.");
+      return effect(() => true);
+    },
+  };
   const assistant = new HostAssistant(store, ports);
   try {
     await assistant.ready;
     let profile = (await assistant.request({ op: "snapshot" }, "owner")).snapshot!.profile;
-    profile = (await assistant.request({ op: "profile.update", expectedVersion: profile.version, patch: { enabled: true, setupComplete: true, voiceSetupComplete: true, name: "Assistant", dailyTokenBudget: 10000 } }, "owner")).profile!;
+    profile = (
+      await assistant.request(
+        {
+          op: "profile.update",
+          expectedVersion: profile.version,
+          patch: {
+            enabled: true,
+            setupComplete: true,
+            voiceSetupComplete: true,
+            name: "Assistant",
+            dailyTokenBudget: 10000,
+          },
+        },
+        "owner",
+      )
+    ).profile!;
     let finished = false;
-    const disabling = assistant.request({ op: "profile.update", expectedVersion: profile.version, patch: { enabled: false } }, "owner");
-    void disabling.then(() => { finished = true; }, () => { finished = true; });
+    const disabling = assistant.request(
+      { op: "profile.update", expectedVersion: profile.version, patch: { enabled: false } },
+      "owner",
+    );
+    void disabling.then(
+      () => {
+        finished = true;
+      },
+      () => {
+        finished = true;
+      },
+    );
     await entered.promise;
     expect(finished).toBe(false);
     closure.resolve();
@@ -32,7 +59,10 @@ it("waits for Native voice closure before disabling its profile and preserves se
     profile = (await assistant.request({ op: "snapshot" }, "owner")).snapshot!.profile;
     expect(profile.enabled).toBe(true);
     unknown = false;
-    const result = await assistant.request({ op: "profile.update", expectedVersion: profile.version, patch: { enabled: false } }, "owner");
+    const result = await assistant.request(
+      { op: "profile.update", expectedVersion: profile.version, patch: { enabled: false } },
+      "owner",
+    );
     expect(result.profile!.enabled).toBe(false);
   } finally {
     await assistant.close();

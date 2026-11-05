@@ -644,18 +644,52 @@ it("accepts only finite Chief question proposals and leaves owner data/approvals
 
 it("narrates a current canonical Chief question once and rejects a stale source", async () => {
   const f = await fixture();
-  f.ports.withVoiceNarrationAuthorization = async (_input, _admission, effect) => effect(() => true);
+  f.ports.withVoiceNarrationAuthorization = async (_input, _admission, effect) =>
+    effect(() => true);
   const snapshot = (await f.owner({ op: "snapshot" })).snapshot!;
-  await f.owner({ op: "profile.update", expectedVersion: snapshot.profile.version, patch: { voiceNarration: true, quietStart: 0, quietEnd: 0 } });
+  await f.owner({
+    op: "profile.update",
+    expectedVersion: snapshot.profile.version,
+    patch: { voiceNarration: true, quietStart: 0, quietEnd: 0 },
+  });
   const { AssistantRepository } = await import("../repository");
   const repository = new AssistantRepository(f.store);
-  await repository.put("runtime", { id: "automaticPresence", version: 0, createdAt: f.now, updatedAt: f.now, value: { state: "present", updatedAt: f.now } });
+  await repository.put("runtime", {
+    id: "automaticPresence",
+    version: 0,
+    createdAt: f.now,
+    updatedAt: f.now,
+    value: { state: "present", updatedAt: f.now },
+  });
   const question = await f.ask();
   const room = await f.assistant.globalRoomBinding();
-  const admission = { environmentId: f.store.environmentId, deviceHash: "device", authorized: async () => true };
+  const admission = {
+    environmentId: f.store.environmentId,
+    deviceHash: "device",
+    authorized: async () => true,
+  };
   const source = { threadId: room!.id, generation: "generation" };
-  const pending = await f.assistant.request({ op: "narration.pending", ...source }, "owner", admission);
-  expect(pending.narrationEvents).toContainEqual({ eventId: `question:${question.id}`, kind: "question", text: "Your assistant needs a decision.", createdAt: question.createdAt });
-  await f.store.db.prepare("UPDATE tasks SET value=json_set(value,'$.projectId','other') WHERE id='decision-worker'").run();
-  await expect(f.assistant.request({ op: "narration.claim", ...source, eventId: `question:${question.id}` }, "owner", admission)).rejects.toThrow("Narration authority unavailable.");
+  const pending = await f.assistant.request(
+    { op: "narration.pending", ...source },
+    "owner",
+    admission,
+  );
+  expect(pending.narrationEvents).toContainEqual({
+    eventId: `question:${question.id}`,
+    kind: "question",
+    text: "Your assistant needs a decision.",
+    createdAt: question.createdAt,
+  });
+  await f.store.db
+    .prepare(
+      "UPDATE tasks SET value=json_set(value,'$.projectId','other') WHERE id='decision-worker'",
+    )
+    .run();
+  await expect(
+    f.assistant.request(
+      { op: "narration.claim", ...source, eventId: `question:${question.id}` },
+      "owner",
+      admission,
+    ),
+  ).rejects.toThrow("Narration authority unavailable.");
 });

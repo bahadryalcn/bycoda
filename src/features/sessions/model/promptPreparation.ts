@@ -1,4 +1,4 @@
-import { applyFileMentionsToTurn } from "../../files/model/fileMentions";
+import { applyFileMentionsToTurn } from "../../files/public/fileMentions";
 import { applyNotesToTurn } from "../../notes";
 import {
   applySkillsToTurn,

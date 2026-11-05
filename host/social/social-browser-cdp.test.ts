@@ -113,29 +113,38 @@ it("limits cookie identity reads to known platform origins and makes a stopped w
   await expect(capture.body(1000)).resolves.toBeUndefined();
 });
 
-
-it.each(["missing endpoint", "CDP connection"])("failed %s retires the exact original capsule before returning failure", async (failure) => {
-  const profile = await mkdtemp(join(tmpdir(), "social-cdp-capsule-"));
-  const capsule = {
-    profile, exit: new Promise<void>(() => {}), failed: failure === "missing endpoint",
-    start: vi.fn(async () => {
-      if (failure === "CDP connection")
-        await writeFile(join(profile, "DevToolsActivePort"), "9333\n/devtools/browser/original-id\n");
-    }),
-    startupFailed: vi.fn(async () => {}), markEstablished: vi.fn(),
-  };
-  const reserve = vi.spyOn(SocialBrowserLaunch, "reserve").mockResolvedValue(capsule as never);
-  const connect = vi.spyOn(Cdp, "connect").mockRejectedValue(new Error("CDP connection failed"));
-  try {
-    await expect(systemBrowserLauncher("browser")!(profile, true)).rejects.toThrow(
-      failure === "missing endpoint" ? "did not expose" : "CDP connection failed",
-    );
-    expect(capsule.startupFailed).toHaveBeenCalledOnce();
-    expect(capsule.start).toHaveBeenCalledOnce();
-    expect(capsule.markEstablished).not.toHaveBeenCalled();
-    expect(connect).toHaveBeenCalledTimes(failure === "CDP connection" ? 1 : 0);
-  } finally {
-    reserve.mockRestore(); connect.mockRestore();
-    await rm(profile, { recursive: true, force: true });
-  }
-});
+it.each(["missing endpoint", "CDP connection"])(
+  "failed %s retires the exact original capsule before returning failure",
+  async (failure) => {
+    const profile = await mkdtemp(join(tmpdir(), "social-cdp-capsule-"));
+    const capsule = {
+      profile,
+      exit: new Promise<void>(() => {}),
+      failed: failure === "missing endpoint",
+      start: vi.fn(async () => {
+        if (failure === "CDP connection")
+          await writeFile(
+            join(profile, "DevToolsActivePort"),
+            "9333\n/devtools/browser/original-id\n",
+          );
+      }),
+      startupFailed: vi.fn(async () => {}),
+      markEstablished: vi.fn(),
+    };
+    const reserve = vi.spyOn(SocialBrowserLaunch, "reserve").mockResolvedValue(capsule as never);
+    const connect = vi.spyOn(Cdp, "connect").mockRejectedValue(new Error("CDP connection failed"));
+    try {
+      await expect(systemBrowserLauncher("browser")!(profile, true)).rejects.toThrow(
+        failure === "missing endpoint" ? "did not expose" : "CDP connection failed",
+      );
+      expect(capsule.startupFailed).toHaveBeenCalledOnce();
+      expect(capsule.start).toHaveBeenCalledOnce();
+      expect(capsule.markEstablished).not.toHaveBeenCalled();
+      expect(connect).toHaveBeenCalledTimes(failure === "CDP connection" ? 1 : 0);
+    } finally {
+      reserve.mockRestore();
+      connect.mockRestore();
+      await rm(profile, { recursive: true, force: true });
+    }
+  },
+);

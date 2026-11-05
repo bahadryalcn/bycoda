@@ -117,3 +117,7 @@ Use **Open in this computer's browser** in Development servers, or click a match
 HTTP requests and WebSocket connections use the paired host connection. No public tunnel is created. Remote HTTPS sites open in the owning host's browser preview. Ordinary public URLs continue to open normally.
 
 The HTTP bridge accepts fixed-length request bodies; streaming/chunked request bodies are rejected. Custom private DNS names are not automatically classified from arbitrary chat links; choose the registered endpoint in Development servers. Opening a file or server never silently falls back to a different machine.
+
+## Notes with question choices
+
+For ordinary questions that accept custom text, select a suggested answer and add an optional note below the choices. The note stays separate from the selected option, survives navigation and remounts with the question draft, and is sent with the answer. Notes do not answer an unselected question. Typed forms and providers that require exact option values keep their original inputs. Answered question actions appear below the answer so Copy and other actions do not cover another question.

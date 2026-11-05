@@ -1,16 +1,16 @@
 import { useState, useSyncExternalStore } from "react";
 import { Alert } from "../../../shared/ui/Alert";
-import { DeliveryReviewChoice } from "../../sessions/ui/DeliveryReviewChoice";
+import { DeliveryReviewChoice } from "../../sessions/public/DeliveryReviewChoice";
 import { resumeSharedLocalQueue, useLocalSharedQueueClient } from "../model/useSharedLocalQueues";
 import { t, useLocale } from "../../../shared/i18n";
 import {
   useDeliveryReviewRequest,
   useLateSettlementPossible,
-} from "../../sessions/model/deliveryReview";
+} from "../../sessions/public/deliveryReview";
 import {
   readDeliveryProgress,
   updateDeliveryProgress,
-} from "../../sessions/model/deliveryProgress";
+} from "../../sessions/public/deliveryProgress";
 
 const empty = { recovery: undefined as string | undefined, error: undefined as string | undefined };
 const subscribe = () => () => {};

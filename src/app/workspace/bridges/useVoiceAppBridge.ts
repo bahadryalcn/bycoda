@@ -135,7 +135,8 @@ export function useVoiceAppBridge(deps: Deps) {
   };
   const onCreate = async (request: VoiceSessionCreate) => {
     assertVisible(request.projectPath);
-    if (request.workspaceRequestId && request.submit) throw new Error("Room desktop session creation cannot submit work.");
+    if (request.workspaceRequestId && request.submit)
+      throw new Error("Room desktop session creation cannot submit work.");
     const choice = newDefaultSession(request.projectPath);
     if (request.harness !== undefined && !HARNESSES.includes(request.harness as Session["harness"]))
       throw new Error("Unknown voice session provider.");
@@ -149,7 +150,14 @@ export function useVoiceAppBridge(deps: Deps) {
     );
     if (request.workspaceRequestId) {
       const { createRoomSession } = await import("../../../features/sessions/data/sessionStore");
-      const created = request.prompt.trim() ? (await import("../sessions/useSessionDraftActions")).addSessionDraft(session, request.prompt, [], request.requestId) : session;
+      const created = request.prompt.trim()
+        ? (await import("../sessions/useSessionDraftActions")).addSessionDraft(
+            session,
+            request.prompt,
+            [],
+            request.requestId,
+          )
+        : session;
       await createRoomSession(created);
       assertVisible(request.projectPath);
       latest.current.appendEmpty(created);
@@ -222,7 +230,8 @@ export function useVoiceAppBridge(deps: Deps) {
     onOpen: async (id, workspaceRequestId) => {
       const remote = listedSessions.current.get(id);
       if (remote && isRemoteProjectPath(remote.cwd) && latest.current.onOpenRemote) {
-        if (workspaceRequestId) throw new Error("Room desktop session must belong to the native workspace.");
+        if (workspaceRequestId)
+          throw new Error("Room desktop session must belong to the native workspace.");
         assertVisible(remote.cwd);
         latest.current.onOpenRemote(remote.cwd, id);
       } else if (workspaceRequestId) await latest.current.onOpen?.(id, { workspaceRequestId });
@@ -240,7 +249,9 @@ export function useVoiceAppBridge(deps: Deps) {
       ? (id, prompt) => latest.current.onSubmit!(actionId(id), prompt)
       : undefined,
     onStop: deps.onStop ? (id) => latest.current.onStop!(actionId(id)) : undefined,
-    onStopForRoom: deps.onStopForRoom ? (id) => latest.current.onStopForRoom!(actionId(id)) : undefined,
+    onStopForRoom: deps.onStopForRoom
+      ? (id) => latest.current.onStopForRoom!(actionId(id))
+      : undefined,
   });
   return {
     workspace,

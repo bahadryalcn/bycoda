@@ -80,14 +80,21 @@ export function useQuickComposerLaunches(
     void Promise.all([
       subscribe(QUICK_COMPOSER_LAUNCH_EVENT, () => void take()),
       subscribe(QUICK_COMPOSER_CATALOG_REQUEST_EVENT, (event) => {
-        const request = event.payload && typeof event.payload === "object"
-          ? event.payload as { requestId?: unknown; generation?: unknown; harness?: unknown }
-          : undefined;
-        const correlated = typeof request?.requestId === "string" && typeof request.generation === "number";
+        const request =
+          event.payload && typeof event.payload === "object"
+            ? (event.payload as { requestId?: unknown; generation?: unknown; harness?: unknown })
+            : undefined;
+        const correlated =
+          typeof request?.requestId === "string" && typeof request.generation === "number";
         const harness = correlated ? request?.harness : event.payload;
-        const answer = () => correlated
-          ? { requestId: request!.requestId, generation: request!.generation, catalog: liveQuickCatalog() }
-          : liveQuickCatalog();
+        const answer = () =>
+          correlated
+            ? {
+                requestId: request!.requestId,
+                generation: request!.generation,
+                catalog: liveQuickCatalog(),
+              }
+            : liveQuickCatalog();
         void isLeadWindow()
           .then((lead) => {
             if (!lead || disposed) return false;
@@ -99,7 +106,8 @@ export function useQuickComposerLaunches(
             // Only probe the provider the user opened, like the workspace picker.
             if (isHarnessId(harness)) {
               await refreshHarnessCatalogs([harness]);
-              if (!disposed && await isLeadWindow()) await emit(QUICK_COMPOSER_CATALOG_EVENT, answer());
+              if (!disposed && (await isLeadWindow()))
+                await emit(QUICK_COMPOSER_CATALOG_EVENT, answer());
             }
           })
           .catch(() => undefined);

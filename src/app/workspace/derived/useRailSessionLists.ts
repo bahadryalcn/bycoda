@@ -20,7 +20,11 @@ export interface RailSessionListsDeps {
   unseenFinishedIds: ReturnType<typeof useUnseenFinishedIds>;
   unopenedRemote: Parameters<typeof remoteLiveSessionInfos>[0];
   history: SessionSummary[];
-  onPinHistorySession: (sessionId: string, pinned: boolean, captured?: { cwd: string; target: PinTarget | null }) => Promise<unknown>;
+  onPinHistorySession: (
+    sessionId: string,
+    pinned: boolean,
+    captured?: { cwd: string; target: PinTarget | null },
+  ) => Promise<unknown>;
   deckProjectTabs: WorkspaceTab[];
   dirtyFiles: Set<string>;
   pendingWindowMoves: PendingWindowMoves;
@@ -100,7 +104,8 @@ export function useRailSessionLists(deps: RailSessionListsDeps): RailSessionList
     () => ({
       history,
       live: railLiveSessions,
-      onPin: (row: RecentSessionRow, pinned: boolean) => onPinHistorySession(row.id, pinned, { cwd: row.cwd, target: row.pinTarget ?? null }),
+      onPin: (row: RecentSessionRow, pinned: boolean) =>
+        onPinHistorySession(row.id, pinned, { cwd: row.cwd, target: row.pinTarget ?? null }),
     }),
     [history, railLiveSessions, onPinHistorySession],
   );

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { allComposerAttachmentIds, getComposerAttachments } from "../../sessions/model/draftCache";
+import { allComposerAttachmentIds, getComposerAttachments } from "../../sessions/public/draftCache";
 import { attachmentOwnershipSourceNames, type AttachmentOwnership } from "./attachmentOwnership";
 import { durableRemoteAttachmentIds } from "./remoteOutbox";
 

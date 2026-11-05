@@ -6,7 +6,10 @@ const NARROW_TOOLS_WIDTH = 768;
 
 for (const scheme of ["dark", "light"] as const) {
   for (const width of [1280, 800]) {
-    test(`workspace translucency preserves accessibility and pane ownership: ${scheme} ${width}`, async ({ page, context }) => {
+    test(`workspace translucency preserves accessibility and pane ownership: ${scheme} ${width}`, async ({
+      page,
+      context,
+    }) => {
       await page.setViewportSize({ width, height: 900 });
       await page.emulateMedia({ reducedMotion: "reduce" });
       await page.goto(`${fixture}?theme=${scheme}`);
@@ -24,12 +27,16 @@ for (const scheme of ["dark", "light"] as const) {
         document.documentElement.classList.add("has-native-glass", "glass-body");
         document.documentElement.style.setProperty("--main-opacity", "0.42");
       });
-      const alpha = (selector: string) => page.locator(selector).first().evaluate((node) => {
-        const canvas = document.createElement("canvas").getContext("2d")!;
-        canvas.fillStyle = getComputedStyle(node).backgroundColor;
-        canvas.fillRect(0, 0, 1, 1);
-        return canvas.getImageData(0, 0, 1, 1).data[3] / 255;
-      });
+      const alpha = (selector: string) =>
+        page
+          .locator(selector)
+          .first()
+          .evaluate((node) => {
+            const canvas = document.createElement("canvas").getContext("2d")!;
+            canvas.fillStyle = getComputedStyle(node).backgroundColor;
+            canvas.fillRect(0, 0, 1, 1);
+            return canvas.getImageData(0, 0, 1, 1).data[3] / 255;
+          });
       await expect.poll(() => alpha(".app-canvas")).toBe(scheme === "dark" ? 0 : 1);
       await expect.poll(() => alpha(".host-tools")).toBe(scheme === "dark" ? 0 : 1);
       expect(await alpha(".body-glass")).toBeCloseTo(scheme === "dark" ? 0.42 : 1, 2);
@@ -52,7 +59,9 @@ for (const scheme of ["dark", "light"] as const) {
           await cdp.detach();
         }
       }
-      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1),
+      ).toBe(true);
     });
   }
 }

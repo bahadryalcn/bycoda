@@ -8,10 +8,21 @@ vi.mock("@tauri-apps/api/webviewWindow", () => ({
   },
 }));
 import { isLeadWindow } from "./workspaceWindows";
-afterEach(() => { api.own = "main"; api.labels = ["main"]; api.failed = false; });
+afterEach(() => {
+  api.own = "main";
+  api.labels = ["main"];
+  api.failed = false;
+});
 
 it("elects only workspace windows and transfers after original leader leaves", async () => {
-  api.labels = ["desktop-control-indicator", "quick-composer", "voice-overlay-main", "quick-composer-git", "main", "window-b"];
+  api.labels = [
+    "desktop-control-indicator",
+    "quick-composer",
+    "voice-overlay-main",
+    "quick-composer-git",
+    "main",
+    "window-b",
+  ];
   expect(await isLeadWindow()).toBe(true);
   api.own = "window-b";
   expect(await isLeadWindow()).toBe(false);

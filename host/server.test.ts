@@ -92,7 +92,14 @@ it("resolves uploaded question files before forwarding answers to the owning des
     s.call("sessions.desktopLive", {
       clientId: "desktop-file-owner",
       pageToken: "7e1c4dc0-6f53-4a8c-b8d8-000000000010",
-      sessions: [{ id: sessionId, turnReceipt: { version: 1, sessionId, turnId: "7e1c4dc0-6f53-4a8c-b8d8-000000000011" }, busy: true, patch: { pendingQuestion: question } }],
+      sessions: [
+        {
+          id: sessionId,
+          turnReceipt: { version: 1, sessionId, turnId: "7e1c4dc0-6f53-4a8c-b8d8-000000000011" },
+          busy: true,
+          patch: { pendingQuestion: question },
+        },
+      ],
     });
   await beat();
   const file = {
@@ -102,7 +109,15 @@ it("resolves uploaded question files before forwarding answers to the owning des
     kind: "file",
     size: 3,
   };
-  await s.call("attachments.upload", { id: file.id, size: 3, offset: 0, data: "YWJj", questionSessionId: sessionId, questionRunId: "desktop", questionRequestId: 7 });
+  await s.call("attachments.upload", {
+    id: file.id,
+    size: 3,
+    offset: 0,
+    data: "YWJj",
+    questionSessionId: sessionId,
+    questionRunId: "desktop",
+    questionRequestId: 7,
+  });
   const dispatched = await s.call("commands.dispatch", {
     type: "answer",
     commandId: "desktop-file-answer",

@@ -12,12 +12,12 @@ import {
   undoSessionChanges,
   type CheckpointFile,
 } from "../model/checkpoint";
-import { invalidateProjectFiles } from "../../files/model/fileIndex";
-import { invalidateWatchedFiles } from "../../files/model/fileWatch";
+import { invalidateProjectFiles } from "../../files/public/fileIndex";
+import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { basename, notifyGitChanged, subscribeGitChanged } from "../../../platform/tauri/fs";
 import { formatInteger } from "../../../shared/lib/numbers";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
-import { useChangedFileMenu } from "../../files/ui/useChangedFileMenu";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
+import { useChangedFileMenu } from "../../files/public/useChangedFileMenu";
 
 type Props = {
   sessionId: string;

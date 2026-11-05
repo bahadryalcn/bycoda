@@ -12,7 +12,10 @@ import type { HostStore } from "../../store";
 import type { HostGoals } from "../../goals/goals";
 import type { HostTasks } from "../../tasks/tasks";
 import type { AsyncHostNotes } from "../../host-notes-async";
-import type { AssistantProfile, AssistantJob } from "../../../src/shared/model/host-contracts/assistant";
+import type {
+  AssistantProfile,
+  AssistantJob,
+} from "../../../src/shared/model/host-contracts/assistant";
 function fixture() {
   utility.text.mockClear();
   utility.wake.mockClear();

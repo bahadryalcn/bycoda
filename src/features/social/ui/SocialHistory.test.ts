@@ -210,7 +210,7 @@ it("clears a host date filter when the retained history controls are reset", asy
   }
 });
 
-it("keeps embedded job counts and local pages scoped to the selected conversation", async () => {
+it("keeps embedded job counts scoped and renders all loaded history continuously", async () => {
   const jobs: SocialSnapshot["jobs"] = Array.from({ length: 35 }, (_, index) => ({
     id: `conversation-job-${index}`,
     operationId: `operation-${index}`,
@@ -260,12 +260,6 @@ it("keeps embedded job counts and local pages scoped to the selected conversatio
   expect(select.querySelector('option[value=""]')?.textContent).toBe("All jobs · 35");
   expect(select.querySelector('option[value="failed"]')?.textContent).toContain("35");
   expect(select.querySelector('option[value="succeeded"]')?.textContent).toContain("0");
-  expect(container.querySelectorAll(".social-history-record")).toHaveLength(30);
-  await act(async () =>
-    Array.from(container.querySelectorAll(".social-pagination button"))
-      .find((button) => button.textContent === "Next")!
-      .click(),
-  );
-  expect(container.querySelectorAll(".social-history-record")).toHaveLength(5);
-  expect(container.querySelector(".social-pagination")?.textContent).toContain("2 / 2");
+  expect(container.querySelectorAll(".social-history-record")).toHaveLength(35);
+  expect(container.querySelector("[data-continuous-list]")).not.toBeNull();
 });

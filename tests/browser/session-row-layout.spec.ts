@@ -4,7 +4,9 @@ import path from "node:path";
 
 const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-workspace");
 const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
-test("sidebar glass retains selection and grouped action focus without main glass", async ({ page }) => {
+test("sidebar glass retains selection and grouped action focus without main glass", async ({
+  page,
+}) => {
   await page.goto("/tests/browser/session-row-layout.html", { waitUntil: "domcontentloaded" });
   const row = page.locator('[data-session-card="row-multi"]');
   const group = page.locator("[data-github-star-prompt]");

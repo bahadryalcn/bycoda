@@ -489,7 +489,7 @@ it("clears inspection selection before a failed refresh", async () => {
   expect(container.textContent).toContain("Inspection failed");
 });
 
-it("connects an installed runtime and follows a connected phone without controlling it", async () => {
+it("requires explicit connection for an installed runtime before following a phone", async () => {
   const api = makeApi();
   vi.mocked(api.status).mockResolvedValue({ ...status, running: false });
   vi.mocked(api.list).mockResolvedValue({
@@ -497,6 +497,11 @@ it("connects an installed runtime and follows a connected phone without controll
     errors: [],
   });
   await act(async () => root.render(createElement(DevicePanel, { api })));
+  expect(api.start).not.toHaveBeenCalled();
+  expect(api.list).not.toHaveBeenCalled();
+  expect(api.capture).not.toHaveBeenCalled();
+  expect(api.claimControl).not.toHaveBeenCalled();
+  await act(async () => button("Connect devices").click());
   expect(api.start).toHaveBeenCalledOnce();
   expect(api.list).toHaveBeenCalledOnce();
   expect(devicePicker().textContent).toContain("Galaxy S24");
@@ -530,6 +535,40 @@ it("keeps discovery retry available when the running host finds no devices", asy
   expect(button("Refresh devices").disabled).toBe(false);
   await act(async () => button("Refresh devices").click());
   expect(devicePicker().textContent).toContain(device.name);
+});
+
+it("invalidates discovery readiness and activity until discovery itself succeeds", async () => {
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  const state = (axis: string) =>
+    container.querySelector(`[data-capability-axis="${axis}"]`)?.getAttribute("data-state");
+  expect(state("readiness")).toBe("ready");
+  expect(state("permission")).toBe("unknown");
+  vi.mocked(api.list).mockRejectedValueOnce(new Error("Discovery refresh failed"));
+  await clickButton("Refresh devices");
+  expect(state("readiness")).toBe("unknown");
+  expect(state("activity")).toBe("unknown");
+  await clickButton("Capture");
+  expect(state("readiness")).toBe("unknown");
+  expect(state("activity")).toBe("unknown");
+  await clickButton("Refresh devices");
+  expect(state("readiness")).toBe("ready");
+});
+
+it("clears the last running runtime observation when a status refresh fails", async () => {
+  const api = makeApi();
+  await act(async () => root.render(createElement(DevicePanel, { api })));
+  await openSetup();
+  vi.mocked(api.status).mockRejectedValueOnce(new Error("Status refresh failed"));
+  await clickButton("Status");
+  expect(
+    container.querySelector('[data-capability-axis="readiness"]')?.getAttribute("data-state"),
+  ).toBe("unknown");
+  expect(
+    container.querySelector('[data-capability-axis="activity"]')?.getAttribute("data-state"),
+  ).toBe("unknown");
+  expect(document.body.textContent).not.toContain("Device host running");
+  expect(api.start).not.toHaveBeenCalled();
 });
 
 it("shows capture progress in its button and identifies capture failure without discovery advice", async () => {

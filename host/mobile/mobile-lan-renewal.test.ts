@@ -7,6 +7,8 @@ import { MobileLanAccess, type createLanGateway } from "./mobile-lan";
 import type { MobileTlsAuthority, MobileTlsMaterial } from "../security/mobile-tls";
 import type { createMobileWssGateway } from "../security/mobile-wss";
 const HOUR = 3_600_000;
+// A live owner has one interface monitor and one TLS renewal timer. Hung
+// issuance retains only the monitor; close/disable must retire both.
 const cleanups: Array<() => Promise<void>> = [];
 beforeEach(() => {
   vi.useFakeTimers({
@@ -108,13 +110,22 @@ async function fixture(initial = material(), failInitialStatus = false) {
 
 it("clears renewal ownership when setup fails after listener publication", async () => {
   const f = await fixture(material(), true);
-  expect(vi.getTimerCount()).toBe(0);
+  // Saved enable intent retains its interface monitor; failed publication must
+  // retire the certificate renewal owner and both listeners.
+  expect(vi.getTimerCount()).toBe(1);
+  expect(f.issue).toHaveBeenCalledOnce();
   expect(f.secure[0].close).toHaveBeenCalledOnce();
   expect(f.plain[0].close).toHaveBeenCalledOnce();
-  expect(await f.access.status()).toMatchObject({ state: "setup-required" });
+  const failed = await f.access.status();
+  expect(failed).toMatchObject({
+    state: "unavailable",
+    reason: "Mobile LAN access could not start. Check the selected network and retry.",
+  });
+  expect(failed.endpoint).toBeUndefined();
+  expect(failed.tls).toBeUndefined();
   await f.access.enable();
   expect(f.makeSecure).toHaveBeenCalledTimes(2);
-  expect(vi.getTimerCount()).toBe(1);
+  expect(vi.getTimerCount()).toBe(2);
 });
 
 it("retains the listener/certificate after one failure and renews in place on the same saved port", async () => {
@@ -126,7 +137,7 @@ it("retains the listener/certificate after one failure and renews in place on th
   expect(await f.access.status()).toMatchObject({ tls: f.bootstrap });
   expect(current.close).not.toHaveBeenCalled();
   expect(current.closeAll).not.toHaveBeenCalled();
-  expect(vi.getTimerCount()).toBe(1);
+  expect(vi.getTimerCount()).toBe(2);
   expect(current.server.listenerCount("error")).toBe(1);
   await vi.advanceTimersByTimeAsync(59_999);
   expect(f.issue).toHaveBeenCalledTimes(2);
@@ -142,7 +153,7 @@ it("retains the listener/certificate after one failure and renews in place on th
   expect(f.makePlain).toHaveBeenCalledOnce();
   expect(f.makeSecure).toHaveBeenCalledOnce();
   expect(current.listen).toHaveBeenCalledOnce();
-  expect(vi.getTimerCount()).toBe(1);
+  expect(vi.getTimerCount()).toBe(2);
 });
 
 it("does not install renewal on a changed port or infer retirement from an unknown binding read", async () => {
@@ -185,7 +196,7 @@ it("uses capped exponential retry and resets to hourly polling after recovery", 
     expect(f.issue).toHaveBeenCalledTimes(calls);
     await vi.advanceTimersByTimeAsync(1);
     expect(f.issue).toHaveBeenCalledTimes(calls + 1);
-    expect(vi.getTimerCount()).toBe(1);
+    expect(vi.getTimerCount()).toBe(2);
   }
   f.issue.mockResolvedValue(material());
   await vi.advanceTimersByTimeAsync(HOUR);
@@ -204,7 +215,7 @@ it("keeps a hung issuance single-flight, hides expired TLS and restores the orig
   await vi.advanceTimersByTimeAsync(HOUR);
   await vi.advanceTimersByTimeAsync(3 * HOUR);
   expect(f.issue).toHaveBeenCalledTimes(2);
-  expect(vi.getTimerCount()).toBe(0);
+  expect(vi.getTimerCount()).toBe(1);
   expect((await f.access.status()).tls).toBeUndefined();
   await f.access.enable();
   expect(f.issue).toHaveBeenCalledTimes(2);
@@ -214,7 +225,7 @@ it("keeps a hung issuance single-flight, hides expired TLS and restores the orig
   expect(f.secure[0].context).toHaveBeenCalledOnce();
   expect(f.secure[0].close).not.toHaveBeenCalled();
   expect(f.secure[0].listen).toHaveBeenCalledOnce();
-  expect(vi.getTimerCount()).toBe(1);
+  expect(vi.getTimerCount()).toBe(2);
 });
 
 it.each(["close", "disable"] as const)(
@@ -237,7 +248,7 @@ it.each(["close", "disable"] as const)(
       f.issue.mockResolvedValue(material());
       await f.access.enable();
       expect(f.makeSecure).toHaveBeenCalledTimes(2);
-      expect(vi.getTimerCount()).toBe(1);
+      expect(vi.getTimerCount()).toBe(2);
     }
   },
 );
@@ -252,12 +263,12 @@ it("does not let an old in-flight renewal replace a newly enabled owner or its t
   await f.access.enable();
   expect(f.makeSecure).toHaveBeenCalledTimes(2);
   expect(f.secure[1].listen).toHaveBeenCalledWith(43211, "192.168.1.20", expect.any(Function));
-  expect(vi.getTimerCount()).toBe(1);
+  expect(vi.getTimerCount()).toBe(2);
   pending.resolve(material({ certificatePem: "old-owner-late-leaf" }));
   await vi.advanceTimersByTimeAsync(0);
   expect(f.secure[0].context).not.toHaveBeenCalled();
   expect(f.secure[1].context).not.toHaveBeenCalled();
-  expect(vi.getTimerCount()).toBe(1);
+  expect(vi.getTimerCount()).toBe(2);
   expect(await f.access.status()).toMatchObject({ tls: f.bootstrap });
 });
 

@@ -983,7 +983,9 @@ describe("X browser background monitoring and messaging", () => {
     }));
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     try {
-      await s.browser.adapter().poll({ ...s.account, platformId: "42", scopes: ["tweet.read"] }, "", []);
+      await s.browser
+        .adapter()
+        .poll({ ...s.account, platformId: "42", scopes: ["tweet.read"] }, "", []);
       await vi.advanceTimersByTimeAsync(120_000);
       expect(fake.calls.filter((call) => call === "close")).toHaveLength(1);
       expect(released).toHaveBeenCalledTimes(1);
@@ -1012,7 +1014,9 @@ describe("X browser background monitoring and messaging", () => {
   it("requires physical release before another operation can reuse the profile", async () => {
     const fake = fakeBrowser({ emptyMentions: true });
     let release!: () => void;
-    const proof = new Promise<void>((resolve) => { release = resolve; });
+    const proof = new Promise<void>((resolve) => {
+      release = resolve;
+    });
     const launcher: BrowserLauncher = async (...args) => ({
       ...(await fake.launcher(...args)),
       profileReleased: async () => await proof,
@@ -1038,13 +1042,21 @@ describe("X browser background monitoring and messaging", () => {
       profileReleased: released,
     });
     const s = await fixture(launcher);
-    const accounts = [s.account.id, "11111111-1111-1111-1111-111111111111", "22222222-2222-2222-2222-222222222222"];
+    const accounts = [
+      s.account.id,
+      "11111111-1111-1111-1111-111111111111",
+      "22222222-2222-2222-2222-222222222222",
+    ];
     for (const id of accounts)
-      await s.browser.adapter().poll({ ...s.account, id, platformId: "42", scopes: ["tweet.read"] }, "", []);
+      await s.browser
+        .adapter()
+        .poll({ ...s.account, id, platformId: "42", scopes: ["tweet.read"] }, "", []);
     expect(fake.calls.filter((call) => call === "close")).toHaveLength(1);
     await s.browser.stop(s.social);
     expect(fake.calls.filter((call) => call === "close")).toHaveLength(3);
-    await expect(s.browser.adapter().poll({ ...s.account, platformId: "42" }, "", [])).rejects.toThrow("stopping");
+    await expect(
+      s.browser.adapter().poll({ ...s.account, platformId: "42" }, "", []),
+    ).rejects.toThrow("stopping");
     expect(fake.launcher).toHaveBeenCalledTimes(3);
   });
   it("rotates owned post comment reads and deduplicates mentions from the same poll", async () => {

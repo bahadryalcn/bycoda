@@ -23,11 +23,15 @@ afterEach(() => {
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "bycoda-async-skills-"));
   roots.push(root);
-  const home = join(root, "home"), cwd = join(root, "project");
+  const home = join(root, "home"),
+    cwd = join(root, "project");
   for (const base of [home, cwd]) {
     const folder = join(base, ".agents/skills/audit-example");
     mkdirSync(folder, { recursive: true });
-    writeFileSync(join(folder, "SKILL.md"), "---\nname: audit-example\ndescription: isolated fixture\n---\nFixture body");
+    writeFileSync(
+      join(folder, "SKILL.md"),
+      "---\nname: audit-example\ndescription: isolated fixture\n---\nFixture body",
+    );
   }
   const registry = join(home, ".claude/plugins/installed_plugins.json");
   mkdirSync(join(home, ".claude/plugins"), { recursive: true });
@@ -38,7 +42,14 @@ it("preserves ordered active/shadowed copies while yielding to other Host work",
   const { home, cwd } = fixture();
   const pending = listHostSkillCandidatesAsync(cwd, home);
   let settled = false;
-  void pending.then(() => { settled = true; }, () => { settled = true; });
+  void pending.then(
+    () => {
+      settled = true;
+    },
+    () => {
+      settled = true;
+    },
+  );
   await Promise.resolve();
   expect(settled).toBe(false);
   expect(await pending).toEqual(listHostSkillCandidates(cwd, home));

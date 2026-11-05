@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import { WebSocket, type ClientOptions } from "ws";
 import { HostBulkTransfers } from "../http/bulk";
 import { HostDispatchError, createHostDispatcher } from "../dispatch";
+import { HostDomainOutcomeError } from "../../domains/context";
 import {
   HOST_SCHEMA_VERSION,
   RPC_ERROR_CODES,
@@ -1120,6 +1121,26 @@ describe("WS framing and orderly disposal", () => {
     finish.resolve([]);
     await finish.promise;
   });
+  it.each(["not-sent", "unknown"] as const)(
+    "preserves trusted actual device admission outcome %s",
+    async (delivery) => {
+      const dispatch = vi.fn<HostWebSocketOptions["dispatch"]>(async () => {
+        throw new HostDispatchError(
+          "service-unavailable",
+          "Device stop held",
+          {
+            cause: new HostDomainOutcomeError("Device stop held", delivery),
+          },
+          { category: "unavailable", retryable: false, delivery },
+        );
+      });
+      const host = await fixture({ methods: ["devices.stop"], dispatch });
+      const client = await host.ready();
+      expect(await client.request("device-outcome", "devices.stop", {})).toMatchObject({
+        error: { data: { delivery, retryable: false } },
+      });
+    },
+  );
   it("preserves explicitly accepted effect delivery from a domain outcome", async () => {
     const dispatch = vi.fn<HostWebSocketOptions["dispatch"]>(async () => {
       throw new HostDispatchError("service-unavailable", "Committed but unconfirmed.", undefined, {
@@ -1150,19 +1171,21 @@ describe("WS framing and orderly disposal", () => {
   });
 });
 
-
-it.each([false, true])("normalizes typed actual result bytes once with bulk=%s", async (withBulk) => {
-  const toJSON = vi.fn((key: string) => {
-    expect(key).toBe("");
-    return [{ id: "project-a", name: "Typed 雪", cwd: "C:/Fixture", optional: undefined }];
-  });
-  const host = await fixture({
-    ...(withBulk ? { bulk: new HostBulkTransfers({ environmentId: ENVIRONMENT }) } : {}),
-    dispatch: async () => ({ toJSON }),
-  });
-  const client = await host.ready();
-  expect(await client.request("typed-normalized", "projects.list")).toMatchObject({
-    result: [{ id: "project-a", name: "Typed 雪", cwd: "C:/Fixture" }],
-  });
-  expect(toJSON).toHaveBeenCalledExactlyOnceWith("");
-});
+it.each([false, true])(
+  "normalizes typed actual result bytes once with bulk=%s",
+  async (withBulk) => {
+    const toJSON = vi.fn((key: string) => {
+      expect(key).toBe("");
+      return [{ id: "project-a", name: "Typed 雪", cwd: "C:/Fixture", optional: undefined }];
+    });
+    const host = await fixture({
+      ...(withBulk ? { bulk: new HostBulkTransfers({ environmentId: ENVIRONMENT }) } : {}),
+      dispatch: async () => ({ toJSON }),
+    });
+    const client = await host.ready();
+    expect(await client.request("typed-normalized", "projects.list")).toMatchObject({
+      result: [{ id: "project-a", name: "Typed 雪", cwd: "C:/Fixture" }],
+    });
+    expect(toJSON).toHaveBeenCalledExactlyOnceWith("");
+  },
+);

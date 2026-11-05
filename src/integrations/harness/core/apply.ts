@@ -580,9 +580,7 @@ function upsertPlan(session: Session, event: Extract<HarnessEvent, { type: "plan
 
   if (existing >= 0) {
     const current = session.blocks[existing];
-    const text = event.append
-      ? current.text + event.text
-      : event.text || current.text;
+    const text = event.append ? current.text + event.text : event.text || current.text;
     const blocks = session.blocks.slice();
     blocks[existing] = {
       ...current,

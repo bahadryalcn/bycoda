@@ -318,7 +318,9 @@ export function VoiceSetupSteps({
           ) : null}
         </>
       ) : null}
-      {error ? <InlineError action={<MicrophoneRecoveryAction message={error} />}>{error}</InlineError> : null}
+      {error ? (
+        <InlineError action={<MicrophoneRecoveryAction message={error} />}>{error}</InlineError>
+      ) : null}
     </div>
   );
 }

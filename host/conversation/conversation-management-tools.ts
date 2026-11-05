@@ -244,12 +244,26 @@ export type GlobalManagementPrincipal = {
   projectId?: undefined;
   sessionId?: undefined;
 };
-export function managementReceiptKey(principal: RuntimeLogSubjectPrincipal | GlobalManagementPrincipal, requestId: string): string {
-  const subject = principal.kind === "assistant-thread" ? `thread:${principal.threadId}` : `session:${principal.sessionId}`;
-  const scope = principal.projectId === undefined ? (principal as GlobalManagementPrincipal).environmentId : principal.projectId;
-  return `management:${createHash("sha256").update(JSON.stringify([scope, subject, requestId])).digest("hex")}`;
+export function managementReceiptKey(
+  principal: RuntimeLogSubjectPrincipal | GlobalManagementPrincipal,
+  requestId: string,
+): string {
+  const subject =
+    principal.kind === "assistant-thread"
+      ? `thread:${principal.threadId}`
+      : `session:${principal.sessionId}`;
+  const scope =
+    principal.projectId === undefined
+      ? (principal as GlobalManagementPrincipal).environmentId
+      : principal.projectId;
+  return `management:${createHash("sha256")
+    .update(JSON.stringify([scope, subject, requestId]))
+    .digest("hex")}`;
 }
-export type ManagementPorts<A extends string = ManagementAction, P extends RuntimeLogSubjectPrincipal | GlobalManagementPrincipal = RuntimeLogSubjectPrincipal> = {
+export type ManagementPorts<
+  A extends string = ManagementAction,
+  P extends RuntimeLogSubjectPrincipal | GlobalManagementPrincipal = RuntimeLogSubjectPrincipal,
+> = {
   execute(
     action: A,
     input: Record<string, unknown>,
@@ -266,15 +280,21 @@ export type ManagementPorts<A extends string = ManagementAction, P extends Runti
 };
 
 /** Receipts persist before approval/effect. Restart never replays an unknown mutation. */
-export class ConversationManagementTools<A extends string = ManagementAction, P extends RuntimeLogSubjectPrincipal | GlobalManagementPrincipal = RuntimeLogSubjectPrincipal> {
+export class ConversationManagementTools<
+  A extends string = ManagementAction,
+  P extends RuntimeLogSubjectPrincipal | GlobalManagementPrincipal = RuntimeLogSubjectPrincipal,
+> {
   private pending = new Map<string, { signature: string; promise: Promise<unknown> }>();
-  constructor(private readonly ports: ManagementPorts<A, P>, private readonly readActions: ReadonlySet<string> = MANAGEMENT_READS) {}
+  constructor(
+    private readonly ports: ManagementPorts<A, P>,
+    private readonly readActions: ReadonlySet<string> = MANAGEMENT_READS,
+  ) {}
   async call(
     action: A,
     input: Record<string, unknown>,
     principal: P,
     authorized: () => Promise<boolean>,
-    qualify: <T>(effect: () => Promise<T>) => Promise<T> = effect => effect(),
+    qualify: <T>(effect: () => Promise<T>) => Promise<T> = (effect) => effect(),
   ) {
     const check = async () => {
       if (!(await authorized())) throw new Error("Conversation authority revoked.");
@@ -325,7 +345,9 @@ export class ConversationManagementTools<A extends string = ManagementAction, P 
         if (!approved.approved || approved.operationHash !== signature)
           throw new Error("Native owner approval required.");
         admitted = true;
-        const result = await qualify(() => this.ports.execute(action, input, principal, authorized));
+        const result = await qualify(() =>
+          this.ports.execute(action, input, principal, authorized),
+        );
         await check();
         const receipt: ManagementReceipt = { signature, state: "completed", result };
         await this.ports.saveReceipt(key, receipt);

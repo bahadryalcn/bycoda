@@ -1,8 +1,14 @@
 import { gitHeadMessage, type GitDiffIndex } from "../../../platform/tauri/fs";
-import type { HarnessId } from "../../sessions/model/session";
+import { useLayoutEffect, useRef } from "react";
+import type { HarnessId } from "../../sessions";
 import { generateCommitMessage } from "../../../integrations/harness";
 import { t } from "../../../shared/i18n/git";
-import { retainGitPanelRuntime, setGitFeedback, useGitPanelRuntime, useGitPanelState } from "../model/gitPanelState";
+import {
+  retainGitPanelRuntime,
+  setGitFeedback,
+  useGitPanelRuntime,
+  useGitPanelState,
+} from "../model/gitPanelState";
 import { useGitGenerationChoice } from "../ui/GitGenerationSettings";
 
 /**
@@ -24,6 +30,13 @@ export function useCommitDraft({
   fail: (error: unknown, operation?: string) => void;
 }) {
   const runtime = useGitPanelRuntime(cwd);
+  const amendOwnerGeneration = useRef(0);
+  useLayoutEffect(() => {
+    amendOwnerGeneration.current++;
+    return () => {
+      amendOwnerGeneration.current++;
+    };
+  }, [runtime]);
   const generateAbortRef = runtime.generateAbort;
   // Generation and staging may outlive/remount the visible panel; the checkout
   // runtime owns both the observed identity and synchronous mutation revision.
@@ -122,22 +135,29 @@ export function useCommitDraft({
     }
     settleStaleAmend();
     const original = retainGitPanelRuntime(cwd);
+    const ownerGeneration = amendOwnerGeneration.current;
     const draft = original.runtime.state.message;
     const target = original.runtime.state.amendTarget;
     const context = original.runtime.generationIndex.identity;
     const mutation = original.runtime.generationIndex.version;
     try {
       const headMessage = await gitHeadMessage(cwd);
+      if (amendOwnerGeneration.current !== ownerGeneration) return;
       // The checkout owns the live draft, including edits made while Git reads HEAD.
-      if (original.runtime.state.amendTarget !== target ||
-          original.runtime.generationIndex.identity !== context || original.runtime.generationIndex.version !== mutation) return;
+      if (
+        original.runtime.state.amendTarget !== target ||
+        original.runtime.generationIndex.identity !== context ||
+        original.runtime.generationIndex.version !== mutation
+      )
+        return;
       if (original.runtime.state.message === draft && !draft.trim()) setStoredMessage(headMessage);
       setStoredAmendTarget({
         branch: index?.branch ?? null,
         head: index?.head ?? null,
       });
     } catch (error) {
-      fail(error, "Couldn’t read commit message");
+      if (amendOwnerGeneration.current === ownerGeneration)
+        fail(error, "Couldn’t read commit message");
     } finally {
       original.release();
     }

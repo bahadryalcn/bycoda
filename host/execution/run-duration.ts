@@ -37,11 +37,17 @@ export async function admitRunDuration(
   await store.db
     .prepare("INSERT OR IGNORE INTO run_duration_daily VALUES (?,?,?,0)")
     .run(sessionId, runId, localRunDay(wall));
-  store.afterCommit(() => {
-    let entries = stores.get(store);
-    if (!entries) stores.set(store, (entries = new Map()));
-    const key = JSON.stringify([sessionId, runId]);
-    if (!entries.has(key)) entries.set(key, new ObservedRunDuration(wall, monotonic));
+  let entries = stores.get(store);
+  if (!entries) stores.set(store, (entries = new Map()));
+  const key = JSON.stringify([sessionId, runId]);
+  const previous = entries.get(key);
+  if (previous) return;
+  const admitted = new ObservedRunDuration(wall, monotonic);
+  // onAccepted may inspect this exact run before the enclosing SQL commit.
+  // Only real process observation grants a known origin, never a SQL row alone.
+  entries.set(key, admitted);
+  store.afterRollback(() => {
+    if (entries.get(key) === admitted) entries.delete(key);
   });
 }
 

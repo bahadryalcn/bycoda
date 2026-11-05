@@ -119,7 +119,9 @@ it("parses saved JSON once across render and copy feedback, then refreshes chang
   const text = '{"result":{"cached":true}}';
   const changed = '{"result":{"cached":false}}';
   const block: Block = {
-    id: "json-cache", role: "tool", text: "Result",
+    id: "json-cache",
+    role: "tool",
+    text: "Result",
     tool: { output: text, status: "completed" },
   };
   const parse = vi.spyOn(JSON, "parse");
@@ -129,9 +131,13 @@ it("parses saved JSON once across render and copy feedback, then refreshes chang
     await act(async () => root.render(createElement(ToolInspectionPanel, { block })));
     expect(parse.mock.calls.filter(([value]) => value === text)).toHaveLength(1);
     expect(clipboard.copy).toHaveBeenCalledWith(text);
-    await act(async () => root.render(createElement(ToolInspectionPanel, {
-      block: { ...block, tool: { ...block.tool, output: changed } },
-    })));
+    await act(async () =>
+      root.render(
+        createElement(ToolInspectionPanel, {
+          block: { ...block, tool: { ...block.tool, output: changed } },
+        }),
+      ),
+    );
     expect(parse.mock.calls.filter(([value]) => value === changed)).toHaveLength(1);
     expect(container.querySelector('[role="tree"]')).not.toBeNull();
   } finally {

@@ -21,9 +21,11 @@ it("moves browser references for every target of only the requested session", ()
 
 it("rejects invalid multi-target snapshots before changing any destination draft", () => {
   writeBrowserDraftTransfer("/atomic", "a", "project", { comment: "retained" });
-  expect(() => restoreBrowserWorkspaceDrafts("/atomic", "a", {
-    project: { comment: "replacement" },
-    "machine:invalid": { comment: "x".repeat(4001) },
-  })).toThrow();
+  expect(() =>
+    restoreBrowserWorkspaceDrafts("/atomic", "a", {
+      project: { comment: "replacement" },
+      "machine:invalid": { comment: "x".repeat(4001) },
+    }),
+  ).toThrow();
   expect(readBrowserWorkspaceDrafts("/atomic", "a").project.comment).toBe("retained");
 });

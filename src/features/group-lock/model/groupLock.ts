@@ -347,7 +347,9 @@ export async function setLockPassword(password: string): Promise<void> {
     );
   await withRoomPrivacyMutation(() => {
     if (privacyRevision !== revision || JSON.stringify(settings.record) !== previous)
-      throw new Error("Privacy settings changed. Review the current state before setting a password.");
+      throw new Error(
+        "Privacy settings changed. Review the current state before setting a password.",
+      );
     saveSettings({ ...settings, record }, true);
     writeAttempts(NO_ATTEMPTS);
   });
@@ -502,7 +504,8 @@ export function lockGroup(groupId: string): Promise<void> {
 
 export function lockAllGroups(): Promise<void> {
   for (const group of loadProjectGroups()) {
-    if ((settings.record && group.lockable) || hiddenGroups.has(group.id)) optimisticLocks.add(group.id);
+    if ((settings.record && group.lockable) || hiddenGroups.has(group.id))
+      optimisticLocks.add(group.id);
   }
   invalidate(false);
   return withRoomPrivacyMutation(() => {
@@ -521,7 +524,8 @@ export async function unlockGroup(groupId: string, password: string): Promise<Ve
   if (privacyRevision !== revision || groupFingerprint(groupId) !== group)
     return staleVerification();
   return withRoomPrivacyMutation(() => {
-    if (privacyRevision !== revision || groupFingerprint(groupId) !== group) return staleVerification();
+    if (privacyRevision !== revision || groupFingerprint(groupId) !== group)
+      return staleVerification();
     const locked = currentView().lock.lockedGroupIds;
     const ids = settings.unlockAll ? [...locked, groupId] : [groupId];
     for (const id of ids) optimisticLocks.delete(id);
@@ -541,7 +545,8 @@ export async function removeGroupLock(groupId: string, password: string): Promis
   if (privacyRevision !== revision || groupFingerprint(groupId) !== group)
     return staleVerification();
   return withRoomPrivacyMutation(() => {
-    if (privacyRevision !== revision || groupFingerprint(groupId) !== group) return staleVerification();
+    if (privacyRevision !== revision || groupFingerprint(groupId) !== group)
+      return staleVerification();
     const saved = updateProjectGroup(groupId, ({ lockable: _lockable, ...group }) => group);
     if (saved) optimisticLocks.delete(groupId);
     dispatch({ type: "lock", groupIds: [groupId] });
@@ -603,7 +608,12 @@ function onStorage(event: StorageEvent) {
       groupIds: parseUnlockedIds(event.newValue),
     });
     invalidate();
-  } else if (key === GROUPS_KEY || key === ASSIGNMENTS_KEY || key === "bycoda.recentProjects" || key === "bycoda.archivedProjects") {
+  } else if (
+    key === GROUPS_KEY ||
+    key === ASSIGNMENTS_KEY ||
+    key === "bycoda.recentProjects" ||
+    key === "bycoda.archivedProjects"
+  ) {
     invalidate();
   }
 }
@@ -621,8 +631,11 @@ function onChannelMessage(event: MessageEvent) {
     });
   } else if (
     (message?.type === "state" ||
-      (message?.type === "state-v2" && stateRequest !== undefined && stateRequest.id === message.requestId &&
-        stateRequest.revision === privacyRevision)) && Array.isArray(message.groupIds)
+      (message?.type === "state-v2" &&
+        stateRequest !== undefined &&
+        stateRequest.id === message.requestId &&
+        stateRequest.revision === privacyRevision)) &&
+    Array.isArray(message.groupIds)
   ) {
     stateRequest = undefined;
     const nextVisible = new Set(
@@ -681,11 +694,19 @@ export function startGroupLockWatcher(): () => void {
     window.addEventListener(name, touch, { capture: true, passive: true });
   }
   const timer = window.setInterval(() => {
-    if (!lockPending && unlocked.size > 0 && autoLockDue(lastActivityAt, Date.now(), settings.autoLockMinutes)) {
+    if (
+      !lockPending &&
+      unlocked.size > 0 &&
+      autoLockDue(lastActivityAt, Date.now(), settings.autoLockMinutes)
+    ) {
       lockPending = true;
-      void lockAllGroups().finally(() => { lockPending = false; }).catch(() => {
-        // The shared privacy status retains the failure for explicit recovery.
-      });
+      void lockAllGroups()
+        .finally(() => {
+          lockPending = false;
+        })
+        .catch(() => {
+          // The shared privacy status retains the failure for explicit recovery.
+        });
     }
   }, AUTO_LOCK_CHECK_MS);
   return () => {

@@ -7,7 +7,8 @@ import {
   sessionCheckpointStatus,
   subscribeReviewChanged,
   type CheckpointFile,
-} from "../../sessions/model/checkpoint";
+} from "../../sessions/public/checkpoint";
+
 import { forEachConcurrent } from "../../../shared/lib/concurrent";
 import { buildUnifiedFile, type UnifiedFileDiff } from "../model/unifiedDiff";
 import { UnifiedDiffView, type UnifiedDiffFileModel } from "./UnifiedDiffView";

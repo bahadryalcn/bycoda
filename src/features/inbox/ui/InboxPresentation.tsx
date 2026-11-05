@@ -1,3 +1,4 @@
+import type { BadgeTone } from "../../../shared/ui/Badge";
 import { SearchableSelect } from "../../../shared/ui/SearchableSelect";
 import type { BadgeListItem } from "../../../shared/ui/BadgeList";
 import { labelColor } from "../../../shared/lib/colorUtils";
@@ -95,7 +96,7 @@ export type CiRepairProps = {
 
 export type InboxStatusMark = {
   Icon: IconComponent;
-  className: string;
+  tone: BadgeTone;
   label: string;
 };
 
@@ -106,12 +107,12 @@ export function inboxStatusMark(item: InboxItem): InboxStatusMark {
   if (label === "Draft") {
     return {
       Icon: GitPullRequestDraft,
-      className: "text-(--ui-text-secondary)",
+      tone: "neutral",
       label,
     };
   }
   if (label === "Merged") {
-    return { Icon: GitMerge, className: "text-(--color-feature)", label };
+    return { Icon: GitMerge, tone: "accent", label };
   }
   if (label === "Closed") {
     if (
@@ -119,24 +120,24 @@ export function inboxStatusMark(item: InboxItem): InboxStatusMark {
       item.kind === "issue" &&
       item.stateReason?.trim().toLowerCase() === "completed"
     ) {
-      return { Icon: CheckCircle, className: "text-(--ui-tone-success-fg)", label: "Completed" };
+      return { Icon: CheckCircle, tone: "success", label: "Completed" };
     }
     if (
       item.provider === "github" &&
       item.kind === "issue" &&
       item.stateReason?.trim().toLowerCase() === "not_planned"
     ) {
-      return { Icon: CircleX, className: "text-(--ui-text-secondary)", label: "Not planned" };
+      return { Icon: CircleX, tone: "neutral", label: "Not planned" };
     }
     return {
       Icon: pr ? GitPullRequestClosed : CircleX,
-      className: "text-(--ui-tone-danger-fg)",
+      tone: "danger",
       label,
     };
   }
   return {
     Icon: pr ? GitPullRequest : CircleDot,
-    className: "text-(--ui-tone-success-fg)",
+    tone: "success",
     label,
   };
 }

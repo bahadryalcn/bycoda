@@ -1,70 +1,87 @@
 ---
 name: feature-host-runtime
-description: "Change Host execution authority, authenticated HTTP/WebSocket transport, immutable operation identity, durable storage, native admission and recovery."
+description: Change common Host authority, transport, storage, native admission and recovery; domain skills retain their user workflows and permission gates.
 ---
 
 # Host runtime
 
-Own common authority and transport contracts across domain services and desktop/mobile/native adapters. Domain skills own user workflows. Source support, advertised capability, qualified activation and installed acceptance are separate; never promote migration/defaults from a successful slice.
+Own common execution/history authority and authenticated transport across `host/`
+domain services, desktop/mobile clients and native adapters. Domain skills retain
+user workflows. Source support, advertised capability, qualified activation and
+installed acceptance remain separate; a successful slice grants no migration/default.
 
-## Source entry points
+## Source starts
 
-Code paths below are repository-root relative.
-
-- `host/engine.ts`
-- `host/server.ts`
-- `host/owner.ts`, `host/lifecycle-state.ts` and `host/storage/atomic-write.ts`
-- `src/features/connections/model/remoteOutbox.ts` and `remoteOutboxDatabase.ts` for desktop remote-command evidence.
-- `host/workspaces/workspace.ts` and `host/storage/workspace-publication.ts`
-- `host/storage/request-fence.ts`, `host/terminals/terminals.ts`, `host/devices/device-preview.ts`
-- `host/conversation/conversation-preview.ts`
-- `host/desktop/desktop-command-delivery.ts`, `host/desktop/desktopLive.ts`, `host/domains/commands/service.ts`
-- `host/transport/read-budget.ts`, `host/transport/dispatch.ts`, `host/transport/ws/server.ts`
-- `src/shared/lib/host-runtime/environmentRuntime.ts`, `src-tauri/src/host_ws/`
-- `host/child-backend.ts` and `host/execution/run-writers.ts`
-- `src/integrations/harness/core/`
-- `src-tauri/src/session_store/canonical_store.rs`, `src-tauri/src/sync_owner.rs`
-  and [storage epoch contracts](references/storage-epoch.md) for native migration,
-  effect admission and exact owner retirement.
+- Host: `host/domains/`, `host/transport/`, `host/storage/` and `host/execution/`;
+  `host/server.ts` and `host/engine.ts` compose the runtime.
+- Domain effects: `host/workspaces/`, `host/desktop/`, `host/conversation/`,
+  `host/terminals/` and `host/devices/`; public entries are domain services.
+- Desktop: `src/features/connections/model/` and `src/shared/lib/host-runtime/`;
+  schemas are under `src/shared/model/host-contracts/`.
+- Providers: `src/integrations/harness/core/` and `src/integrations/harness/providers/`.
+- Native: `src-tauri/src/host_ws/`, `src-tauri/src/session_store/` and sibling
+  authority/control modules. Mobile transport follows nested `mobile/` rules.
 
 ## Workflow
 
-1. Read the Host reference and the specific domain service before changing a wire or owner. Identify environment/session, canonical project, execution cwd, original process/turn and actual storage authority.
-2. Trace the request through schema, authentication, captured principal, service mutex/admission, effect and acknowledgement. Keep one domain service behind HTTP/WS/native adapters.
-3. Capture immutable original handles before deferred work and recheck authority at delayed disclosure/effect boundaries. Bind retries to the accepted command and payload; do not substitute the latest session route.
-4. For persistence/migration, trace actual writers, flush barriers, source bytes, FULL transaction and durable decisions/receipts. Keep unsupported or missing evidence closed and ordinary legacy behavior explicit.
-5. Choose focused contract/service/provider/native tests for the altered seam, then exercise isolated adapters/reconnect/recovery as applicable. Report source, fixture, native and serving-build evidence separately.
+1. Read the Host architecture and affected domain service. Identify environment,
+   session, canonical project, cwd, original turn/process and physical storage owner.
+2. Trace schema, authentication, captured principal, service admission, effect and
+   acknowledgement; retain one domain service across HTTP/WS/native adapters.
+3. Capture immutable original handles before deferred work. Recheck authority at
+   disclosure/effect boundaries; retries bind the accepted command and payload.
+4. For persistence/migration, trace actual writers, flush barriers, source bytes,
+   FULL transactions and durable decisions/receipts. Missing evidence fails closed.
+5. Exercise affected contract/service/provider/native seams and isolated reconnect/
+   recovery; report source, fixture, native and serving-build evidence separately.
 
 ## Preserve
 
-- Corrupt stored session owners remain routing fences even when excluded from list rendering. Quarantined outbox evidence counts toward admission; preserve distinct original bytes and never resend uncertain commands.
+- One execution/history authority per environment/session. Authentication and sockets
+  grant no new scope; credentials remain with their existing native/Host owners.
+- Original construction, turn, approval and request identities survive waits, retries
+  and route replacement. Ambiguity never falls back to PID/current writer.
+- Admission, physical I/O lifetime, revocation, retirement and provider ACK are
+  separate. Observer timeout/cancellation proves neither settlement nor cleanup.
+- Settled warm providers retain writers until exact retirement. Failed retirement
+  preserves unsent input; it cannot trigger an offline execution fallback.
+- Persist remote commands before dispatch. Retain exact payloads, unknown outcomes,
+  quarantined evidence and corrupt owner fences; never replay dispatched mutations.
+- Corrupt lifecycle metadata or endpoint failure cannot prove Host retirement.
+  Kernel-lease proof and explicit repair own legacy/corrupt-state recovery.
+- Workspace publication retains expected content, rooted target, current permission
+  checks and file ACLs. Preserve uncertain candidates and original source/recovery bytes.
+- Authentication/heartbeat admission stays separate from controls. Original monotonic
+  deadlines and physical slot accounting survive queue waits and observer cancellation.
+- Subscription resume needs committed cursor proof for the exact live page, owner,
+  target and resource; changed/unproven membership requires a fresh snapshot.
+- Desktop effects persist original receipts before offer; unknown/offered work cannot
+  be reoffered. Page tokens route existing scope; ACK proves handling only.
+- Fence original authority/request identity before retiring proven settled receipts.
+  Pending effects, failed cleanup, warm/unknown owners and physical completion need
+  their own retained proof; preview settlement includes requested presentation.
+- Preserve drafts, queues, approvals and attachments. Detach does not Stop; migration
+  needs its full admission contract. Snapshot/unit evidence cannot prove crash
+  durability, actor closure, native enforcement or installed source inclusion.
 
-- Missing/corrupt lifecycle metadata or an unreachable endpoint never proves a Host stopped. Probe the kernel lease; live legacy owners without verified identity remain unknown. Keep corrupt policy, tunnel and credential state until explicitly repaired.
-- Workspace saves retain expected-content checks, permission checks at publication, rooted target identity and original file permissions. Preserve uncertain replacement candidates; private-state atomic helpers do not preserve arbitrary workspace ACLs.
+## Focused checks
 
-- One execution/history authority per environment/session. A socket or authenticated connection grants no new scope; credentials remain with their existing native/Host owners.
-- Normal admission, accepted physical I/O lifetime, permission revocation, process retirement and provider protocol ACK are distinct. An observer timeout cannot settle work or certify cleanup.
-- Original construction receipts, turn bindings, approval occurrences and pending identities must survive waits, retries and route replacement. Missing/ambiguous identity must not fall back to PID/current writer.
-- A settled warm Host provider still owns its writer. Desktop continuation needs exact retirement before a run lease; timeout/refusal must retain unsent input rather than trigger an offline fallback on retirement-capable Hosts.
-- Uncertain sends retain the original command ID and are never replayed because a socket closed. Pending/unknown ownership records cannot be evicted to admit fresh work.
-- Generic inline WebSocket results reuse normalized bytes only for the exact transformation-free JSON schema. Preserve final envelope validation, authorization, size/backpressure and bulk descriptor boundaries; other schemas retain normalized-wire validation.
-- Authentication/heartbeat admission stays separate from ordinary controls. Queue waits share the original monotonic deadline; cancelled observers do not release physical work. Reconnect retains only never-sent requests, never dispatched mutations.
-- Subscription resume requires committed cursor proof bound to the exact live page, owner, target and resource. Unproven or changed membership takes a fresh snapshot; renderer cursor input alone grants no replay authority.
-- Desktop control admission persists the original receipt and delivery identity before offering it. Offered/unknown work is never reoffered after a lost response or restart; ACK proves handling only. Native page tokens route existing authority and never replace exact original turn/process grants.
-- Retire only proven settled receipts using monotonic time. Fence their original authority/request identity before removing exact records; a fence match refuses execution. Keep pending effects, failed cleanup and unknown physical completion retained. Resource retirement requires its own proof, not only a fulfilled request.
-- A settled warm Host turn retains only its original provider, activity, operation context and authority needed for explicit retirement. Empty provider sets may be removed after exact retirement; warm or unknown owners remain fenced.
-- Persist remote commands before dispatch; retain exact ID, payload and unknown outcomes. IndexedDB settlements and quarantine preserve reviewed raw evidence; legacy localStorage bytes remain until a qualified writer-cohort retirement proves safe. Storage failures hold dispatch and attachment cleanup.
-- Browser preview settlement includes verified presentation when requested. Read-only status failures can retire; uncertain claim/navigation/presentation work cannot. Token revocation removes disclosure authority, not evidence of an accepted effect. Recheck both original and current authority after delayed waits.
-- Keep drafts, queues, approvals, attachments, exact source bytes and recovery copies. Detach does not Stop; new migration/default authority requires its complete admission contract.
-- Snapshot/unit evidence does not prove crash/power-loss durability, all-actor closure, native sandbox enforcement or installed source inclusion.
+Run schema/import-boundary checks and tests beside the changed service/provider.
+Examples: `pnpm exec vitest run --config host/vitest.config.ts host/transport host/storage`
+and `pnpm exec vitest run src/features/connections/model src/shared/lib/host-runtime`.
+Use normal `tsc-rs` project commands unless fast mode is explicitly selected.
+Native ownership changes need relevant Rust/interop/lifecycle cases; transport changes
+need revocation, stale callbacks, reconnect, duplicate/unknown outcomes and old clients.
+Run only checks justified by the change; evidence limits are in the contract reference.
 
-## Verification and references
+## References
 
-- Use schema/import-boundary checks and changed domain suites. Desktop/Host type checks use normal tsc-rs project commands unless fast mode is explicitly selected.
-- Native ownership changes require relevant Rust/interop/lifecycle cases; transport changes need auth revocation, stale callbacks, reconnect, duplicate/uncertain outcome and old-client coverage. Run only checks justified by the change.
-- Read the [surface map](references/surfaces.md) for the affected UI, state, transport and test owners. Re-search current callers before broad changes.
-- [Canonical Host architecture](../../../docs/reference/host-runtime.md)
-- [Assistant native admission](../../../docs/reference/assistant-native-admission.md):
-  paired-device authentication is not WindowIssuer proof; key enrollment stays
-  owner-only and effects retain exact signed scope and revocation ordering.
-- [Workspace/delivery contract](../../../docs/reference/managed-workspaces.md)
+- [Surface owners](references/surfaces.md): locate current services, adapters and tests.
+- [Authority and recovery](references/contracts.md): detailed publication, outbox,
+  receipt retirement and browser-presentation boundaries.
+- [Native storage epoch](references/storage-epoch.md): migration, source preservation
+  and exact native owner retirement, including linked conditional owner decisions.
+- [Host architecture](../../../docs/reference/host-runtime.md): transport and storage design.
+- [Native admission](../../../docs/reference/assistant-native-admission.md): WindowIssuer
+  provisioning, exact signed scope and revocation; pairing alone grants no proof.
+- [Workspace/delivery](../../../docs/reference/managed-workspaces.md): workspace authority.

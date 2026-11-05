@@ -2,7 +2,10 @@
 import { act, createElement, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { useAssistantControlSource, waitForAssistantControlSource } from "./useAssistantControlSource";
+import {
+  useAssistantControlSource,
+  waitForAssistantControlSource,
+} from "./useAssistantControlSource";
 
 const invoke = vi.hoisted(() => vi.fn(async (_command?: string, _payload?: unknown) => undefined));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -10,19 +13,32 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke }));
 it("waits for native source ACK and rejects a revoked preconnect source", async () => {
   invoke.mockReset();
   const ack = Promise.withResolvers<undefined>();
-  invoke.mockImplementation(async (_command, payload) => (payload as { active: boolean }).active ? ack.promise : undefined);
+  invoke.mockImplementation(async (_command, payload) =>
+    (payload as { active: boolean }).active ? ack.promise : undefined,
+  );
   const root = createRoot(document.createElement("div"));
-  const Surface = () => { useAssistantControlSource("room-delayed-preconnect", "host"); return null; };
+  const Surface = () => {
+    useAssistantControlSource("room-delayed-preconnect", "host");
+    return null;
+  };
   await act(async () => root.render(createElement(Surface)));
   let current = true;
   let connected = false;
-  const waiting = waitForAssistantControlSource("room-delayed-preconnect", "host", () => current)
-    .then(() => { connected = true; });
+  const waiting = waitForAssistantControlSource(
+    "room-delayed-preconnect",
+    "host",
+    () => current,
+  ).then(() => {
+    connected = true;
+  });
   const rejected = expect(waiting).rejects.toThrow("source changed");
   await Promise.resolve();
   expect(connected).toBe(false);
   current = false;
-  await act(async () => { ack.resolve(undefined); await Promise.resolve(); });
+  await act(async () => {
+    ack.resolve(undefined);
+    await Promise.resolve();
+  });
   await rejected;
   expect(connected).toBe(false);
   await act(async () => root.unmount());
@@ -56,11 +72,23 @@ it("serializes Room registration, heartbeat and exact-source revocation across t
     expect(invoke.mock.calls.slice(-2)).toEqual([
       [
         "control_assistant_source_v2",
-        { threadId: "room", environmentId: "host", active: false, role: "interactive", sequence: expect.any(Number) },
+        {
+          threadId: "room",
+          environmentId: "host",
+          active: false,
+          role: "interactive",
+          sequence: expect.any(Number),
+        },
       ],
       [
         "control_assistant_source_v2",
-        { threadId: "next", environmentId: "host", active: true, role: "interactive", sequence: expect.any(Number) },
+        {
+          threadId: "next",
+          environmentId: "host",
+          active: true,
+          role: "interactive",
+          sequence: expect.any(Number),
+        },
       ],
     ]);
     await act(async () => root.unmount());
@@ -108,9 +136,21 @@ it("shares a source across Room and voice until both release it", async () => {
 it("upgrades a shared background source for an interactive Room and downgrades on close", async () => {
   invoke.mockClear();
   const root = createRoot(document.createElement("div"));
-  const Background = () => { useAssistantControlSource("room-priority", "host", "background"); return null; };
-  const Interactive = () => { useAssistantControlSource("room-priority", "host"); return null; };
-  const render = (interactive: boolean) => createElement("div", {}, createElement(Background), interactive ? createElement(Interactive) : null);
+  const Background = () => {
+    useAssistantControlSource("room-priority", "host", "background");
+    return null;
+  };
+  const Interactive = () => {
+    useAssistantControlSource("room-priority", "host");
+    return null;
+  };
+  const render = (interactive: boolean) =>
+    createElement(
+      "div",
+      {},
+      createElement(Background),
+      interactive ? createElement(Interactive) : null,
+    );
   await act(async () => root.render(render(false)));
   expect(invoke.mock.calls.at(-1)?.[1]).toMatchObject({ active: true, role: "background" });
   await act(async () => root.render(render(true)));
@@ -122,17 +162,37 @@ it("upgrades a shared background source for an interactive Room and downgrades o
 });
 it("fails background registration closed on old native while retaining legacy interactive registration", async () => {
   invoke.mockClear();
-  invoke.mockImplementation(async command => { if (command === "control_assistant_source_v2") throw new Error("Command control_assistant_source_v2 not found"); });
+  invoke.mockImplementation(async (command) => {
+    if (command === "control_assistant_source_v2")
+      throw new Error("Command control_assistant_source_v2 not found");
+  });
   const root = createRoot(document.createElement("div"));
-  const Background = () => { useAssistantControlSource("room-old", "host", "background"); return null; };
-  const Interactive = () => { useAssistantControlSource("room-old", "host"); return null; };
+  const Background = () => {
+    useAssistantControlSource("room-old", "host", "background");
+    return null;
+  };
+  const Interactive = () => {
+    useAssistantControlSource("room-old", "host");
+    return null;
+  };
   try {
     await act(async () => root.render(createElement(Background)));
-    expect(invoke.mock.calls.some(([command]) => command === "control_assistant_source")).toBe(false);
-    await act(async () => root.render(createElement("div", {}, createElement(Background), createElement(Interactive))));
-    expect(invoke.mock.calls.some(([command, payload]) => command === "control_assistant_source" && (payload as { active: boolean }).active)).toBe(true);
+    expect(invoke.mock.calls.some(([command]) => command === "control_assistant_source")).toBe(
+      false,
+    );
+    await act(async () =>
+      root.render(createElement("div", {}, createElement(Background), createElement(Interactive))),
+    );
+    expect(
+      invoke.mock.calls.some(
+        ([command, payload]) =>
+          command === "control_assistant_source" && (payload as { active: boolean }).active,
+      ),
+    ).toBe(true);
     await act(async () => root.unmount());
-  } finally { invoke.mockImplementation(async () => undefined); }
+  } finally {
+    invoke.mockImplementation(async () => undefined);
+  }
 });
 
 it("orders same-source StrictMode remounts and timed-out native replies with increasing fences", async () => {
@@ -183,10 +243,20 @@ it("orders same-source StrictMode remounts and timed-out native replies with inc
 it("reports failed native Room registration instead of claiming readiness", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   invoke.mockRejectedValueOnce(new Error("unavailable"));
-  const container=document.createElement("div"),root=createRoot(container);
-  function Surface() { const status=useAssistantControlSource("room-failed","host"); return createElement("span",null,status); }
+  const container = document.createElement("div"),
+    root = createRoot(container);
+  function Surface() {
+    const status = useAssistantControlSource("room-failed", "host");
+    return createElement("span", null, status);
+  }
   try {
-    await act(async()=>{root.render(createElement(Surface)); await new Promise(resolve=>setTimeout(resolve,0));});
+    await act(async () => {
+      root.render(createElement(Surface));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
     expect(container.textContent).toBe("unavailable");
-  } finally { await act(async()=>root.unmount()); vi.unstubAllGlobals(); }
+  } finally {
+    await act(async () => root.unmount());
+    vi.unstubAllGlobals();
+  }
 });

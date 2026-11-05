@@ -15,7 +15,7 @@ import { useGitResource } from "../hooks/useGitResource";
 import { buildUnifiedFile } from "../model/unifiedDiff";
 import { UnifiedDiffView } from "./UnifiedDiffView";
 import { GitFeedback, GitLoading } from "./GitFeedback";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { GitCommitBlameView } from "./GitCommitBlameView";
 
 export function GitGraphCommitInspector({

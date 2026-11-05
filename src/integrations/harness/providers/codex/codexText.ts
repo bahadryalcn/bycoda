@@ -147,8 +147,12 @@ export async function runCodexTextPrompt(input: TextPromptInput): Promise<string
 
 async function promptOnLive(input: TextPromptInput): Promise<string> {
   input.signal?.throwIfAborted();
-  if (isTauri() && !input.operationContext?.nativeControlTurn && !input.operationContext?.hostRun &&
-      (input.ephemeral === false || input.threadId || input.compactBefore))
+  if (
+    isTauri() &&
+    !input.operationContext?.nativeControlTurn &&
+    !input.operationContext?.hostRun &&
+    (input.ephemeral === false || input.threadId || input.compactBefore)
+  )
     throw new Error("Standalone text generation requires a new ephemeral thread.");
   validateTextOutputLimit(input.maxOutputChars);
   if (input.compactBefore && (input.ephemeral !== false || !input.threadId || !input.onCompacted))
@@ -398,7 +402,11 @@ async function startLive(
 ): Promise<LiveText> {
   const previous = captureDrop();
   let stopping = Promise.resolve();
-  const textProcess = createChildProcessHandle(TEXT_CHILD_ID, operationContext?.nativeControlTurn, operationContext?.nativeControlTurn ? undefined : "utility");
+  const textProcess = createChildProcessHandle(
+    TEXT_CHILD_ID,
+    operationContext?.nativeControlTurn,
+    operationContext?.nativeControlTurn ? undefined : "utility",
+  );
   prepareTextProcess(textProcess, operationContext, true);
   const sessionRef: { session: LiveText | null } = { session: null };
   let admitted = false;

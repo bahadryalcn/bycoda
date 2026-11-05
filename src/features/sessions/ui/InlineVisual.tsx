@@ -2,13 +2,13 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { Surface } from "../../../shared/ui/Surface";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { HtmlPreview } from "../../files/ui/HtmlPreview";
+import { HtmlPreview } from "../../files/public/HtmlPreview";
 import { Button } from "../../../shared/ui/Button";
 import { Modal } from "../../../shared/ui/Modal";
 import { Sheet } from "../../../shared/ui/Sheet";
 import { CodeBlock, Maximize2, PanelRight, X } from "../../../shared/ui/icons";
 import { useT } from "../../../shared/i18n";
-import { SCHEME_CHANGE_EVENT } from "../../settings/model/appearance";
+import { SCHEME_CHANGE_EVENT } from "../../settings/public/appearance";
 import {
   inlineVisualSnapshot,
   sandboxedInlineVisual,

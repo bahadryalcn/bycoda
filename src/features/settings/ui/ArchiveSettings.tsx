@@ -4,13 +4,13 @@ import { ConfirmMorph } from "../../../shared/ui/ConfirmMorph";
 import { t, useLocale } from "../../../shared/i18n";
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { HarnessIcon } from "../../sessions/ui/HarnessIcon";
+import { HarnessIcon } from "../../sessions/public/HarnessIcon";
 
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { getGroupLockView } from "../../group-lock/model/groupLock";
 
-import { RemoveProjectDialog } from "../../projects/ui/RemoveProjectDialog";
+import { RemoveProjectDialog } from "../../projects/public/RemoveProjectDialog";
 
 import { prettyCwd, projectKey, projectName } from "../../../shared/lib/paths";
 
@@ -21,14 +21,15 @@ import {
   sameProjectPath,
   subscribeArchivedProjects,
   type ArchivedProject,
-} from "../../projects/model/recents";
-import { sessionDisplayTitle } from "../../sessions/model/session";
+} from "../../projects/public/recents";
+
+import { sessionDisplayTitle } from "../../sessions/public/session";
 
 import {
   loadSessionSidebarFilters,
   saveSessionSidebarFilters,
-} from "../../sessions/model/sessionFilters";
-import type { SessionSummary } from "../../sessions/data/sessionStore";
+} from "../../sessions/public/sessionFilters";
+import type { SessionSummary } from "../../sessions";
 
 import { loadTabGroupLabels, resolveTabGroupLabel } from "../../workspace/model/tabGroups";
 

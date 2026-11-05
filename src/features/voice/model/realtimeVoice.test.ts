@@ -124,12 +124,24 @@ it("does not certify retirement until provider socket and audio contexts actuall
   const socket = sockets.at(-1)!;
   const audio = Promise.withResolvers<void>();
   let closeEvent: (() => void) | undefined;
-  Object.assign(socket, { addEventListener: (_name: string, listener: () => void) => { closeEvent = listener; } });
+  Object.assign(socket, {
+    addEventListener: (_name: string, listener: () => void) => {
+      closeEvent = listener;
+    },
+  });
   Object.defineProperty(track, "readyState", { configurable: true, value: "live", writable: true });
-  track.stop.mockImplementation(() => { Reflect.set(track, "readyState", "ended"); });
-  for (const context of contexts) context.close.mockImplementation(async () => { await audio.promise; context.state = "closed"; });
+  track.stop.mockImplementation(() => {
+    Reflect.set(track, "readyState", "ended");
+  });
+  for (const context of contexts)
+    context.close.mockImplementation(async () => {
+      await audio.promise;
+      context.state = "closed";
+    });
   let retired = false;
-  const retirement = voice.retire().then(() => { retired = true; });
+  const retirement = voice.retire().then(() => {
+    retired = true;
+  });
   try {
     await Promise.resolve();
     expect(retired).toBe(false);
@@ -143,9 +155,12 @@ it("does not certify retirement until provider socket and audio contexts actuall
     expect(socket.close).toHaveBeenCalledOnce();
     expect(track.stop).toHaveBeenCalled();
   } finally {
-    audio.resolve(); socket.readyState = 3; closeEvent?.();
+    audio.resolve();
+    socket.readyState = 3;
+    closeEvent?.();
     await retirement;
-    track.stop.mockReset(); Reflect.deleteProperty(track, "readyState");
+    track.stop.mockReset();
+    Reflect.deleteProperty(track, "readyState");
   }
 });
 
@@ -178,23 +193,45 @@ it("semantic VAD binds provider commit to acoustic onset and never manually comm
   autoSessionUpdate = false;
   const activated = vi.fn();
   let target = "original";
-  const events = { ...callbacks(), captureTurn: () => { const captured = target; return () => activated(captured); } };
-  const voice = new RealtimeVoice("openai", events, "tr", undefined, undefined, "", "auto", { experimentalSemanticVad: true });
+  const events = {
+    ...callbacks(),
+    captureTurn: () => {
+      const captured = target;
+      return () => activated(captured);
+    },
+  };
+  const voice = new RealtimeVoice("openai", events, "tr", undefined, undefined, "", "auto", {
+    experimentalSemanticVad: true,
+  });
   const connecting = voice.connect(secret("openai"));
   await vi.waitFor(() => expect(sockets[0]?.sent()).toHaveLength(1));
   const socket = sockets[0];
   const detection = socket.sent()[0].session.audio.input.turn_detection;
-  expect(detection).toEqual({ type: "semantic_vad", eagerness: "auto", create_response: false, interrupt_response: false });
-  socket.emit({ type: "session.updated", session: { audio: { input: { turn_detection: detection } } } });
+  expect(detection).toEqual({
+    type: "semantic_vad",
+    eagerness: "auto",
+    create_response: false,
+    interrupt_response: false,
+  });
+  socket.emit({
+    type: "session.updated",
+    session: { audio: { input: { turn_detection: detection } } },
+  });
   await connecting;
-  const speech = Int16Array.from({ length: 1024 }, (_, i) => Math.round(4000 * Math.sin((2 * Math.PI * 150 * i) / 24000)));
+  const speech = Int16Array.from({ length: 1024 }, (_, i) =>
+    Math.round(4000 * Math.sin((2 * Math.PI * 150 * i) / 24000)),
+  );
   for (let i = 0; i < 9; i++) pushFrame(speech);
   socket.emit({ type: "input_audio_buffer.speech_started", item_id: "semantic-1" });
   target = "later";
   socket.emit({ type: "input_audio_buffer.committed", item_id: "semantic-1" });
   expect(socket.sent().some((event) => event.type === "input_audio_buffer.commit")).toBe(false);
   expect(socket.sent().some((event) => event.type === "response.create")).toBe(false);
-  socket.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "semantic-1", transcript: "Merhaba" });
+  socket.emit({
+    type: "conversation.item.input_audio_transcription.completed",
+    item_id: "semantic-1",
+    transcript: "Merhaba",
+  });
   expect(activated).toHaveBeenCalledExactlyOnceWith("original");
   expect(socket.sent().filter((event) => event.type === "response.create")).toHaveLength(1);
   voice.close();
@@ -202,19 +239,41 @@ it("semantic VAD binds provider commit to acoustic onset and never manually comm
 
 it("rejects semantic VAD with manual turn mode before opening the microphone", async () => {
   const microphone = setup();
-  const voice = new RealtimeVoice("openai", callbacks(), "tr", undefined, undefined, "", "auto", { experimentalSemanticVad: true, manualTurnEnd: true });
-  await expect(voice.connect(secret("openai"))).rejects.toThrow("Semantic VAD requires OpenAI and automatic turn mode.");
+  const voice = new RealtimeVoice("openai", callbacks(), "tr", undefined, undefined, "", "auto", {
+    experimentalSemanticVad: true,
+    manualTurnEnd: true,
+  });
+  await expect(voice.connect(secret("openai"))).rejects.toThrow(
+    "Semantic VAD requires OpenAI and automatic turn mode.",
+  );
   expect(microphone).not.toHaveBeenCalled();
 });
 
 it("rejects semantic VAD when the provider does not confirm safe settings", async () => {
   setup();
   autoSessionUpdate = false;
-  const voice = new RealtimeVoice("openai", callbacks(), "tr", undefined, undefined, "", "auto", { experimentalSemanticVad: true });
+  const voice = new RealtimeVoice("openai", callbacks(), "tr", undefined, undefined, "", "auto", {
+    experimentalSemanticVad: true,
+  });
   const connecting = voice.connect(secret("openai"));
-  const rejected = expect(connecting).rejects.toThrow("Semantic VAD configuration was not confirmed.");
+  const rejected = expect(connecting).rejects.toThrow(
+    "Semantic VAD configuration was not confirmed.",
+  );
   await vi.waitFor(() => expect(sockets[0]?.sent()).toHaveLength(1));
-  sockets[0].emit({ type: "session.updated", session: { audio: { input: { turn_detection: { type: "semantic_vad", create_response: true, interrupt_response: false } } } } });
+  sockets[0].emit({
+    type: "session.updated",
+    session: {
+      audio: {
+        input: {
+          turn_detection: {
+            type: "semantic_vad",
+            create_response: true,
+            interrupt_response: false,
+          },
+        },
+      },
+    },
+  });
   await rejected;
   expect(sockets[0].close).toHaveBeenCalledOnce();
 });
@@ -223,15 +282,26 @@ it("fails closed on a semantic commit with the wrong item identity", async () =>
   setup();
   autoSessionUpdate = false;
   const events = callbacks();
-  const voice = new RealtimeVoice("openai", events, "tr", undefined, undefined, "", "auto", { experimentalSemanticVad: true });
+  const voice = new RealtimeVoice("openai", events, "tr", undefined, undefined, "", "auto", {
+    experimentalSemanticVad: true,
+  });
   const connecting = voice.connect(secret("openai"));
   await vi.waitFor(() => expect(sockets[0]?.sent()).toHaveLength(1));
   const socket = sockets[0];
-  socket.emit({ type: "session.updated", session: { audio: { input: { turn_detection: socket.sent()[0].session.audio.input.turn_detection } } } });
+  socket.emit({
+    type: "session.updated",
+    session: {
+      audio: { input: { turn_detection: socket.sent()[0].session.audio.input.turn_detection } },
+    },
+  });
   await connecting;
   socket.emit({ type: "input_audio_buffer.speech_started", item_id: "first" });
   socket.emit({ type: "input_audio_buffer.committed", item_id: "different" });
-  expect(events.error).toHaveBeenCalledWith("Semantic voice commit identity could not be confirmed.", true, expect.anything());
+  expect(events.error).toHaveBeenCalledWith(
+    "Semantic voice commit identity could not be confirmed.",
+    true,
+    expect.anything(),
+  );
   expect(socket.sent().some((event) => event.type === "response.create")).toBe(false);
   expect(socket.close).toHaveBeenCalledOnce();
 });
@@ -240,18 +310,33 @@ it("does not admit provider-only semantic speech without a local onset snapshot"
   setup();
   autoSessionUpdate = false;
   const events = callbacks();
-  const voice = new RealtimeVoice("openai", events, "tr", undefined, undefined, "", "auto", { experimentalSemanticVad: true });
+  const voice = new RealtimeVoice("openai", events, "tr", undefined, undefined, "", "auto", {
+    experimentalSemanticVad: true,
+  });
   const connecting = voice.connect(secret("openai"));
   await vi.waitFor(() => expect(sockets[0]?.sent()).toHaveLength(1));
   const socket = sockets[0];
-  socket.emit({ type: "session.updated", session: { audio: { input: { turn_detection: socket.sent()[0].session.audio.input.turn_detection } } } });
+  socket.emit({
+    type: "session.updated",
+    session: {
+      audio: { input: { turn_detection: socket.sent()[0].session.audio.input.turn_detection } },
+    },
+  });
   await connecting;
   socket.emit({ type: "input_audio_buffer.speech_started", item_id: "noise" });
   socket.emit({ type: "input_audio_buffer.committed", item_id: "noise" });
-  socket.emit({ type: "conversation.item.input_audio_transcription.completed", item_id: "noise", transcript: "hello" });
+  socket.emit({
+    type: "conversation.item.input_audio_transcription.completed",
+    item_id: "noise",
+    transcript: "hello",
+  });
   expect(events.transcript).not.toHaveBeenCalled();
   expect(socket.sent().some((event) => event.type === "response.create")).toBe(false);
-  expect(socket.sent().some((event) => event.type === "conversation.item.delete" && event.item_id === "noise")).toBe(true);
+  expect(
+    socket
+      .sent()
+      .some((event) => event.type === "conversation.item.delete" && event.item_id === "noise"),
+  ).toBe(true);
   voice.close();
 });
 
@@ -2117,12 +2202,32 @@ it("receipts out-of-band narration only after its own audio ends", async () => {
   await voice.connect(secret("openai"));
   const socket = sockets.at(-1)!;
   let settled = false;
-  const receipt = voice.speakWithReceipt("Status", "request-1").then((value) => { settled = true; return value; });
+  const receipt = voice.speakWithReceipt("Status", "request-1").then((value) => {
+    settled = true;
+    return value;
+  });
   const sent = socket.sent().at(-1);
-  expect(sent.response).toMatchObject({ conversation: "none", tool_choice: "none", metadata: { request_id: expect.any(String) } });
-  socket.emit({ type: "response.created", response: { id: "n1", metadata: sent.response.metadata } });
-  socket.emit({ type: "response.output_audio_transcript.delta", response_id: "n1", delta: "Status" });
-  socket.emit({ type: "response.output_audio.delta", response_id: "n1", item_id: "i1", content_index: 0, delta: "AAA=" });
+  expect(sent.response).toMatchObject({
+    conversation: "none",
+    tool_choice: "none",
+    metadata: { request_id: expect.any(String) },
+  });
+  socket.emit({
+    type: "response.created",
+    response: { id: "n1", metadata: sent.response.metadata },
+  });
+  socket.emit({
+    type: "response.output_audio_transcript.delta",
+    response_id: "n1",
+    delta: "Status",
+  });
+  socket.emit({
+    type: "response.output_audio.delta",
+    response_id: "n1",
+    item_id: "i1",
+    content_index: 0,
+    delta: "AAA=",
+  });
   const player = contexts.at(-1)!.createBufferSource.mock.results[0].value;
   socket.emit({ type: "response.done", response: { id: "n1", status: "completed", output: [] } });
   await Promise.resolve();
@@ -2141,8 +2246,17 @@ it("resolves interrupted narration unknown and ignores late playback", async () 
   await voice.connect(secret("openai"));
   const socket = sockets.at(-1)!;
   const receipt = voice.speakWithReceipt("Status", "request-2");
-  socket.emit({ type: "response.created", response: { id: "n2", metadata: socket.sent().at(-1).response.metadata } });
-  socket.emit({ type: "response.output_audio.delta", response_id: "n2", item_id: "i2", content_index: 0, delta: "AAA=" });
+  socket.emit({
+    type: "response.created",
+    response: { id: "n2", metadata: socket.sent().at(-1).response.metadata },
+  });
+  socket.emit({
+    type: "response.output_audio.delta",
+    response_id: "n2",
+    item_id: "i2",
+    content_index: 0,
+    delta: "AAA=",
+  });
   const player = contexts.at(-1)!.createBufferSource.mock.results[0].value;
   voice.close();
   expect(await receipt).toEqual({ status: "unknown", requestId: "request-2", responseId: "n2" });
@@ -2157,7 +2271,10 @@ it("refuses busy narration and settles an aborted request before response creati
   const socket = sockets.at(-1)!;
   const controller = new AbortController();
   const receipt = voice.speakWithReceipt("Status", "first", controller.signal);
-  expect(await voice.speakWithReceipt("Other", "second")).toEqual({ status: "unavailable", requestId: "second" });
+  expect(await voice.speakWithReceipt("Other", "second")).toEqual({
+    status: "unavailable",
+    requestId: "second",
+  });
   const metadata = socket.sent().at(-1).response.metadata;
   controller.abort();
   expect(await receipt).toEqual({ status: "unknown", requestId: "first" });

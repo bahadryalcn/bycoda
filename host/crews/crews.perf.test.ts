@@ -57,9 +57,11 @@ describe("host crews idle tick (perf)", () => {
     await crews.tick();
     const prepare = vi.spyOn(store.db, "prepare");
     for (let i = 0; i < 5; i++) await crews.tick();
-    expect(prepare).toHaveBeenCalledTimes(5);
+    expect(prepare).toHaveBeenCalledTimes(10);
     expect(
-      prepare.mock.calls.every(([sql]) => sql.includes("FROM crew_scheduler_source_v1 source")),
+      prepare.mock.calls.every(
+        ([sql]) => sql.includes("FROM crew_runs_v2") || sql.includes("FROM metadata WHERE key=?"),
+      ),
     ).toBe(true);
     expect(engine.command).not.toHaveBeenCalled();
   });

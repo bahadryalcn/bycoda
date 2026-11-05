@@ -99,18 +99,14 @@ export function gitWatchPlan(gitDir: string, commonDir: string): GitWatchPlan[] 
 async function resolveGitDirs(cwd: string): Promise<{ gitDir: string; commonDir: string }> {
   let stdout: string;
   try {
-    ({ stdout } = await exec(
-      "git",
-      ["rev-parse", "--git-dir", "--git-common-dir"],
-      {
-        cwd,
-        timeout: 10_000,
-        maxBuffer: 64 * 1024,
-        encoding: "utf8",
-        windowsHide: true,
-        env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
-      },
-    ));
+    ({ stdout } = await exec("git", ["rev-parse", "--git-dir", "--git-common-dir"], {
+      cwd,
+      timeout: 10_000,
+      maxBuffer: 64 * 1024,
+      encoding: "utf8",
+      windowsHide: true,
+      env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+    }));
   } catch {
     throw new Error(`${cwd} is not a Git checkout`);
   }
@@ -296,8 +292,12 @@ export class GitWatches {
     return this.watchPath(
       plan.path,
       plan.recursive,
-      (type, changed) => { if (entry.generation === generation) this.onEvent(entry, type, changed); },
-      () => { if (entry.generation === generation) this.onError(entry); },
+      (type, changed) => {
+        if (entry.generation === generation) this.onEvent(entry, type, changed);
+      },
+      () => {
+        if (entry.generation === generation) this.onError(entry);
+      },
     );
   }
 
@@ -357,7 +357,10 @@ export class GitWatches {
     const record = { expired: false, generation };
     entry.directoryChecks.set(path, record);
     this.directoryChecks++;
-    const current = () => this.entries.get(entry.cwd) === entry && entry.state === "ready" && entry.generation === generation;
+    const current = () =>
+      this.entries.get(entry.cwd) === entry &&
+      entry.state === "ready" &&
+      entry.generation === generation;
     const deadline = setTimeout(() => {
       record.expired = true;
       if (current()) this.queue(entry, change);
@@ -365,18 +368,23 @@ export class GitWatches {
     deadline.unref();
     void Promise.resolve()
       .then(() => this.isDirectory(path))
-      .then((directory) => {
-        // Folder access-time events are noise; a real ref reports its file.
-        if (!directory && current()) this.queue(entry, change);
-      }, () => {
-        if (current()) this.queue(entry, change);
-      })
+      .then(
+        (directory) => {
+          // Folder access-time events are noise; a real ref reports its file.
+          if (!directory && current()) this.queue(entry, change);
+        },
+        () => {
+          if (current()) this.queue(entry, change);
+        },
+      )
       .finally(() => {
         clearTimeout(deadline);
         this.directoryChecks--;
         if (entry.directoryChecks.get(path) === record) entry.directoryChecks.delete(path);
       })
-      .catch(() => { /* Watch disposal cannot turn failed metadata into absence. */ });
+      .catch(() => {
+        /* Watch disposal cannot turn failed metadata into absence. */
+      });
   }
 
   /** The OS dropped events or the watch broke: anything may have changed. */

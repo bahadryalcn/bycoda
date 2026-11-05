@@ -92,16 +92,29 @@ describe("Windows Android SDK controls", () => {
   it("cleans only its snapshot file after a timed-out dump actually settles", async () => {
     let finish!: () => void;
     const command = vi.fn<typeof deviceCommand>().mockImplementation(async (_exe, args) => {
-      if (args.includes("dump")) await new Promise<void>((resolve) => { finish = resolve; });
+      if (args.includes("dump"))
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
       return "";
     });
     const tracked = new Set<Promise<unknown>>();
     const track = <T>(work: Promise<T>) => {
       tracked.add(work);
-      void work.then(() => tracked.delete(work), () => tracked.delete(work));
+      void work.then(
+        () => tracked.delete(work),
+        () => tracked.delete(work),
+      );
       return work;
     };
-    await expect(androidDeviceControl("adb.exe", "device", { type: "waitForText", text: "Ready", timeoutMs: 30 }, { command, track })).rejects.toThrow("DEVICE_EXPECTATION_TIMEOUT");
+    await expect(
+      androidDeviceControl(
+        "adb.exe",
+        "device",
+        { type: "waitForText", text: "Ready", timeoutMs: 30 },
+        { command, track },
+      ),
+    ).rejects.toThrow("DEVICE_EXPECTATION_TIMEOUT");
     expect(command).toHaveBeenCalledTimes(1);
     const path = command.mock.calls[0][1].at(-1);
     expect(tracked.size).toBeGreaterThan(0);

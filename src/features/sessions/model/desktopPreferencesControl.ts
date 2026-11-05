@@ -2,7 +2,7 @@ import { getGroupLockView } from "../../group-lock/model/groupLock";
 import {
   applicationPreferencesSnapshot,
   applyApplicationPreference,
-} from "../../settings/model/applicationPreferencesControl";
+} from "../../settings/public/applicationPreferencesControl";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import {
   HARNESSES,
@@ -195,16 +195,21 @@ export function createDesktopPreferencesControl(overrides: Partial<Deps> = {}) {
     const lock = getGroupLockView().lock;
     if (
       !context.valid() ||
-      (!!context.sourceSessionId === !!context.sourceThreadId) ||
+      !!context.sourceSessionId === !!context.sourceThreadId ||
       (!!context.sourceSessionId && (!context.projectCwd || !context.workingCwd)) ||
-      (!!context.sourceThreadId && (!!context.projectCwd !== !!context.projectId || !!context.projectCwd !== !!context.workingCwd)) ||
-      (!!context.projectCwd && (context.projectCwd.startsWith("remote://") || isProjectLockedIn(lock, context.projectCwd))) ||
-      (!!context.workingCwd && (context.workingCwd.startsWith("remote://") || isProjectLockedIn(lock, context.workingCwd)))
+      (!!context.sourceThreadId &&
+        (!!context.projectCwd !== !!context.projectId ||
+          !!context.projectCwd !== !!context.workingCwd)) ||
+      (!!context.projectCwd &&
+        (context.projectCwd.startsWith("remote://") ||
+          isProjectLockedIn(lock, context.projectCwd))) ||
+      (!!context.workingCwd &&
+        (context.workingCwd.startsWith("remote://") || isProjectLockedIn(lock, context.workingCwd)))
     )
       throw new Error("Desktop preference source is unavailable or private");
   };
   const requireProject = (context: DesktopPreferencesContext): string => {
-    if (!context.projectCwd) throw new Error('An explicit project target is required');
+    if (!context.projectCwd) throw new Error("An explicit project target is required");
     return context.projectCwd;
   };
   const capture = async (context: DesktopPreferencesContext) => {
@@ -213,7 +218,9 @@ export function createDesktopPreferencesControl(overrides: Partial<Deps> = {}) {
     const lock = privacy();
     const catalogRevision = deps.catalogRevision();
     const templates = loadPromptTemplates();
-    const project = context.projectCwd ? loadProjectProviderSettings(context.projectCwd) : {} as ReturnType<typeof loadProjectProviderSettings>;
+    const project = context.projectCwd
+      ? loadProjectProviderSettings(context.projectCwd)
+      : ({} as ReturnType<typeof loadProjectProviderSettings>);
     const globals = loadGlobalSessionDefaults();
     const globalModels = loadDefaultModels();
     const providers = HARNESSES.map((harness) => {
@@ -340,7 +347,8 @@ export function createDesktopPreferencesControl(overrides: Partial<Deps> = {}) {
         : { state: "unknown" };
     }
     if (action !== "preferences.patch") throw new Error("Unsupported preference action");
-    if (context.sourceThreadId && !context.authorize) throw new Error("Room effect authority is unavailable");
+    if (context.sourceThreadId && !context.authorize)
+      throw new Error("Room effect authority is unavailable");
     exact(input, ["operationId", "expectedRevision", "change"]);
     if (
       !id(input.operationId) ||
@@ -460,7 +468,8 @@ export function createDesktopPreferencesControl(overrides: Partial<Deps> = {}) {
           } else if (change.kind === "projectDefaultModel") {
             apply = () => setProjectDefaultModel(requireProject(context), provider.id, model.id);
             verify = () =>
-              loadProjectProviderSettings(requireProject(context)).models?.[provider.id] === model.id;
+              loadProjectProviderSettings(requireProject(context)).models?.[provider.id] ===
+              model.id;
           } else if (change.kind === "globalDefaultProvider") {
             apply = () => saveLastModelChoice(provider.id, model.id);
             verify = () =>
@@ -491,7 +500,8 @@ export function createDesktopPreferencesControl(overrides: Partial<Deps> = {}) {
           const clean = safeDefaults(wanted, model, provider.runtimeModes);
           if (clean.unsupported) throw new Error("Unavailable session setting");
           if (change.kind === "projectProviderDefaults") {
-            apply = () => setProjectSessionDefaults(requireProject(context), provider.id, clean.safe);
+            apply = () =>
+              setProjectSessionDefaults(requireProject(context), provider.id, clean.safe);
             verify = () =>
               JSON.stringify(
                 loadProjectProviderSettings(requireProject(context)).defaults?.[provider.id] ?? {},
@@ -505,7 +515,8 @@ export function createDesktopPreferencesControl(overrides: Partial<Deps> = {}) {
         } else throw new Error("Unsupported preference change");
       }
       assert(context);
-      if (context.authorize && !(await context.authorize())) throw new Error("Preference authority revoked");
+      if (context.authorize && !(await context.authorize()))
+        throw new Error("Preference authority revoked");
       assert(context);
       if (
         rawMetadata() !== state.raw ||

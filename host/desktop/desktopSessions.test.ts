@@ -14,9 +14,7 @@ import { blockDigest, conversationHead } from "../../src/features/sync/model/con
 import type { Block } from "../../src/features/sessions/model/session";
 import { SessionSyncSchema } from "../../src/shared/model/host-contracts/session-reads";
 
-// The Host answers these over real HTTP and SQLite; busy Windows CI runners need
-// more than the 1 s default, while staying under DESKTOP_WRITER_TRANSFER_MS (12 s).
-const WAIT_FOR_DESKTOP_JOB = { timeout: 10_000 };
+import { WAIT_FOR_DESKTOP_JOB } from "./desktopSessionFixture";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -135,55 +133,79 @@ describe("desktop sessions on the host", () => {
     { partial: false, digests: true },
     { partial: true, digests: false },
     { partial: true, digests: true },
-  ])("keeps normalized desktop revisions out of wire deltas ($partial, $digests)", async ({ partial, digests }) => {
-    const s = await setup();
-    s.seed({ id: "normalized-delta", cwd: s.projectDir, updated: 100 });
-    const blocks = [
-      { id: "b1", role: "user", text: "hi" },
-      { id: "b2", role: "assistant", text: "working" },
-    ];
-    s.desktopDb.exec(`
+  ])(
+    "keeps normalized desktop revisions out of wire deltas ($partial, $digests)",
+    async ({ partial, digests }) => {
+      const s = await setup();
+      s.seed({ id: "normalized-delta", cwd: s.projectDir, updated: 100 });
+      const blocks = [
+        { id: "b1", role: "user", text: "hi" },
+        { id: "b2", role: "assistant", text: "working" },
+      ];
+      s.desktopDb.exec(`
       CREATE TABLE session_block_state(session_id TEXT PRIMARY KEY, revision INTEGER, length INTEGER);
       CREATE TABLE session_blocks(session_id TEXT, block_id TEXT, ordinal INTEGER, revision INTEGER, block_json TEXT);
       CREATE VIEW session_transcripts AS SELECT * FROM sessions;
       INSERT INTO session_block_state VALUES ('normalized-delta', 1, 2);
     `);
-    for (const [ordinal, block] of blocks.entries())
-      s.desktopDb.prepare("INSERT INTO session_blocks VALUES (?, ?, ?, ?, ?)")
-        .run("normalized-delta", block.id, ordinal, 1, JSON.stringify(block));
-    s.desktopDb.prepare("UPDATE sessions SET blocks_json=? WHERE id='normalized-delta'")
-      .run(JSON.stringify(blocks));
-    s.desktopDb.prepare("INSERT INTO in_flight_sessions VALUES (?, ?, 0)")
-      .run("normalized-delta", s.projectDir);
+      for (const [ordinal, block] of blocks.entries())
+        s.desktopDb
+          .prepare("INSERT INTO session_blocks VALUES (?, ?, ?, ?, ?)")
+          .run("normalized-delta", block.id, ordinal, 1, JSON.stringify(block));
+      s.desktopDb
+        .prepare("UPDATE sessions SET blocks_json=? WHERE id='normalized-delta'")
+        .run(JSON.stringify(blocks));
+      s.desktopDb
+        .prepare("INSERT INTO in_flight_sessions VALUES (?, ?, 0)")
+        .run("normalized-delta", s.projectDir);
 
-    const first = await s.call("sessions.sync", { sessionId: "normalized-delta", digests });
-    expect(first.error).toBeUndefined();
-    expect(first.result.kind).toBe("snapshot");
-    expect(first.result.value.executionOwner).toBe("desktop");
-    SessionSyncSchema.parse(first.result);
+      const first = await s.call("sessions.sync", { sessionId: "normalized-delta", digests });
+      expect(first.error).toBeUndefined();
+      expect(first.result.kind).toBe("snapshot");
+      expect(first.result.value.executionOwner).toBe("desktop");
+      SessionSyncSchema.parse(first.result);
 
-    blocks[1].text = "still working";
-    s.desktopDb.prepare("UPDATE sessions SET blocks_json=?, updated_at=200 WHERE id='normalized-delta'")
-      .run(JSON.stringify(blocks));
-    s.desktopDb.prepare("UPDATE session_blocks SET revision=2, block_json=? WHERE block_id='b2'")
-      .run(JSON.stringify(blocks[1]));
-    s.desktopDb.exec("UPDATE session_block_state SET revision=2 WHERE session_id='normalized-delta'");
+      blocks[1].text = "still working";
+      s.desktopDb
+        .prepare("UPDATE sessions SET blocks_json=?, updated_at=200 WHERE id='normalized-delta'")
+        .run(JSON.stringify(blocks));
+      s.desktopDb
+        .prepare("UPDATE session_blocks SET revision=2, block_json=? WHERE block_id='b2'")
+        .run(JSON.stringify(blocks[1]));
+      s.desktopDb.exec(
+        "UPDATE session_block_state SET revision=2 WHERE session_id='normalized-delta'",
+      );
 
-    const next = await s.call("sessions.sync", {
-      sessionId: "normalized-delta", revision: first.result.value.revision, sourceEpoch: first.result.value.sourceEpoch,
-      partial, digests, ...(partial ? { loadedBlockIds: ["b1", "b2"] } : {}),
-    });
-    expect(next.error).toBeUndefined();
-    expect(next.result.kind).toBe("delta");
-    expect(next.result.value).not.toHaveProperty("blockRevisions");
-    expect(next.result.value.executionOwner).toBe("desktop");
-    expect(next.result.blocks.map((block: Block) => block.id)).toEqual(["b2"]);
-    expect(next.result.blocks[0].text).toBe("still working");
-    SessionSyncSchema.parse(next.result);
-    expect((await s.call("sessions.sync", {
-      sessionId: "normalized-delta", revision: next.result.value.revision, sourceEpoch: next.result.value.sourceEpoch,
-    })).result).toEqual({ kind: "unchanged", revision: next.result.value.revision, sourceEpoch: next.result.value.sourceEpoch });
-  });
+      const next = await s.call("sessions.sync", {
+        sessionId: "normalized-delta",
+        revision: first.result.value.revision,
+        sourceEpoch: first.result.value.sourceEpoch,
+        partial,
+        digests,
+        ...(partial ? { loadedBlockIds: ["b1", "b2"] } : {}),
+      });
+      expect(next.error).toBeUndefined();
+      expect(next.result.kind).toBe("delta");
+      expect(next.result.value).not.toHaveProperty("blockRevisions");
+      expect(next.result.value.executionOwner).toBe("desktop");
+      expect(next.result.blocks.map((block: Block) => block.id)).toEqual(["b2"]);
+      expect(next.result.blocks[0].text).toBe("still working");
+      SessionSyncSchema.parse(next.result);
+      expect(
+        (
+          await s.call("sessions.sync", {
+            sessionId: "normalized-delta",
+            revision: next.result.value.revision,
+            sourceEpoch: next.result.value.sourceEpoch,
+          })
+        ).result,
+      ).toEqual({
+        kind: "unchanged",
+        revision: next.result.value.revision,
+        sourceEpoch: next.result.value.sourceEpoch,
+      });
+    },
+  );
 
   it("uses the native list projection for activity, interruption and provider history", async () => {
     const s = await setup();
@@ -907,7 +929,13 @@ describe("desktop sessions on the host", () => {
     const revision = sync.value.revision;
 
     // Seen once: polling again doesn't bump the revision.
-    const again = (await s.call("sessions.sync", { sessionId: "a", revision, sourceEpoch: sync.value.sourceEpoch })).result;
+    const again = (
+      await s.call("sessions.sync", {
+        sessionId: "a",
+        revision,
+        sourceEpoch: sync.value.sourceEpoch,
+      })
+    ).result;
     expect(again.kind).toBe("unchanged");
 
     // A desktop turn in progress blocks sending from here.
@@ -1225,14 +1253,22 @@ describe("desktop sessions on the host", () => {
     // The intervening foreign page retired the read source. Reacquiring the
     // original page requires a snapshot even though its transcript is unchanged.
     const second = (
-      await s.call("sessions.sync", { sessionId: "a", revision: first.value.revision, sourceEpoch: first.value.sourceEpoch })
+      await s.call("sessions.sync", {
+        sessionId: "a",
+        revision: first.value.revision,
+        sourceEpoch: first.value.sourceEpoch,
+      })
     ).result;
     expect(second.kind).toBe("snapshot");
     expect(second.value.executionOwner).toBe("desktop");
     expect(second.value.sourceEpoch).not.toBe(first.value.sourceEpoch);
     expect(second.value.session.blocks.map((block: Block) => block.id)).toEqual(["b1"]);
     const third = (
-      await s.call("sessions.sync", { sessionId: "a", revision: second.value.revision, sourceEpoch: second.value.sourceEpoch })
+      await s.call("sessions.sync", {
+        sessionId: "a",
+        revision: second.value.revision,
+        sourceEpoch: second.value.sourceEpoch,
+      })
     ).result;
     expect(third.kind).toBe("unchanged");
 

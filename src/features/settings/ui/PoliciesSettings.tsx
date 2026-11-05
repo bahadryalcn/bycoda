@@ -3,7 +3,7 @@ import { useContext, useEffect, useId, useRef, useState } from "react";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { t, useLocale } from "../../../shared/i18n";
-import { AgentMarkdown } from "../../sessions/ui/AgentMarkdown";
+import { AgentMarkdown } from "../../sessions/public/AgentMarkdown";
 import { POLICIES } from "../model/policies";
 import { RevealedSetting, Select, settingDomId } from "./settingsControls";
 import "./policies.css";
@@ -143,9 +143,7 @@ export function PoliciesSettings() {
           </div>
           {contactError ? (
             <SettingsFeedback state="error">
-              {t(
-                "Could not open your email app. Copy info@bycoda.codes into your email app.",
-              )}
+              {t("Could not open your email app. Copy info@bycoda.codes into your email app.")}
             </SettingsFeedback>
           ) : null}
           <article

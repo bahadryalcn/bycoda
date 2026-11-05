@@ -167,36 +167,73 @@ async function threadFixture() {
   const f = await fixture();
   const receipts = new Map<string, ManagementReceipt>();
   const approve = vi.fn(async (operation: { operationHash: string }) => ({
-    approved: true, operationHash: operation.operationHash,
+    approved: true,
+    operationHash: operation.operationHash,
   }));
-  const facade = () => new ConversationThreadCrewTools(f.crews, {
-    approve,
-    receipt: async (key) => receipts.get(key),
-    saveReceipt: async (key, value) => { receipts.set(key, value); },
-  });
+  const facade = () =>
+    new ConversationThreadCrewTools(f.crews, {
+      approve,
+      receipt: async (key) => receipts.get(key),
+      saveReceipt: async (key, value) => {
+        receipts.set(key, value);
+      },
+    });
   const tools = facade();
-  const principal = { kind: "assistant-thread" as const, threadId: "global-room-thread", projectId: f.project.id, provider: "assistant" as const };
+  const principal = {
+    kind: "assistant-thread" as const,
+    threadId: "global-room-thread",
+    projectId: f.project.id,
+    provider: "assistant" as const,
+  };
   const read = () => tools.call("crews.list", {}, principal, f.guard);
-  const change = async (action: string, input: Record<string, unknown>, operationId = "operation") => {
-    const view = await read() as { expectedRevision: string };
-    return tools.call(action, { ...input, operationId, expectedRevision: view.expectedRevision }, principal, f.guard);
+  const change = async (
+    action: string,
+    input: Record<string, unknown>,
+    operationId = "operation",
+  ) => {
+    const view = (await read()) as { expectedRevision: string };
+    return tools.call(
+      action,
+      { ...input, operationId, expectedRevision: view.expectedRevision },
+      principal,
+      f.guard,
+    );
   };
   return { ...f, receipts, approve, tools, facade, threadPrincipal: principal, read, change };
 }
 
 it("starts a real supervised coordinator from a reviewed Room thread and reconciles restart without replay", async () => {
   const f = await threadFixture();
-  const view = await f.read() as { expectedRevision: string; value: { definitions: { items: CrewDefinition[] } } };
+  const view = (await f.read()) as {
+    expectedRevision: string;
+    value: { definitions: { items: CrewDefinition[] } };
+  };
   expect(view.value.definitions.items[0].agents[0].instructions).toBe("");
   expect(f.engine.command).not.toHaveBeenCalled();
-  const input = { definitionId: f.saved.id, prompt: "Build it", requestId: "room-run", operationId: "start-operation", expectedRevision: view.expectedRevision };
+  const input = {
+    definitionId: f.saved.id,
+    prompt: "Build it",
+    requestId: "room-run",
+    operationId: "start-operation",
+    expectedRevision: view.expectedRevision,
+  };
   const result = await f.tools.call("crews.start", input, f.threadPrincipal, f.guard);
-  expect(result).toMatchObject({ state: "completed", result: { coordinatorSessionId: "created-session" } });
-  expect(f.engine.command.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(["create", "send"]);
+  expect(result).toMatchObject({
+    state: "completed",
+    result: { coordinatorSessionId: "created-session" },
+  });
+  expect(f.engine.command.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual([
+    "create",
+    "send",
+  ]);
   expect(f.engine.command.mock.calls[0][0]).toMatchObject({ runtimeMode: "supervised" });
-  expect(await f.facade().call("crews.start", input, f.threadPrincipal, f.guard)).toMatchObject({ state: "completed" });
+  expect(await f.facade().call("crews.start", input, f.threadPrincipal, f.guard)).toMatchObject({
+    state: "completed",
+  });
   expect(f.engine.command).toHaveBeenCalledTimes(2);
-  await expect(f.tools.call("crews.start", { ...input, prompt: "Different" }, f.threadPrincipal, f.guard)).rejects.toThrow("reused");
+  await expect(
+    f.tools.call("crews.start", { ...input, prompt: "Different" }, f.threadPrincipal, f.guard),
+  ).rejects.toThrow("reused");
 });
 
 it("rejects a Crew edit made while native review is open before creating a coordinator", async () => {
@@ -205,7 +242,13 @@ it("rejects a Crew edit made while native review is open before creating a coord
     await f.crews.save({ ...f.saved, name: "Changed" }, f.saved.updatedAt);
     return { approved: true, operationHash: operation.operationHash };
   });
-  expect(await f.change("crews.start", { definitionId: f.saved.id, prompt: "Build it", requestId: "room-run" })).toMatchObject({ state: "uncertain", error: expect.stringContaining("changed after review") });
+  expect(
+    await f.change("crews.start", {
+      definitionId: f.saved.id,
+      prompt: "Build it",
+      requestId: "room-run",
+    }),
+  ).toMatchObject({ state: "uncertain", error: expect.stringContaining("changed after review") });
   expect(f.engine.command).not.toHaveBeenCalled();
 });
 
@@ -216,7 +259,13 @@ it("rechecks Crew revision after model discovery before reserving a run", async 
     await f.crews.save({ ...f.saved, name: "Changed during discovery" }, f.saved.updatedAt);
     return discover();
   });
-  expect(await f.change("crews.start", { definitionId: f.saved.id, prompt: "Build it", requestId: "room-run" })).toMatchObject({ state: "uncertain" });
+  expect(
+    await f.change("crews.start", {
+      definitionId: f.saved.id,
+      prompt: "Build it",
+      requestId: "room-run",
+    }),
+  ).toMatchObject({ state: "uncertain" });
   expect(f.engine.command).not.toHaveBeenCalled();
   expect((await f.crews.list(f.project.id)).runs).toHaveLength(0);
 });
@@ -227,13 +276,20 @@ it("never launches after Room authority is revoked in native review", async () =
     f.revoke();
     return { approved: true, operationHash: operation.operationHash };
   });
-  expect(await f.change("crews.start", { definitionId: f.saved.id, prompt: "Build it", requestId: "room-run" })).toMatchObject({ state: "failed" });
+  expect(
+    await f.change("crews.start", {
+      definitionId: f.saved.id,
+      prompt: "Build it",
+      requestId: "room-run",
+    }),
+  ).toMatchObject({ state: "failed" });
   expect(f.engine.command).not.toHaveBeenCalled();
 });
 
 it("retains an accepted coordinator identity after a concurrent owner pause without replay", async () => {
   const f = await threadFixture();
-  const entered = deferred(), release = deferred();
+  const entered = deferred(),
+    release = deferred();
   const command = f.engine.command.getMockImplementation()!;
   f.engine.command.mockImplementation(async (input) => {
     const receipt = await command(input);
@@ -243,7 +299,11 @@ it("retains an accepted coordinator identity after a concurrent owner pause with
     }
     return receipt;
   });
-  const pending = f.change("crews.start", { definitionId: f.saved.id, prompt: "Build it", requestId: "room-run" });
+  const pending = f.change("crews.start", {
+    definitionId: f.saved.id,
+    prompt: "Build it",
+    requestId: "room-run",
+  });
   await entered.promise;
   await f.crews.call("crews.pause", { runId: "room-run" }, f.project.id);
   await f.crews.save({ ...f.saved, name: "New owner definition" }, f.saved.updatedAt);
@@ -251,23 +311,65 @@ it("retains an accepted coordinator identity after a concurrent owner pause with
   await pending;
   const view = await f.crews.list(f.project.id);
   expect(view.definitions[0].name).toBe("New owner definition");
-  expect(view.runs[0]).toMatchObject({ id: "room-run", coordinatorSessionId: "created-session", status: "paused" });
-  expect(f.engine.command.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual(["create", "send"]);
+  expect(view.runs[0]).toMatchObject({
+    id: "room-run",
+    coordinatorSessionId: "created-session",
+    status: "paused",
+  });
+  expect(f.engine.command.mock.calls.map(([input]) => (input as { type: string }).type)).toEqual([
+    "create",
+    "send",
+  ]);
 });
 
 it("keeps approval escalation and foreign Crew edits outside reviewed thread management", async () => {
   const f = await threadFixture();
-  expect(await f.change("crews.save", { definitionJson: JSON.stringify({ ...f.saved, projectId: "foreign" }), expectedUpdatedAt: f.saved.updatedAt })).toMatchObject({ state: "uncertain", error: expect.stringContaining("target project") });
-  expect(await f.change("crews.save", { definitionJson: JSON.stringify({ ...f.saved, policy: { ...f.saved.policy, delegateApprovals: true } }), expectedUpdatedAt: f.saved.updatedAt }, "second-operation")).toMatchObject({ state: "uncertain", error: expect.stringContaining("Delegated approval") });
-  await expect(f.change("crews.respond", { runId: "run" }, "third-operation")).rejects.toThrow("owner workflow");
+  expect(
+    await f.change("crews.save", {
+      definitionJson: JSON.stringify({ ...f.saved, projectId: "foreign" }),
+      expectedUpdatedAt: f.saved.updatedAt,
+    }),
+  ).toMatchObject({ state: "uncertain", error: expect.stringContaining("target project") });
+  expect(
+    await f.change(
+      "crews.save",
+      {
+        definitionJson: JSON.stringify({
+          ...f.saved,
+          policy: { ...f.saved.policy, delegateApprovals: true },
+        }),
+        expectedUpdatedAt: f.saved.updatedAt,
+      },
+      "second-operation",
+    ),
+  ).toMatchObject({ state: "uncertain", error: expect.stringContaining("Delegated approval") });
+  await expect(f.change("crews.respond", { runId: "run" }, "third-operation")).rejects.toThrow(
+    "owner workflow",
+  );
   expect((await f.crews.list(f.project.id)).definitions[0]).toEqual(f.saved);
 });
 
 it("does not confuse a crew directive request ID with operation receipt identity", async () => {
   const f = await threadFixture();
-  await f.change("crews.start", { definitionId: f.saved.id, prompt: "Build it", requestId: "room-run" }, "start-operation");
-  expect(await f.change("crews.request", { runId: "room-run", requestId: "directive", text: "Check delivery" }, "request-operation")).toMatchObject({ state: "completed" });
-  expect(await f.change("crews.resolve", { runId: "room-run", requestId: "directive" }, "resolve-operation")).toMatchObject({ state: "completed" });
+  await f.change(
+    "crews.start",
+    { definitionId: f.saved.id, prompt: "Build it", requestId: "room-run" },
+    "start-operation",
+  );
+  expect(
+    await f.change(
+      "crews.request",
+      { runId: "room-run", requestId: "directive", text: "Check delivery" },
+      "request-operation",
+    ),
+  ).toMatchObject({ state: "completed" });
+  expect(
+    await f.change(
+      "crews.resolve",
+      { runId: "room-run", requestId: "directive" },
+      "resolve-operation",
+    ),
+  ).toMatchObject({ state: "completed" });
   expect(f.receipts.size).toBe(3);
 });
 

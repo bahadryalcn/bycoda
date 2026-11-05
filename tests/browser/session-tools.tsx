@@ -9,7 +9,8 @@ import type { ToolsSession } from "../../src/features/host-tools/toolsSessionReg
 import { calls } from "./host-tools-mocks";
 import "../../src/styles/index.css";
 const query = new URLSearchParams(location.search);
-if (query.get("role") === "source" && query.get("shared-device") === "1") localStorage.removeItem("session-tools.fixture-device-runtime");
+if (query.get("role") === "source" && query.get("shared-device") === "1")
+  localStorage.removeItem("session-tools.fixture-device-runtime");
 applyThemePreference(query.get("theme") === "light" ? "light" : "dark");
 await setLanguagePreference("en");
 await setDomainLanguagePreference("technical", "en");

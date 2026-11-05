@@ -41,8 +41,6 @@ export const folderOnlyRoots = [
 ];
 
 const scannedRoots = ["src", "host", "src-tauri/src", "packages", "apps"];
-/** Report-only rules: counted in --report, never gated or baselined (staged rollout). */
-export const advisoryRules = new Set(["cross-feature-deep-import"]);
 const skipDirs = new Set([
   "node_modules",
   "dist",
@@ -108,10 +106,29 @@ export function resolveSpecifier(file, specifier) {
   return path.posix.normalize(path.posix.join(path.posix.dirname(file), specifier));
 }
 
+const publicEntryDeclaration =
+  /\bexport\s+type\s+\*\s+as\s+[A-Za-z_$][\w$]*\s+from\s*["'](\.\/public\/[^"']+)["']/g;
+
+/** Public feature contracts explicitly declared by each feature index.ts. */
+export function declaredPublicEntries(
+  files,
+  read = (file) => readFileSync(path.join(root, file), "utf8"),
+) {
+  const entries = new Set();
+  for (const file of files) {
+    if (!/^src\/features\/[^/]+\/index\.ts$/.test(file)) continue;
+    for (const match of read(file).matchAll(publicEntryDeclaration)) {
+      const target = resolveSpecifier(file, match[1]);
+      if (target && /^src\/features\/[^/]+\/public\/[^/]+$/.test(target)) entries.add(target);
+    }
+  }
+  return entries;
+}
+
 const importPattern =
   /(?:^|\n)\s*(?:import|export)\s[^;'"]*?from\s*["']([^"']+)["']|(?:^|\n)\s*import\s*["']([^"']+)["']|import\(\s*["']([^"']+)["']\s*\)/g;
 
-export function scanImports(file, text) {
+export function scanImports(file, text, publicEntries = new Set()) {
   const findings = [];
   const layer = layerOf(file);
   if (!layer || layer === "packages" || /\.rs$/.test(file)) return findings;
@@ -133,14 +150,17 @@ export function scanImports(file, text) {
     else if (layer === "features" && targetLayer === "features") {
       const other = featureOf(target);
       const deep = target.replace(/^src\/features\/[^/]+\/?/, "");
-      if (other && other !== feature && deep && deep !== "index" && deep !== "index.ts")
+      const featureRoot = !deep || deep === "index" || deep === "index.ts";
+      const publicTarget = target.replace(/\.(?:tsx?|mts?)$/, "");
+      const declaredPublicEntry = publicEntries.has(target) || publicEntries.has(publicTarget);
+      if (other && other !== feature && !featureRoot && !declaredPublicEntry)
         findings.push({ rule: "cross-feature-deep-import", detail: specifier });
     }
   }
   return findings;
 }
 
-export function scanFile(file, text) {
+export function scanFile(file, text, publicEntries = new Set()) {
   const findings = [];
   const lines = text.split("\n").length;
   const budget = lineBudgets.find((candidate) => candidate.test(file));
@@ -160,21 +180,21 @@ export function scanFile(file, text) {
         findings.push({ rule: spec.rule, detail: `${name} belongs in a feature or module folder` });
     }
   }
-  if (!testFile.test(file)) findings.push(...scanImports(file, text));
+  if (!testFile.test(file)) findings.push(...scanImports(file, text, publicEntries));
   return findings;
 }
 
 /** counts: { [file]: { [rule]: number } }; `file-lines` stores the line count, not 1. */
-export function countFindings(files, read = (file) => readFileSync(path.join(root, file), "utf8")) {
+export function countFindings(
+  files,
+  read = (file) => readFileSync(path.join(root, file), "utf8"),
+  publicEntries = new Set(),
+) {
   const counts = {};
   const details = [];
   for (const file of files) {
-    const findings = scanFile(file, read(file));
+    const findings = scanFile(file, read(file), publicEntries);
     for (const finding of findings) {
-      if (advisoryRules.has(finding.rule)) {
-        details.push({ file, ...finding });
-        continue;
-      }
       counts[file] ??= {};
       counts[file][finding.rule] =
         finding.rule === "file-lines" ? finding.lines : (counts[file][finding.rule] ?? 0) + 1;
@@ -217,12 +237,13 @@ export function main(argv = process.argv.slice(2)) {
     if (options.files) break;
   }
   const all = listSourceFiles();
+  const publicEntries = declaredPublicEntries(all);
   const files = options.files
     ? all.filter((file) =>
         options.files.some((given) => given.endsWith(file) || file.endsWith(given)),
       )
     : all;
-  const { counts, details } = countFindings(files);
+  const { counts, details } = countFindings(files, undefined, publicEntries);
   const baselinePath = path.join(root, baselineFile);
   let previous = null;
   try {
@@ -239,7 +260,7 @@ export function main(argv = process.argv.slice(2)) {
       const owner = owners(finding.file);
       perOwner[owner] = (perOwner[owner] ?? 0) + 1;
     }
-    console.log("Findings per rule (advisory rules are report-only):");
+    console.log("Findings per rule:");
     for (const [rule, count] of Object.entries(perRule).sort((a, b) => b[1] - a[1]))
       console.log(`${count}\t${rule}`);
     console.log("\nFindings per owner:");
@@ -303,9 +324,8 @@ export function main(argv = process.argv.slice(2)) {
       "\nSplit the file into its owning feature/module folder or import through the layer's public entry (docs/reference/code-structure.md). Only an owner-approved exception may be accepted with --update-baseline.",
     );
   }
-  const gated = details.filter((f) => !advisoryRules.has(f.rule)).length;
   console.log(
-    `Code structure: ${files.length} files scanned, ${gated} baselined findings, ${details.length - gated} advisory, ${increases.length} increases.`,
+    `Code structure: ${files.length} files scanned, ${details.length} baselined findings, ${increases.length} increases.`,
   );
   return increases.length ? 1 : 0;
 }

@@ -8,7 +8,11 @@ import { SocialTokenConnections } from "./social-token-connections";
 import { SocialHttp } from "../../src/integrations/social/adapter";
 import { createSocialAdapters } from "../../src/integrations/social/platformAdapters";
 import type { SocialCredential } from "./social-credentials";
-import type { SocialAccount, SocialCampaign, SocialJob } from "../../src/features/social/model/social";
+import type {
+  SocialAccount,
+  SocialCampaign,
+  SocialJob,
+} from "../../src/features/social/model/social";
 
 const owner: SocialPrincipal = { kind: "owner", actorId: "device", provider: "owner" };
 const cleanup: (() => Promise<void>)[] = [];

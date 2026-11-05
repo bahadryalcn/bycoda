@@ -1,5 +1,11 @@
 # Voice companion
 
+Settings show permission, verified readiness and current activity separately.
+Enabling a preference does not verify the microphone or engine. Opening settings
+never starts voice. Readiness comes from a successful check; a failed refresh
+clears the previous runtime observation. Activity is unknown when the current
+window cannot observe it, and running only when a live voice operation is known.
+
 Voice is **off by default**. Enable **Settings → Chat → Voice companion** on
 this device. When disabled, no voice launcher or companion is shown in chat.
 **Enable dictation** is a separate device preference in the same section. Turning

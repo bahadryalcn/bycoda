@@ -27,14 +27,14 @@ import {
   type RankedFile,
 } from "../model/fileIndex";
 import { fuzzyMatch, type FuzzyHit } from "../../../shared/lib/fuzzy";
-import { isRemoteProjectPath, looksLikeProject } from "../../projects/model/recents";
+import { isRemoteProjectPath, looksLikeProject } from "../../projects/public/recents";
 import type { OpenFileFn } from "../../search/model/search";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { FileTypeIcon } from "./FileTypeIcon";
 import { MatchText } from "../../../shared/ui/MatchText";
 import { isImeComposition } from "../../../shared/lib/keyboard";
 import { ALT, MOD, SHIFT } from "../../../platform/tauri/platform";
-import { keybindingShortcutLabel, loadNotesEnabled } from "../../settings/model/settings";
+import { keybindingShortcutLabel, loadNotesEnabled } from "../../settings/public/settings";
 import { NOTES_PANEL_COMMAND } from "../../notes/notesPanel";
 import { LAYOUT_PRESETS } from "../../workspace/model/layoutPresets";
 type Action = {
@@ -372,7 +372,10 @@ export function FilePicker({
             </Button>
           </div>
         ) : null}
-        {!paletteMode && !loading && looksLikeProject(cwd) && projectFilesTruncated(files) !== false ? (
+        {!paletteMode &&
+        !loading &&
+        looksLikeProject(cwd) &&
+        projectFilesTruncated(files) !== false ? (
           <p className="px-3 pb-2 text-ui-caption text-[var(--ui-text-secondary)]">
             {projectFilesTruncated(files)
               ? t("File index is incomplete; some files may not appear.")

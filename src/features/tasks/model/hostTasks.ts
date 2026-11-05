@@ -23,7 +23,8 @@ export {
   hasUnmergedBranch,
   NO_VERDICT,
 } from "./taskRules";
-import { isRemoteProvider, type RemoteProvider } from "../../connections/model/protocol";
+import { isRemoteProvider } from "../../connections/public/protocol";
+import type { RemoteProvider } from "../../connections";
 import { RUNTIME_MODES, type RuntimeMode } from "../../sessions/model/session";
 
 /** A backlog of tasks a machine's host works through on its own, whether or

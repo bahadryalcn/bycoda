@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { LastSessionsRows, LastSessionsSection } from "./LastSessionsSection";
 import { pathKey } from "../../shared/lib/paths";
 import { formatRelative } from "../../features/sessions/model/recentSessions";
+import { resetRetainedState } from "../../shared/hooks/useRetainedState";
 const data = vi.hoisted(() => ({
   stored: [
     {
@@ -35,6 +36,15 @@ const appearance = {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
+  resetRetainedState();
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    return this.hasAttribute("data-index") ? 64 : 480;
+  });
+  vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(640);
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(480);
+  vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -44,6 +54,7 @@ afterEach(async () => {
   container.remove();
   localStorage.clear();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.useRealTimers();
 });
 
@@ -237,4 +248,33 @@ it("marks only the working status dot so the root motion and focus state can pau
   expect(css).toMatch(
     /html:is\(\[data-decorative-motion="off"\], \[data-window-focus="off"\]\) \.working-dot \{\s*animation-play-state: paused/,
   );
+});
+
+it("bounds a large Last sessions collection while retaining its row actions", async () => {
+  const rows = Array.from({ length: 180 }, (_, index) => ({
+    ...data.stored[0],
+    id: `large-${index}`,
+    title: `Large session ${index}`,
+    harness: "codex",
+    updatedAt: index + 1,
+    pinnable: true,
+    remote: false,
+  }));
+  await act(async () =>
+    root.render(
+      createElement(LastSessionsRows, {
+        ...appearance,
+        rows,
+        searchActive: false,
+        onOpenSession: vi.fn(),
+        onOpenProject: vi.fn(),
+        onTogglePin: vi.fn(),
+      }),
+    ),
+  );
+  expect(container.querySelector('[data-continuous-list="last-sessions:rail"]')).not.toBeNull();
+  const mountedRows = container.querySelectorAll('[role="listitem"]').length;
+  expect(mountedRows).toBeGreaterThan(0);
+  expect(mountedRows).toBeLessThan(rows.length);
+  expect(container.textContent).toContain("Large session 0");
 });

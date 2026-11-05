@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { subscribePersistedComposerDrafts } from "../../sessions/data/composerDraftStore";
+import { subscribePersistedComposerDrafts } from "../../sessions/public/composerDraftStore";
 import {
   retireClosedAttachmentOwners,
   type AttachmentOwnership,

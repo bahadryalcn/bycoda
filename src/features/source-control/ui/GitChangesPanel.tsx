@@ -93,25 +93,22 @@ import {
   type GitHistoryCommit,
   type GitPr,
 } from "../../../platform/tauri/fs";
-import type { HarnessId } from "../../sessions/model/session";
+import type { HarnessId } from "../../sessions";
 import { recordInboxSelfActivity } from "../../inbox/model/inboxSelfActivity";
-import {
-  loadChangesView,
-  saveChangesView,
-  type ChangesView,
-} from "../../settings/model/appearance";
+import { loadChangesView, saveChangesView } from "../../settings/public/appearance";
+import type { ChangesView } from "../../settings";
 import { generatePrContent } from "../../../integrations/harness";
-import { invalidateWatchedFiles } from "../../files/model/fileWatch";
+import { invalidateWatchedFiles } from "../../files/public/fileWatch";
 import { MOD } from "../../../platform/tauri/platform";
 import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
-import { isRemoteProjectPath } from "../../projects/model/recents";
+import { isRemoteProjectPath } from "../../projects/public/recents";
 import {
   GIT_ACTIONS,
   GIT_CONFLICTS,
   useRemoteSupports,
-} from "../../connections/model/remoteCapabilities";
-import { remotePollDue, useRemoteLoadFailure } from "../../connections/model/remoteHealth";
-import { RemoteLoadError } from "../../connections/ui/RemoteLoadError";
+} from "../../connections/public/remoteCapabilities";
+import { remotePollDue, useRemoteLoadFailure } from "../../connections/public/remoteHealth";
+import { RemoteLoadError } from "../../connections/public/RemoteLoadError";
 import type { CommitMenuOptions } from "../model/gitActionsMenu";
 import {
   commitBlockedMessage,
@@ -921,13 +918,13 @@ function ChangedFiles({
 
   const confirmDefault = async (kind: "push" | "pr") => {
     return withGitPanelRuntime(cwd, async () => {
-    if (!onDefault || !index?.branch) return true;
-    const branch = index.branch;
-    return confirmNative(
-      kind === "pr"
-        ? `Create a pull request from default branch "${branch}"?`
-        : `Push to default branch "${branch}"?`,
-    );
+      if (!onDefault || !index?.branch) return true;
+      const branch = index.branch;
+      return confirmNative(
+        kind === "pr"
+          ? `Create a pull request from default branch "${branch}"?`
+          : `Push to default branch "${branch}"?`,
+      );
     });
   };
 
@@ -938,47 +935,47 @@ function ChangedFiles({
     optimisticIndex?: GitDiffIndex,
   ) => {
     return withGitPanelRuntime(cwd, async () => {
-    const queue = fileActions.current;
-    // File actions queue behind each other; any other action holds them off.
-    if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
-    if (action === "discard" && !confirmed) {
-      const ok = await confirmDiscardFile(file);
-      if (!ok) return;
-    }
-    if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
-    if (queue.size === 0) setGitFeedback(cwd, null);
-    queue.size += 1;
-    queue.paths.push(file.path);
-    generationMutation.version++;
-    setBusy(file.relative);
-    setPending(ACTION_LABEL[action]);
-    // The row moves at once; the reload below confirms it or puts it back.
-    if (index) showOptimistic(optimisticIndex ?? applyIndexAction(index, action, file.relative));
-    // One git command at a time: two would fight over the index lock.
-    const task = queue.tail.then(async () => {
-      try {
-        if (action === "stage") await gitStageFile(cwd, file.relative);
-        else if (action === "unstage") await gitUnstageFile(cwd, file.relative);
-        else await gitDiscardFile(cwd, file.relative);
-      } catch (error) {
-        fail(
-          error,
-          action === "stage"
-            ? "Couldn’t stage changes"
-            : action === "unstage"
-              ? "Couldn’t unstage changes"
-              : "Couldn’t discard changes",
-        );
+      const queue = fileActions.current;
+      // File actions queue behind each other; any other action holds them off.
+      if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
+      if (action === "discard" && !confirmed) {
+        const ok = await confirmDiscardFile(file);
+        if (!ok) return;
       }
-    });
-    queue.tail = task;
-    await task;
-    queue.size -= 1;
-    if (queue.size > 0) return;
-    // Reloading earlier would put back the rows of actions still queued.
-    onMutated(queue.paths.splice(0), "index");
-    setBusy(null);
-    setPending(null);
+      if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
+      if (queue.size === 0) setGitFeedback(cwd, null);
+      queue.size += 1;
+      queue.paths.push(file.path);
+      generationMutation.version++;
+      setBusy(file.relative);
+      setPending(ACTION_LABEL[action]);
+      // The row moves at once; the reload below confirms it or puts it back.
+      if (index) showOptimistic(optimisticIndex ?? applyIndexAction(index, action, file.relative));
+      // One git command at a time: two would fight over the index lock.
+      const task = queue.tail.then(async () => {
+        try {
+          if (action === "stage") await gitStageFile(cwd, file.relative);
+          else if (action === "unstage") await gitUnstageFile(cwd, file.relative);
+          else await gitDiscardFile(cwd, file.relative);
+        } catch (error) {
+          fail(
+            error,
+            action === "stage"
+              ? "Couldn’t stage changes"
+              : action === "unstage"
+                ? "Couldn’t unstage changes"
+                : "Couldn’t discard changes",
+          );
+        }
+      });
+      queue.tail = task;
+      await task;
+      queue.size -= 1;
+      if (queue.size > 0) return;
+      // Reloading earlier would put back the rows of actions still queued.
+      onMutated(queue.paths.splice(0), "index");
+      setBusy(null);
+      setPending(null);
     });
   };
 
@@ -987,35 +984,86 @@ function ChangedFiles({
     action: "stage" | "unstage" | "discard",
   ) => {
     return withGitPanelRuntime(cwd, async () => {
-    if (!selectedFiles.length) return;
-    if (selectedFiles.length === 1) return run(selectedFiles[0], action);
-    const queue = fileActions.current;
-    if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
-    if (action === "discard") {
-      const ok = await confirmNative(
-        `Discard changes in ${selectedFiles.length} selected files? Untracked files will be deleted. This cannot be undone.`,
-        "Discard",
-      );
-      if (!ok || (gitPanelRuntime(cwd).state.busy && queue.size === 0)) return;
-    }
-    if (queue.size === 0) setGitFeedback(cwd, null);
-    queue.size += 1;
-    queue.paths.push(...selectedFiles.map((file) => file.path));
-    generationMutation.version++;
-    setBusy(action);
-    setPending(ACTION_LABEL[action]);
-    if (index) {
-      showOptimistic(
-        applyIndexAction(index, action, new Set(selectedFiles.map((file) => file.relative))),
-      );
-    }
-    const task = queue.tail.then(async () => {
+      if (!selectedFiles.length) return;
+      if (selectedFiles.length === 1) return run(selectedFiles[0], action);
+      const queue = fileActions.current;
+      if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
+      if (action === "discard") {
+        const ok = await confirmNative(
+          `Discard changes in ${selectedFiles.length} selected files? Untracked files will be deleted. This cannot be undone.`,
+          "Discard",
+        );
+        if (!ok || (gitPanelRuntime(cwd).state.busy && queue.size === 0)) return;
+      }
+      if (queue.size === 0) setGitFeedback(cwd, null);
+      queue.size += 1;
+      queue.paths.push(...selectedFiles.map((file) => file.path));
+      generationMutation.version++;
+      setBusy(action);
+      setPending(ACTION_LABEL[action]);
+      if (index) {
+        showOptimistic(
+          applyIndexAction(index, action, new Set(selectedFiles.map((file) => file.relative))),
+        );
+      }
+      const task = queue.tail.then(async () => {
+        try {
+          const paths = selectedFiles.map((file) => file.relative);
+          if (action === "stage") await gitStageFiles(cwd, paths);
+          else if (action === "unstage") await gitUnstageFiles(cwd, paths);
+          else await gitDiscardFiles(cwd, paths);
+        } catch (error) {
+          fail(
+            error,
+            action === "stage"
+              ? "Couldn’t stage changes"
+              : action === "unstage"
+                ? "Couldn’t unstage changes"
+                : "Couldn’t discard changes",
+          );
+        }
+      });
+      queue.tail = task;
+      await task;
+      queue.size -= 1;
+      if (queue.size > 0) return;
+      onMutated(queue.paths.splice(0), "index");
+      setBusy(null);
+      setPending(null);
+    });
+  };
+
+  const runAll = async (action: "stage" | "unstage" | "discard") => {
+    return withGitPanelRuntime(cwd, async () => {
+      if (gitPanelRuntime(cwd).state.busy) return;
+      if (action === "discard") {
+        const n = unstaged.length;
+        if (n === 0) return;
+        const only = unstaged[0];
+        const untrackedOnly = n === 1 && only?.status === "untracked";
+        const ok = await confirmNative(
+          untrackedOnly
+            ? `Delete untracked file ${basename(only.relative)}?`
+            : n === 1 && only
+              ? `Discard changes in ${basename(only.relative)}? This cannot be undone.`
+              : `Discard all unstaged changes in ${n} files? This cannot be undone.`,
+          untrackedOnly ? "Delete" : "Discard",
+        );
+        if (!ok) return;
+      }
+      if (gitPanelRuntime(cwd).state.busy) return;
+      setGitFeedback(cwd, null);
+      setBusy(action);
+      const discarded = action === "discard" ? unstaged.map((file) => file.path) : undefined;
+      generationMutation.version++;
+      if (index) showOptimistic(applyIndexAction(index, action));
       try {
-        const paths = selectedFiles.map((file) => file.relative);
-        if (action === "stage") await gitStageFiles(cwd, paths);
-        else if (action === "unstage") await gitUnstageFiles(cwd, paths);
-        else await gitDiscardFiles(cwd, paths);
+        if (action === "stage") await gitStageAll(cwd);
+        else if (action === "unstage") await gitUnstageAll(cwd);
+        else await gitDiscardAll(cwd);
+        onMutated(discarded, "index");
       } catch (error) {
+        onMutated(discarded, "index");
         fail(
           error,
           action === "stage"
@@ -1024,109 +1072,60 @@ function ChangedFiles({
               ? "Couldn’t unstage changes"
               : "Couldn’t discard changes",
         );
+      } finally {
+        setBusy(null);
       }
-    });
-    queue.tail = task;
-    await task;
-    queue.size -= 1;
-    if (queue.size > 0) return;
-    onMutated(queue.paths.splice(0), "index");
-    setBusy(null);
-    setPending(null);
-    });
-  };
-
-  const runAll = async (action: "stage" | "unstage" | "discard") => {
-    return withGitPanelRuntime(cwd, async () => {
-    if (gitPanelRuntime(cwd).state.busy) return;
-    if (action === "discard") {
-      const n = unstaged.length;
-      if (n === 0) return;
-      const only = unstaged[0];
-      const untrackedOnly = n === 1 && only?.status === "untracked";
-      const ok = await confirmNative(
-        untrackedOnly
-          ? `Delete untracked file ${basename(only.relative)}?`
-          : n === 1 && only
-            ? `Discard changes in ${basename(only.relative)}? This cannot be undone.`
-            : `Discard all unstaged changes in ${n} files? This cannot be undone.`,
-        untrackedOnly ? "Delete" : "Discard",
-      );
-      if (!ok) return;
-    }
-    if (gitPanelRuntime(cwd).state.busy) return;
-    setGitFeedback(cwd, null);
-    setBusy(action);
-    const discarded = action === "discard" ? unstaged.map((file) => file.path) : undefined;
-    generationMutation.version++;
-    if (index) showOptimistic(applyIndexAction(index, action));
-    try {
-      if (action === "stage") await gitStageAll(cwd);
-      else if (action === "unstage") await gitUnstageAll(cwd);
-      else await gitDiscardAll(cwd);
-      onMutated(discarded, "index");
-    } catch (error) {
-      onMutated(discarded, "index");
-      fail(
-        error,
-        action === "stage"
-          ? "Couldn’t stage changes"
-          : action === "unstage"
-            ? "Couldn’t unstage changes"
-            : "Couldn’t discard changes",
-      );
-    } finally {
-      setBusy(null);
-    }
     });
   };
 
   const runFolder = async (relative: string, action: "stage" | "unstage") => {
     return withGitPanelRuntime(cwd, async () => {
-    const queue = fileActions.current;
-    if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
-    if (queue.size === 0) setGitFeedback(cwd, null);
-    queue.size += 1;
-    generationMutation.version++;
-    queue.paths.push(
-      ...files.filter((file) => file.relative.startsWith(`${relative}/`)).map((file) => file.path),
-    );
-    setBusy(`folder:${action}:${relative}`);
-    setPending(ACTION_LABEL[action]);
-    // Share the existing index mutation queue with single-file actions.
-    const task = queue.tail.then(async () => {
-      try {
-        if (action === "stage") await gitStageFile(cwd, relative);
-        else await gitUnstageFile(cwd, relative);
-      } catch (error) {
-        fail(error, action === "stage" ? "Couldn’t stage changes" : "Couldn’t unstage changes");
-      }
-    });
-    queue.tail = task;
-    await task;
-    queue.size -= 1;
-    if (queue.size > 0) return;
-    // Also refresh after failure: Git may have partially changed the index.
-    onMutated(queue.paths.splice(0), "index");
-    setBusy(null);
-    setPending(null);
+      const queue = fileActions.current;
+      if (gitPanelRuntime(cwd).state.busy && queue.size === 0) return;
+      if (queue.size === 0) setGitFeedback(cwd, null);
+      queue.size += 1;
+      generationMutation.version++;
+      queue.paths.push(
+        ...files
+          .filter((file) => file.relative.startsWith(`${relative}/`))
+          .map((file) => file.path),
+      );
+      setBusy(`folder:${action}:${relative}`);
+      setPending(ACTION_LABEL[action]);
+      // Share the existing index mutation queue with single-file actions.
+      const task = queue.tail.then(async () => {
+        try {
+          if (action === "stage") await gitStageFile(cwd, relative);
+          else await gitUnstageFile(cwd, relative);
+        } catch (error) {
+          fail(error, action === "stage" ? "Couldn’t stage changes" : "Couldn’t unstage changes");
+        }
+      });
+      queue.tail = task;
+      await task;
+      queue.size -= 1;
+      if (queue.size > 0) return;
+      // Also refresh after failure: Git may have partially changed the index.
+      onMutated(queue.paths.splice(0), "index");
+      setBusy(null);
+      setPending(null);
     });
   };
 
   const toggleAmend = async () => {
     return withGitPanelRuntime(cwd, async () => {
-    setMenuOpen(false);
-    await toggleAmendDraft();
+      setMenuOpen(false);
+      await toggleAmendDraft();
     });
   };
 
   const confirmAmend = async (amending: boolean) => {
     return withGitPanelRuntime(cwd, async () => {
-    if (!amending || !index?.headPushed) return true;
-    return confirmNative(
-      `Amend a commit that is already pushed? ${PRODUCT_IDENTITY.displayName} cannot push the result. You will need a force push from the terminal.`,
-      "Amend",
-    );
+      if (!amending || !index?.headPushed) return true;
+      return confirmNative(
+        `Amend a commit that is already pushed? ${PRODUCT_IDENTITY.displayName} cannot push the result. You will need a force push from the terminal.`,
+        "Amend",
+      );
     });
   };
 
@@ -1136,69 +1135,69 @@ function ChangedFiles({
    */
   const commit = async (push: boolean, createPr = false, options?: CommitMenuOptions) => {
     return withGitPanelRuntime(cwd, async () => {
-    const amending = options ? options.amend : amend;
-    if (runtime.state.generating || generateAbortRef.current) return;
-    if (options ? busy : !canCommit) return;
-    if (blockedMessage) return;
-    if (!message.trim() && !amending) {
-      messageRef.current?.focus();
-      return;
-    }
-    if ((push || createPr) && !(await confirmDefault(createPr ? "pr" : "push"))) {
-      return;
-    }
-    if (!(await confirmAmend(amending))) return;
-    // Nothing staged: Commit takes everything, but amending never sweeps in
-    // files the user did not stage.
-    const stageAll =
-      options?.scope === "all" ||
-      ((options?.scope ?? "smart") === "smart" && !amending && staged.length === 0);
-    if (runtime.state.busy || runtime.state.generating || generateAbortRef.current) return;
-    setGitFeedback(cwd, null);
-    setBusy(createPr ? "pr" : "commit");
-    setPending("Committing…");
-    setMenuOpen(false);
-    let committed = false;
-    let pushed = false;
-    try {
-      if (stageAll) await gitStageAll(cwd);
-      // Amending with an empty box keeps the message the commit already has.
-      const text = message.trim() || (await gitHeadMessage(cwd));
-      await gitCommit(cwd, text, amending, options?.signoff ?? false);
-      committed = true;
-      // The commit is made: its files leave the list now, not after the push
-      // and the reload that follow.
-      if (index) showOptimistic(applyCommit(index, stageAll));
-      clearDraft();
-      if (push || createPr) {
-        setPending("Pushing…");
-        await gitPush(cwd);
-        pushed = true;
-        recordPrActivity();
+      const amending = options ? options.amend : amend;
+      if (runtime.state.generating || generateAbortRef.current) return;
+      if (options ? busy : !canCommit) return;
+      if (blockedMessage) return;
+      if (!message.trim() && !amending) {
+        messageRef.current?.focus();
+        return;
       }
-      onMutated();
-      if (createPr) {
-        setPending("Creating pull request…");
-        await openCreatedPr();
-        reloadPr();
+      if ((push || createPr) && !(await confirmDefault(createPr ? "pr" : "push"))) {
+        return;
       }
-    } catch (error) {
-      if (committed)
-        setGitFeedback(cwd, {
-          kind: "warning",
-          title: pushed
-            ? "Commit pushed; pull request creation failed"
-            : "Commit created; push failed",
-          detail: error instanceof Error ? error.message : String(error),
-          retry: () =>
-            retryPublication(!pushed && (push || createPr), createPr, index?.branch ?? null),
-        });
-      else fail(error, "Couldn’t commit changes");
-      onMutated();
-    } finally {
-      setBusy(null);
-      setPending(null);
-    }
+      if (!(await confirmAmend(amending))) return;
+      // Nothing staged: Commit takes everything, but amending never sweeps in
+      // files the user did not stage.
+      const stageAll =
+        options?.scope === "all" ||
+        ((options?.scope ?? "smart") === "smart" && !amending && staged.length === 0);
+      if (runtime.state.busy || runtime.state.generating || generateAbortRef.current) return;
+      setGitFeedback(cwd, null);
+      setBusy(createPr ? "pr" : "commit");
+      setPending("Committing…");
+      setMenuOpen(false);
+      let committed = false;
+      let pushed = false;
+      try {
+        if (stageAll) await gitStageAll(cwd);
+        // Amending with an empty box keeps the message the commit already has.
+        const text = message.trim() || (await gitHeadMessage(cwd));
+        await gitCommit(cwd, text, amending, options?.signoff ?? false);
+        committed = true;
+        // The commit is made: its files leave the list now, not after the push
+        // and the reload that follow.
+        if (index) showOptimistic(applyCommit(index, stageAll));
+        clearDraft();
+        if (push || createPr) {
+          setPending("Pushing…");
+          await gitPush(cwd);
+          pushed = true;
+          recordPrActivity();
+        }
+        onMutated();
+        if (createPr) {
+          setPending("Creating pull request…");
+          await openCreatedPr();
+          reloadPr();
+        }
+      } catch (error) {
+        if (committed)
+          setGitFeedback(cwd, {
+            kind: "warning",
+            title: pushed
+              ? "Commit pushed; pull request creation failed"
+              : "Commit created; push failed",
+            detail: error instanceof Error ? error.message : String(error),
+            retry: () =>
+              retryPublication(!pushed && (push || createPr), createPr, index?.branch ?? null),
+          });
+        else fail(error, "Couldn’t commit changes");
+        onMutated();
+      } finally {
+        setBusy(null);
+        setPending(null);
+      }
     });
   };
 
@@ -1212,131 +1211,131 @@ function ChangedFiles({
 
   const sync = async () => {
     return withGitPanelRuntime(cwd, async () => {
-    if (!index || !(canSync || canPublish)) return;
-    const pushesCommits = index.ahead > 0;
-    if (gitPanelRuntime(cwd).state.busy) return;
-    setGitFeedback(cwd, null);
-    setBusy("sync");
-    try {
-      await gitSync(cwd);
-      if (pushesCommits) recordPrActivity();
-      onMutated();
-      reloadPr();
-    } catch (error) {
-      fail(error, canPublish ? "Couldn’t publish branch" : "Couldn’t synchronize changes");
-      onMutated();
-    } finally {
-      setBusy(null);
-    }
+      if (!index || !(canSync || canPublish)) return;
+      const pushesCommits = index.ahead > 0;
+      if (gitPanelRuntime(cwd).state.busy) return;
+      setGitFeedback(cwd, null);
+      setBusy("sync");
+      try {
+        await gitSync(cwd);
+        if (pushesCommits) recordPrActivity();
+        onMutated();
+        reloadPr();
+      } catch (error) {
+        fail(error, canPublish ? "Couldn’t publish branch" : "Couldn’t synchronize changes");
+        onMutated();
+      } finally {
+        setBusy(null);
+      }
     });
   };
 
   async function openCreatedPr() {
     return withGitPanelRuntime(cwd, async () => {
-    const content = isRemoteProjectPath(cwd)
-      ? await remotePrContent(cwd)
-      : generationChoice
-        ? await generatePrContent(cwd, textHarness, generationChoice)
-        : await generatePrContent(cwd, textHarness);
-    if (!content) throw new Error("Could not prepare pull request content");
-    const url = await gitPrCreate(cwd, content.title, content.body, content.base, content.head);
-    const number = Number(/\/pull\/(\d+)(?:[/?#]|$)/.exec(url)?.[1]);
-    if (Number.isInteger(number) && number > 0) recordPrActivity(number);
-    reloadPr();
-    try {
-      await openUrl(url.trim());
-      setGitFeedback(cwd, {
-        kind: "success",
-        get title() {
-          return t("Pull request created");
-        },
-        url: url.trim(),
-      });
-    } catch (error) {
-      setGitFeedback(cwd, {
-        kind: "warning",
-        get title() {
-          return t("Pull request created; couldn’t open the link");
-        },
-        detail: String(error),
-        url: url.trim(),
-      });
-    }
+      const content = isRemoteProjectPath(cwd)
+        ? await remotePrContent(cwd)
+        : generationChoice
+          ? await generatePrContent(cwd, textHarness, generationChoice)
+          : await generatePrContent(cwd, textHarness);
+      if (!content) throw new Error("Could not prepare pull request content");
+      const url = await gitPrCreate(cwd, content.title, content.body, content.base, content.head);
+      const number = Number(/\/pull\/(\d+)(?:[/?#]|$)/.exec(url)?.[1]);
+      if (Number.isInteger(number) && number > 0) recordPrActivity(number);
+      reloadPr();
+      try {
+        await openUrl(url.trim());
+        setGitFeedback(cwd, {
+          kind: "success",
+          get title() {
+            return t("Pull request created");
+          },
+          url: url.trim(),
+        });
+      } catch (error) {
+        setGitFeedback(cwd, {
+          kind: "warning",
+          get title() {
+            return t("Pull request created; couldn’t open the link");
+          },
+          detail: String(error),
+          url: url.trim(),
+        });
+      }
     });
   }
 
   async function retryPublication(push: boolean, createPr: boolean, branch: string | null) {
     return withGitPanelRuntime(cwd, async () => {
-    let remainingPush = push;
-    try {
-      await withGitOperation(cwd, push ? "Pushing…" : "Creating pull request…", async () => {
-        const current = await gitDiffIndex(cwd);
-        if (current.branch !== branch)
-          throw new Error("The branch changed. Review the current branch before publishing.");
-        if (remainingPush) {
-          await gitPush(cwd);
-          remainingPush = false;
-        }
-        if (createPr) {
-          const existing = await gitPrStatus(cwd);
-          if (existing?.state === "open")
-            setGitFeedback(cwd, {
-              kind: "success",
-              get title() {
-                return t("Pull request already exists");
-              },
-              url: existing.url,
-            });
-          else await openCreatedPr();
-        }
-      });
-    } catch (error) {
-      setGitFeedback(cwd, {
-        kind: "warning",
-        title: remainingPush ? "Commit created; push failed" : "Publication incomplete",
-        detail: String(error),
-        retry: () => retryPublication(remainingPush, createPr, branch),
-      });
-    } finally {
-      onMutated();
-      reloadPr();
-    }
+      let remainingPush = push;
+      try {
+        await withGitOperation(cwd, push ? "Pushing…" : "Creating pull request…", async () => {
+          const current = await gitDiffIndex(cwd);
+          if (current.branch !== branch)
+            throw new Error("The branch changed. Review the current branch before publishing.");
+          if (remainingPush) {
+            await gitPush(cwd);
+            remainingPush = false;
+          }
+          if (createPr) {
+            const existing = await gitPrStatus(cwd);
+            if (existing?.state === "open")
+              setGitFeedback(cwd, {
+                kind: "success",
+                get title() {
+                  return t("Pull request already exists");
+                },
+                url: existing.url,
+              });
+            else await openCreatedPr();
+          }
+        });
+      } catch (error) {
+        setGitFeedback(cwd, {
+          kind: "warning",
+          title: remainingPush ? "Commit created; push failed" : "Publication incomplete",
+          detail: String(error),
+          retry: () => retryPublication(remainingPush, createPr, branch),
+        });
+      } finally {
+        onMutated();
+        reloadPr();
+      }
     });
   }
 
   const createPr = async () => {
     return withGitPanelRuntime(cwd, async () => {
-    if (!canCreatePr) return;
-    if (!(await confirmDefault("pr"))) return;
-    if (gitPanelRuntime(cwd).state.busy) return;
-    setGitFeedback(cwd, null);
-    setBusy("pr");
-    let pushed = false;
-    try {
-      if ((index?.ahead ?? 0) > 0) {
-        setPending("Pushing…");
-        await gitPush(cwd);
-        pushed = true;
+      if (!canCreatePr) return;
+      if (!(await confirmDefault("pr"))) return;
+      if (gitPanelRuntime(cwd).state.busy) return;
+      setGitFeedback(cwd, null);
+      setBusy("pr");
+      let pushed = false;
+      try {
+        if ((index?.ahead ?? 0) > 0) {
+          setPending("Pushing…");
+          await gitPush(cwd);
+          pushed = true;
+        }
+        setPending("Creating pull request…");
+        await openCreatedPr();
+        onMutated();
+        reloadPr();
+      } catch (error) {
+        setGitFeedback(cwd, {
+          kind: pushed ? "warning" : "error",
+          title: pushed
+            ? "Branch pushed; pull request creation failed"
+            : "Couldn’t create pull request",
+          detail: String(error),
+          retry: () =>
+            retryPublication(!pushed && (index?.ahead ?? 0) > 0, true, index?.branch ?? null),
+        });
+        onMutated();
+      } finally {
+        setBusy(null);
+        setPending(null);
       }
-      setPending("Creating pull request…");
-      await openCreatedPr();
-      onMutated();
-      reloadPr();
-    } catch (error) {
-      setGitFeedback(cwd, {
-        kind: pushed ? "warning" : "error",
-        title: pushed
-          ? "Branch pushed; pull request creation failed"
-          : "Couldn’t create pull request",
-        detail: String(error),
-        retry: () =>
-          retryPublication(!pushed && (index?.ahead ?? 0) > 0, true, index?.branch ?? null),
-      });
-      onMutated();
-    } finally {
-      setBusy(null);
-      setPending(null);
-    }
     });
   };
 

@@ -3,7 +3,9 @@ import { retireProviderEpoch } from "../core/providerEpoch";
 
 it("retains cancellation identity until old work settles and never removes replacement state", async () => {
   let finish!: () => void;
-  const old = new Promise<void>((resolve) => { finish = resolve; });
+  const old = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
   const first = {};
   const epochs = new Map([["session", first]]);
   const tails = new Map<string, Promise<unknown>>([["session", old]]);
@@ -24,7 +26,9 @@ it("retains cancellation identity until old work settles and never removes repla
 
 it("does not retire a marker still captured by a later queued operation", async () => {
   let finish!: () => void;
-  const old = new Promise<void>((resolve) => { finish = resolve; });
+  const old = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
   const epoch = {};
   const epochs = new Map([["session", epoch]]);
   const tails = new Map<string, Promise<unknown>>([["session", old]]);
@@ -40,8 +44,12 @@ it("does not retire a marker still captured by a later queued operation", async 
 it("waits for every captured lifecycle queue before retiring a marker", async () => {
   let finishTurn!: () => void;
   let finishLifecycle!: () => void;
-  const turn = new Promise<void>((resolve) => { finishTurn = resolve; });
-  const lifecycle = new Promise<void>((resolve) => { finishLifecycle = resolve; });
+  const turn = new Promise<void>((resolve) => {
+    finishTurn = resolve;
+  });
+  const lifecycle = new Promise<void>((resolve) => {
+    finishLifecycle = resolve;
+  });
   const epochs = new Map([["session", {}]]);
   const turns = new Map<string, Promise<unknown>>([["session", turn]]);
   const lifecycles = new Map<string, Promise<unknown>>([["session", lifecycle]]);

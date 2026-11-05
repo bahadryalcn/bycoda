@@ -1,4 +1,7 @@
-import { withRoomPrivacyMutation, type PrivacyMutationToken } from "../../../features/group-lock/model/roomPrivacyProjection";
+import {
+  withRoomPrivacyMutation,
+  type PrivacyMutationToken,
+} from "../../../features/group-lock/model/roomPrivacyProjection";
 import { isProjectPasswordLocked } from "../../../features/group-lock/model/groupLock";
 import { useCallback, useEffect, useState, type Dispatch, type SetStateAction } from "react";
 import type { setSessions } from "../../../features/sessions/model/sessionsStore";
@@ -182,42 +185,70 @@ export function useProjectImport({
     [],
   );
 
-  const onPlaceSessionInFolder = useCallback(async (sessionId: string, target: SessionFolderTarget) => {
-    const source = sessionsRef.current.find((session) => session.id === sessionId);
-    if (!source || !looksLikeProject(source.cwd)) return;
-    if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
-      const actualId = isRemoteProjectPath(source.cwd) ? (remoteSessionFor(sessionId) ?? sessionId) : sessionId;
-      const gestureId = crypto.randomUUID();
-      let admitted = false;
-      try {
-        return await withRoomPrivacyMutation(() => {
-          if (isProjectPasswordLocked(source.cwd)) throw new Error("Project is locked.");
-          admitted = true;
-          return executeOrganizationOperation(gestureId, target.kind === "existing"
-            ? { kind: "batch", cwd: source.cwd, operations: [
-                { kind: "assign", cwd: source.cwd, folderId: target.folderId, sessionIds: [actualId] },
-                { kind: "folderCollapsed", cwd: source.cwd, folderId: target.folderId, collapsed: false },
-              ] }
-            : { kind: "create", cwd: source.cwd, folderId: crypto.randomUUID(), sessionIds: [actualId], name: target.name });
-        });
-      } catch (error) {
-        if (admitted) return { state: "unknown" as const, operationId: gestureId };
-        throw error;
+  const onPlaceSessionInFolder = useCallback(
+    async (sessionId: string, target: SessionFolderTarget) => {
+      const source = sessionsRef.current.find((session) => session.id === sessionId);
+      if (!source || !looksLikeProject(source.cwd)) return;
+      if (NATIVE_SESSION_ORGANIZATION_ACTIVE) {
+        const actualId = isRemoteProjectPath(source.cwd)
+          ? (remoteSessionFor(sessionId) ?? sessionId)
+          : sessionId;
+        const gestureId = crypto.randomUUID();
+        let admitted = false;
+        try {
+          return await withRoomPrivacyMutation(() => {
+            if (isProjectPasswordLocked(source.cwd)) throw new Error("Project is locked.");
+            admitted = true;
+            return executeOrganizationOperation(
+              gestureId,
+              target.kind === "existing"
+                ? {
+                    kind: "batch",
+                    cwd: source.cwd,
+                    operations: [
+                      {
+                        kind: "assign",
+                        cwd: source.cwd,
+                        folderId: target.folderId,
+                        sessionIds: [actualId],
+                      },
+                      {
+                        kind: "folderCollapsed",
+                        cwd: source.cwd,
+                        folderId: target.folderId,
+                        collapsed: false,
+                      },
+                    ],
+                  }
+                : {
+                    kind: "create",
+                    cwd: source.cwd,
+                    folderId: crypto.randomUUID(),
+                    sessionIds: [actualId],
+                    name: target.name,
+                  },
+            );
+          });
+        } catch (error) {
+          if (admitted) return { state: "unknown" as const, operationId: gestureId };
+          throw error;
+        }
       }
-    }
-    const folders = loadSessionFolders(source.cwd);
-    if (target.kind === "existing" && !folders.some((folder) => folder.id === target.folderId)) {
-      return;
-    }
-    saveSessionFolders(
-      source.cwd,
-      placeSessionInFolder(
-        folders,
-        isRemoteProjectPath(source.cwd) ? (remoteSessionFor(sessionId) ?? sessionId) : sessionId,
-        target,
-      ),
-    );
-  }, []);
+      const folders = loadSessionFolders(source.cwd);
+      if (target.kind === "existing" && !folders.some((folder) => folder.id === target.folderId)) {
+        return;
+      }
+      saveSessionFolders(
+        source.cwd,
+        placeSessionInFolder(
+          folders,
+          isRemoteProjectPath(source.cwd) ? (remoteSessionFor(sessionId) ?? sessionId) : sessionId,
+          target,
+        ),
+      );
+    },
+    [],
+  );
 
   // Imported sessions add projects to the rail and rows to the open project.
   const onSessionsImported = useCallback(() => {

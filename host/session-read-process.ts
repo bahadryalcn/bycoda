@@ -1,37 +1,65 @@
 import { fork, type ChildProcess } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, URL as NodeURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { HostNotesAdmission } from "./host-notes-admission";
 
 export type SessionReadRequest =
   | { kind: "host"; path: string; sessionId: string }
-  | { kind: "desktop"; paths: string[]; platform: NodeJS.Platform; method: "snapshot" | "stamp" | "metadata"; sessionId: string; projectId?: string; expectedProjectCwd?: string };
+  | {
+      kind: "desktop";
+      paths: string[];
+      platform: NodeJS.Platform;
+      method: "snapshot" | "stamp" | "metadata";
+      sessionId: string;
+      projectId?: string;
+      expectedProjectCwd?: string;
+    };
 type Reply = { id: string; value?: unknown; error?: string };
 const aborted = () => new Error("Session read cancelled before completion.");
 /** One bounded readonly job per child. Never settle a dispatched job before EXIT. */
 export class SessionReadProcesses {
-  private readonly flights = new Map<string, { controller: AbortController; observers: Set<object>; attached: number; work: Promise<unknown> }>();
+  private readonly flights = new Map<
+    string,
+    {
+      controller: AbortController;
+      observers: Set<object>;
+      attached: number;
+      work: Promise<unknown>;
+    }
+  >();
   private readonly admission = new HostNotesAdmission();
-  constructor(private readonly helper = new URL("./session-read-helper.mjs", import.meta.url), private readonly spawn: typeof fork = fork) {}
+  constructor(
+    private readonly helper = new NodeURL("./session-read-helper.mjs", import.meta.url),
+    private readonly spawn: typeof fork = fork,
+  ) {}
   read<T>(request: SessionReadRequest, signal: AbortSignal): Promise<T> {
     if (signal.aborted) return Promise.reject(aborted());
     const key = JSON.stringify(request);
     let flight = this.flights.get(key);
     if (!flight) {
-      if (this.flights.size >= 8) return Promise.reject(new Error("Session read process capacity is busy."));
+      if (this.flights.size >= 8)
+        return Promise.reject(new Error("Session read process capacity is busy."));
       const controller = new AbortController();
-      const original = { controller, observers: new Set<object>(), attached: 0, work: Promise.resolve(undefined) as Promise<unknown> };
+      const original = {
+        controller,
+        observers: new Set<object>(),
+        attached: 0,
+        work: Promise.resolve(undefined) as Promise<unknown>,
+      };
       this.flights.set(key, original);
-      original.work = Promise.resolve().then(() => this.run(request, controller.signal)).finally(() => {
-        if (this.flights.get(key) === original) this.flights.delete(key);
-      });
+      original.work = Promise.resolve()
+        .then(() => this.run(request, controller.signal))
+        .finally(() => {
+          if (this.flights.get(key) === original) this.flights.delete(key);
+        });
       void original.work.catch(() => undefined);
       flight = original;
     }
     const original = flight;
     // Detached promises still await the original job; bound that retained metadata
     // too when an unresponsive child cannot be retired by the OS.
-    if (original.attached >= 128) return Promise.reject(new Error("Session read observer capacity is busy."));
+    if (original.attached >= 128)
+      return Promise.reject(new Error("Session read observer capacity is busy."));
     original.attached++;
     const observer = {};
     original.observers.add(observer);
@@ -46,14 +74,17 @@ export class SessionReadProcesses {
       };
       signal.addEventListener("abort", cancel, { once: true });
       if (signal.aborted) cancel();
-      original.work.then(
-        (value) => cancelled ? reject(aborted()) : resolve(value as T),
-        (error) => reject(cancelled ? aborted() : error),
-      ).finally(() => {
-        signal.removeEventListener("abort", cancel);
-        original.observers.delete(observer);
-        original.attached--;
-      }).catch(() => undefined);
+      original.work
+        .then(
+          (value) => (cancelled ? reject(aborted()) : resolve(value as T)),
+          (error) => reject(cancelled ? aborted() : error),
+        )
+        .finally(() => {
+          signal.removeEventListener("abort", cancel);
+          original.observers.delete(observer);
+          original.attached--;
+        })
+        .catch(() => undefined);
     });
   }
   close(): Promise<void> {
@@ -63,7 +94,10 @@ export class SessionReadProcesses {
   }
   private run(request: SessionReadRequest, signal: AbortSignal): Promise<unknown> {
     signal.throwIfAborted();
-    const accepted = this.admission.accept(request.kind === "host" ? [request.path] : request.paths, false);
+    const accepted = this.admission.accept(
+      request.kind === "host" ? [request.path] : request.paths,
+      false,
+    );
     const id = randomUUID();
     const environment = { ...process.env };
     delete environment.NODE_OPTIONS;
@@ -82,14 +116,21 @@ export class SessionReadProcesses {
         signal.removeEventListener("abort", cancel);
         accepted?.finishActual();
         if (failure || code !== 0 || !reply || reply.error)
-          reject(failure ?? new Error(reply?.error ?? "Session read helper exited without a confirmed result."));
+          reject(
+            failure ??
+              new Error(reply?.error ?? "Session read helper exited without a confirmed result."),
+          );
         else resolve(reply.value);
       };
       const cancel = () => {
         failure ??= aborted();
         // This captured child has no descendant-spawning methods. A kill request
         // is not completion: keep its admission/slot until this child's EXIT.
-        try { child.kill("SIGKILL"); } catch { /* unresolved child remains owned */ }
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          /* unresolved child remains owned */
+        }
       };
       const deadline = setTimeout(cancel, 30_000);
       deadline.unref();
@@ -97,11 +138,14 @@ export class SessionReadProcesses {
         child = this.spawn(fileURLToPath(this.helper), [], {
           execPath: process.execPath,
           execArgv: import.meta.url.endsWith(".ts") ? ["--experimental-transform-types"] : [],
-          env: environment, windowsHide: true,
-          stdio: ["ignore", "ignore", "ignore", "ipc"], serialization: "advanced",
+          env: environment,
+          windowsHide: true,
+          stdio: ["ignore", "ignore", "ignore", "ipc"],
+          serialization: "advanced",
         });
       } catch (error) {
-        failure = error instanceof Error ? error : new Error("Session read helper could not start.");
+        failure =
+          error instanceof Error ? error : new Error("Session read helper could not start.");
         finish(null); // Synchronous spawn failure never produced a physical child.
         return;
       }
@@ -129,9 +173,13 @@ export class SessionReadProcesses {
       });
       signal.addEventListener("abort", cancel, { once: true });
       if (signal.aborted) cancel();
-      else child.send({ id, request, comparison: accepted?.comparison }, (error) => {
-        if (error) { failure ??= error; cancel(); }
-      });
+      else
+        child.send({ id, request, comparison: accepted?.comparison }, (error) => {
+          if (error) {
+            failure ??= error;
+            cancel();
+          }
+        });
     });
   }
 }

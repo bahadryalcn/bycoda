@@ -823,7 +823,9 @@ async function ensureLive(
     }
 
     const liveRef: { current: Live | null } = { current: null };
-    const capability = input.nativeControlTurn ? nativeSessionCapability(input.nativeControlTurn) : undefined;
+    const capability = input.nativeControlTurn
+      ? nativeSessionCapability(input.nativeControlTurn)
+      : undefined;
     const service =
       generation === "v2" ? await resolveOpenCodeV2Service(path, input.cwd, capability) : undefined;
     let serverUrl = service?.url ?? "";
@@ -2176,7 +2178,14 @@ function unsupportedFileMediaType(error: unknown): string | undefined {
 }
 
 async function assertOpenCodeVersion(path: string, cwd: string): Promise<OpenCodeApiGeneration> {
-  const output = await execChild(path, ["--version"], cwd, "opencode", undefined, "management").catch(() => "");
+  const output = await execChild(
+    path,
+    ["--version"],
+    cwd,
+    "opencode",
+    undefined,
+    "management",
+  ).catch(() => "");
   const version = parseOpenCodeVersion(output);
   return assertSupportedOpenCodeVersion(version);
 }

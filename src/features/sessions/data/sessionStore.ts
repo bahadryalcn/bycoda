@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { inlineVisualSnapshot } from "../model/inlineVisual";
 import { readToolWindow } from "../../../app/model/toolWindows";
-import { serverTerminalRestoreState } from "../../connections/model/serverTerminalRestoreState";
+import { serverTerminalRestoreState } from "../../connections/public/serverTerminalRestoreState";
 import { buildSessionBlockDelta, type PersistedBlock } from "./sessionDelta";
 import { parseHead, type ConversationHead } from "../../sync/model/conversationHead";
 import { PersistenceBaselines } from "./persistenceBaselines";
@@ -15,7 +15,7 @@ import {
   forgetHostSessionShell,
   saveHostSessionBinding,
   flushHostSessionBindings,
-} from "../../connections/model/sessionExecutionBinding";
+} from "../../connections/public/sessionExecutionBinding";
 import {
   captureSessionOutputWrite,
   acknowledgeSessionOutputWrite,
@@ -60,8 +60,8 @@ import {
   PERSISTED_AGENT_PROMPT_CHARS,
 } from "../model/agentOutput";
 import type { ContextUsage } from "../model/contextUsage";
-import { isRemoteProjectPath, normalizeProjectPath } from "../../projects/model/recents";
-import { removeSessionAdditionalDirs } from "../../projects/model/additionalDirs";
+import { isRemoteProjectPath, normalizeProjectPath } from "../../projects/public/recents";
+import { removeSessionAdditionalDirs } from "../../projects/public/additionalDirs";
 import {
   claudeShellCommands,
   ompActiveAssistantTexts,
@@ -513,9 +513,22 @@ export function upsertClearedSession(session: Session): Promise<SessionSummary |
 
 /** Explicit Room creation persists its empty conversation before reporting its ID. */
 export async function createRoomSession(session: Session): Promise<SessionSummary> {
-  if (session.blocks.length > 1 || session.blocks.some(block => block.role !== "user" || !block.draft || !block.appRequestId) || session.providerSessionId || session.pendingContextReplay || session.historyPartial || session.historyLoading || session.inboxAsk || hostSessionBinding(session) || isRemoteProjectPath(session.cwd) || session.cwd === "~") throw new Error("Invalid Room conversation");
+  if (
+    session.blocks.length > 1 ||
+    session.blocks.some((block) => block.role !== "user" || !block.draft || !block.appRequestId) ||
+    session.providerSessionId ||
+    session.pendingContextReplay ||
+    session.historyPartial ||
+    session.historyLoading ||
+    session.inboxAsk ||
+    hostSessionBinding(session) ||
+    isRemoteProjectPath(session.cwd) ||
+    session.cwd === "~"
+  )
+    throw new Error("Invalid Room conversation");
   const summary = await persistSession(session, { expectMissing: true }, true);
-  if (!summary || summary.id !== session.id) throw new Error("Room conversation creation outcome is unknown");
+  if (!summary || summary.id !== session.id)
+    throw new Error("Room conversation creation outcome is unknown");
   return summary;
 }
 
@@ -1066,13 +1079,30 @@ export async function listRecentSessions(limit: number): Promise<SessionSummary[
   const rows = await invoke<SessionSummary[]>("session_list_recent", { limit });
   const owned = hostSessionShellSummaries();
   const native = rows.filter((row) => !hasHostSessionOwnerFence(row.id));
-  const nativeRows = native.map((row): SessionSummary => ({ ...normalizeSummary(row), recentPinTarget: !row.cwd || row.cwd === "~" || isRemoteProjectPath(row.cwd)
-    ? null : { kind: "native", sessionId: row.id, cwd: row.cwd } }));
+  const nativeRows = native.map((row): SessionSummary => ({
+    ...normalizeSummary(row),
+    recentPinTarget:
+      !row.cwd || row.cwd === "~" || isRemoteProjectPath(row.cwd)
+        ? null
+        : { kind: "native", sessionId: row.id, cwd: row.cwd },
+  }));
   const ownedRows = owned.map((row): SessionSummary => {
     const owner = hostSessionBinding({ id: row.id });
-    return { ...normalizeSummary(row), recentPinTarget: owner?.created ? { kind: "host", sessionId: owner.sessionId,
-      machineId: owner.machineId, environmentId: owner.environmentId, projectId: owner.projectId,
-      ...(owner.authorityGeneration === null ? {} : { authorityGeneration: owner.authorityGeneration }) } : null };
+    return {
+      ...normalizeSummary(row),
+      recentPinTarget: owner?.created
+        ? {
+            kind: "host",
+            sessionId: owner.sessionId,
+            machineId: owner.machineId,
+            environmentId: owner.environmentId,
+            projectId: owner.projectId,
+            ...(owner.authorityGeneration === null
+              ? {}
+              : { authorityGeneration: owner.authorityGeneration }),
+          }
+        : null,
+    };
   });
   if (!ownedRows.length) return nativeRows;
   const combined = [...nativeRows, ...ownedRows].sort(
@@ -1109,7 +1139,10 @@ export async function listRecentSessionsSincePage(
 }
 
 /** Recheck ownership at publication because bindings may change between pages. */
-export function finalizeRecentSessionPages(rows: SessionSummary[], since: number): SessionSummary[] {
+export function finalizeRecentSessionPages(
+  rows: SessionSummary[],
+  since: number,
+): SessionSummary[] {
   return [
     ...rows.filter((row) => !hasHostSessionOwnerFence(row.id)),
     ...hostSessionShellSummaries().filter((row) => summaryActivityAt(row) >= since),
@@ -1616,7 +1649,7 @@ export async function deleteSession(sessionId: string, imagePaths: string[] = []
   if (owner) {
     if (!owner.created)
       throw new Error("Verify this conversation's pending creation before deleting it.");
-    const { sessionAccessForMachine } = await import("../../connections/model/connections");
+    const { sessionAccessForMachine } = await import("../../connections/public/connections");
     await sessionAccessForMachine(owner.machineId, false, true, owner.environmentId).delete(
       owner.sessionId,
       owner.projectId,
@@ -1712,7 +1745,7 @@ export async function updateOwnedSessionMetadata(
   if (!owner) return false;
   if (!owner.created)
     throw new Error("Verify this conversation's pending creation before changing it.");
-  const { sessionAccessForMachine } = await import("../../connections/model/connections");
+  const { sessionAccessForMachine } = await import("../../connections/public/connections");
   await sessionAccessForMachine(owner.machineId, false, true, owner.environmentId).update(
     owner.sessionId,
     {
@@ -2029,10 +2062,15 @@ function sanitizeShellRun(value: Block["shell"]): Block["shell"] {
   return {
     command: value.command,
     output: typeof value.output === "string" ? value.output : "",
-    exitCode: typeof value.exitCode === "number" && !value.running && !value.terminationFailed ? value.exitCode : null,
+    exitCode:
+      typeof value.exitCode === "number" && !value.running && !value.terminationFailed
+        ? value.exitCode
+        : null,
     ...(value.timedOut ? { timedOut: true } : {}),
     ...(value.truncated ? { truncated: true } : {}),
-    ...(typeof value.terminationFailed === "string" && value.terminationFailed ? { terminationFailed: value.terminationFailed } : {}),
+    ...(typeof value.terminationFailed === "string" && value.terminationFailed
+      ? { terminationFailed: value.terminationFailed }
+      : {}),
   };
 }
 

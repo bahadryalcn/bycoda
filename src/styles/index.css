@@ -1497,6 +1497,13 @@ html.has-chat-background.chat-background-effect-ready.chat-background-gradient-b
     transition: opacity var(--motion-duration-fast) ease;
   }
 
+  /* Answer rows have no turn gap: reserve the action tray's real height so it
+   * cannot cover the next question, even when text or controls wrap. */
+  [data-question-answer] .user-message-actions {
+    position: static;
+    align-self: flex-end;
+  }
+
   .user-message-row:hover .user-message-actions,
   .user-message-row:focus-within .user-message-actions {
     opacity: 1;
@@ -2206,73 +2213,76 @@ html.has-native-glass:not(.theme-light) .body-glass.sidebar-pane {
   background-color: var(--color-background-base);
 }
 
-  html.has-workspace-background,
-  .workspace-background-preview {
-    --workspace-background-veil: color-mix(
-      in srgb,
-      var(--color-background-base) calc(100% - clamp(0, var(--workspace-background-strength, 0), 1) * 32%),
-      transparent
-    );
-  }
+html.has-workspace-background,
+.workspace-background-preview {
+  --workspace-background-veil: color-mix(
+    in srgb,
+    var(--color-background-base)
+      calc(100% - clamp(0, var(--workspace-background-strength, 0), 1) * 32%),
+    transparent
+  );
+}
 
-  .workspace-background-preview {
-    background-image: linear-gradient(var(--workspace-background-veil), var(--workspace-background-veil)),
-      var(--workspace-background-image, none);
-    background-position: center;
-    background-size: cover;
-    background-repeat: no-repeat;
-  }
+.workspace-background-preview {
+  background-image:
+    linear-gradient(var(--workspace-background-veil), var(--workspace-background-veil)),
+    var(--workspace-background-image, none);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
 
-  html.has-workspace-background,
-  html.has-workspace-background.has-native-glass:not(.theme-light),
-  html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) {
-    --ui-workspace-canvas: transparent;
-    --ui-workspace-panel: transparent;
-    --ui-workspace-reading: color-mix(in srgb, var(--ui-surface) 80%, transparent);
-    --ui-workspace-reading-base: var(--ui-workspace-reading);
-    --ui-workspace-reading-chat: var(--ui-workspace-reading);
-    --ui-workspace-reading-panel: var(--ui-workspace-reading);
-    --ui-workspace-reading-muted: var(--ui-workspace-reading);
-    --ui-workspace-canvas-muted: transparent;
-    --ui-workspace-canvas-chat: transparent;
-    --ui-workspace-canvas-surface: transparent;
-    --ui-navigation-panel: transparent;
-    --ui-navigation-chrome: transparent;
-    --ui-navigation-quiet: var(--ui-workspace-reading);
-    --ui-navigation-control: var(--ui-workspace-reading);
-    --ui-navigation-selected: color-mix(in srgb, var(--ui-surface-selected) 80%, transparent);
-    --ui-composer-surface: var(--ui-workspace-reading);
-    background-color: var(--color-background-base);
-    background-image: linear-gradient(var(--workspace-background-veil), var(--workspace-background-veil)),
-      var(--workspace-background-image, none);
-    background-position: center;
-    background-size: cover;
-    background-repeat: no-repeat;
-  }
+html.has-workspace-background,
+html.has-workspace-background.has-native-glass:not(.theme-light),
+html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) {
+  --ui-workspace-canvas: transparent;
+  --ui-workspace-panel: transparent;
+  --ui-workspace-reading: color-mix(in srgb, var(--ui-surface) 80%, transparent);
+  --ui-workspace-reading-base: var(--ui-workspace-reading);
+  --ui-workspace-reading-chat: var(--ui-workspace-reading);
+  --ui-workspace-reading-panel: var(--ui-workspace-reading);
+  --ui-workspace-reading-muted: var(--ui-workspace-reading);
+  --ui-workspace-canvas-muted: transparent;
+  --ui-workspace-canvas-chat: transparent;
+  --ui-workspace-canvas-surface: transparent;
+  --ui-navigation-panel: transparent;
+  --ui-navigation-chrome: transparent;
+  --ui-navigation-quiet: var(--ui-workspace-reading);
+  --ui-navigation-control: var(--ui-workspace-reading);
+  --ui-navigation-selected: color-mix(in srgb, var(--ui-surface-selected) 80%, transparent);
+  --ui-composer-surface: var(--ui-workspace-reading);
+  background-color: var(--color-background-base);
+  background-image:
+    linear-gradient(var(--workspace-background-veil), var(--workspace-background-veil)),
+    var(--workspace-background-image, none);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
 
-  html.has-workspace-background body,
-  html.has-workspace-background #root,
-  html.has-workspace-background .app-canvas,
-  html.has-workspace-background.has-native-glass:not(.theme-light) body,
-  html.has-workspace-background.has-native-glass:not(.theme-light) #root,
-  html.has-workspace-background.has-native-glass:not(.theme-light) .app-canvas,
-  html.has-workspace-background .sidebar-glass,
-  html.has-workspace-background .body-glass,
-  html.has-workspace-background .bycoda-sidebar.body-glass,
-  html.has-workspace-background.has-native-glass:not(.theme-light) .sidebar-glass,
-  html.has-workspace-background.has-native-glass:not(.theme-light) .body-glass.sidebar-pane,
-  html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) .body-glass {
-    background: transparent;
-  }
+html.has-workspace-background body,
+html.has-workspace-background #root,
+html.has-workspace-background .app-canvas,
+html.has-workspace-background.has-native-glass:not(.theme-light) body,
+html.has-workspace-background.has-native-glass:not(.theme-light) #root,
+html.has-workspace-background.has-native-glass:not(.theme-light) .app-canvas,
+html.has-workspace-background .sidebar-glass,
+html.has-workspace-background .body-glass,
+html.has-workspace-background .bycoda-sidebar.body-glass,
+html.has-workspace-background.has-native-glass:not(.theme-light) .sidebar-glass,
+html.has-workspace-background.has-native-glass:not(.theme-light) .body-glass.sidebar-pane,
+html.has-workspace-background.has-native-glass.glass-body:not(.theme-light) .body-glass {
+  background: transparent;
+}
 
-  html.has-workspace-background .chat-pane-background,
-  html.has-workspace-background.has-native-glass:not(.theme-light) .chat-pane-background {
-    background-color: transparent;
-  }
+html.has-workspace-background .chat-pane-background,
+html.has-workspace-background.has-native-glass:not(.theme-light) .chat-pane-background {
+  background-color: transparent;
+}
 
-  html.has-workspace-background .bycoda-sidebar [data-session-card][data-selected] {
-    --action-host-selected: var(--ui-navigation-selected-layer);
-  }
+html.has-workspace-background .bycoda-sidebar [data-session-card][data-selected] {
+  --action-host-selected: var(--ui-navigation-selected-layer);
+}
 
 /* Unknown media features must not disable artwork; only explicit user opt-outs do. */
 @media (forced-colors: active), (prefers-reduced-transparency: reduce) {

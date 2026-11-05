@@ -1,6 +1,7 @@
 import { AssistantManagedBadge } from "../../features/sessions/ui/AssistantManagedBadge";
 import { DropdownMenu } from "../../shared/ui/DropdownMenu";
 import { Button } from "../../shared/ui/Button";
+import { ContinuousList } from "../../shared/ui/ContinuousList";
 import { ActionHost, InlineAction } from "../../shared/ui/ActionHost";
 import { useMinuteNow } from "./RelativeSessionTime";
 import { getLocale, useT } from "../../shared/i18n";
@@ -92,9 +93,12 @@ export function useLastSessionsRows({
     saveRecentSessionsPrefs(next);
   };
   const togglePin = (row: RecentSessionRow) => {
-    void source.onPin(row, !row.pinned).then(refresh).catch((error: unknown) => {
-      console.error("Could not refresh pinned session:", error);
-    });
+    void source
+      .onPin(row, !row.pinned)
+      .then(refresh)
+      .catch((error: unknown) => {
+        console.error("Could not refresh pinned session:", error);
+      });
   };
   return { prefs, update, rows, hasRows: rows.length > 0, togglePin, refresh };
 }
@@ -129,6 +133,7 @@ export function LastSessionsSection({
   lastSessionsOpen = false,
   drag,
   onShownChange,
+  listScopeKey,
   ...appearance
 }: {
   source: RecentSessionsSource;
@@ -145,6 +150,8 @@ export function LastSessionsSection({
   drag?: RailSectionDrag;
   /** Reports whether the section is on screen: it has nothing to show without sessions. */
   onShownChange?: (shown: boolean) => void;
+  /** Optional owner scope for query-specific Last sessions viewports. */
+  listScopeKey?: string;
 } & Appearance) {
   const t = useT();
   const { prefs, update, rows, hasRows, togglePin } = useLastSessionsRows({
@@ -204,6 +211,7 @@ export function LastSessionsSection({
           onOpenProject={onOpenProject}
           onTogglePin={togglePin}
           className={drag?.folded ? "hidden" : "flex"}
+          listScopeKey={listScopeKey}
           {...appearance}
         />
       )}
@@ -220,6 +228,7 @@ export function LastSessionsRows({
   onOpenProject,
   onTogglePin,
   className,
+  listScopeKey,
   ...appearance
 }: {
   rows: RecentSessionRow[];
@@ -229,6 +238,7 @@ export function LastSessionsRows({
   onOpenProject: (path: string) => void;
   onTogglePin: (row: RecentSessionRow) => void;
   className?: string;
+  listScopeKey?: string;
 } & Appearance) {
   const t = useT();
   const [menu, setMenu] = useState<{
@@ -244,21 +254,27 @@ export function LastSessionsRows({
       <div
         role="list"
         aria-label={t("Last sessions")}
-        className={`flex-col gap-px overflow-y-auto px-2 ${className ?? ""}`}
+        className={`flex min-h-0 flex-1 flex-col gap-px ${className ?? ""}`}
       >
-        {rows.map((row) => (
-          <SessionRow
-            key={JSON.stringify([row.cwd, row.id])}
-            row={row}
-            now={now}
-            selected={!searchActive && row.id === activeSessionId}
-            onOpen={() => onOpenSession?.(row.id, row.cwd)}
-            onKeepOpen={() => onOpenSession?.(row.id, row.cwd, { keepOpen: true })}
-            onTogglePin={() => onTogglePin(row)}
-            onOpenMenu={(x, y) => setMenu({ x, y, row })}
-            {...appearance}
-          />
-        ))}
+        <ContinuousList
+          className="flex-1 min-h-0 px-2"
+          items={rows}
+          itemKey={(row) => JSON.stringify([row.cwd, row.id])}
+          stateKey={listScopeKey ?? "last-sessions:rail"}
+          estimateSize={56}
+          renderItem={(row) => (
+            <SessionRow
+              row={row}
+              now={now}
+              selected={!searchActive && row.id === activeSessionId}
+              onOpen={() => onOpenSession?.(row.id, row.cwd)}
+              onKeepOpen={() => onOpenSession?.(row.id, row.cwd, { keepOpen: true })}
+              onTogglePin={() => onTogglePin(row)}
+              onOpenMenu={(x, y) => setMenu({ x, y, row })}
+              {...appearance}
+            />
+          )}
+        />
       </div>
       {menu && menuRow ? (
         <ExplorerMenu

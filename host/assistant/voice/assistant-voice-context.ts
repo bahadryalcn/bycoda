@@ -1,6 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
-import { mergeNativeLibraryProofs, type NativeLibraryProof } from "../../../src/shared/model/nativeLibraryProof";
+import {
+  mergeNativeLibraryProofs,
+  type NativeLibraryProof,
+} from "../../../src/shared/model/nativeLibraryProof";
 import type { HostStore } from "../../store";
 import type {
   AssistantMessage,
@@ -81,12 +84,30 @@ export type AssistantVoiceMessageAction = {
 };
 type Ports = {
   message(id: string): Promise<AssistantMessage | null>;
-  messageProjectProofs?(message: AssistantMessage): Promise<{ projectId: string; cwd: string }[] | undefined>;
+  messageProjectProofs?(
+    message: AssistantMessage,
+  ): Promise<{ projectId: string; cwd: string }[] | undefined>;
   messageNativeProofs?(message: AssistantMessage): Promise<NativeLibraryProof[] | undefined>;
   thread(id: string): Promise<AssistantThread | null>;
   summary?(threadId: string, id: string): Promise<AssistantThreadSummaryProof | undefined>;
-  summarySources?(threadId: string, id: string): Promise<{ projectProofs: { projectId: string; cwd: string }[]; accountProofs: { accountId: string; version: string }[]; nativeProofs?: NativeLibraryProof[] } | undefined>;
-  summarySourcesValid?(threadId: string, sources: { projectProofs: { projectId: string; cwd: string }[]; accountProofs: { accountId: string; version: string }[] }): Promise<boolean>;
+  summarySources?(
+    threadId: string,
+    id: string,
+  ): Promise<
+    | {
+        projectProofs: { projectId: string; cwd: string }[];
+        accountProofs: { accountId: string; version: string }[];
+        nativeProofs?: NativeLibraryProof[];
+      }
+    | undefined
+  >;
+  summarySourcesValid?(
+    threadId: string,
+    sources: {
+      projectProofs: { projectId: string; cwd: string }[];
+      accountProofs: { accountId: string; version: string }[];
+    },
+  ): Promise<boolean>;
   now?(): number;
 };
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -236,7 +257,13 @@ export class HostAssistantVoiceContexts {
       if (context.summaryProofId) {
         const proof = await this.ports.summary?.(context.threadId, context.summaryProofId);
         const sources = await this.ports.summarySources?.(context.threadId, context.summaryProofId);
-        if (!proof || !sources || !this.ports.summarySourcesValid || !(await this.ports.summarySourcesValid(context.threadId, sources))) return undefined;
+        if (
+          !proof ||
+          !sources ||
+          !this.ports.summarySourcesValid ||
+          !(await this.ports.summarySourcesValid(context.threadId, sources))
+        )
+          return undefined;
         for (const id of proof.projectIds) projects.add(id);
       }
       for (const ref of context.refs) {
@@ -250,10 +277,19 @@ export class HostAssistantVoiceContexts {
           return undefined;
         if (message.role === "assistant" && message.projectIds.length) {
           const proofs = await this.ports.messageProjectProofs?.(message);
-          if (!proofs || message.projectIds.some(projectId => !proofs.some(proof => proof.projectId === projectId))) return undefined;
+          if (
+            !proofs ||
+            message.projectIds.some(
+              (projectId) => !proofs.some((proof) => proof.projectId === projectId),
+            )
+          )
+            return undefined;
           for (const proof of proofs) {
-            try { if ((await this.store.project(proof.projectId)).cwd !== proof.cwd) return undefined; }
-            catch { return undefined; }
+            try {
+              if ((await this.store.project(proof.projectId)).cwd !== proof.cwd) return undefined;
+            } catch {
+              return undefined;
+            }
           }
         }
         for (const id of message.projectIds) projects.add(id);
@@ -263,13 +299,33 @@ export class HostAssistantVoiceContexts {
         if (ticket.state !== "complete" || !ticket.projectIds) return undefined;
         if (ticket.source?.nativeLibrary && !ticket.source.nativeProofs?.length) return undefined;
         try {
-          if (ticket.source?.nativeProofs?.some(proof => proof.environmentId !== context.environmentId || proof.threadId !== context.threadId)) return undefined;
+          if (
+            ticket.source?.nativeProofs?.some(
+              (proof) =>
+                proof.environmentId !== context.environmentId ||
+                proof.threadId !== context.threadId,
+            )
+          )
+            return undefined;
           mergeNativeLibraryProofs(ticket.source?.nativeProofs ?? []);
-        } catch { return undefined; }
-        if (ticket.projectIds.length && (!ticket.source?.projectProofs || ticket.projectIds.some(projectId => !ticket.source!.projectProofs!.some(proof => proof.projectId === projectId)))) return undefined;
+        } catch {
+          return undefined;
+        }
+        if (
+          ticket.projectIds.length &&
+          (!ticket.source?.projectProofs ||
+            ticket.projectIds.some(
+              (projectId) =>
+                !ticket.source!.projectProofs!.some((proof) => proof.projectId === projectId),
+            ))
+        )
+          return undefined;
         for (const proof of ticket.source?.projectProofs ?? []) {
-          try { if ((await this.store.project(proof.projectId)).cwd !== proof.cwd) return undefined; }
-          catch { return undefined; }
+          try {
+            if ((await this.store.project(proof.projectId)).cwd !== proof.cwd) return undefined;
+          } catch {
+            return undefined;
+          }
         }
         for (const projectId of ticket.projectIds) projects.add(projectId);
       }
@@ -324,14 +380,28 @@ export class HostAssistantVoiceContexts {
     await this.ready;
     return (await this.context(id)).version;
   }
-  async pendingGeneration(contextId: string, requestId: string, threadId: string): Promise<{ generationKey: string }> {
+  async pendingGeneration(
+    contextId: string,
+    requestId: string,
+    threadId: string,
+  ): Promise<{ generationKey: string }> {
     await this.ready;
     return this.store.db.scope(async () => {
       const context = await this.context(contextId);
-      if (context.threadId !== threadId) throw new Error("Voice generation belongs to another Room.");
-      const row = await this.store.db.prepare("SELECT value FROM assistant_voice_disclosures WHERE request_key=?").get(hash([key(threadId, context.generationKey), requestId]));
-      const ticket = row ? JSON.parse(String(row.value)) as Ticket : undefined;
-      if (!ticket || ticket.state !== "pending" || ticket.contextId !== contextId || ticket.threadId !== threadId || ticket.generationKey !== context.generationKey) throw new Error("Voice generation disclosure is unavailable.");
+      if (context.threadId !== threadId)
+        throw new Error("Voice generation belongs to another Room.");
+      const row = await this.store.db
+        .prepare("SELECT value FROM assistant_voice_disclosures WHERE request_key=?")
+        .get(hash([key(threadId, context.generationKey), requestId]));
+      const ticket = row ? (JSON.parse(String(row.value)) as Ticket) : undefined;
+      if (
+        !ticket ||
+        ticket.state !== "pending" ||
+        ticket.contextId !== contextId ||
+        ticket.threadId !== threadId ||
+        ticket.generationKey !== context.generationKey
+      )
+        throw new Error("Voice generation disclosure is unavailable.");
       return { generationKey: context.generationKey };
     });
   }
@@ -544,52 +614,97 @@ export class HostAssistantVoiceContexts {
       return undefined;
     return this.scope(context);
   }
-  async historicalNativeProofs(id: string, version: number, threadId: string, allowPending = false): Promise<NativeLibraryProof[] | undefined> {
+  async historicalNativeProofs(
+    id: string,
+    version: number,
+    threadId: string,
+    allowPending = false,
+  ): Promise<NativeLibraryProof[] | undefined> {
     await this.ready;
     const resolving = this.nativeResolving.getStore() ?? new Set<string>();
     const resolveKey = `${id}:${version}`;
     if (resolving.has(resolveKey) || resolving.size >= 64) return undefined;
     return this.nativeResolving.run(new Set([...resolving, resolveKey]), async () => {
-    const row = await this.store.db.prepare("SELECT value FROM assistant_voice_context_versions WHERE context_id=? AND version=?").get(id, version);
-    if (!row) return undefined;
-    const context = JSON.parse(String(row.value)) as Context;
-    if (context.threadId !== threadId || context.environmentId !== this.store.environmentId || context.unknown || (!allowPending && context.pendingIds.length)) return undefined;
-    try {
-      let proofs: NativeLibraryProof[] = [];
-      if (context.summaryProofId) {
-        const summary = await this.ports.summarySources?.(threadId, context.summaryProofId);
-        if (!summary) return undefined;
-        proofs = mergeNativeLibraryProofs(proofs, summary.nativeProofs ?? []);
+      const row = await this.store.db
+        .prepare(
+          "SELECT value FROM assistant_voice_context_versions WHERE context_id=? AND version=?",
+        )
+        .get(id, version);
+      if (!row) return undefined;
+      const context = JSON.parse(String(row.value)) as Context;
+      if (
+        context.threadId !== threadId ||
+        context.environmentId !== this.store.environmentId ||
+        context.unknown ||
+        (!allowPending && context.pendingIds.length)
+      )
+        return undefined;
+      try {
+        let proofs: NativeLibraryProof[] = [];
+        if (context.summaryProofId) {
+          const summary = await this.ports.summarySources?.(threadId, context.summaryProofId);
+          if (!summary) return undefined;
+          proofs = mergeNativeLibraryProofs(proofs, summary.nativeProofs ?? []);
+        }
+        for (const ref of context.refs) {
+          const message = await this.ports.message(ref.id);
+          if (
+            !message ||
+            message.threadId !== threadId ||
+            messageFingerprint(message) !== ref.fingerprint
+          )
+            return undefined;
+          const inherited = await this.ports.messageNativeProofs?.(message);
+          if (!inherited) return undefined;
+          proofs = mergeNativeLibraryProofs(proofs, inherited);
+        }
+        for (const id of context.ticketIds) {
+          const ticket = await this.ticket(id);
+          if (
+            ticket.state !== "complete" ||
+            (ticket.source?.nativeLibrary && !ticket.source.nativeProofs?.length)
+          )
+            return undefined;
+          proofs = mergeNativeLibraryProofs(proofs, ticket.source?.nativeProofs ?? []);
+        }
+        if (
+          proofs.some(
+            (proof) => proof.environmentId !== context.environmentId || proof.threadId !== threadId,
+          )
+        )
+          return undefined;
+        return proofs;
+      } catch {
+        return undefined;
       }
-      for (const ref of context.refs) {
-        const message = await this.ports.message(ref.id);
-        if (!message || message.threadId !== threadId || messageFingerprint(message) !== ref.fingerprint) return undefined;
-        const inherited = await this.ports.messageNativeProofs?.(message);
-        if (!inherited) return undefined;
-        proofs = mergeNativeLibraryProofs(proofs, inherited);
-      }
-      for (const id of context.ticketIds) {
-        const ticket = await this.ticket(id);
-        if (ticket.state !== "complete" || (ticket.source?.nativeLibrary && !ticket.source.nativeProofs?.length)) return undefined;
-        proofs = mergeNativeLibraryProofs(proofs, ticket.source?.nativeProofs ?? []);
-      }
-      if (proofs.some(proof => proof.environmentId !== context.environmentId || proof.threadId !== threadId)) return undefined;
-      return proofs;
-    } catch { return undefined; }
     });
   }
-  async historicalProjectProofs(id: string, version: number, threadId: string): Promise<{ projectId: string; cwd: string }[] | undefined> {
+  async historicalProjectProofs(
+    id: string,
+    version: number,
+    threadId: string,
+  ): Promise<{ projectId: string; cwd: string }[] | undefined> {
     await this.ready;
-    const row = await this.store.db.prepare("SELECT value FROM assistant_voice_context_versions WHERE context_id=? AND version=?").get(id, version);
+    const row = await this.store.db
+      .prepare(
+        "SELECT value FROM assistant_voice_context_versions WHERE context_id=? AND version=?",
+      )
+      .get(id, version);
     if (!row) return undefined;
     const context = JSON.parse(row.value) as Context;
-    if (context.threadId !== threadId || context.environmentId !== this.store.environmentId) return undefined;
+    if (context.threadId !== threadId || context.environmentId !== this.store.environmentId)
+      return undefined;
     const scope = await this.scope(context);
     if (!scope) return undefined;
     const proofs = new Map<string, string>();
     if (context.summaryProofId) {
       const sources = await this.ports.summarySources?.(threadId, context.summaryProofId);
-      if (!sources || !this.ports.summarySourcesValid || !(await this.ports.summarySourcesValid(threadId, sources))) return undefined;
+      if (
+        !sources ||
+        !this.ports.summarySourcesValid ||
+        !(await this.ports.summarySourcesValid(threadId, sources))
+      )
+        return undefined;
       for (const proof of sources.projectProofs) proofs.set(proof.projectId, proof.cwd);
     }
     for (const ref of context.refs) {
@@ -598,7 +713,8 @@ export class HostAssistantVoiceContexts {
       const inherited = await this.ports.messageProjectProofs(message);
       if (!inherited) return undefined;
       for (const proof of inherited) {
-        if (proofs.has(proof.projectId) && proofs.get(proof.projectId) !== proof.cwd) return undefined;
+        if (proofs.has(proof.projectId) && proofs.get(proof.projectId) !== proof.cwd)
+          return undefined;
         proofs.set(proof.projectId, proof.cwd);
       }
     }
@@ -606,11 +722,12 @@ export class HostAssistantVoiceContexts {
       const ticket = await this.ticket(ticketId);
       if (ticket.state !== "complete") return undefined;
       for (const proof of ticket.source?.projectProofs ?? []) {
-        if (proofs.has(proof.projectId) && proofs.get(proof.projectId) !== proof.cwd) return undefined;
+        if (proofs.has(proof.projectId) && proofs.get(proof.projectId) !== proof.cwd)
+          return undefined;
         proofs.set(proof.projectId, proof.cwd);
       }
     }
-    if (scope.some(projectId => !proofs.has(projectId))) return undefined;
+    if (scope.some((projectId) => !proofs.has(projectId))) return undefined;
     return [...proofs].map(([projectId, cwd]) => ({ projectId, cwd }));
   }
   async actionsForMessage(
@@ -737,14 +854,34 @@ export class HostAssistantVoiceContexts {
     source: AssistantVoiceToolSource,
     threadId: string,
   ): Promise<{ projectIds: string[]; resultHash: string } | undefined> {
-    const native = source.nativeLibrary === true && source.family === "conversation" && ["observations.read", "observations.ack", "observations.resnapshot"].includes(source.action) && !source.projectId && !source.accountId && !!source.nativeProofs?.length;
+    const native =
+      source.nativeLibrary === true &&
+      source.family === "conversation" &&
+      ["observations.read", "observations.ack", "observations.resnapshot"].includes(
+        source.action,
+      ) &&
+      !source.projectId &&
+      !source.accountId &&
+      !!source.nativeProofs?.length;
     try {
-      if (source.nativeLibrary && (!native || mergeNativeLibraryProofs(source.nativeProofs ?? []).some(proof => proof.threadId !== threadId || proof.environmentId !== this.store.environmentId))) return undefined;
+      if (
+        source.nativeLibrary &&
+        (!native ||
+          mergeNativeLibraryProofs(source.nativeProofs ?? []).some(
+            (proof) =>
+              proof.threadId !== threadId || proof.environmentId !== this.store.environmentId,
+          ))
+      )
+        return undefined;
       if (!source.nativeLibrary && source.nativeProofs?.length) return undefined;
-    } catch { return undefined; }
+    } catch {
+      return undefined;
+    }
     if (
       source.threadId !== threadId ||
-      (!source.projectId && !native && !(source.family === "conversation" && source.action === "tools.list")) ||
+      (!source.projectId &&
+        !native &&
+        !(source.family === "conversation" && source.action === "tools.list")) ||
       !(
         native ||
         (source.family === "conversation" && supportedConversation.has(source.action)) ||
@@ -816,9 +953,24 @@ export class HostAssistantVoiceContexts {
           projects.add(projectId);
       }
       if (projects.size > 1000) return undefined;
-      if (projects.size && (!source.projectProofs || [...projects].some(projectId => !source.projectProofs!.some(proof => proof.projectId === projectId)))) return undefined;
-      if (source.projectProofs && (source.projectProofs.length > 1000 || source.projectProofs.some(proof => !proof.projectId || !proof.cwd || proof.cwd.length > 4096))) return undefined;
-      for (const proof of source.projectProofs ?? []) if ((await this.store.project(proof.projectId)).cwd !== proof.cwd) return undefined;
+      if (
+        projects.size &&
+        (!source.projectProofs ||
+          [...projects].some(
+            (projectId) => !source.projectProofs!.some((proof) => proof.projectId === projectId),
+          ))
+      )
+        return undefined;
+      if (
+        source.projectProofs &&
+        (source.projectProofs.length > 1000 ||
+          source.projectProofs.some(
+            (proof) => !proof.projectId || !proof.cwd || proof.cwd.length > 4096,
+          ))
+      )
+        return undefined;
+      for (const proof of source.projectProofs ?? [])
+        if ((await this.store.project(proof.projectId)).cwd !== proof.cwd) return undefined;
       for (const id of projects) await this.store.project(id);
     } catch {
       return undefined;
@@ -841,7 +993,18 @@ export class HostAssistantVoiceContexts {
       family: source.family,
       action: source.action,
     });
-    if (subject.accountId && (!(subject.family === "social" || (subject.family === "conversation" && ["observations.read", "observations.ack", "observations.resnapshot"].includes(subject.action))) || subject.projectId || subject.sessionId))
+    if (
+      subject.accountId &&
+      (!(
+        subject.family === "social" ||
+        (subject.family === "conversation" &&
+          ["observations.read", "observations.ack", "observations.resnapshot"].includes(
+            subject.action,
+          ))
+      ) ||
+        subject.projectId ||
+        subject.sessionId)
+    )
       throw new Error("The voice tool account target is invalid.");
     if (subject.projectId) await this.store.project(subject.projectId);
     const thread = await this.ports.thread(subject.threadId);
@@ -849,7 +1012,8 @@ export class HostAssistantVoiceContexts {
       throw new Error("The voice tool operation belongs to another project.");
     if (
       subject.sessionId &&
-      (!subject.projectId || (await this.store.session(subject.sessionId)).projectId !== subject.projectId)
+      (!subject.projectId ||
+        (await this.store.session(subject.sessionId)).projectId !== subject.projectId)
     )
       throw new Error("The voice tool operation belongs to another session project.");
     return subject;
@@ -905,10 +1069,11 @@ export class HostAssistantVoiceContexts {
       if (head.id !== original.id) await this.save(output);
       const unattributed =
         !scope &&
-        (!source.projectId || !(
-          (source.family === "conversation" && supportedConversation.has(source.action)) ||
-          (source.family === "runtime-logs" && supportedLogs.has(source.action))
-        ));
+        (!source.projectId ||
+          !(
+            (source.family === "conversation" && supportedConversation.has(source.action)) ||
+            (source.family === "runtime-logs" && supportedLogs.has(source.action))
+          ));
       return {
         voiceContext: await this.output(output),
         voiceDisclosure: {
@@ -917,7 +1082,12 @@ export class HostAssistantVoiceContexts {
           requestId: ticket.requestId,
           verified: !!scope,
           ...(scope
-            ? { projectIds: scope.projectIds, ...(source.nativeLibrary ? { source: await this.operationSource(source, original) } : {}) }
+            ? {
+                projectIds: scope.projectIds,
+                ...(source.nativeLibrary
+                  ? { source: await this.operationSource(source, original) }
+                  : {}),
+              }
             : unattributed
               ? { source: await this.operationSource(source, original) }
               : {}),

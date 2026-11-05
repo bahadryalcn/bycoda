@@ -56,10 +56,11 @@ export function useOpenSessionTargets({
         ),
       );
       const cwd = focusedWorkspaceTabCwd(
-          { ...tab, layout: selectPaneTab(tab.layout, sessionId), focusedId: sessionId },
-          sessionsRef.current,
+        { ...tab, layout: selectPaneTab(tab.layout, sessionId), focusedId: sessionId },
+        sessionsRef.current,
       );
-      if (token) followProject(cwd, token); else followProject(cwd);
+      if (token) followProject(cwd, token);
+      else followProject(cwd);
       setComposerFocused(true);
       return true;
     },

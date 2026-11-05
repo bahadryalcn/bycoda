@@ -208,8 +208,10 @@ it("settles Room project selection only after the canonical recents mutation", a
   configureDestination();
   const source = hostSession();
   await mount(source);
-  await act(async () => { await projects.onSelectProject("G:/beta", "native-pending"); });
-  expect(loadRecents().some(project => project.path === "G:/beta")).toBe(true);
+  await act(async () => {
+    await projects.onSelectProject("G:/beta", "native-pending");
+  });
+  expect(loadRecents().some((project) => project.path === "G:/beta")).toBe(true);
   expectHostUntouched(source);
 });
 

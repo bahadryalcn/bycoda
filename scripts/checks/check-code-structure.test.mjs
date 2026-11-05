@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   compare,
   countFindings,
+  declaredPublicEntries,
   resolveSpecifier,
   scanFile,
   scanImports,
@@ -76,7 +77,8 @@ test("layer imports: foundation and features may not reach app; host may not rea
   assert.deepEqual(scanImports("src/features/voice/ui/A.tsx", 'import x from "react";'), []);
 });
 
-test("cross-feature imports are advisory and only count deep paths", () => {
+test("cross-feature imports require declared public entries and gate deep paths", () => {
+  const publicEntries = new Set(["src/features/sessions/public/questionDrafts"]);
   const deep = scanImports(
     "src/features/tasks/ui/A.tsx",
     'import { s } from "../../sessions/data/sessionStore";',
@@ -90,6 +92,26 @@ test("cross-feature imports are advisory and only count deep paths", () => {
     [],
   );
   assert.deepEqual(
+    scanImports("src/features/tasks/ui/A.tsx", 'import { s } from "../../sessions/index";'),
+    [],
+  );
+  assert.deepEqual(
+    scanImports(
+      "src/features/tasks/ui/A.tsx",
+      'import { s } from "../../sessions/public/questionDrafts";',
+      publicEntries,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    scanImports(
+      "src/features/tasks/ui/A.tsx",
+      'import { s } from "../../sessions/public/unlisted";',
+      publicEntries,
+    ).map((finding) => finding.rule),
+    ["cross-feature-deep-import"],
+  );
+  assert.deepEqual(
     scanImports("src/features/tasks/ui/A.tsx", 'import { s } from "../model/tasks";'),
     [],
   );
@@ -97,8 +119,37 @@ test("cross-feature imports are advisory and only count deep paths", () => {
     ["src/features/tasks/ui/A.tsx"],
     () => 'import { s } from "../../sessions/data/sessionStore";',
   );
-  assert.deepEqual(counts, {});
+  assert.deepEqual(counts, {
+    "src/features/tasks/ui/A.tsx": { "cross-feature-deep-import": 1 },
+  });
   assert.equal(details.length, 1);
+  assert.deepEqual(compare(counts, {}, null), [
+    {
+      file: "src/features/tasks/ui/A.tsx",
+      rule: "cross-feature-deep-import",
+      count: 1,
+      allowed: 0,
+    },
+  ]);
+  const accepted = countFindings(
+    ["src/features/tasks/ui/A.tsx"],
+    () => 'import { s } from "../../sessions/public/questionDrafts";',
+    publicEntries,
+  );
+  assert.deepEqual(accepted.counts, {});
+});
+
+test("public entries come only from explicit feature index declarations", () => {
+  const entries = declaredPublicEntries(
+    ["src/features/sessions/index.ts", "src/features/tasks/ui/A.tsx"],
+    () =>
+      [
+        'export type * as modelQuestionDraftsApi from "./public/questionDrafts";',
+        'export type * as notPublicApi from "./model/notPublic";',
+        'export type * as headlessApi from "./headless";',
+      ].join("\n"),
+  );
+  assert.deepEqual([...entries], ["src/features/sessions/public/questionDrafts"]);
 });
 
 test("compare reports only counts above the baseline and honours the file scope", () => {

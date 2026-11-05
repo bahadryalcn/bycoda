@@ -1,12 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "../../../shared/i18n";
-import { sameQueuedModelTarget } from "../../sessions/model/messageQueue";
-import type {
-  Attachment,
-  ComposerTurnOptions,
-  QueuedMessage,
-  RuntimeMode,
-} from "../../sessions/model/session";
+import { sameQueuedModelTarget } from "../../sessions/public/messageQueue";
+import type { Attachment, ComposerTurnOptions, QueuedMessage, RuntimeMode } from "../../sessions";
 import type { RemoteProvider } from "./protocol";
 import { remoteIntentAuthority, remoteIntentAuthorityMatches } from "./remoteOutbox";
 

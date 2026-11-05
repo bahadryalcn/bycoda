@@ -25,7 +25,7 @@ import {
   type ProjectSearchOptions,
   type ProjectSearchResult,
 } from "../../search/model/search";
-import { FileTypeIcon } from "../../files/ui/FileTypeIcon";
+import { FileTypeIcon } from "../../files/public/FileTypeIcon";
 import { useRetainedState } from "../../../shared/hooks/useRetainedState";
 import { pathKey } from "../../../shared/lib/paths";
 import { isImeComposition } from "../../../shared/lib/keyboard";

@@ -5,7 +5,7 @@ import { CircleDashed, X } from "../../../shared/ui/icons";
 import { MAX_PREVIEW_LINES } from "../../../integrations/harness/core/preview";
 import { formatInteger } from "../../../shared/lib/numbers";
 import { displayPath, resolveWorkspacePath } from "../../../shared/lib/paths";
-import type { ToolPreview, ToolPreviewLine } from "../../sessions/model/session";
+import type { ToolPreview, ToolPreviewLine } from "../../sessions";
 import { FileTypeIcon } from "./FileTypeIcon";
 
 type Status = "pending" | "accepted" | "rejected";

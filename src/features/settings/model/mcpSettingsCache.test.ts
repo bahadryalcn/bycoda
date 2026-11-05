@@ -27,6 +27,21 @@ beforeEach(() => {
 });
 afterEach(clearMcpSettingsCache);
 
+it("clears verified connection and sign-in after failed discovery without losing configuration", async () => {
+  invoke.mockImplementation(async (command: string) =>
+    command === "mcp_discover" ? configured : "docs: local - Connected",
+  );
+  await loadMcpSettings("/repo");
+  await vi.waitFor(() =>
+    expect(getCachedMcpSettings("/repo")?.servers[0].status).toBe("Connected"),
+  );
+  invoke.mockRejectedValue(new Error("Discovery unavailable"));
+  const snapshot = await loadMcpSettings("/repo", true);
+  expect(snapshot.servers).toEqual([{ ...configured[0], status: "Configured" }]);
+  expect(snapshot.error).toContain("Discovery unavailable");
+  expect(snapshot.claudeChecking).toBeUndefined();
+});
+
 it("never sends remote project paths to desktop discovery or health commands", async () => {
   const snapshot = await loadMcpSettings("remote://fixture-host/work/project", true);
   expect(snapshot).toEqual({ servers: [], error: MCP_LOCAL_ONLY_ERROR, claudeError: "" });

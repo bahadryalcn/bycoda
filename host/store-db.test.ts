@@ -729,11 +729,14 @@ it("authenticates warm tokens without entering SQLite and invalidates them on re
   unsubscribe();
 });
 
-
 it("cancels queued read admission without ever dispatching its work after the original owner leaves", async () => {
   const { store } = await fixture();
-  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>();
-  const original = store.db.scope(async () => { entered.resolve(); await release.promise; });
+  const entered = Promise.withResolvers<void>(),
+    release = Promise.withResolvers<void>();
+  const original = store.db.scope(async () => {
+    entered.resolve();
+    await release.promise;
+  });
   await entered.promise;
   const controller = new AbortController();
   const read = vi.fn(async () => "should never run");
@@ -747,10 +750,17 @@ it("cancels queued read admission without ever dispatching its work after the or
   expect(read).not.toHaveBeenCalled();
 });
 
-
 it("reads cold Host snapshots in the original cancellable scope while retaining pending/cache precedence", async () => {
   const { store, value } = await fixture();
-  const changed = { ...value, revision: 2, updatedAt: 2, session: { ...value.session, blocks: [{ id: "answer", role: "assistant" as const, text: "exact cold journal" }] } };
+  const changed = {
+    ...value,
+    revision: 2,
+    updatedAt: 2,
+    session: {
+      ...value.session,
+      blocks: [{ id: "answer", role: "assistant" as const, text: "exact cold journal" }],
+    },
+  };
   await store.save(changed, {});
   await store.flushAll();
   (store as unknown as { cache: Map<string, unknown> }).cache.clear();
@@ -758,6 +768,11 @@ it("reads cold Host snapshots in the original cancellable scope while retaining 
   const cold = await store.session("session", controller.signal);
   expect(cold.revision).toBe(2);
   expect(cold.session.blocks).toEqual(changed.session.blocks);
-  await store.save({ ...changed, revision: 3, session: { ...changed.session, title: "Unflushed owner value" } }, {});
-  expect((await store.session("session", controller.signal)).session.title).toBe("Unflushed owner value");
+  await store.save(
+    { ...changed, revision: 3, session: { ...changed.session, title: "Unflushed owner value" } },
+    {},
+  );
+  expect((await store.session("session", controller.signal)).session.title).toBe(
+    "Unflushed owner value",
+  );
 });

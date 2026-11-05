@@ -268,7 +268,9 @@ export function useTooltip({
       childList: true,
       characterData: true,
       attributes: true,
-      attributeFilter: ["class", "style", "hidden"],
+      // No "style": motion writes inline styles on each render; observing them looped
+      // overflow anchors (motion writes -> refresh -> render) under act().
+      attributeFilter: ["class", "hidden"],
     });
     window.addEventListener("resize", update);
     return () => {

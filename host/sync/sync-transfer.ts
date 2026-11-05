@@ -73,7 +73,12 @@ export class SyncTransfers {
       text,
       expires: Date.now() + TRANSFER_TTL_MS,
     });
-    return { kind: "chunked", transfer, length: text.length, ...(sync.value.sourceEpoch ? { sourceEpoch: sync.value.sourceEpoch } : {}) };
+    return {
+      kind: "chunked",
+      transfer,
+      length: text.length,
+      ...(sync.value.sourceEpoch ? { sourceEpoch: sync.value.sourceEpoch } : {}),
+    };
   }
 
   chunk(sessionId: string, transfer: string, offset: number): SessionSyncChunk {

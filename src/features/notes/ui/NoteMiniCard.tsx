@@ -39,7 +39,7 @@ export function NoteMiniCard({ card, onDismiss, embedded = false }: Props) {
   const inner = (
     <div
       data-note-card
-      className="note-mini-card flex items-start gap-2 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-(--ui-surface) px-2.5 py-2"
+      className="note-mini-card flex items-start gap-2 rounded-(--ui-radius-card) border border-(--ui-editor-border) bg-transparent px-2.5 py-2"
     >
       <File className="icon-sm mt-0.5 shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />
       <div className="flex min-w-0 flex-1 flex-col text-left">

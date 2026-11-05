@@ -211,33 +211,77 @@ export function bindNativeDevicesOwner(
           else if (method === "devices.control.status")
             result = await host.control.status(String(params.deviceId));
           else if (method === "devices.inspect") {
-            const deviceId = String(params.deviceId), owner = `paired:${principal}`, leaseId = String(params.leaseId ?? "");
-            const leasedEffect = { authorized: async () => {
-              if (!(await authorized())) return false;
-              try { await host.control.assert(deviceId, owner, leaseId); return true; } catch { return false; }
-            } };
+            const deviceId = String(params.deviceId),
+              owner = `paired:${principal}`,
+              leaseId = String(params.leaseId ?? "");
+            const leasedEffect = {
+              authorized: async () => {
+                if (!(await authorized())) return false;
+                try {
+                  await host.control.assert(deviceId, owner, leaseId);
+                  return true;
+                } catch {
+                  return false;
+                }
+              },
+            };
             await host.control.assert(deviceId, owner, leaseId);
             result = await host.inspect(deviceId, `${owner}:${leaseId}`, leasedEffect);
-          }
-          else if (method === "devices.control.claim") {
-            result = await host.control.claim(String(params.deviceId), `paired:${principal}`, String(params.requestId ?? ""), authorized);
+          } else if (method === "devices.control.claim") {
+            result = await host.control.claim(
+              String(params.deviceId),
+              `paired:${principal}`,
+              String(params.requestId ?? ""),
+              authorized,
+            );
             effectAdmitted?.();
           } else if (method === "devices.control.release") {
-            result = await host.control.release(String(params.deviceId), `paired:${principal}`, String(params.leaseId ?? ""));
+            result = await host.control.release(
+              String(params.deviceId),
+              `paired:${principal}`,
+              String(params.leaseId ?? ""),
+            );
             effectAdmitted?.();
           } else if (method === "devices.control.renew") {
-            result = await host.control.renew(String(params.deviceId), `paired:${principal}`, String(params.leaseId ?? ""));
+            result = await host.control.renew(
+              String(params.deviceId),
+              `paired:${principal}`,
+              String(params.leaseId ?? ""),
+            );
             effectAdmitted?.();
           } else {
-            const deviceId = String(params.deviceId ?? ""), owner = `paired:${principal}`, leaseId = String(params.leaseId ?? "");
-            result = await host.control.execute(deviceId, owner, leaseId, String(params.requestId ?? ""), params.action, async (track) => {
-              const leasedEffect = { track, authorized: async () => {
-                if (!(await authorized())) return false;
-                try { await host.control.assert(deviceId, owner, leaseId); return true; } catch { return false; }
-              } };
-              effectAdmitted?.();
-              return host.action(deviceId, params.action as DeviceAction, leasedEffect, `${owner}:${leaseId}`);
-            }, effectAdmitted);
+            const deviceId = String(params.deviceId ?? ""),
+              owner = `paired:${principal}`,
+              leaseId = String(params.leaseId ?? "");
+            result = await host.control.execute(
+              deviceId,
+              owner,
+              leaseId,
+              String(params.requestId ?? ""),
+              params.action,
+              async (track) => {
+                const leasedEffect = {
+                  track,
+                  authorized: async () => {
+                    if (!(await authorized())) return false;
+                    try {
+                      await host.control.assert(deviceId, owner, leaseId);
+                      return true;
+                    } catch {
+                      return false;
+                    }
+                  },
+                };
+                effectAdmitted?.();
+                return host.action(
+                  deviceId,
+                  params.action as DeviceAction,
+                  leasedEffect,
+                  `${owner}:${leaseId}`,
+                );
+              },
+              effectAdmitted,
+            );
           }
         }
         if (!(await authorized())) throw new HostDomainAuthorizationError();

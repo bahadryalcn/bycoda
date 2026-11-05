@@ -22,12 +22,15 @@ import { getLocale, t, useLocale } from "../../../shared/i18n";
 import { SocialContactHistory } from "./SocialHistoryPage";
 import { useSocialWorkspaceFilter } from "./useSocialWorkspaceFilter";
 import { JobHistory } from "./SocialHistory";
+import { socialQueryScope } from "../model/socialQuery";
 import type { SocialContact, SocialSnapshot, SocialThread } from "../model/social";
 import type { SocialClient } from "../model/socialClient";
 import { SocialModelField } from "./SocialModelField";
 import { HARNESS_TITLE } from "../../sessions/model/session";
 import { DEFAULT_SOCIAL_POLICIES, effectiveSocialPolicy } from "../model/socialPolicy";
 import { DraftList } from "./SocialDrafts";
+import { ContinuousList } from "../../../shared/ui/ContinuousList";
+import { SocialAudienceContactRow } from "./SocialAudienceContactRow";
 import {
   CONTACT_IMPORT_MAX_BYTES,
   previewContactImport,
@@ -340,67 +343,31 @@ export function Audience({
           ) : null}
           {contacts.length ? (
             <div className="social-list">
-              {contacts.map((contact) => (
-                <div className="social-selection-row" key={contact.id}>
-                  <label>
-                    <Checkbox
-                      disabled={socialLocked}
-                      aria-label={t("Select contact {p0}", { p0: contact.name })}
-                      checked={checkedIds.includes(contact.id)}
-                      onChange={(event) =>
-                        setCheckedIds((current) =>
-                          event.target.checked
-                            ? [...current, contact.id]
-                            : current.filter((id) => id !== contact.id),
-                        )
-                      }
-                    />
-                  </label>
-                  <Button
+              <ContinuousList
+                items={contacts}
+                itemKey={(contact) => contact.id}
+                stateKey={`social-audience:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}:${accountFilter}:${segment}:${query}`}
+                requiredKey={selectedId}
+                estimateSize={108}
+                renderItem={(contact) => (
+                  <SocialAudienceContactRow
+                    contact={contact}
+                    snapshot={snapshot}
+                    projects={projects}
+                    selected={contact.id === selectedId}
+                    checked={checkedIds.includes(contact.id)}
                     disabled={socialLocked}
-                    type="button"
-                    variant="tab"
-                    layout="stacked"
-                    className="social-row"
-                    aria-label={contact.name}
-                    aria-pressed={contact.id === selectedId}
-                    onClick={() => setSelectedId(contact.id)}
-                  >
-                    <strong>{contact.name}</strong>
-                    <span>
-                      {snapshot.accounts.find((account) => account.id === contact.accountId)
-                        ?.name ?? t("Account not found")}{" "}
-                      · {contact.platformId}
-                    </span>
-                    <span>
-                      {contact.projectIds
-                        .map(
-                          (id) =>
-                            projects.find((project) => project.id === id)?.name ??
-                            t("Inaccessible project"),
-                        )
-                        .join(", ")}
-                      {contact.tags.length ? ` · ${contact.tags.join(", ")}` : ""}
-                    </span>
-                    <StatusBadge
-                      status={
-                        contact.optedOut
-                          ? "cancelled"
-                          : contact.consent?.allowed
-                            ? "available"
-                            : "review"
-                      }
-                      label={
-                        contact.optedOut
-                          ? t("Contact closed")
-                          : contact.consent?.allowed
-                            ? t("Messaging allowed")
-                            : t("No messaging consent")
-                      }
-                    />
-                  </Button>
-                </div>
-              ))}
+                    onCheckedChange={(checked) =>
+                      setCheckedIds((current) =>
+                        checked
+                          ? [...current, contact.id]
+                          : current.filter((id) => id !== contact.id),
+                      )
+                    }
+                    onSelect={() => setSelectedId(contact.id)}
+                  />
+                )}
+              />
             </div>
           ) : (
             <Empty
@@ -695,7 +662,6 @@ export function Audience({
                 />
               </details>
               <SocialContactHistory contact={selected} client={client} />
-
               <DraftList
                 drafts={snapshot.drafts.filter(
                   (draft) => draft.contactId === selected.id && !draft.threadId,
@@ -703,6 +669,7 @@ export function Audience({
                 client={client}
                 run={run}
                 snapshot={snapshot}
+                scopeKey={`contact:${selected.id}`}
               />
               <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-(--ui-tone-neutral-border) pt-3">
                 <Button
@@ -1572,26 +1539,35 @@ export function Rules({
             />
           </div>
           <div className="social-list">
-            {visibleRules.map((rule) => (
-              <Button
-                disabled={socialLocked}
-                key={rule.id}
-                type="button"
-                variant="tab"
-                layout="stacked"
-                className="social-row"
-                aria-pressed={selectedRule?.id === rule.id}
-                onClick={() => setSelectedRuleId(rule.id)}
-              >
-                <strong>{rule.name}</strong>
-                <span>
-                  {snapshot.accounts.find((item) => item.id === rule.accountId)?.name ??
-                    t("Account not found")}{" "}
-                  · {rule.trigger === "comment" ? t("Comment") : t("Message")}
-                </span>
-                <StatusBadge status={rule.enabled ? "active" : "paused"} />
-              </Button>
-            ))}
+            {visibleRules.length ? (
+              <ContinuousList
+                items={visibleRules}
+                itemKey={(rule) => rule.id}
+                stateKey={`social-rules:${socialQueryScope(client).join(":")}:${snapshot.executorId}:${snapshot.programProjectId ?? "all"}:${ruleQuery}`}
+                requiredKey={selectedRule?.id}
+                estimateSize={92}
+                renderItem={(rule) => (
+                  <Button
+                    disabled={socialLocked}
+                    key={rule.id}
+                    type="button"
+                    variant="tab"
+                    layout="stacked"
+                    className="social-row"
+                    aria-pressed={selectedRule?.id === rule.id}
+                    onClick={() => setSelectedRuleId(rule.id)}
+                  >
+                    <strong>{rule.name}</strong>
+                    <span>
+                      {snapshot.accounts.find((item) => item.id === rule.accountId)?.name ??
+                        t("Account not found")}{" "}
+                      · {rule.trigger === "comment" ? t("Comment") : t("Message")}
+                    </span>
+                    <StatusBadge status={rule.enabled ? "active" : "paused"} />
+                  </Button>
+                )}
+              />
+            ) : null}
             {!visibleRules.length ? (
               <Empty
                 title={snapshot.rules.length ? t("No rules found") : t("Prepare replies with AI")}
@@ -1724,7 +1700,13 @@ export function Rules({
             : null}
           <h2>{t("Replies to review")}</h2>
 
-          <DraftList drafts={snapshot.drafts} client={client} run={run} snapshot={snapshot} />
+          <DraftList
+            drafts={snapshot.drafts}
+            client={client}
+            run={run}
+            snapshot={snapshot}
+            scopeKey={`rules:${ruleQuery}`}
+          />
           {!snapshot.drafts.length ? (
             <p className="social-muted">{t("No reply drafts to review.")}</p>
           ) : null}

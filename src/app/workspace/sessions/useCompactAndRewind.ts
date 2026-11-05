@@ -250,7 +250,8 @@ export function useCompactAndRewind({
       )
         throw new Error(t("Wait for this session to finish before undoing the rewind."));
       const editToken = editedResends.start(sessionId);
-      if (!editToken) throw new Error(t("Wait for this session to finish before undoing the rewind."));
+      if (!editToken)
+        throw new Error(t("Wait for this session to finish before undoing the rewind."));
       const authorityGeneration = current.adoptedAuthorityGeneration;
       try {
         await stopHarnessSession(current.harness, sessionId);

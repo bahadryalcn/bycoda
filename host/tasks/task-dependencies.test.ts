@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { HostStore } from "../store";
 import { HostEngine } from "../engine";
-import { HostTasks } from "./tasks";
+import { HostTasks } from "./service";
 const stores: HostStore[] = [];
 afterEach(async () => {
   for (const store of await stores.splice(0)) await store.close();

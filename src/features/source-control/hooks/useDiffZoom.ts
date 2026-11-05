@@ -12,8 +12,8 @@ import {
   codeZoomScale,
   subscribeCodeZoom,
   zoomCodeByWheel,
-} from "../../files/editor/editorZoom";
-import { anchoredScroll } from "../../files/ui/documentZoom";
+} from "../../files/public/editorZoom";
+import { anchoredScroll } from "../../files/public/documentZoom";
 import { diffRowMetrics } from "../model/unifiedDiffWindow";
 
 /**

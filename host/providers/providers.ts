@@ -39,9 +39,16 @@ import { PI_FLAVOR, OMP_FLAVOR } from "../../src/integrations/harness/providers/
 import { respondQuestion as respondPiQuestion } from "../../src/integrations/harness/providers/pi/piFamily";
 import { readSkillPolicy } from "../skills/skill-policy";
 import { withSkillPolicy } from "../../src/integrations/harness/core/skillPolicy";
-import { getReportedCommands, reportedSkillRestrictions } from "../../src/integrations/harness/core/reportedCommands";
+import {
+  getReportedCommands,
+  reportedSkillRestrictions,
+} from "../../src/integrations/harness/core/reportedCommands";
 
-export type HostPolicyInput = SendTurnInput | CompactContextInput | RewindLastTurnInput | SteerTurnInput;
+export type HostPolicyInput =
+  | SendTurnInput
+  | CompactContextInput
+  | RewindLastTurnInput
+  | SteerTurnInput;
 
 export interface HostProvider {
   send(input: SendTurnInput): Promise<void>;
@@ -208,23 +215,42 @@ export function withMachineSkillPolicy(
   id: RemoteProvider,
   provider: HostProvider,
   readPolicy = readSkillPolicy,
-  installedSkills: (cwd: string) => readonly import("../../src/features/skills/model/skillProviderScope").ProviderScopedSkill[] | Promise<readonly import("../../src/features/skills/model/skillProviderScope").ProviderScopedSkill[]> = async (cwd) => {
+  installedSkills: (
+    cwd: string,
+  ) =>
+    | readonly import("../../src/features/skills/model/skillProviderScope").ProviderScopedSkill[]
+    | Promise<
+        readonly import("../../src/features/skills/model/skillProviderScope").ProviderScopedSkill[]
+      > = async (cwd) => {
     const result = await listHostSkillCandidatesAsync(cwd);
-    if (result.truncated) throw new Error("Skill discovery is incomplete; provider admission refused.");
+    if (result.truncated)
+      throw new Error("Skill discovery is incomplete; provider admission refused.");
     return result.skills;
   },
 ): HostProvider {
-  type Candidates = readonly import("../../src/features/skills/model/skillProviderScope").ProviderScopedSkill[];
-  const preparedInputs = new WeakMap<HostPolicyInput, { original: HostPolicyInput; candidates: Candidates }>();
-  const apply = <T extends HostPolicyInput>(input: T, candidates: Candidates, mode: string = id): T => {
+  type Candidates =
+    readonly import("../../src/features/skills/model/skillProviderScope").ProviderScopedSkill[];
+  const preparedInputs = new WeakMap<
+    HostPolicyInput,
+    { original: HostPolicyInput; candidates: Candidates }
+  >();
+  const apply = <T extends HostPolicyInput>(
+    input: T,
+    candidates: Candidates,
+    mode: string = id,
+  ): T => {
     const machine = readPolicy();
     const native = reportedSkillRestrictions(getReportedCommands(input.sessionId));
-    const policy = withInstalledSkillScope({
-      disabledNames: [...new Set([...machine.disabledNames, ...native.disabledNames])],
-      disabledPaths: [...new Set([...machine.disabledPaths, ...native.disabledPaths])],
-    }, id, candidates);
+    const policy = withInstalledSkillScope(
+      {
+        disabledNames: [...new Set([...machine.disabledNames, ...native.disabledNames])],
+        disabledPaths: [...new Set([...machine.disabledPaths, ...native.disabledPaths])],
+      },
+      id,
+      candidates,
+    );
     return "text" in input && typeof input.text === "string"
-      ? withSkillPolicy(mode, { ...input, text: input.text }, policy) as T
+      ? (withSkillPolicy(mode, { ...input, text: input.text }, policy) as T)
       : { ...input, skillPolicy: policy };
   };
   const prepare = async <T extends HostPolicyInput>(input: T): Promise<T> => {
@@ -243,7 +269,11 @@ export function withMachineSkillPolicy(
     Object.assign(input, apply(receipt.original, receipt.candidates, mode));
     return input;
   };
-  const dispatch = <T extends HostPolicyInput, R>(input: T, action: (prepared: T) => R, mode: string = id): R | Promise<R> => {
+  const dispatch = <T extends HostPolicyInput, R>(
+    input: T,
+    action: (prepared: T) => R,
+    mode: string = id,
+  ): R | Promise<R> => {
     if (preparedInputs.has(input)) return action(finish(input, mode));
     const unprepared = async (): Promise<R> => action(finish(await prepare(input), mode));
     return unprepared();
@@ -253,15 +283,24 @@ export function withMachineSkillPolicy(
     prepareOperationPolicy: prepare,
     prepareSendPolicy: () => prepare,
     send: (input) => Promise.resolve(dispatch(input, (prepared) => provider.send(prepared))),
-    ...(provider.compact ? {
-      compact: (input: CompactContextInput) => Promise.resolve(dispatch(input, (prepared) => provider.compact!(prepared))),
-    } : {}),
-    ...(provider.rewind ? {
-      rewind: (input: RewindLastTurnInput) => Promise.resolve(dispatch(input, (prepared) => provider.rewind!(prepared))),
-    } : {}),
-    ...(provider.steer ? {
-      steer: (input: SteerTurnInput) => Promise.resolve(dispatch(input, (prepared) => provider.steer!(prepared), "steer")),
-    } : {}),
+    ...(provider.compact
+      ? {
+          compact: (input: CompactContextInput) =>
+            Promise.resolve(dispatch(input, (prepared) => provider.compact!(prepared))),
+        }
+      : {}),
+    ...(provider.rewind
+      ? {
+          rewind: (input: RewindLastTurnInput) =>
+            Promise.resolve(dispatch(input, (prepared) => provider.rewind!(prepared))),
+        }
+      : {}),
+    ...(provider.steer
+      ? {
+          steer: (input: SteerTurnInput) =>
+            Promise.resolve(dispatch(input, (prepared) => provider.steer!(prepared), "steer")),
+        }
+      : {}),
   };
 }
 

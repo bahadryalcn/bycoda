@@ -7,7 +7,7 @@ import {
   type WorkspaceTab,
 } from "../../workspace/model/layout";
 import { normalizeProjectPath, sameProjectPath } from "./recents";
-import type { Session } from "../../sessions/model/session";
+import type { Session } from "../../sessions";
 import { applyTerminalMeta, type TerminalMetaPatch } from "../../terminal/model/terminalTab";
 import { workspaceTabCwd } from "../../workspace/model/workspaceTabGroups";
 

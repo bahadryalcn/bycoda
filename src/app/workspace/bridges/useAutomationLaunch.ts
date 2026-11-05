@@ -208,20 +208,43 @@ export function useAutomationLaunch({
                 if (isProjectPasswordLocked(automation.cwd)) throw new Error("Project is locked.");
                 folderAdmitted = true;
                 return executeOrganizationOperation(gestureId, {
-                  kind: "batch", cwd: automation.cwd, operations: [
-                    { kind: "assign", cwd: automation.cwd, folderId: automation.sessionFolderId!, sessionIds: [session.id] },
-                    { kind: "folderCollapsed", cwd: automation.cwd, folderId: automation.sessionFolderId!, collapsed: false },
+                  kind: "batch",
+                  cwd: automation.cwd,
+                  operations: [
+                    {
+                      kind: "assign",
+                      cwd: automation.cwd,
+                      folderId: automation.sessionFolderId!,
+                      sessionIds: [session.id],
+                    },
+                    {
+                      kind: "folderCollapsed",
+                      cwd: automation.cwd,
+                      folderId: automation.sessionFolderId!,
+                      collapsed: false,
+                    },
                   ],
                 });
               });
-              if (result.state !== "applied") window.dispatchEvent(new CustomEvent("bycoda:organization-operation-feedback", {
-                detail: { cwd: automation.cwd, sessionId: session.id, runId: run.id, result },
-              }));
+              if (result.state !== "applied")
+                window.dispatchEvent(
+                  new CustomEvent("bycoda:organization-operation-feedback", {
+                    detail: { cwd: automation.cwd, sessionId: session.id, runId: run.id, result },
+                  }),
+                );
             } catch (error) {
-              window.dispatchEvent(new CustomEvent("bycoda:organization-operation-feedback", {
-                detail: { cwd: automation.cwd, sessionId: session.id, runId: run.id,
-                  ...(folderAdmitted ? { result: { state: "unknown", operationId: gestureId } } : { error: String(error) }) },
-              }));
+              window.dispatchEvent(
+                new CustomEvent("bycoda:organization-operation-feedback", {
+                  detail: {
+                    cwd: automation.cwd,
+                    sessionId: session.id,
+                    runId: run.id,
+                    ...(folderAdmitted
+                      ? { result: { state: "unknown", operationId: gestureId } }
+                      : { error: String(error) }),
+                  },
+                }),
+              );
             }
           } else {
             saveSessionFolders(

@@ -34,7 +34,7 @@ import { SprintManagement } from "./SprintManagement";
 import { SprintPlanningControls } from "./SprintPlanningControls";
 import { SprintReports } from "./SprintReports";
 import { bulkTaskKey } from "../model/taskBulkActions";
-import { HostModelSource } from "../../connections/ui/HostModelSource";
+import { HostModelSource } from "../../connections/public/HostModelSource";
 import {
   type BoardTask,
   deleteTask,
@@ -87,9 +87,9 @@ import { useLockOverscroll } from "../../../shared/hooks/useLockOverscroll";
 import { backgroundMachineFor } from "../../automations/model/hostAutomationClient";
 import { LAYER } from "../../../shared/lib/layers";
 import { TaskSessionSheet } from "./TaskSessionSheet";
-import { LocalHostStartButton } from "../../connections/ui/LocalHostDownNotice";
-import { useLocalHostState } from "../../connections/model/localHostService";
-import { parseRemotePath } from "../../connections/model/remoteProjects";
+import { LocalHostStartButton } from "../../connections/public/LocalHostDownNotice";
+import { useLocalHostState } from "../../connections/public/localHostService";
+import { parseRemotePath } from "../../connections/public/remoteProjects";
 import { useLockSnapshot } from "../../group-lock/hooks/useGroupLock";
 import { isProjectLockedIn } from "../../group-lock/model/lockState";
 import { IS_MAC } from "../../../platform/tauri/platform";
@@ -1584,7 +1584,7 @@ function TasksContent({
           ) : listView || selectMode || section === "backlog" ? (
             tasks.length ? (
               <TaskList
-                key={`${projectFilter}:${sprintFilter}:${section}:${statusFilter}`}
+                stateKey={`${viewStateKey}:list:${projectFilter}:${sprintFilter}:${section}:${statusFilter}:${searchQuery}`}
                 tasks={tasks}
                 selection={selectMode}
                 selected={bulkSelection}

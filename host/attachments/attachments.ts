@@ -53,7 +53,11 @@ async function readExactly(handle: FileHandle, bytes: Buffer, offset: number): P
     read += result.bytesRead;
   }
 }
-export async function attachmentUploadStatus(store: HostStore, input: Record<string, unknown>, before?: () => Promise<void>) {
+export async function attachmentUploadStatus(
+  store: HostStore,
+  input: Record<string, unknown>,
+  before?: () => Promise<void>,
+) {
   const path = attachmentPath(store, String(input.id ?? ""));
   if (
     !Number.isSafeInteger(input.size) ||
@@ -206,13 +210,19 @@ export function resolveAttachments(store: HostStore, refs: RemoteAttachment[]): 
   });
 }
 /** Question replies may contain many files; do not block the Host event loop on stat. */
-export async function resolveQuestionAttachments(store: HostStore, refs: RemoteAttachment[]): Promise<Attachment[]> {
-  return Promise.all(refs.map(async (ref) => {
-    const path = attachmentPath(store, ref.id);
-    touchAttachment(join(dirname(resolve(path)), basename(path).toLowerCase()));
-    if ((await stat(path)).size !== ref.size) throw new Error(`Attachment ${ref.name} is incomplete`);
-    return { ...ref, path };
-  }));
+export async function resolveQuestionAttachments(
+  store: HostStore,
+  refs: RemoteAttachment[],
+): Promise<Attachment[]> {
+  return Promise.all(
+    refs.map(async (ref) => {
+      const path = attachmentPath(store, ref.id);
+      touchAttachment(join(dirname(resolve(path)), basename(path).toLowerCase()));
+      if ((await stat(path)).size !== ref.size)
+        throw new Error(`Attachment ${ref.name} is incomplete`);
+      return { ...ref, path };
+    }),
+  );
 }
 /** Reads only an attachment already accepted into this session. Paths supplied
  * by the client are never used, and each response stays below the RPC cap. */

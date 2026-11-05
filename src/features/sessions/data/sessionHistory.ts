@@ -6,7 +6,7 @@ import type { OrchestrationRun } from "../../orchestration/model/orchestration";
 import { summarizeOrchestration } from "../../orchestration/model/orchestrationSummary";
 import { fuzzyMatch } from "../../../shared/lib/fuzzy";
 import { projectName } from "../../../shared/lib/paths";
-import { sameProjectPath } from "../../projects/model/recents";
+import { sameProjectPath } from "../../projects/public/recents";
 import {
   sessionDisplayTitle,
   sessionDraftBlock,

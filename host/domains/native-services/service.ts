@@ -49,15 +49,36 @@ export function createNativeServicesService() {
     let result: unknown;
     if (method.startsWith("native.services.assistant.delegation.")) {
       if (!owner.delegation) throw new Error("Native Room delegation is unavailable.");
-      const action = method.slice("native.services.assistant.delegation.".length) as "publicKey" | "origin" | "nativeChallenge" | "attest" | "issue" | "issue.status" | "challenge" | "call" | "revoke";
+      const action = method.slice("native.services.assistant.delegation.".length) as
+        | "publicKey"
+        | "origin"
+        | "nativeChallenge"
+        | "attest"
+        | "issue"
+        | "issue.status"
+        | "challenge"
+        | "call"
+        | "revoke";
       result = await owner.delegation(action, (params.input ?? {}) as Record<string, unknown>);
     } else if (method === "native.services.assistant.visibility.epoch") {
       if (!owner.visibilityEpoch) throw new Error("Native visibility fence is unavailable.");
       result = await owner.visibilityEpoch();
     } else if (method === "native.services.assistant.notification.authorize") {
-      if (!owner.authorizeAssistantNotification) throw new Error("Assistant notification authorization is unavailable.");
-      const input = params.input as { threadId: string; notificationId: string; operationHash: string };
-      if (!input.threadId || input.threadId.length > 200 || !input.notificationId || input.notificationId.length > 200 || !/^[a-f0-9]{64}$/.test(input.operationHash)) throw new Error("Invalid Assistant notification authorization identity.");
+      if (!owner.authorizeAssistantNotification)
+        throw new Error("Assistant notification authorization is unavailable.");
+      const input = params.input as {
+        threadId: string;
+        notificationId: string;
+        operationHash: string;
+      };
+      if (
+        !input.threadId ||
+        input.threadId.length > 200 ||
+        !input.notificationId ||
+        input.notificationId.length > 200 ||
+        !/^[a-f0-9]{64}$/.test(input.operationHash)
+      )
+        throw new Error("Invalid Assistant notification authorization identity.");
       result = await owner.authorizeAssistantNotification(input);
     } else if (method === "native.services.assistant.browser.panel") {
       if (!owner.browserPanel) throw new Error("Room browser panel transport is unavailable.");
@@ -66,9 +87,17 @@ export function createNativeServicesService() {
       if (!owner.observationsIngest) throw new Error("Native observation owner is unavailable.");
       result = await owner.observationsIngest(params.input as Record<string, unknown>);
     } else if (method === "native.services.assistant.workspace.authorize") {
-      if (!owner.authorizeAssistantWorkspace) throw new Error("Assistant workspace authorization is unavailable.");
+      if (!owner.authorizeAssistantWorkspace)
+        throw new Error("Assistant workspace authorization is unavailable.");
       const input = params.input as { threadId: string; requestId: string; operationHash: string };
-      if (!input.threadId || input.threadId.length > 200 || !input.requestId || input.requestId.length > 200 || !/^[a-f0-9]{64}$/.test(input.operationHash)) throw new Error("Invalid Assistant workspace authorization identity.");
+      if (
+        !input.threadId ||
+        input.threadId.length > 200 ||
+        !input.requestId ||
+        input.requestId.length > 200 ||
+        !/^[a-f0-9]{64}$/.test(input.operationHash)
+      )
+        throw new Error("Invalid Assistant workspace authorization identity.");
       result = await owner.authorizeAssistantWorkspace(input);
     } else if (method === "native.services.assistant.visibility.revoke") {
       if (!owner.visibilityRevoke) throw new Error("Native visibility fence is unavailable.");

@@ -657,7 +657,9 @@ describe("host crews", () => {
     const pending = (await readCrewRun(f.store, "run"))?.pendingDelivery;
     expect(pending?.commandId).toBeTruthy();
     await f.service.tick();
-    expect(f.engine.command.mock.calls.at(-1)?.[0]).toMatchObject({ commandId: pending!.commandId });
+    expect(f.engine.command.mock.calls.at(-1)?.[0]).toMatchObject({
+      commandId: pending!.commandId,
+    });
     const calls = f.engine.command.mock.calls.length;
     await f.service.tick();
     expect(f.engine.command).toHaveBeenCalledTimes(calls);
@@ -1028,9 +1030,10 @@ describe("crew work deletion", () => {
       runId: "run",
       expectedUpdatedAt: (await f.service.list(f.project.id)).runs[0].updatedAt,
     };
-    vi.mocked(f.store.session).mockReturnValue({ projectId: f.project.id, status: "running" } as ReturnType<
-      HostStore["session"]
-    >);
+    vi.mocked(f.store.session).mockReturnValue({
+      projectId: f.project.id,
+      status: "running",
+    } as ReturnType<HostStore["session"]>);
     await expect(f.service.call("crews.deleteRun", input, f.project.id)).rejects.toThrow(
       "running conversations",
     );

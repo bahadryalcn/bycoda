@@ -35,12 +35,14 @@ export function localMobileAddresses(): string[] {
 }
 function interfaceForAddress(address: string): string | undefined {
   return Object.entries(networkInterfaces()).find(([, entries]) =>
-    (entries ?? []).some((entry) => !entry.internal && entry.family === "IPv4" && entry.address === address),
+    (entries ?? []).some(
+      (entry) => !entry.internal && entry.family === "IPv4" && entry.address === address,
+    ),
   )?.[0];
 }
 function addressForInterface(name: string): string | undefined {
-  return (networkInterfaces()[name] ?? []).find((entry) =>
-    !entry.internal && entry.family === "IPv4" && isLanAddress(entry.address),
+  return (networkInterfaces()[name] ?? []).find(
+    (entry) => !entry.internal && entry.family === "IPv4" && isLanAddress(entry.address),
   )?.address;
 }
 
@@ -233,7 +235,9 @@ export class MobileLanAccess {
         typeof saved.key !== "string" ||
         (saved.address !== undefined && !isLanAddress(saved.address)) ||
         (saved.interfaceName !== undefined &&
-          (typeof saved.interfaceName !== "string" || !saved.interfaceName || saved.interfaceName.length > 256)) ||
+          (typeof saved.interfaceName !== "string" ||
+            !saved.interfaceName ||
+            saved.interfaceName.length > 256)) ||
         (saved.port !== undefined &&
           (!Number.isInteger(saved.port) || saved.port < 1 || saved.port > 65535)) ||
         (saved.tlsPort !== undefined &&
@@ -275,7 +279,13 @@ export class MobileLanAccess {
         : undefined;
     return {
       mode: "lan",
-      state: ready ? "ready" : this.notice ? "unavailable" : addresses.length ? "setup-required" : "unavailable",
+      state: ready
+        ? "ready"
+        : this.notice
+          ? "unavailable"
+          : addresses.length
+            ? "setup-required"
+            : "unavailable",
       addresses,
       ...(this.notice ? { reason: this.notice } : {}),
       machineName: hostname().slice(0, 120),
@@ -299,20 +309,27 @@ export class MobileLanAccess {
       const check = (async () => {
         const selected = this.saved?.address;
         if (!selected) return;
-        const current = this.saved?.interfaceName ? addressForInterface(this.saved.interfaceName) : selected;
+        const current = this.saved?.interfaceName
+          ? addressForInterface(this.saved.interfaceName)
+          : selected;
         const available = !!current && this.addresses().includes(current);
         const active = this.gateway?.address();
         if (!available) {
           this.notice = "The selected mobile network interface is unavailable.";
           if (active) await this.closeGateway();
-        }
-        else if (available && (!active || (typeof active !== "string" && active.address !== current)) && !this.disposed)
+        } else if (
+          available &&
+          (!active || (typeof active !== "string" && active.address !== current)) &&
+          !this.disposed
+        )
           await this.enable(current);
       })();
       this.addressCheck = check;
-      void check.catch(() => {}).finally(() => {
-        if (this.addressCheck === check) this.addressCheck = undefined;
-      });
+      void check
+        .catch(() => {})
+        .finally(() => {
+          if (this.addressCheck === check) this.addressCheck = undefined;
+        });
     }, 15_000);
     this.addressTimer.unref?.();
   }
@@ -400,7 +417,10 @@ export class MobileLanAccess {
         this.wssGateway = wss;
         this.tlsBootstrap = tls;
         this.tlsExpiresAt = material?.expiresAt;
-        this.notice = previousAddress && previousAddress !== selected ? "Mobile address changed. Reconnect paired devices using the new endpoint." : undefined;
+        this.notice =
+          previousAddress && previousAddress !== selected
+            ? "Mobile address changed. Reconnect paired devices using the new endpoint."
+            : undefined;
         this.watchAddress();
         if (wss && this.tlsOptions && material && tlsPort) {
           const secure = wss;
@@ -414,9 +434,10 @@ export class MobileLanAccess {
         });
         return await this.status();
       } catch (error) {
-        this.notice = (error as NodeJS.ErrnoException).code === "EADDRINUSE"
-          ? "The saved mobile port is in use. Free it and retry."
-          : "Mobile LAN access could not start. Check the selected network and retry.";
+        this.notice =
+          (error as NodeJS.ErrnoException).code === "EADDRINUSE"
+            ? "The saved mobile port is in use. Free it and retry."
+            : "Mobile LAN access could not start. Check the selected network and retry.";
         if (this.gateway === gateway || (wss && this.wssGateway === wss)) {
           await this.closeGateway();
         } else {
@@ -425,7 +446,12 @@ export class MobileLanAccess {
           wss?.closeAllConnections();
           wss?.close();
         }
-        return { mode: "lan", state: "unavailable", addresses, reason: this.notice } as MobileAccessStatus;
+        return {
+          mode: "lan",
+          state: "unavailable",
+          addresses,
+          reason: this.notice,
+        } as MobileAccessStatus;
       }
     })();
     this.operation = operation;

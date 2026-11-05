@@ -1,5 +1,5 @@
 import type { GitHistoryCommit, GitRemote, GitResetMode } from "../../../platform/tauri/fs";
-import type { ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
+import type { ExplorerMenuItem } from "../../files";
 import { t } from "../../../shared/i18n/git";
 
 export type CommitAction =

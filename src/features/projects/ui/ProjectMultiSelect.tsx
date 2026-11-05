@@ -6,7 +6,8 @@ import { createContext, useContext, useRef, useState, type ReactNode } from "rea
 import { t, useLocale } from "../../../shared/i18n";
 import { pathKey } from "../../../shared/lib/paths";
 import { Popover } from "../../../shared/ui/Popover";
-import { ExplorerMenu, type ExplorerMenuItem } from "../../files/ui/ExplorerMenu";
+import { ExplorerMenu, type ExplorerMenuItem } from "../../files/public/ExplorerMenu";
+
 import { selectProjectRange } from "../model/projectSelection";
 import {
   assignProjectsToNamedGroup,
@@ -107,7 +108,10 @@ export function ProjectMultiSelect({
         else assignments[pathKey(path)] = groupId;
       }
       return saveProjectGroupAssignments(assignments);
-    }).then((saved) => setError(!saved), () => setError(true));
+    }).then(
+      (saved) => setError(!saved),
+      () => setError(true),
+    );
   };
   const groupItems: ExplorerMenuItem[] = [
     { kind: "item", id: "new", label: t("New group…") },
@@ -229,10 +233,13 @@ export function ProjectMultiSelect({
                 setError(true);
                 return;
               }
-              void withRoomPrivacyMutation(() => !!assignProjectsToNamedGroup(name, chosen)).then((saved) => {
-                setError(!saved);
-                if (saved) setNewGroupAnchor(null);
-              }, () => setError(true));
+              void withRoomPrivacyMutation(() => !!assignProjectsToNamedGroup(name, chosen)).then(
+                (saved) => {
+                  setError(!saved);
+                  if (saved) setNewGroupAnchor(null);
+                },
+                () => setError(true),
+              );
             }}
           >
             <label

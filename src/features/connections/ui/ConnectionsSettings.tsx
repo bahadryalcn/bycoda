@@ -6,7 +6,7 @@ import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
 import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { invoke } from "@tauri-apps/api/core";
-import { RemoteReconnectGroup } from "../../settings/ui/ConnectionRecoverySettings";
+import { RemoteReconnectGroup } from "../../settings/public/ConnectionRecoverySettings";
 import { Tab, TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
 import { Tooltip, OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { InlineMessage } from "../../../shared/ui/InlineError";

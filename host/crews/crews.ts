@@ -7,10 +7,23 @@ import type { HostEngine } from "../engine";
 import type { HostStore } from "../store";
 import type { HostTasks } from "../tasks/tasks";
 import { RequestAuthorizationError } from "../store-db";
-import { initializeCrewSchedulerProjection, readCrewSchedulerRuns, readCrewSchedulerRun, patchCrewSchedulerRun, readCrewState, readCrewProjectState, readCrewDefinitions, writeCrewState, readCrewRun } from "./crew-scheduler-projection";
+import {
+  initializeCrewSchedulerProjection,
+  readCrewSchedulerRuns,
+  readCrewSchedulerRun,
+  patchCrewSchedulerRun,
+  readCrewState,
+  readCrewProjectState,
+  readCrewDefinitions,
+  writeCrewState,
+  readCrewRun,
+} from "./crew-scheduler-projection";
 import { launchSessionRun, STOPPED_BY_USER } from "../sessions/sessionRuns";
 import { finishRunDuration } from "../execution/run-duration";
-import { callConversationCrewRead, CONVERSATION_CREW_READ_TOOLS } from "../conversation/conversation-crew-tools";
+import {
+  callConversationCrewRead,
+  CONVERSATION_CREW_READ_TOOLS,
+} from "../conversation/conversation-crew-tools";
 import {
   parseCrewDefinition,
   parseCrewAgent,
@@ -34,13 +47,18 @@ type Principal = {
 };
 
 export type CrewSessionPorts = {
-  session(id: string): Promise<Omit<HostSession, "session"> & {
-    session: Omit<HostSession["session"], "blocks">;
-  }>;
-  command(command: unknown, context: {
-    authorized(): Promise<boolean>;
-    principalId: string;
-  }): ReturnType<HostEngine["command"]>;
+  session(id: string): Promise<
+    Omit<HostSession, "session"> & {
+      session: Omit<HostSession["session"], "blocks">;
+    }
+  >;
+  command(
+    command: unknown,
+    context: {
+      authorized(): Promise<boolean>;
+      principalId: string;
+    },
+  ): ReturnType<HostEngine["command"]>;
 };
 type CrewState = CrewDefaultsState & {
   runs: CrewRun[];
@@ -114,12 +132,16 @@ export class HostCrews {
     ) => Promise<boolean | undefined>,
     private readonly sessions?: CrewSessionPorts,
   ) {
-    this.ready = Promise.all([store.ready, tasks.ready]).then(() => initializeCrewSchedulerProjection(store));
+    this.ready = Promise.all([store.ready, tasks.ready]).then(() =>
+      initializeCrewSchedulerProjection(store),
+    );
     tasks.crewRunner = {
       validate: async (task) => {
         if (
-          !(await readCrewDefinitions(this.store)).definitions.some((d) =>
-            d.id === task.crewDefinitionId && (!d.projectId || d.projectId === task.projectId))
+          !(await readCrewDefinitions(this.store)).definitions.some(
+            (d) =>
+              d.id === task.crewDefinitionId && (!d.projectId || d.projectId === task.projectId),
+          )
         )
           throw new Error("Choose a crew available to this task's project.");
       },
@@ -228,17 +250,30 @@ export class HostCrews {
   private async command(command: unknown, run?: CrewRun) {
     await this.checkOperationAuthority();
     if (!this.sessions || !run) return this.engine.command(command);
-    const target = command as { sessionId?: string; commandId?: string; type?: string; text?: string };
+    const target = command as {
+      sessionId?: string;
+      commandId?: string;
+      type?: string;
+      text?: string;
+    };
     return this.sessions.command(command, {
       principalId: `crew:${run.id}`,
       authorized: async () => {
         await this.checkOperationAuthority();
-        const current = await this.store.transaction(async () =>
-          (await readCrewSchedulerRun(this.store, run.id))?.run);
-        return !!current && target.sessionId === run.coordinatorSessionId && current.projectId === run.projectId &&
+        const current = await this.store.transaction(
+          async () => (await readCrewSchedulerRun(this.store, run.id))?.run,
+        );
+        return (
+          !!current &&
+          target.sessionId === run.coordinatorSessionId &&
+          current.projectId === run.projectId &&
           current.coordinatorSessionId === run.coordinatorSessionId &&
-          ((target.type === "cancel" && current.status !== "finished") || (current.status === "active" &&
-            !!current.pendingDelivery && current.pendingDelivery.commandId === target.commandId && current.pendingDelivery.text === target.text));
+          ((target.type === "cancel" && current.status !== "finished") ||
+            (current.status === "active" &&
+              !!current.pendingDelivery &&
+              current.pendingDelivery.commandId === target.commandId &&
+              current.pendingDelivery.text === target.text))
+        );
       },
     });
   }
@@ -257,7 +292,8 @@ export class HostCrews {
     try {
       return (await this.coordinatorSession(id, projectId)).status;
     } catch (error) {
-      if (error instanceof Error && error.message === "Session not found on this machine") return undefined;
+      if (error instanceof Error && error.message === "Session not found on this machine")
+        return undefined;
       throw error;
     }
   }
@@ -319,7 +355,11 @@ export class HostCrews {
       await this.write(state);
     });
   }
-  private async patchSchedulerRun(ordinal: number, run: CrewRun, fields: ReadonlyArray<keyof CrewRun>) {
+  private async patchSchedulerRun(
+    ordinal: number,
+    run: CrewRun,
+    fields: ReadonlyArray<keyof CrewRun>,
+  ) {
     await patchCrewSchedulerRun(this.store, ordinal, run, fields);
     // Reviewed-thread writes retain the existing revision contract; ordinary
     // timer ticks have no review context and never decode canonical history.
@@ -330,19 +370,29 @@ export class HostCrews {
     return this.store.transaction(async () => {
       await this.checkOperationAuthority();
       const current = await readCrewSchedulerRun(this.store, run.id);
-      if (!current || (requireActive && current.run.status !== "active") ||
-          current.run.coordinatorSessionId !== run.coordinatorSessionId) return false;
+      if (
+        !current ||
+        (requireActive && current.run.status !== "active") ||
+        current.run.coordinatorSessionId !== run.coordinatorSessionId
+      )
+        return false;
       // Do not overwrite a different persisted delivery admitted while the engine
       // was awaited. Settling requires this exact original persisted command.
       if (settledCommandId !== undefined) {
         if (current.run.pendingDelivery?.commandId !== settledCommandId) return false;
-      } else if (current.run.pendingDelivery &&
-          current.run.pendingDelivery.commandId !== run.pendingDelivery?.commandId) return false;
+      } else if (
+        current.run.pendingDelivery &&
+        current.run.pendingDelivery.commandId !== run.pendingDelivery?.commandId
+      )
+        return false;
       current.run.notifications = { ...current.run.notifications, ...run.notifications };
       current.run.pendingDelivery = run.pendingDelivery;
       current.run.updatedAt = Math.max(this.now(), current.run.updatedAt + 1);
-      await this.patchSchedulerRun(current.ordinal, current.run,
-        ["notifications", "pendingDelivery", "updatedAt"]);
+      await this.patchSchedulerRun(current.ordinal, current.run, [
+        "notifications",
+        "pendingDelivery",
+        "updatedAt",
+      ]);
       return true;
     });
   }
@@ -350,7 +400,9 @@ export class HostCrews {
     await this.store.project(projectId);
     const state = await readCrewProjectState(this.store, projectId, history);
     return {
-      ...(state.historyNextCursor === undefined ? {} : { historyNextCursor: state.historyNextCursor }),
+      ...(state.historyNextCursor === undefined
+        ? {}
+        : { historyNextCursor: state.historyNextCursor }),
       agents: (state.agents ?? []).filter((a) => !a.projectId || a.projectId === projectId),
       definitions: state.definitions.filter((d) => !d.projectId || d.projectId === projectId),
       runs: await mapAsync(
@@ -427,14 +479,29 @@ export class HostCrews {
     if (before !== after) throw new Error("Crew changed while reading. Refresh its state.");
     let value: unknown;
     if (action === "crews.list") {
-      const offset = Number(input.offset ?? 0), limit = Number(input.limit ?? 30);
-      if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+      const offset = Number(input.offset ?? 0),
+        limit = Number(input.limit ?? 30);
+      if (
+        !Number.isSafeInteger(offset) ||
+        offset < 0 ||
+        !Number.isSafeInteger(limit) ||
+        limit < 1 ||
+        limit > 100
+      )
         throw new Error("Provide bounded crew pagination");
-      value = Object.fromEntries(["definitions", "agents", "runs"].map((key) => {
-        const rows = view[key as keyof typeof view] as unknown[];
-        return [key, { items: rows.slice(offset, offset + limit), total: rows.length,
-          nextOffset: offset + limit < rows.length ? offset + limit : undefined }];
-      }));
+      value = Object.fromEntries(
+        ["definitions", "agents", "runs"].map((key) => {
+          const rows = view[key as keyof typeof view] as unknown[];
+          return [
+            key,
+            {
+              items: rows.slice(offset, offset + limit),
+              total: rows.length,
+              nextOffset: offset + limit < rows.length ? offset + limit : undefined,
+            },
+          ];
+        }),
+      );
     } else if (Object.hasOwn(CONVERSATION_CREW_READ_TOOLS, action)) {
       value = callConversationCrewRead(action, input, view);
     } else if (action === "crews.get") {
@@ -456,22 +523,44 @@ export class HostCrews {
     principal: AssistantThreadPrincipal,
     expectedRevision: string,
   ) {
-    const allowed = ["crews.save", "crews.agent.save", "crews.start", "crews.assign", "crews.request",
-      "crews.resolve", "crews.pause", "crews.stop", "crews.resume", "crews.accept", "crews.finish"];
+    const allowed = [
+      "crews.save",
+      "crews.agent.save",
+      "crews.start",
+      "crews.assign",
+      "crews.request",
+      "crews.resolve",
+      "crews.pause",
+      "crews.stop",
+      "crews.resume",
+      "crews.accept",
+      "crews.finish",
+    ];
     if (!allowed.includes(action) || !principal.threadId || !principal.projectId)
       throw new Error("Invalid reviewed Assistant Crew operation.");
     const original = structuredClone(input);
     if (action === "crews.save" || action === "crews.agent.save") {
-      const value = JSON.parse(message(original[action === "crews.save" ? "definitionJson" : "agentJson"], action === "crews.save" ? 100000 : 30000)) as Record<string, unknown>;
+      const value = JSON.parse(
+        message(
+          original[action === "crews.save" ? "definitionJson" : "agentJson"],
+          action === "crews.save" ? 100000 : 30000,
+        ),
+      ) as Record<string, unknown>;
       if (value.projectId !== principal.projectId)
         throw new Error("Assistant Crew edits require the explicit target project.");
-      if (action === "crews.save" && (value.policy as Record<string, unknown> | undefined)?.delegateApprovals)
+      if (
+        action === "crews.save" &&
+        (value.policy as Record<string, unknown> | undefined)?.delegateApprovals
+      )
         throw new Error("Delegated approval changes keep their existing owner workflow.");
     }
-    return this.reviewedThread.run({ projectId: principal.projectId, threadId: principal.threadId, revision: expectedRevision }, async () => {
-      await this.checkOperationAuthority();
-      return this.call(action, original, principal.projectId);
-    });
+    return this.reviewedThread.run(
+      { projectId: principal.projectId, threadId: principal.threadId, revision: expectedRevision },
+      async () => {
+        await this.checkOperationAuthority();
+        return this.call(action, original, principal.projectId);
+      },
+    );
   }
   async save(value: unknown, expectedUpdatedAt?: number, principal?: Principal) {
     await this.ready;
@@ -552,7 +641,8 @@ export class HostCrews {
   }
   private async run(id: string, projectId: string) {
     const run = await readCrewRun(this.store, id);
-    if (!run || run.projectId !== projectId) throw new Error("Crew run does not belong to this project");
+    if (!run || run.projectId !== projectId)
+      throw new Error("Crew run does not belong to this project");
     return run;
   }
   private lead(run: CrewRun, principal?: Principal) {
@@ -659,7 +749,9 @@ export class HostCrews {
     message(prompt, sourceTaskId ? 270000 : 12000);
     if (principal && principal.projectId !== projectId)
       throw new Error("Foreign coordinator session");
-    const own = principal ? await this.coordinatorSession(principal.sessionId, projectId) : undefined;
+    const own = principal
+      ? await this.coordinatorSession(principal.sessionId, projectId)
+      : undefined;
     const executionRuntimeMode = own?.session.runtimeMode ?? runtimeMode;
     message(requestId, 200);
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(requestId))
@@ -714,8 +806,11 @@ export class HostCrews {
     const selected = await this.candidate(projectId, selectionDefinition, coordinator.id);
     if (principal) {
       const current = await this.coordinatorSession(principal.sessionId, projectId);
-      if (current.session.harness !== own!.session.harness || current.session.model !== own!.session.model ||
-          current.session.runtimeMode !== own!.session.runtimeMode)
+      if (
+        current.session.harness !== own!.session.harness ||
+        current.session.model !== own!.session.model ||
+        current.session.runtimeMode !== own!.session.runtimeMode
+      )
         throw new Error("Coordinator changed during model discovery. Read it again.");
     }
     // Recheck after catalog discovery; no duplicate launch on concurrent retries.
@@ -993,7 +1088,8 @@ export class HostCrews {
       // Reserve after discovery while the actor owns the complete mutation.
       run = await this.run(run.id, projectId);
       this.lead(run, principal);
-      if (run.coordinatorSessionId !== coordinatorId) throw new Error("Crew coordinator changed. Read it again.");
+      if (run.coordinatorSessionId !== coordinatorId)
+        throw new Error("Crew coordinator changed. Read it again.");
       const replay = run.assignments.find((a) => a.id === id);
       if (replay) {
         if (replay.requestFingerprint !== signature)
@@ -1108,8 +1204,13 @@ export class HostCrews {
       let history: { cursor?: string; limit: number } | undefined;
       if (input.historyLimit !== undefined || input.historyCursor !== undefined) {
         const limit = Number(input.historyLimit);
-        if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
-            (input.historyCursor !== undefined && (typeof input.historyCursor !== "string" || input.historyCursor.length > 1024)))
+        if (
+          !Number.isSafeInteger(limit) ||
+          limit < 1 ||
+          limit > 100 ||
+          (input.historyCursor !== undefined &&
+            (typeof input.historyCursor !== "string" || input.historyCursor.length > 1024))
+        )
           throw new Error("Provide bounded Crew history pagination");
         history = { cursor: input.historyCursor as string | undefined, limit };
       }
@@ -1439,9 +1540,10 @@ export class HostCrews {
     }
     if (action === "crews.pause" || action === "crews.resume") {
       const coordinatorId = run.coordinatorSessionId;
-      const coordinator = action === "crews.resume" && run.coordinatorSessionId &&
-        !(run.launch && run.error)
-        ? await this.coordinatorSession(run.coordinatorSessionId, projectId) : undefined;
+      const coordinator =
+        action === "crews.resume" && run.coordinatorSessionId && !(run.launch && run.error)
+          ? await this.coordinatorSession(run.coordinatorSessionId, projectId)
+          : undefined;
       const current = await this.store.db.scope(async () => {
         const current = await this.run(run.id, projectId);
         this.lead(current, principal);
@@ -1500,12 +1602,15 @@ export class HostCrews {
         try {
           const session = await this.coordinatorSession(run.coordinatorSessionId, projectId);
           if (session.status === "running" && session.runId)
-            await this.command({
-              type: "cancel",
-              commandId: randomUUID(),
-              sessionId: run.coordinatorSessionId,
-              runId: session.runId,
-            }, run);
+            await this.command(
+              {
+                type: "cancel",
+                commandId: randomUUID(),
+                sessionId: run.coordinatorSessionId,
+                runId: session.runId,
+              },
+              run,
+            );
         } catch (error) {
           failures.push(error);
         }
@@ -1634,14 +1739,21 @@ export class HostCrews {
           await this.store.transaction(async () => {
             await this.checkOperationAuthority();
             const current = await readCrewSchedulerRun(this.store, run.id);
-            if (!current || current.run.status !== "active" ||
-                current.run.coordinatorSessionId !== run.coordinatorSessionId) return;
+            if (
+              !current ||
+              current.run.status !== "active" ||
+              current.run.coordinatorSessionId !== run.coordinatorSessionId
+            )
+              return;
             current.run.status = "paused";
             current.run.error =
               "The coordinator session is no longer available. Start a new crew conversation to continue.";
             current.run.updatedAt = Math.max(this.now(), current.run.updatedAt + 1);
-            await this.patchSchedulerRun(current.ordinal, current.run,
-              ["status", "error", "updatedAt"]);
+            await this.patchSchedulerRun(current.ordinal, current.run, [
+              "status",
+              "error",
+              "updatedAt",
+            ]);
           });
           continue;
         }
@@ -1694,12 +1806,15 @@ export class HostCrews {
         if (!(await this.updateDelivery(run, true))) continue;
         // Persisted command IDs reuse host receipts after uncertain delivery.
         if (this.closing) return;
-        await this.command({
-          type: "send",
-          commandId: run.pendingDelivery.commandId,
-          sessionId: run.coordinatorSessionId!,
-          text: run.pendingDelivery.text,
-        }, run);
+        await this.command(
+          {
+            type: "send",
+            commandId: run.pendingDelivery.commandId,
+            sessionId: run.coordinatorSessionId!,
+            text: run.pendingDelivery.text,
+          },
+          run,
+        );
         const settledCommandId = run.pendingDelivery.commandId;
         run.notifications = run.pendingDelivery.notifications;
         run.pendingDelivery = undefined;

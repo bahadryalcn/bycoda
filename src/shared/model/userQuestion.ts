@@ -59,6 +59,8 @@ export type UserQuestionReply =
       kind: "answered";
       answers: Record<string, string[]>;
       custom?: Record<string, string>;
+      /** Optional context accompanying a supported free-text-capable answer. */
+      notes?: Record<string, string>;
       attachments?: Record<string, UserQuestionAttachment[]>;
     }
   | { kind: "skipped" };

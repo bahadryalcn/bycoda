@@ -22,7 +22,7 @@ const grant: McpGrant = {
 };
 
 describe("managed discovery across real tool catalogs", () => {
-  it("covers every declared operation and all 30 conversation families without inventing readiness", () => {
+  it("covers every declared operation and all 47 conversation families without inventing readiness", () => {
     const catalog = managedMcpCatalog();
     const rawCount = MCP_GROUPS.reduce((sum, group) => sum + mcpCatalog(group).length, 0);
     expect(catalog).toHaveLength(rawCount);
@@ -30,7 +30,9 @@ describe("managed discovery across real tool catalogs", () => {
     expect(catalog.filter((entry) => !entry.supported).map((entry) => entry.id)).toEqual([]);
     const conversation = catalog.filter((entry) => entry.group === "conversation");
     const families = new Set(conversation.map((entry) => entry.family));
-    expect(families.size).toBe(30);
+    expect(families.size).toBe(47);
+    for (const family of ["notebook", "workspace", "remote", "social"])
+      expect(families.has(family)).toBe(true);
     expect(families.has("desktop")).toBe(true);
     expect(
       conversation
@@ -46,7 +48,9 @@ describe("managed discovery across real tool catalogs", () => {
         .every((id) => ids.has(id)),
     ).toBe(true);
     for (const entry of catalog)
-      expect(entry.authorizationScope).toBe(toolAuthorizationScope(entry.group, entry.action));
+      expect(entry.authorizationScope, entry.id).toBe(
+        toolAuthorizationScope(entry.group, entry.action),
+      );
   });
 
   it("keeps external discovery and workflow references inside the existing grant allowlist", () => {

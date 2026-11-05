@@ -5,7 +5,7 @@ import { newSession } from "../model/session";
 import { saveHostSessionBinding } from "../../connections/model/sessionExecutionBinding";
 import { finalizeRecentSessionPages, listRecentSessionsSincePage } from "./sessionStore";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
 beforeEach(() => {
   localStorage.clear();
   vi.mocked(invoke).mockReset();

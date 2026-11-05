@@ -140,7 +140,11 @@ export const NATIVE_DEVICES_RPC_SCHEMAS = {
   },
   "devices.control.claim": {
     params: z.strictObject({ ...base, deviceId: z.string(), requestId: z.string() }),
-    result: z.strictObject({ deviceId: z.string(), leaseId: z.string(), expiresAt: SafeCounterSchema }),
+    result: z.strictObject({
+      deviceId: z.string(),
+      leaseId: z.string(),
+      expiresAt: SafeCounterSchema,
+    }),
   },
   "devices.control.release": {
     params: z.strictObject({ ...base, deviceId: z.string(), leaseId: z.string() }),
@@ -148,14 +152,48 @@ export const NATIVE_DEVICES_RPC_SCHEMAS = {
   },
   "devices.control.renew": {
     params: z.strictObject({ ...base, deviceId: z.string(), leaseId: z.string() }),
-    result: z.strictObject({ deviceId: z.string(), leaseId: z.string(), expiresAt: SafeCounterSchema }),
+    result: z.strictObject({
+      deviceId: z.string(),
+      leaseId: z.string(),
+      expiresAt: SafeCounterSchema,
+    }),
   },
   "devices.inspect": {
     params: z.strictObject({ ...base, deviceId: z.string(), leaseId: z.string() }),
-    result: z.strictObject({ deviceId: z.string(), inspectionId: z.string(), raw: z.string(), inspectedAt: z.string(), frame: DeviceFrameSchema, coordinateSpace: z.enum(["pixels", "points"]), viewport: z.strictObject({ width: SafeCounterSchema, height: SafeCounterSchema }).optional(), nodes: z.array(z.strictObject({ id: z.string(), label: z.string(), role: z.string(), identity: z.string(), bounds: z.strictObject({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }), enabled: z.boolean(), clickable: z.boolean() })) }),
+    result: z.strictObject({
+      deviceId: z.string(),
+      inspectionId: z.string(),
+      raw: z.string(),
+      inspectedAt: z.string(),
+      frame: DeviceFrameSchema,
+      coordinateSpace: z.enum(["pixels", "points"]),
+      viewport: z.strictObject({ width: SafeCounterSchema, height: SafeCounterSchema }).optional(),
+      nodes: z.array(
+        z.strictObject({
+          id: z.string(),
+          label: z.string(),
+          role: z.string(),
+          identity: z.string(),
+          bounds: z.strictObject({
+            x: z.number(),
+            y: z.number(),
+            width: z.number(),
+            height: z.number(),
+          }),
+          enabled: z.boolean(),
+          clickable: z.boolean(),
+        }),
+      ),
+    }),
   },
   "devices.action": {
-    params: z.strictObject({ ...base, deviceId: z.string(), leaseId: z.string(), requestId: z.string(), action: DeviceActionSchema }),
+    params: z.strictObject({
+      ...base,
+      deviceId: z.string(),
+      leaseId: z.string(),
+      requestId: z.string(),
+      action: DeviceActionSchema,
+    }),
     result: z.string(),
   },
 } as const;

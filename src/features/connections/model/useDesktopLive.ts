@@ -1,11 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { hostSessionBinding } from "./sessionExecutionBinding";
 import { remoteProjectFor } from "./remoteProjects";
-import { liveTurnHarness } from "../../sessions/model/messageQueue";
-import { sessionWorkCwd } from "../../sessions/model/session";
+import { liveTurnHarness } from "../../sessions/public/messageQueue";
+import { sessionWorkCwd, type Session } from "../../sessions/public/session";
 import { orchestrator } from "../../orchestration/model/orchestration";
 import { useEffect, useRef, type MutableRefObject } from "react";
-import type { Session } from "../../sessions/model/session";
+
 import {
   DESKTOP_LIVE_MS,
   runDesktopLiveTick,
@@ -26,8 +26,8 @@ import {
   wakeSharedLocalQueues,
 } from "./useSharedLocalQueues";
 import type { RemoteMachine } from "./protocol";
-import { buildMobileProjectDirectory } from "../../projects/model/mobileProjectDirectory";
-import { withMobileProjectLogos } from "../../projects/model/mobileProjectLogos";
+import { buildMobileProjectDirectory } from "../../projects/public/mobileProjectDirectory";
+import { withMobileProjectLogos } from "../../projects/public/mobileProjectLogos";
 import {
   retainedHarnessWriters,
   retireHarnessWriter,

@@ -11,12 +11,19 @@ export function retireProviderEpoch<T>(
   const queues = [tails, ...otherTails];
   const captured = queues.map((queue) => queue.get(sessionId));
   const retire = () => {
-    if (epochs.get(sessionId) === epoch && queues.every((queue, index) => {
-      const currentTail = queue.get(sessionId);
-      return !currentTail || currentTail === captured[index];
-    })) epochs.delete(sessionId);
+    if (
+      epochs.get(sessionId) === epoch &&
+      queues.every((queue, index) => {
+        const currentTail = queue.get(sessionId);
+        return !currentTail || currentTail === captured[index];
+      })
+    )
+      epochs.delete(sessionId);
   };
   const pending = captured.filter((tail): tail is Promise<unknown> => !!tail);
-  if (pending.length) void Promise.allSettled(pending).then(retire).catch(() => {});
+  if (pending.length)
+    void Promise.allSettled(pending)
+      .then(retire)
+      .catch(() => {});
   else retire();
 }

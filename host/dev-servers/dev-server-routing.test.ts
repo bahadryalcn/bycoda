@@ -8,6 +8,7 @@ const { handle, openBrowser } = vi.hoisted(() => ({ handle: vi.fn(), openBrowser
 vi.mock("./dev-servers", () => ({
   DevServersService: class {
     handle = handle;
+    close = async () => {};
   },
 }));
 vi.mock("./dev-server-browser", () => ({ openDevServerBrowser: openBrowser }));

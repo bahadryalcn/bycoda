@@ -166,54 +166,120 @@ it("routes real owner voice RPCs through scoped tools without leaking or retaini
       thread = opened.result.thread;
     const globalCatalog = await call("voice.tools.list", { threadId: thread.id });
     expect(globalCatalog.result.tools.length).toBeGreaterThan(0);
-    expect((await call("voice.tools.list", { threadId: "missing-thread" })).error).toMatch(/verified global assistant thread/);
+    expect((await call("voice.tools.list", { threadId: "missing-thread" })).error).toMatch(
+      /verified global assistant thread/,
+    );
     const globalTools = await call("voice.tools.call", {
-      threadId: thread.id, family: "conversation", action: "tools.list", input: {},
+      threadId: thread.id,
+      family: "conversation",
+      action: "tools.list",
+      input: {},
     });
     expect(globalTools.result.tools.length).toBeGreaterThan(0);
     const crewRead = await call("voice.tools.call", {
-      threadId: thread.id, projectId: project.id,
-      family: "conversation", action: "crews.list", input: { limit: 10 },
+      threadId: thread.id,
+      projectId: project.id,
+      family: "conversation",
+      action: "crews.list",
+      input: { limit: 10 },
     });
     // A real Room project scope requires its live native issuer; this fixture is offline.
     expect(crewRead.error).toContain("Desktop relay is offline");
     let reviews: any[] = [];
     await call("conversation.desktop.take", {});
-    const directoryRead = call("voice.tools.call", { threadId: thread.id, family: "conversation", action: "projects.organization.read", input: { offset: 2, limit: 3 } });
+    const directoryRead = call("voice.tools.call", {
+      threadId: thread.id,
+      family: "conversation",
+      action: "projects.organization.read",
+      input: { offset: 2, limit: 3 },
+    });
     reviews = [];
     for (let attempt = 0; attempt < 100 && !reviews.length; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 10));
       reviews = (await call("conversation.desktop.take", {})).result;
     }
-    expect(reviews[0]).toMatchObject({ action: "organization.read", threadId: thread.id, input: { offset: 2, limit: 3 } });
+    expect(reviews[0]).toMatchObject({
+      action: "organization.read",
+      threadId: thread.id,
+      input: { offset: 2, limit: 3 },
+    });
     expect(reviews[0]).not.toHaveProperty("projectId");
-    await call("conversation.desktop.finish", { id: reviews[0].id, result: { items: [{ cwd: project.cwd, name: "Visible" }, { cwd: "unregistered", name: "Unregistered" }], total: 5, nextOffset: null } });
-    expect((await directoryRead).result).toMatchObject({ items: [{ cwd: project.cwd, projectId: project.id }, { cwd: "unregistered" }], total: 5 });
-    const serverInput = { id: "saved-server", operationId: "remove-server-once", expectedInventoryRevision: "a".repeat(64) };
-    const remove = call("voice.tools.call", { threadId: thread.id, family: "conversation", action: "servers.ssh.remove", input: serverInput });
+    await call("conversation.desktop.finish", {
+      id: reviews[0].id,
+      result: {
+        items: [
+          { cwd: project.cwd, name: "Visible" },
+          { cwd: "unregistered", name: "Unregistered" },
+        ],
+        total: 5,
+        nextOffset: null,
+      },
+    });
+    expect((await directoryRead).result).toMatchObject({
+      items: [{ cwd: project.cwd, projectId: project.id }, { cwd: "unregistered" }],
+      total: 5,
+    });
+    const serverInput = {
+      id: "saved-server",
+      operationId: "remove-server-once",
+      expectedInventoryRevision: "a".repeat(64),
+    };
+    const remove = call("voice.tools.call", {
+      threadId: thread.id,
+      family: "conversation",
+      action: "servers.ssh.remove",
+      input: serverInput,
+    });
     reviews = [];
     for (let attempt = 0; attempt < 100 && !reviews.length; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 10));
       reviews = (await call("conversation.desktop.take", {})).result;
     }
     expect(reviews).toHaveLength(1);
-    expect(reviews[0]).toMatchObject({ action: "management.write.authorize", threadId: thread.id, input: { operation: { action: "servers.ssh.remove", input: { serverInput } } } });
-    await call("conversation.desktop.finish", { id: reviews[0].id, result: { approved: true, operationHash: reviews[0].input.operation.operationHash } });
+    expect(reviews[0]).toMatchObject({
+      action: "management.write.authorize",
+      threadId: thread.id,
+      input: { operation: { action: "servers.ssh.remove", input: { serverInput } } },
+    });
+    await call("conversation.desktop.finish", {
+      id: reviews[0].id,
+      result: { approved: true, operationHash: reviews[0].input.operation.operationHash },
+    });
     reviews = [];
     for (let attempt = 0; attempt < 100 && !reviews.length; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 10));
       reviews = (await call("conversation.desktop.take", {})).result;
     }
     expect(reviews).toHaveLength(1);
-    expect(reviews[0]).toMatchObject({ action: "servers.ssh.remove", threadId: thread.id, input: { id: "saved-server", expectedInventoryRevision: "a".repeat(64) } });
+    expect(reviews[0]).toMatchObject({
+      action: "servers.ssh.remove",
+      threadId: thread.id,
+      input: { id: "saved-server", expectedInventoryRevision: "a".repeat(64) },
+    });
     expect(reviews[0].input).not.toHaveProperty("operationId");
     await call("conversation.desktop.finish", { id: reviews[0].id, result: { removed: true } });
     expect((await remove).result).toMatchObject({ state: "completed", result: { removed: true } });
-    expect((await call("voice.tools.call", { threadId: thread.id, family: "conversation", action: "servers.ssh.remove", input: serverInput })).result).toMatchObject({ state: "completed" });
+    expect(
+      (
+        await call("voice.tools.call", {
+          threadId: thread.id,
+          family: "conversation",
+          action: "servers.ssh.remove",
+          input: serverInput,
+        })
+      ).result,
+    ).toMatchObject({ state: "completed" });
     expect((await call("conversation.desktop.take", {})).result).toEqual([]);
-    expect((await call("voice.tools.call", {
-      threadId: thread.id, family: "conversation", action: "tasks.list", input: {},
-    })).error).toMatch(/supported global operation/);
+    expect(
+      (
+        await call("voice.tools.call", {
+          threadId: thread.id,
+          family: "conversation",
+          action: "tasks.list",
+          input: {},
+        })
+      ).error,
+    ).toMatch(/supported global operation/);
     const ownerTurn = await call("assistant.request", {
       op: "threads.append",
       threadId: thread.id,
@@ -566,7 +632,13 @@ describe("voice tool gateway", () => {
 });
 
 it("accepts an exact account target only for a projectless social Room", () => {
-  const call = { threadId: "room", accountId: "account-a", family: "social", action: "inbox.list", input: {} };
+  const call = {
+    threadId: "room",
+    accountId: "account-a",
+    family: "social",
+    action: "inbox.list",
+    input: {},
+  };
   expect(parseVoiceToolCall(call)).toMatchObject({ accountId: "account-a", threadId: "room" });
   expect(() => parseVoiceToolCall({ ...call, projectId: "project" })).toThrow();
   expect(() => parseVoiceToolCall({ ...call, sessionId: "session" })).toThrow();

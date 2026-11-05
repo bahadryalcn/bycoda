@@ -7,6 +7,7 @@ export type QuestionDraft = {
   step: number;
   answers: Record<string, string[]>;
   custom: Record<string, string>;
+  notes?: Record<string, string>;
   attachments?: Record<string, Attachment[]>;
   /** A void decision callback is not proof that the provider consumed it. */
   delivery?: "sending" | "unknown";
@@ -136,6 +137,7 @@ function nonempty(entry: Entry) {
     Object.values(entry.draft.attachments ?? {}).some((files) => files.length > 0) ||
     entry.draft.step > 0 ||
     Object.values(entry.draft.answers).some((value) => value.length > 0) ||
+    Object.values(entry.draft.notes ?? {}).some((value) => value.length > 0) ||
     Object.values(entry.draft.custom).some((value) => value.length > 0)
   );
 }
@@ -225,6 +227,11 @@ function packet(
         (answer) => !Array.isArray(answer) || answer.some((text) => typeof text !== "string"),
       ) ||
       Object.values(draft.custom).some((text) => typeof text !== "string") ||
+      (draft.notes !== undefined &&
+        (typeof draft.notes !== "object" ||
+          draft.notes === null ||
+          Array.isArray(draft.notes) ||
+          Object.values(draft.notes).some((text) => typeof text !== "string"))) ||
       (draft.delivery !== undefined &&
         draft.delivery !== "sending" &&
         draft.delivery !== "unknown") ||

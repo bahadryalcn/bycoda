@@ -21,7 +21,7 @@ import {
   workingTreeDiffFocusId,
   type WorkingTreeDiffEntry,
 } from "../model/workingTreeDiff";
-import { stageChunkText } from "../../files/editor/editorGit";
+import { stageChunkText } from "../../files/public/editorGit";
 import {
   currentGitChangeHint,
   fetchGitIndex,

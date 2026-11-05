@@ -111,15 +111,88 @@ createRoot(document.getElementById("root")!).render(
   </ModelSourceContext.Provider>,
 );
 function NotificationRecoveryFixture() {
-  return <main style={{ padding: 24, maxWidth: 720, fontFamily: "var(--font-sans)" }}><h1>History · fixture</h1><AssistantNotificationRecovery environmentId="fixture-host" projects={[{ id: "fixture-project", name: "Fixture project" }]} request={async input => input.op === "threads.open" ? { thread: { id: "fixture-room" } as never } : { observationDeliveries: [{ notificationId: "observation:fixture-123", projectId: "fixture-project", state: input.op === "observation.delivery.refresh" ? "unknown" : "unknown" }] }} /></main>;
+  return (
+    <main style={{ padding: 24, maxWidth: 720, fontFamily: "var(--font-sans)" }}>
+      <h1>History · fixture</h1>
+      <AssistantNotificationRecovery
+        environmentId="fixture-host"
+        projects={[{ id: "fixture-project", name: "Fixture project" }]}
+        request={async (input) =>
+          input.op === "threads.open"
+            ? { thread: { id: "fixture-room" } as never }
+            : {
+                observationDeliveries: [
+                  {
+                    notificationId: "observation:fixture-123",
+                    projectId: "fixture-project",
+                    state: input.op === "observation.delivery.refresh" ? "unknown" : "unknown",
+                  },
+                ],
+              }
+        }
+      />
+    </main>
+  );
 }
 function RoomAuthorFixture() {
-  const author = { kind: "assistant-room" as const, name: "Assistant", threadId: "fixture-room", reason: "kickoff" as const, operationId: "fixture-operation" };
-  return <main style={{ padding: 24, fontFamily: "var(--font-sans)" }}><div className="user-message-row" style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 12 }}><SessionMessageAuthor author={author} onOpen={() => {}} /><p>Review this project and prepare the next steps.</p></div></main>;
+  const author = {
+    kind: "assistant-room" as const,
+    name: "Assistant",
+    threadId: "fixture-room",
+    reason: "kickoff" as const,
+    operationId: "fixture-operation",
+  };
+  return (
+    <main style={{ padding: 24, fontFamily: "var(--font-sans)" }}>
+      <div
+        className="user-message-row"
+        style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 12 }}
+      >
+        <SessionMessageAuthor author={author} onOpen={() => {}} />
+        <p>Review this project and prepare the next steps.</p>
+      </div>
+    </main>
+  );
 }
 function AccountGrantFixture() {
-  const account = { id:"fixture-account", platform:"telegram" as const, platformId:"fixture", name:"Fixture account", accountType:"channel" as const, scopes:[], accessApproved:true, connected:true, paused:false, executorId:"fixture-host", grants:{}, assistantGrant:{permissions:["read"] as ("read"|"draft")[],version:"fixture-revision"}, ...(params.has("account-pending") ? { assistantGrantPending: { permissions: [] as ("read"|"draft")[] } } : {}), createdAt:1 };
-  return <main className="social-view" style={{padding:24,maxWidth:720,fontFamily:"var(--font-sans)"}}><h1>Fixture account</h1><AssistantAccountGrant account={account} client={{request:async()=>{throw new Error("Fixture forbids writes")}} as never} run={async()=>false} locked={false} /></main>;
+  const account = {
+    id: "fixture-account",
+    platform: "telegram" as const,
+    platformId: "fixture",
+    name: "Fixture account",
+    accountType: "channel" as const,
+    scopes: [],
+    accessApproved: true,
+    connected: true,
+    paused: false,
+    executorId: "fixture-host",
+    grants: {},
+    assistantGrant: { permissions: ["read"] as ("read" | "draft")[], version: "fixture-revision" },
+    ...(params.has("account-pending")
+      ? { assistantGrantPending: { permissions: [] as ("read" | "draft")[] } }
+      : {}),
+    createdAt: 1,
+  };
+  return (
+    <main
+      className="social-view"
+      style={{ padding: 24, maxWidth: 720, fontFamily: "var(--font-sans)" }}
+    >
+      <h1>Fixture account</h1>
+      <AssistantAccountGrant
+        account={account}
+        client={
+          {
+            request: async () => {
+              throw new Error("Fixture forbids writes");
+            },
+          } as never
+        }
+        run={async () => false}
+        locked={false}
+      />
+    </main>
+  );
 }
 function AssistantSetupFixture() {
   const [open, setOpen] = useState(true);

@@ -87,7 +87,9 @@ function originalFor(state: Keeper, handle: ControlTurnHandle): Original {
   return original;
 }
 
-export function nativeSessionCapability(handle: ControlTurnHandle): NativeSessionCapability | undefined {
+export function nativeSessionCapability(
+  handle: ControlTurnHandle,
+): NativeSessionCapability | undefined {
   return originalFor(available(), handle).nativeSessionCapability;
 }
 
@@ -162,7 +164,12 @@ export async function beginNativeControlTurn(
   const handle = Object.freeze({ sessionId }) as ControlTurnHandle;
   if (nativeSessionCapability && nativeSessionCapability.shellId !== sessionId)
     throw new Error("Native session capability belongs to another session.");
-  const original: Original = { handle, invoke: invokeFn, nativeSessionCapability, phase: "authorizing" };
+  const original: Original = {
+    handle,
+    invoke: invokeFn,
+    nativeSessionCapability,
+    phase: "authorizing",
+  };
   // Reserve before any effect; terminal failures release the local slot.
   state.handles.set(handle, original);
   state.active.add(original);

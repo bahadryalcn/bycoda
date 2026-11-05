@@ -45,8 +45,12 @@ it("ignores an uncorrelated state-v2 message after the original request settled"
   let listener: ((event: MessageEvent) => void) | undefined;
   let requestId = "";
   class Channel {
-    set onmessage(value: (event: MessageEvent) => void) { listener = value; }
-    postMessage(value: { type: string; requestId?: string }) { if (value.type === "hello-v2") requestId = value.requestId ?? ""; }
+    set onmessage(value: (event: MessageEvent) => void) {
+      listener = value;
+    }
+    postMessage(value: { type: string; requestId?: string }) {
+      if (value.type === "hello-v2") requestId = value.requestId ?? "";
+    }
     close() {}
   }
   vi.stubGlobal("BroadcastChannel", Channel);
@@ -55,13 +59,17 @@ it("ignores an uncorrelated state-v2 message after the original request settled"
   listener?.({ data: { type: "state-v2", requestId, groupIds: [] } } as MessageEvent);
   await model.setLockPassword("synthetic-initial");
   await model.lockAllGroups();
-  expect(() => listener?.({ data: { type: "state-v2", groupIds: ["work"] } } as MessageEvent)).not.toThrow();
+  expect(() =>
+    listener?.({ data: { type: "state-v2", groupIds: ["work"] } } as MessageEvent),
+  ).not.toThrow();
   expect(model.getGroupLockView().lock.lockedGroupIds.has("work")).toBe(true);
 });
 it("keeps hidden-group authorization when another window repeats the same state", async () => {
   let listener: ((event: MessageEvent) => void) | undefined;
   class Channel {
-    set onmessage(value: (event: MessageEvent) => void) { listener = value; }
+    set onmessage(value: (event: MessageEvent) => void) {
+      listener = value;
+    }
     postMessage() {}
     close() {}
   }

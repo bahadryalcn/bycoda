@@ -39,6 +39,16 @@ export const AssistantOwnerAnswerSchema = z.strictObject({
     .record(id, z.string().max(2000))
     .refine((value) => Object.keys(value).length <= 3)
     .optional(),
+  notes: z
+    .record(
+      id,
+      z
+        .string()
+        .max(2000)
+        .refine((value) => !!value.trim()),
+    )
+    .refine((value) => Object.keys(value).length <= 3)
+    .optional(),
 });
 export const AssistantOwnerQuestionAskSchema = z
   .strictObject({
@@ -133,6 +143,7 @@ export const AssistantOwnerQuestionSchema = z.strictObject({
       requestId: id,
       answers: AssistantOwnerAnswerSchema.shape.answers,
       custom: AssistantOwnerAnswerSchema.shape.custom,
+      notes: AssistantOwnerAnswerSchema.shape.notes,
       answeredAt: counter,
       version: counter,
     })
@@ -158,14 +169,17 @@ export function validateAssistantOwnerAnswer(
     known = new Set(questions.map((item) => item.id));
   if (
     Object.keys(parsed.answers).some((key) => !known.has(key)) ||
-    Object.keys(parsed.custom ?? {}).some((key) => !known.has(key))
+    Object.keys(parsed.custom ?? {}).some((key) => !known.has(key)) ||
+    Object.keys(parsed.notes ?? {}).some((key) => !known.has(key))
   )
     throw new Error("The question changed; reload its current choices.");
   const answers: Record<string, string[]> = {},
-    custom: Record<string, string> = {};
+    custom: Record<string, string> = {},
+    notes: Record<string, string> = {};
   for (const question of questions) {
     const selected = parsed.answers[question.id] ?? [],
       text = parsed.custom?.[question.id]?.trim(),
+      note = parsed.notes?.[question.id]?.trim(),
       ids = new Set(question.options.map((option) => option.id));
     if (
       new Set(selected).size !== selected.length ||
@@ -180,8 +194,15 @@ export function validateAssistantOwnerAnswer(
       );
     if (text && !question.allowCustom)
       throw new Error("This question does not allow a custom answer.");
+    if (note && (!question.allowCustom || !selected.some((id) => id !== CUSTOM_OPTION_ID)))
+      throw new Error("This question does not allow an optional note.");
     answers[question.id] = [...selected];
     if (text) custom[question.id] = text;
+    if (note) notes[question.id] = note;
   }
-  return { answers, ...(Object.keys(custom).length ? { custom } : {}) };
+  return {
+    answers,
+    ...(Object.keys(custom).length ? { custom } : {}),
+    ...(Object.keys(notes).length ? { notes } : {}),
+  };
 }

@@ -31,7 +31,8 @@ function fixture() {
     signal: controller.signal,
     validateContext: async () => visible,
     validateAccounts: async () => visible,
-    validateProjects: async (proofs: { projectId: string; cwd: string }[]) => proofs.every(proof => proof.cwd === projectCwd),
+    validateProjects: async (proofs: { projectId: string; cwd: string }[]) =>
+      proofs.every((proof) => proof.cwd === projectCwd),
   };
   const model = vi.fn(async () => ({
     text: JSON.stringify({ type: "final", text: "Read complete" }),
@@ -52,7 +53,13 @@ function fixture() {
         ...(call.accountId ? { accountId: call.accountId } : {}),
       },
       contributorProjectIds: call.projectId ? [call.projectId] : [],
-      ...(call.family === "social" && !call.projectId ? { contributorAccounts: call.accountId ? [{ accountId: call.accountId, version: "grant-v1" }] : [] } : {}),
+      ...(call.family === "social" && !call.projectId
+        ? {
+            contributorAccounts: call.accountId
+              ? [{ accountId: call.accountId, version: "grant-v1" }]
+              : [],
+          }
+        : {}),
     }),
   );
   const ports = {
@@ -78,7 +85,9 @@ function fixture() {
     hide: () => {
       visible = false;
     },
-    retarget: () => { projectCwd = "/new-project"; },
+    retarget: () => {
+      projectCwd = "/new-project";
+    },
   };
 }
 const decision = (action: string, input = {}, projectId?: string) => ({
@@ -100,7 +109,9 @@ it("does not disclose a project result after its identity is retargeted", async 
     f.retarget();
     return result;
   });
-  await expect(runRoomManagementTurn(f.input, f.ports)).rejects.toThrow("project source became unavailable or changed");
+  await expect(runRoomManagementTurn(f.input, f.ports)).rejects.toThrow(
+    "project source became unavailable or changed",
+  );
   expect(f.model).toHaveBeenCalledTimes(1);
 });
 afterEach(() => vi.useRealTimers());
@@ -160,15 +171,29 @@ it("returns uncertain original receipts while keeping uncertain mutations held",
     const original = f.tool.getMockImplementation()!;
     f.tool.mockImplementationOnce(async (call, admission) => {
       expect(call.input.requestId).toBe("original");
-      return { ...(await original(call, admission)), value: { requestId: "original", state: "uncertain" } };
+      return {
+        ...(await original(call, admission)),
+        value: { requestId: "original", state: "uncertain" },
+      };
     });
-    await expect(runRoomManagementTurn(f.input, f.ports)).resolves.toMatchObject({ text: "Read complete" });
+    await expect(runRoomManagementTurn(f.input, f.ports)).resolves.toMatchObject({
+      text: "Read complete",
+    });
     expect(f.tool).toHaveBeenCalledOnce();
   }
   const f = fixture();
-  f.model.mockResolvedValueOnce(decision("preferences.patch", { requestId: "new", expectedRevision: "r", change: { kind: "theme", value: "dark" } }));
+  f.model.mockResolvedValueOnce(
+    decision("preferences.patch", {
+      requestId: "new",
+      expectedRevision: "r",
+      change: { kind: "theme", value: "dark" },
+    }),
+  );
   const original = f.tool.getMockImplementation()!;
-  f.tool.mockImplementationOnce(async (call, admission) => ({ ...(await original(call, admission)), value: { state: "uncertain" } }));
+  f.tool.mockImplementationOnce(async (call, admission) => ({
+    ...(await original(call, admission)),
+    value: { state: "uncertain" },
+  }));
   await expect(runRoomManagementTurn(f.input, f.ports)).rejects.toThrow("outcome is unknown");
   expect(f.saved).toMatchObject({ phase: "held-uncertain" });
   expect(f.model).toHaveBeenCalledOnce();
@@ -356,45 +381,143 @@ it("completes realistic bounded discovery, read, write and readback within the d
 
 it("binds projectless social tool decisions and results to the exact account", async () => {
   const f = fixture();
-  f.model.mockResolvedValueOnce({ text: JSON.stringify({ type: "tool", family: "social", action: "inbox.list", accountId: "account-a", input: {} }), tokens: 10 });
+  f.model.mockResolvedValueOnce({
+    text: JSON.stringify({
+      type: "tool",
+      family: "social",
+      action: "inbox.list",
+      accountId: "account-a",
+      input: {},
+    }),
+    tokens: 10,
+  });
   await runRoomManagementTurn(f.input, f.ports);
-  expect(f.tool.mock.calls[0][0]).toMatchObject({ threadId: "room", accountId: "account-a", family: "social" });
+  expect(f.tool.mock.calls[0][0]).toMatchObject({
+    threadId: "room",
+    accountId: "account-a",
+    family: "social",
+  });
   const bad = fixture();
-  bad.model.mockResolvedValueOnce({ text: JSON.stringify({ type: "tool", family: "social", action: "inbox.list", accountId: "account-a", input: {} }), tokens: 10 });
-  bad.tool.mockImplementationOnce(async (call) => ({ value: {}, source: { environmentId: "host", threadId: call.threadId, family: call.family, action: call.action, accountId: "account-b" }, contributorProjectIds: [] }));
-  await expect(runRoomManagementTurn(bad.input, bad.ports)).rejects.toThrow("result source changed");
+  bad.model.mockResolvedValueOnce({
+    text: JSON.stringify({
+      type: "tool",
+      family: "social",
+      action: "inbox.list",
+      accountId: "account-a",
+      input: {},
+    }),
+    tokens: 10,
+  });
+  bad.tool.mockImplementationOnce(async (call) => ({
+    value: {},
+    source: {
+      environmentId: "host",
+      threadId: call.threadId,
+      family: call.family,
+      action: call.action,
+      accountId: "account-b",
+    },
+    contributorProjectIds: [],
+  }));
+  await expect(runRoomManagementTurn(bad.input, bad.ports)).rejects.toThrow(
+    "result source changed",
+  );
 });
 
 it("holds account provenance across provider awaits and rejects a revoked reply", async () => {
   const f = fixture();
   let allowed = true;
-  f.input.validateAccounts = async (proofs) => allowed && proofs.every((proof) => proof.accountId === "account-a" && proof.version === "grant-v1");
-  f.model.mockResolvedValueOnce({ text: JSON.stringify({ type: "tool", family: "social", action: "inbox.list", accountId: "account-a", input: {} }), tokens: 10 });
-  f.model.mockImplementationOnce(async () => { allowed = false; return { text: JSON.stringify({ type: "final", text: "private data" }), tokens: 10 }; });
-  await expect(runRoomManagementTurn(f.input, f.ports)).rejects.toThrow("account access became unavailable");
+  f.input.validateAccounts = async (proofs) =>
+    allowed &&
+    proofs.every((proof) => proof.accountId === "account-a" && proof.version === "grant-v1");
+  f.model.mockResolvedValueOnce({
+    text: JSON.stringify({
+      type: "tool",
+      family: "social",
+      action: "inbox.list",
+      accountId: "account-a",
+      input: {},
+    }),
+    tokens: 10,
+  });
+  f.model.mockImplementationOnce(async () => {
+    allowed = false;
+    return { text: JSON.stringify({ type: "final", text: "private data" }), tokens: 10 };
+  });
+  await expect(runRoomManagementTurn(f.input, f.ports)).rejects.toThrow(
+    "account access became unavailable",
+  );
   expect(f.saved?.result).toBeUndefined();
 });
 
 it("fails closed when account provenance is missing or names another account", async () => {
-  for (const contributorAccounts of [undefined, [{ accountId: "account-b", version: "grant-v1" }]]) {
+  for (const contributorAccounts of [
+    undefined,
+    [{ accountId: "account-b", version: "grant-v1" }],
+  ]) {
     const f = fixture();
-    f.model.mockResolvedValueOnce({ text: JSON.stringify({ type: "tool", family: "social", action: "inbox.list", accountId: "account-a", input: {} }), tokens: 10 });
-    f.tool.mockImplementationOnce(async call => ({ value: {}, source: { environmentId: "host", threadId: call.threadId, family: call.family, action: call.action, accountId: "account-a" }, contributorProjectIds: [], ...(contributorAccounts ? { contributorAccounts } : {}) }));
-    await expect(runRoomManagementTurn(f.input, f.ports)).rejects.toThrow(contributorAccounts ? "account contributor scope changed" : "account provenance is unavailable");
+    f.model.mockResolvedValueOnce({
+      text: JSON.stringify({
+        type: "tool",
+        family: "social",
+        action: "inbox.list",
+        accountId: "account-a",
+        input: {},
+      }),
+      tokens: 10,
+    });
+    f.tool.mockImplementationOnce(async (call) => ({
+      value: {},
+      source: {
+        environmentId: "host",
+        threadId: call.threadId,
+        family: call.family,
+        action: call.action,
+        accountId: "account-a",
+      },
+      contributorProjectIds: [],
+      ...(contributorAccounts ? { contributorAccounts } : {}),
+    }));
+    await expect(runRoomManagementTurn(f.input, f.ports)).rejects.toThrow(
+      contributorAccounts
+        ? "account contributor scope changed"
+        : "account provenance is unavailable",
+    );
     expect(f.saved?.result).toBeUndefined();
   }
 });
 
 it("retains verified Native library provenance across the model turn and blocks revoked sources", async () => {
   const f = fixture();
-  const proof = { environmentId: "host", threadId: "room", installationId: "installation", issuer: "issuer", registryRevision: "revision", visibilityEpoch: 1, policyGeneration: "policy" };
+  const proof = {
+    environmentId: "host",
+    threadId: "room",
+    installationId: "installation",
+    issuer: "issuer",
+    registryRevision: "revision",
+    visibilityEpoch: 1,
+    policyGeneration: "policy",
+  };
   let valid = true;
   const input = { ...f.input, validateNativeProofs: async () => valid };
   f.model.mockResolvedValueOnce(decision("observations.read", { nativeLibrary: true }));
-  f.tool.mockImplementationOnce(async call => ({ value: { events: [] }, source: { environmentId: "host", threadId: call.threadId, family: call.family, action: call.action, nativeLibrary: true }, contributorProjectIds: [], contributorNativeProofs: [proof] }));
+  f.tool.mockImplementationOnce(async (call) => ({
+    value: { events: [] },
+    source: {
+      environmentId: "host",
+      threadId: call.threadId,
+      family: call.family,
+      action: call.action,
+      nativeLibrary: true,
+    },
+    contributorProjectIds: [],
+    contributorNativeProofs: [proof],
+  }));
   const result = await runRoomManagementTurn(input, f.ports);
   expect(result.contributorNativeProofs).toEqual([proof]);
   expect(f.saved?.calls[0].contributorNativeProofs).toEqual([proof]);
   valid = false;
-  await expect(runRoomManagementTurn(input, f.ports)).rejects.toThrow("Native library source became unavailable or changed");
+  await expect(runRoomManagementTurn(input, f.ports)).rejects.toThrow(
+    "Native library source became unavailable or changed",
+  );
 });

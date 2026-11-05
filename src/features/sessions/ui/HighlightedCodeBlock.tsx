@@ -2,7 +2,7 @@ import { memo, useEffect, useMemo, useState, type CSSProperties, type ReactEleme
 import type { HighlightResult } from "@streamdown/code";
 import type { BundledLanguage } from "shiki";
 import { CodeBlockContainer, CodeBlockHeader } from "streamdown";
-import { useCodeHighlightPlugin } from "../../files/editor/useCodeHighlightPlugin";
+import { useCodeHighlightPlugin } from "../../files/public/useCodeHighlightPlugin";
 
 type Line = HighlightResult["tokens"][number];
 

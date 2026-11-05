@@ -3,7 +3,7 @@ import { t, useLocale } from "../../../shared/i18n";
 import { useEffect, useState } from "react";
 import { basename, gitFetch, gitRemotes, notifyGitChanged } from "../../../platform/tauri/fs";
 import { Popover } from "../../../shared/ui/Popover";
-import { GIT_ACTIONS, requireRemoteSupport } from "../../connections/model/remoteCapabilities";
+import { GIT_ACTIONS, requireRemoteSupport } from "../../connections/public/remoteCapabilities";
 import { fetchAllProjects, type FetchAllResult } from "../model/groupGit";
 
 const LABELS: Record<FetchAllResult["status"], string> = {

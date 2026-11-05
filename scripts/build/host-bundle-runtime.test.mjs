@@ -49,25 +49,50 @@ test("production Host ESM options start the real bundled ws dependency without a
   assert.equal(result.trim(), "owned websocket runtime");
 });
 
-
 test("bundled readonly session helper runs with no TypeScript loader or ambient NODE_OPTIONS", async (t) => {
   const root = fileURLToPath(new URL("../../", import.meta.url));
   const directory = mkdtempSync(join(tmpdir(), "bycoda-session-helper-esm-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
-  const plan = hostBuildPlans(readFileSync(join(root, "host/build.mjs"), "utf8")).find((item) => item.entryPoints.includes("host/session-read-helper.mjs"));
+  const plan = hostBuildPlans(readFileSync(join(root, "host/build.mjs"), "utf8")).find((item) =>
+    item.entryPoints.includes("host/session-read-helper.mjs"),
+  );
   assert.ok(plan);
   const output = join(directory, "session-read-helper.mjs");
   await build({ ...plan, absWorkingDir: root, outfile: output, sourcemap: false });
   const environment = { ...process.env };
   delete environment.NODE_OPTIONS;
   delete environment.NODE_PATH;
-  const child = fork(output, [], { execPath: process.execPath, execArgv: [], env: environment, windowsHide: true, stdio: ["ignore", "ignore", "ignore", "ipc"], serialization: "advanced" });
+  const child = fork(output, [], {
+    execPath: process.execPath,
+    execArgv: [],
+    env: environment,
+    windowsHide: true,
+    stdio: ["ignore", "ignore", "ignore", "ipc"],
+    serialization: "advanced",
+  });
   const deadline = setTimeout(() => child.kill("SIGKILL"), 15000);
-  t.after(() => { clearTimeout(deadline); child.kill("SIGKILL"); });
+  t.after(() => {
+    clearTimeout(deadline);
+    child.kill("SIGKILL");
+  });
   let reply;
-  child.on("message", (value) => { reply = value; });
-  const exit = new Promise((resolve, reject) => { child.once("exit", resolve); child.once("error", reject); });
-  child.send({ id: "packaged-original", request: { kind: "desktop", paths: [], platform: process.platform, method: "stamp", sessionId: "missing" } });
+  child.on("message", (value) => {
+    reply = value;
+  });
+  const exit = new Promise((resolve, reject) => {
+    child.once("exit", resolve);
+    child.once("error", reject);
+  });
+  child.send({
+    id: "packaged-original",
+    request: {
+      kind: "desktop",
+      paths: [],
+      platform: process.platform,
+      method: "stamp",
+      sessionId: "missing",
+    },
+  });
   assert.equal(await exit, 0);
   assert.deepEqual(reply, { id: "packaged-original", value: [], error: undefined });
 });

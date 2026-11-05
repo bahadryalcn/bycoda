@@ -263,7 +263,8 @@ it.each([false, true])(
       expect(container.querySelector("textarea")).toBe(input);
       act(() => options.at(-1)!.click());
     }
-    expect(container.querySelector("textarea")).toBeNull();
+    expect(container.querySelector('textarea[aria-label="Type your answer"]')).toBeNull();
+    expect(container.textContent).toContain("Additional note (optional)");
   },
 );
 

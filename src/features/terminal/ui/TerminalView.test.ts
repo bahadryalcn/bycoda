@@ -337,9 +337,16 @@ it("updates the retained terminal when accessibility transparency changes", asyn
   const { host, root } = setup();
   host.style.backgroundColor = "rgb(17, 34, 51)";
   try {
-    await act(async () => root.render(createElement(TerminalView, {
-      id: "transparency-change", cwd: "", sshConnectionId: "saved", active: true,
-    })));
+    await act(async () =>
+      root.render(
+        createElement(TerminalView, {
+          id: "transparency-change",
+          cwd: "",
+          sshConnectionId: "saved",
+          active: true,
+        }),
+      ),
+    );
     const instance = xterm.instances[0];
     expect(instance.options).toHaveProperty("theme.background", "rgba(17, 34, 51, 0)");
     host.style.backgroundColor = "rgb(68, 85, 102)";

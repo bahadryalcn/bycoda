@@ -63,7 +63,7 @@ export function CrewWorkList({
   const selectedHidden =
     !!selectedId && !!query.trim() && !runs.some((run) => run.id === selectedId);
   return (
-    <nav aria-label={t("Crew work")} className="flex min-w-0 flex-col bg-(--ui-workspace-panel)">
+    <nav aria-label={t("Crew work")} className="flex min-w-0 flex-col bg-transparent">
       <div className="flex flex-col gap-2 px-3 pb-2 pt-3">
         <SegmentedControl
           label={t("Crew work view")}
@@ -140,8 +140,17 @@ export function CrewWorkList({
           </p>
         ) : null}
         {view === "finished" && hasMoreHistory ? (
-          <Button variant="ghost" size="sm" disabled={disabled || historyLoading} onClick={onLoadMore}>
-            {historyLoading ? t("Loading…") : historyError ? t("Retry loading older work") : t("Load older work")}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={disabled || historyLoading}
+            onClick={onLoadMore}
+          >
+            {historyLoading
+              ? t("Loading…")
+              : historyError
+                ? t("Retry loading older work")
+                : t("Load older work")}
           </Button>
         ) : null}
       </div>

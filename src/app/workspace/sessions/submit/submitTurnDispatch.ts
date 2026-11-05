@@ -246,7 +246,8 @@ export async function runSubmitDispatch(
         startNativeOutputSession(sessionId, () => turnGen.current.get(sessionId) === gen);
       earlyNativeOutput = undefined;
       const nativeOutputSessionId = nativeOutput?.sessionId;
-      if (options?.appRequestId) await requireRoomNativeOutput(nativeOutput, () => turnGen.current.get(sessionId) === gen);
+      if (options?.appRequestId)
+        await requireRoomNativeOutput(nativeOutput, () => turnGen.current.get(sessionId) === gen);
       recordPerformanceEvent("dispatch", {}, traceId);
       const finishDispatch = startPerformanceSpan("dispatch", {}, traceId);
       // A queued send waits for the provider from here on, not from its claim.

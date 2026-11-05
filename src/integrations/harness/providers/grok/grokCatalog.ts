@@ -72,7 +72,10 @@ async function discoverViaAcp(workingDirectory?: string) {
   const { path } = await resolveGrokBinary();
   const cwd = workingDirectory ?? (await homeDir());
   const probeId = `${PROBE_ID}-${crypto.randomUUID()}`;
-  const probeProcess = retirements.admit(createChildProcessHandle(probeId, undefined, "management"), "grok.catalog");
+  const probeProcess = retirements.admit(
+    createChildProcessHandle(probeId, undefined, "management"),
+    "grok.catalog",
+  );
   const acp = new AcpClient(probeProcess, {
     onRequest: (id) => {
       void acp.respond(id, {}).catch(() => undefined);

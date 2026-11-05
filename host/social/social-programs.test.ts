@@ -156,9 +156,24 @@ async function fixture(
 }
 describe("AI campaign programs through SocialService", () => {
   it("coalesces feature-only Codex probes and permits explicit fresh discovery without caching generation capability", async () => {
-    let release!: (value: { provider: "codex"; available: boolean; reason: string; models: string[] }) => void;
-    const held = new Promise<{ provider: "codex"; available: boolean; reason: string; models: string[] }>((done) => { release = done; });
-    const capability = vi.fn().mockImplementationOnce(() => held).mockResolvedValue({ provider: "codex", available: false, reason: "Signed out", models: [] });
+    let release!: (value: {
+      provider: "codex";
+      available: boolean;
+      reason: string;
+      models: string[];
+    }) => void;
+    const held = new Promise<{
+      provider: "codex";
+      available: boolean;
+      reason: string;
+      models: string[];
+    }>((done) => {
+      release = done;
+    });
+    const capability = vi
+      .fn()
+      .mockImplementationOnce(() => held)
+      .mockResolvedValue({ provider: "codex", available: false, reason: "Signed out", models: [] });
     const images: SocialImageAdapters = { codex: { capability, generate: vi.fn() } };
     const f = await fixture(undefined, images);
     const first = f.call<{ images: Array<{ models: string[] }> }>("programs.features");
@@ -168,16 +183,22 @@ describe("AI campaign programs through SocialService", () => {
     await second;
     expect(capability).toHaveBeenCalledTimes(1);
     result.images[0].models.push("mutated response");
-    const cached = await f.call<{ images: Array<{ available: boolean; models: string[] }> }>("programs.features");
+    const cached = await f.call<{ images: Array<{ available: boolean; models: string[] }> }>(
+      "programs.features",
+    );
     expect(cached.images[0].models).toEqual(["native-default"]);
     expect(capability).toHaveBeenCalledTimes(1);
-    const fresh = await f.call<{ images: Array<{ available: boolean }> }>("programs.features", { refresh: true });
+    const fresh = await f.call<{ images: Array<{ available: boolean }> }>("programs.features", {
+      refresh: true,
+    });
     expect(fresh.images[0].available).toBe(false);
     expect(capability).toHaveBeenCalledTimes(2);
     await images.codex!.capability();
     expect(capability).toHaveBeenCalledTimes(3);
     expect(images.codex!.generate).not.toHaveBeenCalled();
-    await expect(f.call("programs.features", { refresh: "yes" })).rejects.toThrow("Invalid feature refresh");
+    await expect(f.call("programs.features", { refresh: "yes" })).rejects.toThrow(
+      "Invalid feature refresh",
+    );
   });
   it("keeps generation stopped when an older asynchronous start resumes after Stop", async () => {
     const generate = vi.fn(async () => JSON.stringify({ text: "Prepared content", factIds: [] }));

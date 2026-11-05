@@ -81,16 +81,34 @@ function fixture() {
 }
 it("binds Room organization writes to the explicit project and current authority", async () => {
   const f = fixture();
-  const context = { environmentId: "env", sourceThreadId: "room", projectId: "project-id",
-    projectCwd: "/alpha", workingCwd: "/alpha", valid: () => true, authorize: vi.fn(async () => false) };
-  const snapshot = await f.control(context, "organization.read", {}) as ProjectOrganizationSnapshot;
+  const context = {
+    environmentId: "env",
+    sourceThreadId: "room",
+    projectId: "project-id",
+    projectCwd: "/alpha",
+    workingCwd: "/alpha",
+    valid: () => true,
+    authorize: vi.fn(async () => false),
+  };
+  const snapshot = (await f.control(
+    context,
+    "organization.read",
+    {},
+  )) as ProjectOrganizationSnapshot;
   expect(snapshot).toMatchObject({ sourceThreadId: "room", projectId: "project-id" });
-  const result = await f.control(context, "organization.patch", { operationId: "room-op",
-    expectedRevision: snapshot.revision, change: { kind: "projectName", name: "Changed" } }) as ProjectOrganizationStatus;
+  const result = (await f.control(context, "organization.patch", {
+    operationId: "room-op",
+    expectedRevision: snapshot.revision,
+    change: { kind: "projectName", name: "Changed" },
+  })) as ProjectOrganizationStatus;
   expect(result.state).toBe("failed");
   expect(context.authorize).toHaveBeenCalledOnce();
   expect(loadCustomTabGroupLabels()[projectKey("/alpha")]).not.toBe("Changed");
-  expect(await f.control({ ...context, projectId: "other" }, "organization.status", { operationId: "room-op" })).toEqual({ state: "unknown" });
+  expect(
+    await f.control({ ...context, projectId: "other" }, "organization.status", {
+      operationId: "room-op",
+    }),
+  ).toEqual({ state: "unknown" });
 });
 it("returns current-project canonical metadata and explicitly optimistic revisions without private membership", async () => {
   saveProjectGroups([

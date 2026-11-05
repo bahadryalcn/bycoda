@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getHostRpcMethod } from "../../../shared/model/host-contracts";
 import {
+  hostServerDispatchSource,
   remoteRpcCallLiterals,
   rpcCallLiterals,
   rpcDispatchLiterals,
@@ -27,7 +28,7 @@ function allowlist(): Set<string> {
 }
 
 function hostMethods(): Set<string> {
-  const server = readFileSync(join(root, "host", "server.ts"), "utf8");
+  const server = hostServerDispatchSource();
   // Compatibility spellings or tool actions in the HTTP source do not add a
   // canonical RPC contract and must never expand the native forwarding list.
   return new Set(rpcDispatchLiterals(server).filter((name) => getHostRpcMethod(name)));
@@ -56,10 +57,11 @@ describe("remote method allowlist", () => {
       invoke("remote_request", { method: "tasks.list", params: {} });
       const descriptor = { method: "desktop.status" };
       switch (input.method) { case "tasks.list": break; }
+      switch (request.input.method) { case "tasks.save": break; }
       switch (tool.action) { case "desktop.status": break; }
     `;
     expect(rpcCallLiterals(source).sort()).toEqual(["desktop.request", "tasks.list"]);
-    expect(rpcDispatchLiterals(source)).toEqual(["tasks.list"]);
+    expect(rpcDispatchLiterals(source)).toEqual(["tasks.list", "tasks.save"]);
     expect(remoteRpcCallLiterals(source).sort()).toEqual(["desktop.request", "tasks.list"]);
     expect(
       remoteRpcCallLiterals(`

@@ -28,11 +28,35 @@ export interface SessionDraftActionDeps {
 }
 
 /** Shared draft construction for interactive and explicitly owned Room creation. */
-export function addSessionDraft(session: Session, text: string, attachments: Attachment[] = [], appRequestId?: string): Session {
+export function addSessionDraft(
+  session: Session,
+  text: string,
+  attachments: Attachment[] = [],
+  appRequestId?: string,
+): Session {
   if (sessionDraftBlock(session)) return session;
-  const title = canReplaceSessionTitle(session.title, session.harness, HARNESS_LABEL[session.harness])
-    ? titleFromPrompt(text, session.harness, attachments) : session.title;
-  return { ...session, title, blocks: [...session.blocks, { id: crypto.randomUUID(), role: "user", text, ...(attachments.length ? { attachments } : {}), draft: true, ...(appRequestId ? { appRequestId } : {}) }] };
+  const title = canReplaceSessionTitle(
+    session.title,
+    session.harness,
+    HARNESS_LABEL[session.harness],
+  )
+    ? titleFromPrompt(text, session.harness, attachments)
+    : session.title;
+  return {
+    ...session,
+    title,
+    blocks: [
+      ...session.blocks,
+      {
+        id: crypto.randomUUID(),
+        role: "user",
+        text,
+        ...(attachments.length ? { attachments } : {}),
+        draft: true,
+        ...(appRequestId ? { appRequestId } : {}),
+      },
+    ],
+  };
 }
 
 export function useSessionDraftActions({

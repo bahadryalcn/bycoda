@@ -1,5 +1,5 @@
 import { themePalette } from "../../../shared/theme/palette";
-import type { CrewTheme } from "../../settings/model/settings";
+import type { CrewTheme } from "../../settings";
 import { drawPacingDroid } from "./pacingDroidArt";
 import { drawPacingEnt } from "./pacingEntArt";
 import {

@@ -74,8 +74,9 @@ it("does not send a prompt when the fresh session request fails", async () => {
     if (request.type === "new_session") throw new Error("session reset failed");
     return { data: {} };
   });
-  await expect(runPiTextPrompt({ cwd: "/repo", prompt: "private request" }))
-    .rejects.toThrow("session reset failed");
+  await expect(runPiTextPrompt({ cwd: "/repo", prompt: "private request" })).rejects.toThrow(
+    "session reset failed",
+  );
   expect(mocks.request.mock.calls.some(([request]) => request.type === "prompt")).toBe(false);
 });
 

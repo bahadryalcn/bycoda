@@ -116,9 +116,7 @@ export async function readHarnessSkill(
   // Without a selector, read the copy that /name resolves to.
   const inventory = await listHostSkillCandidatesAsync(cwd, home, provider);
   if (inventory.truncated) throw new Error("Skill discovery is incomplete; exact read refused.");
-  const named = inventory.skills.filter(
-    (entry) => entry.name === input.name,
-  );
+  const named = inventory.skills.filter((entry) => entry.name === input.name);
   const matches = named.filter(
     (entry) =>
       (!input.source || entry.source === input.source) &&

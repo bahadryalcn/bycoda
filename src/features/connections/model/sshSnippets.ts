@@ -2,7 +2,7 @@ import {
   loadPromptTemplates,
   savePromptTemplates,
   subscribePromptTemplates,
-} from "../../sessions/model/promptTemplates";
+} from "../../sessions/public/promptTemplates";
 import { isSingleLineCommand } from "../../terminal/model/terminalSuggestions";
 
 const KEY = "bycoda.sshSnippetReferences.v1";

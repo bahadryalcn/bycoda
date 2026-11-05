@@ -42,11 +42,29 @@ async function fixture(
     listProjects: async () =>
       (await store.projects()).map((p) => ({ id: p.id, path: p.cwd, name: p.name })),
     ...(options.visible ? { manualProjectVisible: async () => options.visible!() } : {}),
-    ...(options.qualified ? {
-      roomProjectProofsValid: async (proofs: { projectId: string; cwd: string }[]) => (await Promise.all(proofs.map(async proof => (await store.project(proof.projectId)).cwd === proof.cwd))).every(Boolean),
-      roomAccountProofsValid: async (_threadId: string, proofs: { accountId: string; version: string }[]) => proofs.every(proof => proof.accountId === "account" && proof.version === "grant-v1"),
-      withSummarySourceDisclosure: async <T>(_threadId: string, projectProofs: { projectId: string; cwd: string }[], _accountProofs: { accountId: string; version: string }[], effect: (valid: () => boolean) => Promise<T>) => store.withProjectIdentityRead(projectProofs, effect),
-    } : {}),
+    ...(options.qualified
+      ? {
+          roomProjectProofsValid: async (proofs: { projectId: string; cwd: string }[]) =>
+            (
+              await Promise.all(
+                proofs.map(
+                  async (proof) => (await store.project(proof.projectId)).cwd === proof.cwd,
+                ),
+              )
+            ).every(Boolean),
+          roomAccountProofsValid: async (
+            _threadId: string,
+            proofs: { accountId: string; version: string }[],
+          ) =>
+            proofs.every((proof) => proof.accountId === "account" && proof.version === "grant-v1"),
+          withSummarySourceDisclosure: async <T>(
+            _threadId: string,
+            projectProofs: { projectId: string; cwd: string }[],
+            _accountProofs: { accountId: string; version: string }[],
+            effect: (valid: () => boolean) => Promise<T>,
+          ) => store.withProjectIdentityRead(projectProofs, effect),
+        }
+      : {}),
     summarize: async (input) => {
       calls.push(input);
       return options.generate
@@ -147,31 +165,64 @@ it("persists exact source identities for qualified project summaries and rejects
   await f.summary().drain();
   const first = await f.current();
   expect(first.summaryProof?.projectIds).toEqual([f.project.id]);
-  expect(await f.summary().sourceProofs(f.thread.id, first.summaryProof!.id)).toEqual({ projectProofs: [{ projectId: f.project.id, cwd: f.project.cwd }], accountProofs: [] });
-  await f.store.withProjectIdentityWrite(() => f.store.db.prepare("UPDATE projects SET cwd=? WHERE id=?").run(`${f.project.cwd}-new`, f.project.id).then(() => undefined));
+  expect(await f.summary().sourceProofs(f.thread.id, first.summaryProof!.id)).toEqual({
+    projectProofs: [{ projectId: f.project.id, cwd: f.project.cwd }],
+    accountProofs: [],
+  });
+  await f.store.withProjectIdentityWrite(() =>
+    f.store.db
+      .prepare("UPDATE projects SET cwd=? WHERE id=?")
+      .run(`${f.project.cwd}-new`, f.project.id)
+      .then(() => undefined),
+  );
   const saved = await f.summary().sourceProofs(f.thread.id, first.summaryProof!.id);
-  await expect(f.store.withProjectIdentityRead(saved!.projectProofs, async () => {})).rejects.toThrow("project identity changed");
+  await expect(
+    f.store.withProjectIdentityRead(saved!.projectProofs, async () => {}),
+  ).rejects.toThrow("project identity changed");
   expect(await f.current()).toMatchObject({ summary: "", summaryState: { status: "blocked" } });
 });
 it("persists account grant versions in qualified summary artifacts", async () => {
   const f = await fixture({ qualified: true });
-  vi.spyOn(f.service as unknown as { messageAccountProofs: () => Promise<{ accountId: string; version: string }[]> }, "messageAccountProofs").mockResolvedValue([{ accountId: "account", version: "grant-v1" }]);
+  vi.spyOn(
+    f.service as unknown as {
+      messageAccountProofs: () => Promise<{ accountId: string; version: string }[]>;
+    },
+    "messageAccountProofs",
+  ).mockResolvedValue([{ accountId: "account", version: "grant-v1" }]);
   await f.fill();
   await f.summary().drain();
   const thread = await f.current();
-  expect(await f.summary().sourceProofs(f.thread.id, thread.summaryProof!.id)).toEqual({ projectProofs: [], accountProofs: [{ accountId: "account", version: "grant-v1" }] });
+  expect(await f.summary().sourceProofs(f.thread.id, thread.summaryProof!.id)).toEqual({
+    projectProofs: [],
+    accountProofs: [{ accountId: "account", version: "grant-v1" }],
+  });
 });
 it("holds the project identity through the physical summary provider and rechecks it at commit", async () => {
   let entered!: () => void, release!: () => void;
-  const started = new Promise<void>(resolve => { entered = resolve; });
-  const gate = new Promise<void>(resolve => { release = resolve; });
-  const f = await fixture({ project: true, visible: async () => true, qualified: true, generate: async () => { entered(); await gate; return { text: "Old project summary", tokens: 10 }; } });
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const f = await fixture({
+    project: true,
+    visible: async () => true,
+    qualified: true,
+    generate: async () => {
+      entered();
+      await gate;
+      return { text: "Old project summary", tokens: 10 };
+    },
+  });
   await f.fill();
   const running = f.summary().drain();
   await started;
   let changed = false;
   const writer = f.store.withProjectIdentityWrite(async () => {
-    await f.store.db.prepare("UPDATE projects SET cwd=? WHERE id=?").run(`${f.project.cwd}-new`, f.project.id);
+    await f.store.db
+      .prepare("UPDATE projects SET cwd=? WHERE id=?")
+      .run(`${f.project.cwd}-new`, f.project.id);
     changed = true;
   });
   await Promise.resolve();
@@ -511,11 +562,29 @@ it("captures the original proven typed-reply summary before a concurrent rolling
 
 it("retains Native library proof in summary and hides it after revocation", async () => {
   const f = await fixture({ qualified: true });
-  const proof = { environmentId: f.store.environmentId, threadId: f.thread.id, installationId: "installation", issuer: "issuer", registryRevision: "revision", visibilityEpoch: 1, policyGeneration: "generation" };
+  const proof = {
+    environmentId: f.store.environmentId,
+    threadId: f.thread.id,
+    installationId: "installation",
+    issuer: "issuer",
+    registryRevision: "revision",
+    visibilityEpoch: 1,
+    policyGeneration: "generation",
+  };
   let valid = true;
-  vi.spyOn(f.service as unknown as { messageNativeProofs: () => Promise<typeof proof[]> }, "messageNativeProofs").mockResolvedValue([proof]);
+  vi.spyOn(
+    f.service as unknown as { messageNativeProofs: () => Promise<(typeof proof)[]> },
+    "messageNativeProofs",
+  ).mockResolvedValue([proof]);
   f.ports.roomNativeProofsValid = async () => valid;
-  f.ports.withSummarySourceDisclosure = async (_threadId, _projects, _accounts, effect, _expected, native) => {
+  f.ports.withSummarySourceDisclosure = async (
+    _threadId,
+    _projects,
+    _accounts,
+    effect,
+    _expected,
+    native,
+  ) => {
     expect(native).toEqual([proof]);
     if (!valid) throw new Error("Native source revoked");
     return effect(() => valid);
@@ -523,7 +592,9 @@ it("retains Native library proof in summary and hides it after revocation", asyn
   await f.fill();
   await f.summary().drain();
   const thread = await f.current();
-  expect((await f.summary().sourceProofs(f.thread.id, thread.summaryProof!.id))?.nativeProofs).toEqual([proof]);
+  expect(
+    (await f.summary().sourceProofs(f.thread.id, thread.summaryProof!.id))?.nativeProofs,
+  ).toEqual([proof]);
   valid = false;
   expect(await f.current()).toMatchObject({ summary: "", summaryState: { status: "blocked" } });
 });

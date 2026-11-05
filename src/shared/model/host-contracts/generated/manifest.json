@@ -275,6 +275,11 @@
                     "type": "integer"
                   },
                   "id": { "type": "string" },
+                  "notes": {
+                    "additionalProperties": { "type": "string" },
+                    "propertyNames": { "type": "string" },
+                    "type": "object"
+                  },
                   "op": { "const": "questions.answer", "type": "string" },
                   "requestId": { "type": "string" }
                 },
@@ -2054,6 +2059,11 @@
                         "propertyNames": { "type": "string" },
                         "type": "object"
                       },
+                      "notes": {
+                        "additionalProperties": { "type": "string" },
+                        "propertyNames": { "type": "string" },
+                        "type": "object"
+                      },
                       "requestId": { "type": "string" },
                       "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                     },
@@ -2092,6 +2102,11 @@
                                 "type": "integer"
                               },
                               "id": { "type": "string" },
+                              "notes": {
+                                "additionalProperties": { "type": "string" },
+                                "propertyNames": { "type": "string" },
+                                "type": "object"
+                              },
                               "op": { "const": "questions.answer", "type": "string" },
                               "requestId": { "type": "string" }
                             },
@@ -2253,6 +2268,11 @@
                         "type": "integer"
                       },
                       "id": { "type": "string" },
+                      "notes": {
+                        "additionalProperties": { "type": "string" },
+                        "propertyNames": { "type": "string" },
+                        "type": "object"
+                      },
                       "op": { "const": "questions.answer", "type": "string" },
                       "requestId": { "type": "string" }
                     },
@@ -3330,6 +3350,11 @@
                           "propertyNames": { "type": "string" },
                           "type": "object"
                         },
+                        "notes": {
+                          "additionalProperties": { "type": "string" },
+                          "propertyNames": { "type": "string" },
+                          "type": "object"
+                        },
                         "requestId": { "type": "string" },
                         "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
                       },
@@ -3368,6 +3393,11 @@
                                   "type": "integer"
                                 },
                                 "id": { "type": "string" },
+                                "notes": {
+                                  "additionalProperties": { "type": "string" },
+                                  "propertyNames": { "type": "string" },
+                                  "type": "object"
+                                },
                                 "op": { "const": "questions.answer", "type": "string" },
                                 "requestId": { "type": "string" }
                               },
@@ -6337,7 +6367,12 @@
                         "propertyNames": { "type": "string" },
                         "type": "object"
                       },
-                      "kind": { "const": "answered", "type": "string" }
+                      "kind": { "const": "answered", "type": "string" },
+                      "notes": {
+                        "additionalProperties": { "type": "string" },
+                        "propertyNames": { "type": "string" },
+                        "type": "object"
+                      }
                     },
                     "required": ["kind", "answers"],
                     "type": "object"
@@ -46279,7 +46314,12 @@
                       "propertyNames": { "type": "string" },
                       "type": "object"
                     },
-                    "kind": { "const": "answered", "type": "string" }
+                    "kind": { "const": "answered", "type": "string" },
+                    "notes": {
+                      "additionalProperties": { "type": "string" },
+                      "propertyNames": { "type": "string" },
+                      "type": "object"
+                    }
                   },
                   "required": ["kind", "answers"],
                   "type": "object"
@@ -46861,6 +46901,11 @@
                           "type": "integer"
                         },
                         "id": { "type": "string" },
+                        "notes": {
+                          "additionalProperties": { "type": "string" },
+                          "propertyNames": { "type": "string" },
+                          "type": "object"
+                        },
                         "op": { "const": "questions.answer", "type": "string" },
                         "requestId": { "type": "string" }
                       },
@@ -60922,7 +60967,12 @@
                               "propertyNames": { "type": "string" },
                               "type": "object"
                             },
-                            "kind": { "const": "answered", "type": "string" }
+                            "kind": { "const": "answered", "type": "string" },
+                            "notes": {
+                              "additionalProperties": { "type": "string" },
+                              "propertyNames": { "type": "string" },
+                              "type": "object"
+                            }
                           },
                           "required": ["kind", "answers"],
                           "type": "object"
@@ -61719,5 +61769,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "a768d6edceb62c8693176bd6841ba23640b97237908aa58ba5408acb9995d04b"
+  "schemaHash": "2c9b5fadf2a6d8f1024cbb17b36de0155ab8a907a5b9ec336ae58946569c14f8"
 }

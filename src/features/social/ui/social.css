@@ -187,9 +187,9 @@
   max-inline-size: 100%;
   padding: 1rem;
 }
-/* The list/context pane is a quiet panel; the work area beside it stays on the canvas. */
+/* List and work area share the canvas. */
 .social-columns > section:first-child:not(:last-child) {
-  background: var(--ui-workspace-panel);
+  background: transparent;
   border-radius: var(--ui-radius-card);
 }
 .social-columns > section:only-child {
@@ -476,11 +476,11 @@
   padding: 0.5rem 0;
   border-block-end: 1px solid var(--color-stroke);
 }
-/* Our own messages sit inset on a quiet fill: direction is not an edge stripe. */
+/* Inset messages distinguish direction while sharing the transcript canvas. */
 .social-conversation .social-outbound {
   margin-inline-start: 1.5rem;
   padding: 0.5rem 0.75rem;
-  background: var(--ui-surface-panel);
+  background: transparent;
   border-radius: var(--ui-radius-card);
   border-block-end: 0;
 }

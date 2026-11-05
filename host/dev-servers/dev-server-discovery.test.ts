@@ -11,7 +11,7 @@ import {
   parseWindowsListeners,
   type DiscoveryCommand,
   type DiscoveryFileSystem,
-} from "../dev-server-discovery.js";
+} from "./dev-server-discovery.js";
 
 const birth = "638958615012345678";
 const processRow = {

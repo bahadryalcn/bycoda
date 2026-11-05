@@ -71,17 +71,38 @@ const shellBlocks = async (store: HostStore, id: string) =>
 describe("a !command on the host", () => {
   it("finishes failed termination for display while retaining the physical ownership index", async () => {
     const { engine, store, runs, id } = await setup();
-    await engine.command({ type: "shell", commandId: "failed-tree", sessionId: id, line: "long command" });
+    await engine.command({
+      type: "shell",
+      commandId: "failed-tree",
+      sessionId: id,
+      line: "long command",
+    });
     await vi.waitFor(() => expect(runs).toHaveLength(1));
-    runs[0].finish({ output: "Command tree termination failed.", exitCode: null, timedOut: true, terminationFailed: "Command tree termination failed." });
-    await vi.waitFor(async () => expect((await shellBlocks(store, id))[0].shell?.terminationFailed).toBeTruthy());
+    runs[0].finish({
+      output: "Command tree termination failed.",
+      exitCode: null,
+      timedOut: true,
+      terminationFailed: "Command tree termination failed.",
+    });
+    await vi.waitFor(async () =>
+      expect((await shellBlocks(store, id))[0].shell?.terminationFailed).toBeTruthy(),
+    );
     expect((await shellBlocks(store, id))[0].shell?.running).not.toBe(true);
-    const state = await store.db.prepare("SELECT shell_running FROM session_state WHERE id=?").get(id);
+    const state = await store.db
+      .prepare("SELECT shell_running FROM session_state WHERE id=?")
+      .get(id);
     expect(Number(state!.shell_running)).toBe(1);
     expect((await store.startupStates()).find((entry) => entry.id === id)?.shellRunning).toBe(true);
-    const owners = await store.db.prepare("SELECT value FROM metadata WHERE key GLOB 'shell-physical-owner.v1:*'").all();
+    const owners = await store.db
+      .prepare("SELECT value FROM metadata WHERE key GLOB 'shell-physical-owner.v1:*'")
+      .all();
     expect(owners).toHaveLength(1);
-    expect(JSON.parse(String(owners[0].value))).toMatchObject({ kind: "session", ownerId: id, command: "long command", failure: "Command tree termination failed." });
+    expect(JSON.parse(String(owners[0].value))).toMatchObject({
+      kind: "session",
+      ownerId: id,
+      command: "long command",
+      failure: "Command tree termination failed.",
+    });
   });
   it("runs in the session's folder without a model turn and records the output", async () => {
     const { engine, store, provider, runs, id, directory } = await setup();
@@ -116,7 +137,9 @@ describe("a !command on the host", () => {
     await vi.waitFor(() => expect(runs).toHaveLength(1));
     runs[0].finish({ output: "1 failed", exitCode: 1, timedOut: false });
     await vi.waitFor(() => expect(runs).toHaveLength(1));
-    await vi.waitFor(async () => expect((await shellBlocks(store, id))[0].shell?.running).not.toBe(true));
+    await vi.waitFor(async () =>
+      expect((await shellBlocks(store, id))[0].shell?.running).not.toBe(true),
+    );
 
     await engine.command({ type: "send", commandId: "ask", sessionId: id, text: "Fix it" });
     await vi.waitFor(() => expect(turns).toHaveLength(1));

@@ -25,7 +25,10 @@ export type ConversationPreviewScope = {
   projectId: string;
   /** Stable transport-derived principal; never an input field from the agent. */
   principalId: string;
-} & ({ kind?: "session"; sessionId: string; threadId?: never } | { kind: "assistant-thread"; threadId: string; sessionId?: never });
+} & (
+  | { kind?: "session"; sessionId: string; threadId?: never }
+  | { kind: "assistant-thread"; threadId: string; sessionId?: never }
+);
 export type PreviewBrowserState = {
   open: boolean;
   controlling: boolean;
@@ -101,7 +104,11 @@ export class ConversationPreviewWorkflow {
     if (this.closed) throw new Error("Preview workflow is closed.");
     await ports.authorize();
     if (this.closed) throw new Error("Preview workflow is closed.");
-    if (!scope.projectId || !(scope.kind === "assistant-thread" ? scope.threadId : scope.sessionId) || !scope.principalId)
+    if (
+      !scope.projectId ||
+      !(scope.kind === "assistant-thread" ? scope.threadId : scope.sessionId) ||
+      !scope.principalId
+    )
       throw new Error("Preview requires an authenticated project, conversation and principal.");
     if (typeof input.requestId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(input.requestId))
       throw new Error(
@@ -114,7 +121,13 @@ export class ConversationPreviewWorkflow {
         : undefined;
     if (input.show !== undefined && typeof input.show !== "boolean")
       throw new Error("Invalid preview visibility.");
-    const scopeKey = JSON.stringify([scope.projectId, scope.kind === "assistant-thread" ? ["assistant-thread", scope.threadId] : ["session", scope.sessionId], scope.principalId]);
+    const scopeKey = JSON.stringify([
+      scope.projectId,
+      scope.kind === "assistant-thread"
+        ? ["assistant-thread", scope.threadId]
+        : ["session", scope.sessionId],
+      scope.principalId,
+    ]);
     const key = JSON.stringify([scopeKey, input.requestId]);
     const signature = createHash("sha256")
       .update(JSON.stringify([url, viewport, input.show !== false]))

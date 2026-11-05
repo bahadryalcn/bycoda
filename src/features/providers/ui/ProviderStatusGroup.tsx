@@ -2,6 +2,7 @@ import { useSyncExternalStore } from "react";
 import { RelativeSessionTime, useMinuteNow } from "../../../app/shell/RelativeSessionTime";
 import { t, useLocale } from "../../../shared/i18n";
 import { Badge, type BadgeTone } from "../../../shared/ui/Badge";
+import { CapabilityStatus } from "../../../shared/ui/CapabilityStatus";
 import { Button } from "../../../shared/ui/Button";
 import { ArrowDownCircle, RefreshCw } from "../../../shared/ui/icons";
 import { hasProbedHarnessAvailability } from "../../../integrations/harness/core/availability";
@@ -25,6 +26,7 @@ import {
 import { useProviderAccountIdentities } from "../model/providerAccountIdentity";
 import { getAllRateLimits, subscribeRateLimits } from "../model/rateLimitsCache";
 import { exhaustedExplanation, providerAuthState, type ProviderAuthTone } from "./providerStatus";
+import { providerReadiness } from "../model/providerReadiness";
 
 const AUTH_BADGE_TONE: Record<ProviderAuthTone, BadgeTone> = {
   ready: "success",
@@ -140,10 +142,24 @@ export function ProviderStatusGroup({
   const title = HARNESS_TITLE[harness];
   const notice = updateNotice(run, check);
   const notFound = hasProbedHarnessAvailability() && !available;
+  const capabilityStatus = (
+    <CapabilityStatus
+      permission="unknown"
+      readiness={providerReadiness({
+        available,
+        availabilityChecked: hasProbedHarnessAvailability(),
+        checking,
+        status: limits?.status,
+        auth: auth?.tone,
+      })}
+      activity="unknown"
+    />
+  );
 
   if (notFound) {
     return (
       <Group title={t("Status")} layout="full">
+        <Row label={t("Availability")}>{capabilityStatus}</Row>
         <Row label={t("CLI not found")} description={t("Set up the CLI to use this provider.")}>
           <Button size="sm" onClick={onSetup}>
             {t("Set up")}
@@ -164,6 +180,7 @@ export function ProviderStatusGroup({
 
   return (
     <Group title={t("Status")} layout="full">
+      <Row label={t("Availability")}>{capabilityStatus}</Row>
       {accountProvider ? (
         <Row label={t("Sign-in")} description={authDescription || undefined}>
           {auth ? (

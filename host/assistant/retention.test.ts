@@ -18,8 +18,15 @@ async function fixture() {
     now: () => now,
     listProjects: async () => [{ id: "project-two", path: dir, name: "Two" }],
     roomProjectProofsValid: async (proofs: { projectId: string; cwd: string }[]) => {
-      try { return (await Promise.all(proofs.map(async proof => (await store.project(proof.projectId)).cwd === proof.cwd))).every(Boolean); }
-      catch { return false; }
+      try {
+        return (
+          await Promise.all(
+            proofs.map(async (proof) => (await store.project(proof.projectId)).cwd === proof.cwd),
+          )
+        ).every(Boolean);
+      } catch {
+        return false;
+      }
     },
   };
   await store.ready;
@@ -107,7 +114,9 @@ it("clears an entire conversation beyond the visible page, preserving summary an
       (value) => value.id === thread.id,
     ),
   ).toMatchObject({ summary: "", summaryState: { status: "blocked" } });
-  const retained = await f.store.db.prepare("SELECT value FROM assistant_threads WHERE id=?").get(thread.id);
+  const retained = await f.store.db
+    .prepare("SELECT value FROM assistant_threads WHERE id=?")
+    .get(thread.id);
   expect(JSON.parse(String(retained!.value)).summary).toBe("A retained summary");
   expect(
     (

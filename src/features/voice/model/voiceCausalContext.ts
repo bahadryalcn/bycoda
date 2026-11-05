@@ -55,14 +55,25 @@ export class VoiceCausalGeneration {
     if (!this.active() || history.current?.() === false || history.remote)
       throw new Error("Voice runtime source unavailable.");
     const [opened, scope, environmentId] = await Promise.all([
-      history.open(), history.scope?.(), history.environmentId?.(),
+      history.open(),
+      history.scope?.(),
+      history.environmentId?.(),
     ]);
     // The Host qualifies each exact seed independently. A partial directory can
     // still contain visible personal turns; it cannot certify tool provenance.
-    if (!this.active() || history.current?.() === false || !scope || !scope.current() || !environmentId)
+    if (
+      !this.active() ||
+      history.current?.() === false ||
+      !scope ||
+      !scope.current() ||
+      !environmentId
+    )
       throw new Error("Voice runtime source unavailable.");
     const threadId = opened.thread.id;
-    if ((this.initialThread && this.initialThread !== threadId) || (this.environmentId && this.environmentId !== environmentId))
+    if (
+      (this.initialThread && this.initialThread !== threadId) ||
+      (this.environmentId && this.environmentId !== environmentId)
+    )
       throw new Error("Voice runtime source changed.");
     this.initialThread = threadId;
     this.environmentId = environmentId;
@@ -70,7 +81,9 @@ export class VoiceCausalGeneration {
     if (!this.active() || history.current?.() === false || !scope.current())
       throw new Error("Voice runtime source changed.");
     const response = await history.request({
-      op: "voice.runtime.register", threadId, generationKey: this.generationKey,
+      op: "voice.runtime.register",
+      threadId,
+      generationKey: this.generationKey,
       seedMessageIds: [...this.seedMessageIds],
       ...(this.summaryUsed && this.summaryProofId ? { summaryProofId: this.summaryProofId } : {}),
     });
@@ -112,7 +125,10 @@ export class VoiceCausalGeneration {
           throw new Error("The captured question Host changed.");
         this.initialThread = owner.message.threadId;
         this.environmentId = environmentId;
-        await bindVoiceGeneration(this.generationKey, { threadId: this.initialThread, environmentId });
+        await bindVoiceGeneration(this.generationKey, {
+          threadId: this.initialThread,
+          environmentId,
+        });
         if (!this.active() || history.current?.() === false) return;
         this.visible = (ids) =>
           this.active() &&

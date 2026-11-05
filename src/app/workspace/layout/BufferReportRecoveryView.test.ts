@@ -66,22 +66,27 @@ async function render(recovery: BufferReportRecoveryModel<BufferReportDisplay>) 
 }
 const text = () => container.textContent ?? "";
 
-describe("earlier file reports empty pages", () => {
-  it("says an empty continuation page needs nothing and points to the other pages", async () => {
-    await render(model([], { hasNext: true }));
-    expect(text()).toContain("No reports needing recovery on this page.");
-    expect(text()).toContain("Use Next or Previous to check other pages.");
-    expect(text()).not.toContain("No earlier reports on this page.");
+describe("earlier file reports empty collections", () => {
+  it("keeps cursor continuation explicit when no rows loaded", async () => {
+    const recovery = model([], { hasNext: true });
+    const next = vi.fn(async () => {});
+    recovery.next = next;
+    await render(recovery);
+    expect(text()).toContain("No earlier file reports.");
+    await act(async () =>
+      container.querySelector<HTMLButtonElement>("[data-collection-footer] button")?.click(),
+    );
+    expect(next).toHaveBeenCalledOnce();
   });
-  it("calls a lone empty page empty instead of suggesting other pages", async () => {
+  it("calls a lone empty collection empty", async () => {
     await render(model([]));
-    expect(text()).toContain("No earlier reports on this page.");
-    expect(text()).not.toContain("Use Next or Previous");
+    expect(text()).toContain("No earlier file reports.");
+    expect(text()).not.toContain("Load more");
   });
-  it("offers all reports when the page only has ones that need nothing", async () => {
+  it("offers all reports when loaded rows only have ones that need nothing", async () => {
     await render(model([report(1, false)], { hasNext: true }));
-    expect(text()).toContain("No reports needing recovery on this page.");
-    expect(text()).toContain("1 other reports on this page are available.");
+    expect(text()).toContain("No reports needing recovery.");
+    expect(text()).toContain("1 other loaded reports are available.");
     expect(
       [...container.querySelectorAll("button")].some((b) => b.textContent === "Show all reports"),
     ).toBe(true);

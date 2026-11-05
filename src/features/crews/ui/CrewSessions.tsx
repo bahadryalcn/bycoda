@@ -239,7 +239,9 @@ export function CrewManagementDialog({
     void act(`open:${source}`, async () => {
       await onOpen({ cwd, machineId: data.machine.id, projectId: data.project.id, sessionId });
       onClose();
-    }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : String(reason)));
+    }).catch((reason: unknown) =>
+      setError(reason instanceof Error ? reason.message : String(reason)),
+    );
   };
   if (page === "edit")
     return (
