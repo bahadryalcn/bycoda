@@ -5,6 +5,20 @@ use std::{ffi::OsStr, io::{self, Read, Seek, Write}};
 use cap_std::fs::{Dir, OpenOptions};
 use cap_fs_ext::{DirExt, FollowSymlinks, MetadataExt, OpenOptionsFollowExt};
 
+/// Fill `buffer` until it is full or EOF, so chunk boundaries never depend on short reads.
+fn read_full(reader: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
+    let mut filled = 0;
+    while filled < buffer.len() {
+        match reader.read(&mut buffer[filled..]) {
+            Ok(0) => break,
+            Ok(count) => filled += count,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(filled)
+}
+
 fn names(dir: &Dir) -> io::Result<Vec<std::ffi::OsString>> {
     let mut result = dir.entries()?.map(|e| e.map(|v| v.file_name())).collect::<io::Result<Vec<_>>>()?;
     result.sort();
@@ -76,8 +90,8 @@ pub fn copy_child_no_follow(source: &Dir, name: &OsStr, dest: &Dir, target: &OsS
         output.rewind()?;
         let mut copied = [0u8; 65536];
         loop {
-            let source_count = input.read(&mut buffer)?;
-            let copied_count = output.read(&mut copied)?;
+            let source_count = read_full(&mut input, &mut buffer)?;
+            let copied_count = read_full(&mut output, &mut copied)?;
             if source_count != copied_count || buffer[..source_count] != copied[..copied_count] {
                 return Err(io::Error::other("Copied file differs from source"));
             }

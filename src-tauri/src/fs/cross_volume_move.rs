@@ -146,25 +146,33 @@ pub enum MoveOutcome {
 
 pub(super) fn move_path_outcome(from: &str, dest_parent: &str) -> Result<MoveOutcome, String> {
     let from = super::expand_home(from);
-    if !from.exists() { return Err(format!("{}: No such file or directory", from.display())); }
+    // Use link metadata so a symbolic link moves as itself, even when dangling.
+    let from_meta = fs::symlink_metadata(&from).map_err(|_| format!("{}: No such file or directory", from.display()))?;
     let parent = super::expand_home(dest_parent);
     if !parent.is_dir() { return Err(format!("{} is not a folder", parent.display())); }
-    if from.is_dir() && super::dir_contains(&from, &parent) { return Err("Cannot paste a folder into itself.".into()); }
+    if from_meta.is_dir() && super::dir_contains(&from, &parent) { return Err("Cannot paste a folder into itself.".into()); }
     let name = super::file_label(&from, from.to_str().unwrap_or("item"));
     let destination = parent.join(&name);
-    if super::same_entry(&from, &destination) { return Ok(MoveOutcome::Path(from.to_string_lossy().into_owned())); }
+    // A link is its own entry: never treat it as the file it points at.
+    if from == destination || (!from_meta.file_type().is_symlink() && super::same_entry(&from, &destination)) {
+        return Ok(MoveOutcome::Path(from.to_string_lossy().into_owned()));
+    }
     if fs::symlink_metadata(&destination).is_ok() { return Err(super::already_exists(&name)); }
     // ast-grep-ignore: rust-rename-without-fsync -- this moves the existing source entry rather than publishing temporary-file contents
     match fs::rename(&from, &destination) {
         Ok(()) => Ok(MoveOutcome::Path(destination.to_string_lossy().into_owned())),
         Err(error) if error.kind() == io::ErrorKind::CrossesDevices => {
             bycoda_physical_store_admission::guarded_move_paths::move_paths(&from, &destination)
-                .map(|result| MoveOutcome::Recovery(MoveRecovery {
-                    path: result.path.to_string_lossy().into_owned(),
-                    recovery_path: result.recovery_path.to_string_lossy().into_owned(),
-                    receipt_path: result.receipt_path.to_string_lossy().into_owned(),
-                    warning: result.warning,
-                })).map_err(|error| error.to_string())
+                .map(|result| if result.recovery_retained {
+                    MoveOutcome::Recovery(MoveRecovery {
+                        path: result.path.to_string_lossy().into_owned(),
+                        recovery_path: result.recovery_path.to_string_lossy().into_owned(),
+                        receipt_path: result.receipt_path.to_string_lossy().into_owned(),
+                        warning: result.warning,
+                    })
+                } else {
+                    MoveOutcome::Path(result.path.to_string_lossy().into_owned())
+                }).map_err(|error| error.to_string())
         },
         Err(error) => Err(error.to_string()),
     }
