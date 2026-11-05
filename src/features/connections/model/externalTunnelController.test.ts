@@ -130,3 +130,28 @@ describe("external tunnel status routing", () => {
     expect(value.tunnels[0].publicUrl).toBe("https://owned.trycloudflare.com");
   });
 });
+
+describe("external tunnel repair notice", () => {
+  it("carries the Host repair through the published overview", async () => {
+    const { controller, api } = setup();
+    vi.mocked(api.status).mockResolvedValueOnce({
+      ...status(),
+      repair: { repaired: true, dropped: 2 },
+    });
+    await controller.refresh();
+    expect(controller.getSnapshot().overview?.repair).toEqual({ repaired: true, dropped: 2 });
+  });
+
+  it("drops a malformed repair without rejecting the rest of the overview", () => {
+    const value = readTunnelOverview(
+      { ...status(), repair: { repaired: true, dropped: -1, path: "/private/state.json" } },
+      "env",
+    );
+    expect(value.repair).toBeUndefined();
+    expect(value.tunnels).toEqual([]);
+    expect(JSON.stringify(value)).not.toContain("/private/state.json");
+    expect(
+      readTunnelOverview({ ...status(), repair: { repaired: false, dropped: 1 } }, "env").repair,
+    ).toBeUndefined();
+  });
+});

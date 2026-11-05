@@ -11,6 +11,27 @@ import type { TunnelOverview } from "../../../integrations/external-tunnels";
 
 vi.mock("../model/connections", () => ({ remoteRequest: vi.fn() }));
 vi.mock("../../../platform/tauri/clipboard", () => ({ copyText: vi.fn(async () => {}) }));
+// The shared Alert completes its dismissal on an exit animation that happy-dom does not run;
+// its own tests cover that. Here the panel only needs the notice text and its dismiss wiring.
+vi.mock("../../../shared/ui/Alert", () => ({
+  Alert: ({
+    children,
+    onDismiss,
+    role,
+  }: {
+    children: ReactNode;
+    onDismiss?: () => void;
+    role?: string;
+  }) =>
+    createElement(
+      "div",
+      { role },
+      children,
+      onDismiss
+        ? createElement("button", { type: "button", "aria-label": "Dismiss", onClick: onDismiss })
+        : null,
+    ),
+}));
 vi.mock("../../../shared/ui/Modal", () => ({
   Modal: ({ children, title }: { children: ReactNode; title: string }) =>
     createElement("div", { role: "dialog", "aria-label": title }, children),
@@ -199,4 +220,20 @@ it("ignores a previous computer's late status after the selection changes", asyn
   );
   expect(container.textContent).not.toContain("old.trycloudflare.com");
   expect(container.textContent).toContain("Home Mac");
+});
+
+it("shows a dismissible notice after the Host repaired damaged tunnel state", async () => {
+  current = { ...overview(), repair: { repaired: true, dropped: 2 } };
+  await render();
+  const text = "Tunnel settings were damaged and repaired; 2 entries could not be recovered.";
+  expect(container.textContent).toContain(text);
+  const dismiss = container.querySelector<HTMLButtonElement>('button[aria-label="Dismiss"]');
+  expect(dismiss).not.toBeNull();
+  await act(async () => dismiss!.click());
+  expect(container.textContent).not.toContain(text);
+});
+
+it("does not show the repair notice when the Host reports no repair", async () => {
+  await render();
+  expect(container.textContent).not.toContain("could not be recovered");
 });

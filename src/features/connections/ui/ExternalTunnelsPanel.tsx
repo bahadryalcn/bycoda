@@ -208,6 +208,7 @@ export function TunnelControls({
   const [target, setTarget] = useState<TunnelTarget>("dev-server");
   const [localUrl, setLocalUrl] = useState(initialLocalUrl);
   const [token, setToken] = useState("");
+  const [repairNoticeDismissed, setRepairNoticeDismissed] = useState(false);
   useEffect(() => {
     controller.activate();
     let disposed = false;
@@ -304,6 +305,13 @@ export function TunnelControls({
           <LoadingText>{state.pending ? t("Working…") : t("Checking tunnel access…")}</LoadingText>
         ) : null}
       </div>
+      {overview?.repair && !repairNoticeDismissed ? (
+        <Alert tone="info" onDismiss={() => setRepairNoticeDismissed(true)}>
+          {t("Tunnel settings were damaged and repaired; {p0} entries could not be recovered.", {
+            p0: String(overview.repair.dropped),
+          })}
+        </Alert>
+      ) : null}
       {state.issue ? (
         <Alert role="alert" tone="danger">
           {t(issueCopy[state.issue])}

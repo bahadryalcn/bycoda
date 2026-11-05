@@ -40,6 +40,13 @@ function nativePageToken(): Promise<string> {
   }));
 }
 
+/**
+ * A compare-and-set lost a race with another writer (another window, tab or queue drain).
+ * Callers may re-read and re-apply their change; a real change to the same entry is reported
+ * as a plain error by the re-read instead.
+ */
+export class OutboxConflictError extends Error {}
+
 export class OversizedOutboxRecordError extends Error {
   constructor(readonly record: { key: string; version: number; bytes: number; revision: number }) {
     super(
@@ -81,7 +88,7 @@ async function nativeChange(
     expectedRevision: expectedRevision ?? null,
     claim: null,
   });
-  if (!outcome.applied) throw new Error("The pending request changed.");
+  if (!outcome.applied) throw new OutboxConflictError("The pending request changed.");
   if (outcome.compacted && writes.length) {
     let current: NativeSnapshot;
     try {
@@ -538,7 +545,7 @@ export async function changeOutboxDatabase(
       (current?.raw ?? null) !== expected ||
       (expectedRevision !== undefined && snapshot.revision !== expectedRevision)
     )
-      throw new Error("The pending request changed.");
+      throw new OutboxConflictError("The pending request changed.");
     const checks = keys.map((item) => ({
       key: item,
       version: snapshot.entries.find((entry) => entry.key === item)?.version ?? null,
@@ -582,7 +589,11 @@ export async function changeOutboxDatabase(
     revision.onsuccess = validate;
     transaction.oncomplete = () => resolve();
     transaction.onabort = () =>
-      reject(new Error(conflict ? "The pending request changed." : "Cannot save remote requests."));
+      reject(
+        conflict
+          ? new OutboxConflictError("The pending request changed.")
+          : new Error("Cannot save remote requests."),
+      );
     transaction.onerror = () => reject(new Error("Cannot save remote requests."));
   });
 }
