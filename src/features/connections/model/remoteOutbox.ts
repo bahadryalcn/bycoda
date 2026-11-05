@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { listenWindow } from "../../../platform/tauri/listenWindow";
-import { isRemoteProvider, type HostCommand } from "./protocol";
-import { RUNTIME_MODES } from "../../sessions/public/session";
+import type { HostCommand } from "./protocol";
 import { t } from "../../../shared/i18n/core";
 import { canonicalJson } from "../../sync/model/canonicalJson";
-import { requestIssuedAt } from "../../../shared/lib/id/requestId";
+import {
+  readPendingEntry,
+  type AttachmentCommand,
+  type PendingEntry,
+} from "./remoteOutboxValidation";
+import {
+  remoteRequestPastRetryLimit,
+  retryOutboxConflict,
+  type OutboxRetry,
+} from "./remoteOutboxRetry";
 import {
   changeOutboxDatabase,
   readOutboxDatabasePage,
@@ -18,9 +26,12 @@ import {
   OutboxConflictError,
 } from "./remoteOutboxDatabase";
 
-type AttachmentCommand =
-  | HostCommand
-  | NonNullable<Extract<HostCommand, { type: "create" }>["firstTurn"]>;
+export {
+  REMOTE_REQUEST_RETRY_LIMIT_MS,
+  remoteOutcomeUnknownMessage,
+  remoteRequestPastRetryLimit,
+  type OutboxRetry,
+} from "./remoteOutboxRetry";
 
 const PREFIX = "bycoda.remote-command.v1:";
 const ARCHIVE_PREFIX = "bycoda.remote-command-quarantine.v1:";
@@ -38,14 +49,6 @@ function ensureOutboxChannel() {
 }
 const pendingPrefix = (project: string, environment: string) =>
   `${PREFIX}${JSON.stringify([project, environment])}:`;
-type PendingEntry = {
-  v?: 1;
-  savedAt?: number;
-  command: HostCommand;
-  shellId?: string;
-  followup?: HostCommand;
-  stopRequested?: boolean;
-};
 export type OutboxIssue = {
   key: string;
   project: string;
@@ -55,12 +58,6 @@ export type OutboxIssue = {
   oversized?: boolean;
   oversizedRecord?: { key: string; version: number; bytes: number; revision: number };
 };
-const object = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
-const strings = (value: unknown): boolean =>
-  object(value) && Object.values(value).every((v) => typeof v === "string");
-const optionalString = (value: unknown) => value === undefined || typeof value === "string";
-
 export type RemoteIntentAuthority = { authorityGeneration?: number };
 /** Capture only while constructing a new intent. Never derive persisted intent provenance again. */
 export function remoteIntentAuthority(
@@ -81,167 +78,6 @@ export function remoteIntentAuthorityMatches(
     remoteIntentAuthority(intent).authorityGeneration ===
     remoteIntentAuthority(snapshot).authorityGeneration
   );
-}
-
-function validCommand(value: unknown, followup = false): value is HostCommand {
-  if (!object(value) || typeof value.commandId !== "string" || !value.commandId) return false;
-  if (
-    value.authorityGeneration !== undefined &&
-    (!Number.isSafeInteger(value.authorityGeneration) || Number(value.authorityGeneration) < 1)
-  )
-    return false;
-  if (value.type === "create") {
-    return (
-      typeof value.projectId === "string" &&
-      !!value.projectId &&
-      isRemoteProvider(value.harness) &&
-      typeof value.model === "string" &&
-      RUNTIME_MODES.includes(value.runtimeMode as never) &&
-      (value.modelSettings === undefined || strings(value.modelSettings)) &&
-      optionalString(value.worktreeCwd) &&
-      optionalString(value.autoWorktreeBranch) &&
-      (value.firstTurn === undefined ||
-        (object(value.firstTurn) &&
-          ["send", "draft"].includes(String(value.firstTurn.type)) &&
-          optionalString(value.firstTurn.sessionId) &&
-          validCommand({ ...value.firstTurn, sessionId: "" }, true)))
-    );
-  }
-  if (
-    typeof value.sessionId !== "string" ||
-    (!value.sessionId && !(followup && (value.type === "send" || value.type === "draft")))
-  )
-    return false;
-  if (value.resumeAtReset !== undefined && typeof value.resumeAtReset !== "boolean") return false;
-  switch (value.type) {
-    case "contextual":
-      return (
-        typeof value.sourceBlockId === "string" &&
-        !!value.sourceBlockId &&
-        Number.isSafeInteger(value.expectedRevision) &&
-        Number(value.expectedRevision) >= 0 &&
-        ["handoff", "secondOpinion"].includes(String(value.mode)) &&
-        isRemoteProvider(value.harness) &&
-        typeof value.model === "string" &&
-        !!value.model &&
-        strings(value.modelSettings) &&
-        typeof value.previewDigest === "string" &&
-        /^[a-f0-9]{64}$/.test(value.previewDigest)
-      );
-    case "configure":
-      return (
-        (value.providerAccountId === undefined ||
-          value.providerAccountId === null ||
-          typeof value.providerAccountId === "string") &&
-        (value.harness === undefined || isRemoteProvider(value.harness)) &&
-        typeof value.model === "string" &&
-        strings(value.modelSettings) &&
-        RUNTIME_MODES.includes(value.runtimeMode as never)
-      );
-    case "compact":
-      return true;
-    case "send":
-    case "draft":
-      return (
-        typeof value.text === "string" &&
-        (value.attachments === undefined ||
-          (Array.isArray(value.attachments) &&
-            value.attachments.every(
-              (a) =>
-                object(a) &&
-                typeof a.id === "string" &&
-                !!a.id &&
-                typeof a.name === "string" &&
-                typeof a.mimeType === "string" &&
-                ["image", "audio", "file"].includes(a.kind as string) &&
-                typeof a.size === "number" &&
-                Number.isFinite(a.size) &&
-                a.size >= 0,
-            ))) &&
-        (value.intent === undefined ||
-          ["default", "plan", "build"].includes(value.intent as string)) &&
-        optionalString(value.draftBlockId) &&
-        optionalString(value.planBlockId) &&
-        optionalString(value.expectedPlanText)
-      );
-    case "removeDraft":
-      return typeof value.draftBlockId === "string" && !!value.draftBlockId;
-    case "shell":
-      return typeof value.line === "string";
-    case "usageLimit":
-      return ["arm", "disarm", "dismiss"].includes(value.action as string);
-    case "steer":
-      return (
-        typeof value.runId === "string" &&
-        !!value.runId &&
-        typeof value.text === "string" &&
-        validCommand({ ...value, type: "send" })
-      );
-    case "cancel":
-      return typeof value.runId === "string" && !!value.runId;
-    case "stopItem":
-      return [value.runId, value.blockId, value.callId].every(
-        (entry) => typeof entry === "string" && !!entry,
-      );
-    case "approve":
-    case "answer": {
-      if (
-        typeof value.runId !== "string" ||
-        !value.runId ||
-        !Number.isSafeInteger(value.requestId) ||
-        (value.requestId as number) < 0
-      )
-        return false;
-      if (value.type === "approve") return value.decision === "allow" || value.decision === "deny";
-      const reply = value.reply;
-      return (
-        object(reply) &&
-        (reply.kind === "skipped" ||
-          (reply.kind === "answered" &&
-            object(reply.answers) &&
-            Object.values(reply.answers).every(
-              (a) => Array.isArray(a) && a.every((s) => typeof s === "string"),
-            ) &&
-            (reply.custom === undefined || strings(reply.custom))))
-      );
-    }
-    default:
-      return false;
-  }
-}
-
-function readPendingEntry(value: string, id: string): PendingEntry | undefined {
-  try {
-    const parsed: unknown = JSON.parse(value);
-    if (!object(parsed)) return;
-    const entry = "command" in parsed ? parsed : { command: parsed };
-    if (entry.v !== undefined && entry.v !== 1) return;
-    if (
-      entry.savedAt !== undefined &&
-      (typeof entry.savedAt !== "number" ||
-        !Number.isFinite(entry.savedAt) ||
-        entry.savedAt <= 0 ||
-        Date.now() - entry.savedAt >= 6 * 24 * 60 * 60 * 1000)
-    )
-      return;
-    if (
-      !validCommand(entry.command) ||
-      entry.command.commandId !== id ||
-      !optionalString(entry.shellId)
-    )
-      return;
-    if (entry.stopRequested !== undefined && typeof entry.stopRequested !== "boolean") return;
-    if (
-      entry.followup !== undefined &&
-      (entry.command.type !== "create" ||
-        !validCommand(entry.followup, true) ||
-        (entry.followup.type !== "send" && entry.followup.type !== "draft"))
-    )
-      return;
-    return entry as PendingEntry;
-  } catch {
-    return;
-  }
 }
 
 function scopeForKey(
@@ -699,25 +535,6 @@ export function savePendingRemoteCommand(
   changed();
 }
 
-/**
- * The Host refuses a request id older than its 30-day replay horizon, and deletes that
- * fence a day later. A request this old is never retried automatically: its outcome is
- * unknown until the Host confirms it, and only an explicit check may send it again.
- */
-export const REMOTE_REQUEST_RETRY_LIMIT_MS = 29 * 24 * 60 * 60 * 1000;
-
-/** Legacy UUIDv4 ids carry no issue time, so they keep their existing retry behaviour. */
-export function remoteRequestPastRetryLimit(requestId: string, now = Date.now()): boolean {
-  const issuedAt = requestIssuedAt(requestId);
-  return issuedAt !== undefined && now - issuedAt > REMOTE_REQUEST_RETRY_LIMIT_MS;
-}
-
-export function remoteOutcomeUnknownMessage(): string {
-  return t(
-    "This request is older than 29 days, so it will not be sent automatically. Its outcome is unknown: check the conversation before sending it again.",
-  );
-}
-
 /** Legacy entries have no retry age; a missing receipt is not proof that their
  * external effect never happened. Keep them for explicit recovery. */
 export function remoteCommandNeedsVerification(
@@ -758,39 +575,6 @@ export function clearPendingRemoteCommand(project: string, environment: string, 
   if (isTauri()) throw new Error("Use durable remote request settlement.");
   localStorage.removeItem(`${pendingPrefix(project, environment)}${commandId}`);
   changed();
-}
-
-/** Injected for tests, like `now` elsewhere in this file. Defaults use the real clock. */
-export type OutboxRetry = {
-  wait?: (ms: number) => Promise<void>;
-  random?: () => number;
-};
-const OUTBOX_RETRY_ATTEMPTS = 5;
-const OUTBOX_RETRY_BASE_MS = 20;
-const OUTBOX_RETRY_MAX_MS = 320;
-
-/**
- * Re-run a whole read-then-write operation when another writer changed the outbox between
- * its reads and its compare-and-set. Each attempt re-derives every decision from fresh
- * state, so a real change to the same request still fails with its own plain error, and a
- * write is only committed by a compare-and-set that matched the bytes it was derived from.
- */
-async function retryOutboxConflict<T>(
-  operation: () => Promise<T>,
-  retry: OutboxRetry = {},
-): Promise<T> {
-  const wait =
-    retry.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  const random = retry.random ?? Math.random;
-  for (let attempt = 1; ; attempt++) {
-    try {
-      return await operation();
-    } catch (error) {
-      if (!(error instanceof OutboxConflictError) || attempt >= OUTBOX_RETRY_ATTEMPTS) throw error;
-      const cap = Math.min(OUTBOX_RETRY_MAX_MS, OUTBOX_RETRY_BASE_MS * 2 ** (attempt - 1));
-      await wait(cap / 2 + random() * (cap / 2));
-    }
-  }
 }
 
 /** Read durable and legacy evidence against one IDB revision. Unknown data holds sending. */

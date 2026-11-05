@@ -22,12 +22,12 @@ import {
   saveModelEnabled,
 } from "../../sessions/model/models";
 import { rememberRemoteProject, remoteProjectFor } from "../model/remoteProjects";
+import { RemoteSession, type RemoteSessionOverrides } from "./RemoteSession";
+import { outboxFixture } from "./remoteSessionOutboxFixture";
 import {
-  RemoteSession,
-  type RemoteSessionOverrides,
   preloadRemoteSession,
   resetRemoteSessionCachesForTests,
-} from "./RemoteSession";
+} from "../model/remoteSessionSnapshotCache";
 import {
   rememberRemoteSession,
   remoteSessionFor,
@@ -91,103 +91,10 @@ vi.mock("../model/sessionExecutionBinding", async (original) => ({
   // Real owner hydration/publication is exercised by the Chromium storage suite.
   flushHostSessionBindings: vi.fn().mockResolvedValue(undefined),
 }));
-// UI tests use an isolated transaction fixture; real IndexedDB races are checked in Chromium.
-const outboxFixture = vi.hoisted(() => ({
-  entries: new Map<string, string>(),
-  settlements: new Map<string, string>(),
-  modern: new Set<string>(),
-  revision: 0,
-  unavailable: false,
-  failWrites: false,
-  afterCommit: undefined as Promise<void> | undefined,
-}));
 vi.mock("../model/remoteOutboxDatabase", async (original) => ({
   ...(await original<typeof import("../model/remoteOutboxDatabase")>()),
-  readOutboxDatabasePage: async (
-    kind: "entries" | "settlements",
-    prefix: string,
-    after?: string,
-  ) => {
-    if (outboxFixture.unavailable) throw new Error("Remote request storage is unavailable.");
-    const keys = [...outboxFixture[kind].keys()]
-      .filter((key) => key.startsWith(prefix) && (after === undefined || key > after))
-      .sort();
-    const selected = keys.slice(0, 128);
-    return {
-      values: selected.map((key) => ({ key, raw: outboxFixture[kind].get(key)! })),
-      next: keys.length > 128 ? selected.at(-1) : undefined,
-      revision: outboxFixture.revision,
-    };
-  },
-  readOutboxDatabaseRecord: async (key: string) => ({
-    entry: outboxFixture.entries.get(key),
-    settlement: outboxFixture.modern.has(key) ? undefined : outboxFixture.settlements.get(key),
-    resolved: outboxFixture.settlements.has(key),
-    revision: outboxFixture.revision,
-  }),
-  changeOutboxDatabase: async (
-    key: string,
-    expected: string | null,
-    next: string | null,
-    legacy?: string,
-    revision?: number,
-  ) => {
-    if (outboxFixture.failWrites) throw new Error("Cannot save remote requests.");
-    if (
-      (outboxFixture.entries.get(key) ?? null) !== expected ||
-      (revision !== undefined && revision !== outboxFixture.revision)
-    )
-      throw new Error("The pending request changed.");
-    if (next === null) outboxFixture.entries.delete(key);
-    else outboxFixture.entries.set(key, next);
-    if (legacy !== undefined) {
-      outboxFixture.settlements.set(key, legacy);
-      outboxFixture.modern.delete(key);
-    }
-    outboxFixture.revision++;
-    const wait = outboxFixture.afterCommit;
-    outboxFixture.afterCommit = undefined;
-    if (wait) await wait;
-  },
-  settleOutboxDatabase: async (
-    key: string,
-    expected: string,
-    legacy?: string,
-    next?: { key: string; raw: string },
-    revision?: number,
-  ) => {
-    if (
-      outboxFixture.entries.get(key) !== expected ||
-      (revision !== undefined && revision !== outboxFixture.revision) ||
-      (next &&
-        outboxFixture.entries.has(next.key) &&
-        outboxFixture.entries.get(next.key) !== next.raw)
-    )
-      throw new Error("The pending request changed.");
-    outboxFixture.entries.delete(key);
-    if (next) outboxFixture.entries.set(next.key, next.raw);
-    outboxFixture.settlements.set(key, legacy ?? "");
-    if (legacy === undefined) outboxFixture.modern.add(key);
-    else outboxFixture.modern.delete(key);
-    outboxFixture.revision++;
-  },
-  quarantineOutboxDatabase: async (
-    key: string,
-    expected: string | null,
-    legacy: string | null,
-    revision: number,
-  ) => {
-    if (
-      (outboxFixture.entries.get(key) ?? null) !== expected ||
-      revision !== outboxFixture.revision
-    )
-      throw new Error("The pending request changed.");
-    outboxFixture.entries.delete(key);
-    if (legacy !== null || expected !== null) outboxFixture.settlements.set(key, legacy ?? "");
-    if (legacy === null) outboxFixture.modern.add(key);
-    else outboxFixture.modern.delete(key);
-    outboxFixture.revision++;
-  },
+  // Imported lazily: vi.mock factories are hoisted above this file's imports.
+  ...(await import("./remoteSessionOutboxFixture")).outboxDatabaseMock,
 }));
 // Observe the real transport's render-probe contract without changing its props,
 // the pane, or Composer's fail-closed creation policy. Creation transport tests

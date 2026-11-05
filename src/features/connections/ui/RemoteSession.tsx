@@ -33,7 +33,6 @@ import type {
   Block,
   ComposerTurnOptions,
   HarnessId,
-  RuntimeMode,
   Session,
   WorkspaceMode,
   PlanBuildTarget,
@@ -70,17 +69,9 @@ import {
   retryAttachmentOwnershipReleases,
 } from "../model/attachmentOwnership";
 import { getComposerAttachments, subscribeComposerDrafts } from "../../sessions/public/draftCache";
-import { snapshotWeight } from "../model/snapshotWeight";
-import {
-  deleteRemotePageCache,
-  flushRemotePageCache,
-  writeRemotePageCache,
-} from "../model/remotePageCache";
+import { deleteRemotePageCache, flushRemotePageCache } from "../model/remotePageCache";
 import { canApplyRemotePreview } from "../model/remotePreviewBinding";
-import {
-  canCacheRemoteSnapshot,
-  createRemoteHistoryGeneration,
-} from "../model/remoteHistoryGeneration";
+import { createRemoteHistoryGeneration } from "../model/remoteHistoryGeneration";
 import {
   beginSessionPerformanceTrace,
   sessionPerformanceTrace,
@@ -95,15 +86,20 @@ import {
   registerWorkspaceRewindUndoHandler,
   type WorkspaceRewindUndoIdentity,
 } from "../../workspaces/ui/WorkspaceRewindPreview";
-import { isModelEnabled, type AgentModel } from "../../sessions/public/models";
+import { isModelEnabled } from "../../sessions/public/models";
 import { RemoteBindingGeneration } from "../model/remoteBindingGeneration";
-import {
-  resetRemoteModelCatalogCacheForTests,
-  useRemoteModelCatalog,
-} from "../model/useRemoteModelCatalog";
+import { useRemoteModelCatalog } from "../model/useRemoteModelCatalog";
 import { remoteSessionPollDelay } from "../model/remotePollingPolicy";
 import { subscribeRemoteMachineChannel } from "../model/remoteMachineChannel";
 import { ModelSourceContext, type ModelSource } from "../../sessions/public/modelSource";
+import {
+  cachedDescriptors,
+  cachedSessionSnapshots,
+  rememberSessionSnapshot,
+  snapshotKey,
+} from "../model/remoteSessionSnapshotCache";
+import { buildRemoteModelSource } from "../model/remoteModelSource";
+import type { Configuration, OptimisticTurn } from "../model/remoteSessionTypes";
 import { notifyGitChanged } from "../../../platform/tauri/fs";
 import { boundedSet } from "../../../shared/lib/store";
 import type { Worktree } from "../../source-control";
@@ -178,12 +174,7 @@ import {
   verifyRemoteProjectAlias,
   type RemoteProject,
 } from "../model/remoteProjects";
-import {
-  carryModelSettings,
-  findRemoteModel,
-  remoteModelControls,
-  sameModelSettings,
-} from "../model/remoteModels";
+import { carryModelSettings, findRemoteModel, sameModelSettings } from "../model/remoteModels";
 import {
   isRemoteProvider,
   REMOTE_PROVIDERS,
@@ -218,90 +209,7 @@ export type RemoteSessionOverrides = Partial<SessionPaneProps> & {
   allowedModelHarnesses: readonly HarnessId[];
 };
 
-type Configuration = {
-  providerAccountId?: string | null;
-  authorityGeneration?: number;
-  harness: RemoteProvider;
-  model: string;
-  settings: Record<string, string>;
-  mode: RuntimeMode;
-};
-
-type OptimisticTurn = {
-  authorityGeneration?: number;
-  queued?: HostCommand["queued"];
-  commandId: string;
-  text: string;
-  attachments: Attachment[];
-  intent: "default" | "plan" | "build";
-  draft?: boolean;
-  draftBlockId?: string;
-  planBlockId?: string;
-  startedAt: number;
-  turnModel: NonNullable<Block["turnModel"]>;
-  acceptedRun?: { sessionId: string; runId: string; authorityGeneration?: number };
-  onSendRejected?: () => boolean;
-  restoredDraft?: boolean;
-  /** Its command is in the outbox, so a failed dispatch is retried, not shown as failed. */
-  saved?: boolean;
-};
-
 const noop = () => {};
-const cachedSessionSnapshots = new Map<string, HostSession>();
-const cachedDescriptors = new Map<string, HostDescriptor>();
-const snapshotKey = (machineId: string, sessionId: string) => `${machineId}:${sessionId}`;
-function rememberSessionSnapshot(key: string, snapshot: HostSession, environmentId?: string) {
-  const existing = cachedSessionSnapshots.get(key);
-  if (existing === snapshot) return;
-  if (!canCacheRemoteSnapshot(snapshot)) return;
-  if (existing && existing.revision > snapshot.revision) return;
-  cachedSessionSnapshots.delete(key);
-  cachedSessionSnapshots.set(key, snapshot);
-  if (cachedSessionSnapshots.size > 8)
-    cachedSessionSnapshots.delete(cachedSessionSnapshots.keys().next().value!);
-  let bytes = 0;
-  for (const value of [...cachedSessionSnapshots.values()].reverse()) {
-    bytes += snapshotWeight(value);
-    if (bytes > 32 * 1024 * 1024) {
-      for (const [entryKey, entry] of cachedSessionSnapshots)
-        if (entry === value) cachedSessionSnapshots.delete(entryKey);
-    }
-  }
-  if (environmentId)
-    void writeRemotePageCache({ environmentId, sessionId: snapshot.session.id }, snapshot);
-}
-
-/** Isolate UI harnesses that intentionally reuse machine/session identifiers. */
-export function resetRemoteSessionCachesForTests() {
-  cachedSessionSnapshots.clear();
-  cachedDescriptors.clear();
-  resetRemoteModelCatalogCacheForTests();
-}
-
-/** Fetches a host conversation into the snapshot cache, so its tab opens with
- * the transcript already laid out, as a local session read from disk does. */
-export async function preloadRemoteSession(machineId: string, sessionId: string): Promise<void> {
-  const key = snapshotKey(machineId, sessionId);
-  if (cachedSessionSnapshots.has(key)) return;
-  let host = cachedDescriptors.get(machineId);
-  if (!host) {
-    host = requireHostDescriptor(
-      await remoteRequest<HostDescriptor>(machineId, "environment.describe", {
-        supportedProviders: REMOTE_PROVIDERS,
-      }),
-    );
-    boundedSet(cachedDescriptors, machineId, host);
-  }
-  const lazyHistory = host.capabilities.includes("sessions.lazyHistory");
-  const pages = lazyHistory || host.capabilities.includes("sessions.pages");
-  const snapshot = await loadRemoteSession(machineId, sessionId, undefined, {
-    pages,
-    partialHistory: lazyHistory,
-    ...(pages ? { onPreviews: noop } : {}),
-  });
-  rememberSessionSnapshot(key, snapshot, host.environmentId);
-}
-
 /** A tab in a project on another machine. The host owns the session; this
  * renders the normal session pane with actions routed to the host. */
 export function RemoteSession({
@@ -2840,77 +2748,28 @@ function ConnectedRemoteSession({
     busy,
   });
 
-  const modelSource = useMemo<ModelSource>(() => {
-    const models = (harness: HarnessId) => catalog?.models[harness as RemoteProvider] ?? [];
-    const savedModel = hostSession?.model;
-    const savedSettings = hostSession?.modelSettings ?? {};
-    return {
-      id: `remote:${machine.environmentId}`,
-      accounts: {
-        codex: catalog?.accounts?.codex ?? [
-          {
-            id:
-              hostSession?.harness === "codex"
-                ? (hostSession.providerAccountId ?? "default")
-                : "default",
-            label: t("Current Host account"),
-          },
-        ],
-        claude: catalog?.accounts?.claude ?? [
-          {
-            id:
-              hostSession?.harness === "claude"
-                ? (hostSession.providerAccountId ?? "default")
-                : "default",
-            label: t("Current Host account"),
-          },
-        ],
-      },
-      modelsFor: models,
-      resolve: (harness, id = "") => {
-        const provider = harness as RemoteProvider;
-        // Keep the saved model's effort visible even when the host catalog is
-        // loading, failed, or no longer lists it.
-        const controls = remoteModelControls(
-          catalog,
-          provider,
-          id,
-          id === savedModel ? savedSettings : {},
-          savedModel,
-        );
-        const listed = controls.model;
-        return {
-          ...(listed ?? {
-            id,
-            harness,
-            name: id ? id.replace(/^[a-z]+:/, "") : "Loading models…",
-            nativeId: id.replace(/^[a-z]+:/, ""),
-          }),
-          settings: controls.settings,
-        } satisfies AgentModel;
-      },
-      find: (id) => providers.flatMap((harness) => models(harness)).find((m) => m.id === id),
-      available: (harness) =>
-        providers.includes(harness as RemoteProvider) &&
-        (!hostSession ||
-          descriptor?.capabilities.includes("sessions.harnessSwitch") === true ||
-          hostSession.harness === harness),
-      probed: () => !!descriptor,
-      // The host re-probes when a provider CLI changes or its catalog ages,
-      // so each picker opening asks again.
-      refresh: refreshCatalog,
-    };
-  }, [
-    catalog,
-    catalogError,
-    refreshCatalog,
-    descriptor,
-    providers,
-    machine.environmentId,
-    hostSession?.harness,
-    hostSession?.model,
-    hostSession?.modelSettings,
-  ]);
+  const modelSource = useMemo<ModelSource>(
+    () =>
+      buildRemoteModelSource({
+        catalog,
+        environmentId: machine.environmentId,
+        hostSession,
+        descriptor,
+        providers,
+        refreshCatalog,
+      }),
+    [
+      catalog,
+      catalogError,
+      refreshCatalog,
+      descriptor,
+      providers,
+      machine.environmentId,
+      hostSession?.harness,
+      hostSession?.model,
+      hostSession?.modelSettings,
+    ],
+  );
 
   // Show a message the host has not confirmed yet in the transcript.
   // A draft being sent is replaced by its message at once, as locally.
