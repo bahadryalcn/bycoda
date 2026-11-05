@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.5]
+
+### Remote hosts and two-computer use
+
+- Report a Host refusal (lease held by another computer, drain lease, changed shared queue, session already running) as not sent instead of an unknown outcome, so the other computer waits instead of showing an error.
+- Reconcile a pending remote command automatically after a reconnect, recovery or focus: settle it when the Host has a receipt, otherwise resend the same command id; offline sends are kept and sent after reconnect.
+- Wait up to 90 seconds for a reconnect before queue and command requests fail, and fall back to HTTP for WebSocket requests that were provably not sent.
+- Keep shared queues running while the other computer is busy, put a queued message back at the head when the session is not ready, and back off before offering it again.
+- Retry outbox writes that conflict with another window or tab instead of failing the send.
+- Keep a WebSocket lane usable while a Host restarts (503 for internal authentication errors, limited retries after an earlier successful sign-in), keep live streams running when another window joins, and detach a window's connection on page reload.
+
+### Reliability and data safety
+
+- Repair a damaged owner lock or tunnel state automatically, keeping a quarantined copy, unless the damaged lock names a live legacy Host.
+- Retire command receipts after a 30-day replay horizon: new request ids carry their issue time and the Host refuses expired ids instead of running them again.
+- Reconcile social media references in the background so Host start is not blocked; media is quarantined or purged only after reconciliation completes.
+- Stop lists from crashing after many distinct searches, and keep typed search text out of list state keys.
+- Make cross-drive moves work on Windows, remove the recovery copy after a verified move, and stop renaming a symlink from replacing its target.
+- Keep social workspaces and the Host inbox working beyond 1000 social jobs, and clean up unused social media files.
+- Release the installer lock after the installer exits and allow automatic Host maintenance on existing installations.
+- Match non-ASCII text case-insensitively in desktop search on macOS.
+
+### Quality
+
+- Fix Rust test compilation, clippy, formatting and lint findings; enforce file-size structure limits by moving helpers into feature modules.
+
 ## [0.7.4]
 
 ### Conversations and navigation
