@@ -513,7 +513,8 @@ it("pushes to the configured upstream and supports a first push without origin",
   expect(reviewGit(origin, "for-each-ref", "refs/heads")).toBe("");
 });
 afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  for (const root of roots.splice(0))
+    rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 });
 
 it("reports a broken Git index instead of searching ignored files", async () => {

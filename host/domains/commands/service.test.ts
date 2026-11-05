@@ -242,15 +242,17 @@ describe("command domain admission", () => {
     expect(ports.execution.clearConversation).not.toHaveBeenCalled();
   });
   it("preserves legacy HTTP's ignored top-level metadata while validating every known command field", async () => {
-    const { service, ports, auth } = setup();
+    const { service, ports, auth, revoke } = setup();
     await service.dispatch({ ...send, projectId: "p", title: "unrelated rename" }, auth, {
       legacy: true,
     });
-    expect(ports.execution.command).toHaveBeenCalledWith(send);
+    expect(ports.execution.command).toHaveBeenCalledWith(send, auth);
     await expect(
       service.dispatch({ ...send, text: 42, title: "unrelated" }, auth, { legacy: true }),
     ).rejects.toThrow();
     expect(ports.execution.command).toHaveBeenCalledOnce();
+    revoke();
+    expect(await auth.authorized()).toBe(false);
   });
   it("retains semantic rejection of an ignored legacy field such as note context on rewind", async () => {
     const { service, ports, auth } = setup();
@@ -530,7 +532,7 @@ describe("command domain admission", () => {
     vi.mocked(ports.repository.receiptStatus).mockResolvedValue(receipt);
     vi.mocked(ports.nativeProjection.watch).mockResolvedValue({ revision: 8, running: true });
     expect(await service.dispatch(command, auth)).toEqual(receipt);
-    expect(ports.execution.command).toHaveBeenCalledExactlyOnceWith(command);
+    expect(ports.execution.command).toHaveBeenCalledExactlyOnceWith(command, auth);
     expect(ports.nativeProjection.prepareDesktop).not.toHaveBeenCalled();
     expect(ports.repository.adopt).not.toHaveBeenCalled();
     vi.mocked(ports.execution.command).mockRejectedValue(
