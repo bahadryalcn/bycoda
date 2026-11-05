@@ -11,12 +11,20 @@ export async function resolveAuthorizedQuestionAttachments(
   const populated = Object.values(refs).some((files) => files.length);
   if (populated && !authorize) throw new Error("Question attachment identity is unavailable");
   if (populated) await authorize!();
-  const resolved = Object.fromEntries(await Promise.all(Object.entries(refs).map(async ([id, files]) => {
-    const question = questions.find((item) => item.id === id);
-    if (!question?.allowCustom || question.preserveCustomWhitespace)
-      throw new Error("This question cannot accept attachments");
-    return [id, await resolveQuestionAttachments(store, parseRemoteAttachments(files))] as const;
-  })));
+  const resolved = Object.fromEntries(
+    await Promise.all(
+      Object.entries(refs).map(async ([id, files]) => {
+        const question = questions.find((item) => item.id === id);
+        // An empty list means "no attachments" and is accepted for any question.
+        if (files.length && (!question?.allowCustom || question.preserveCustomWhitespace))
+          throw new Error("This question cannot accept attachments");
+        return [
+          id,
+          await resolveQuestionAttachments(store, parseRemoteAttachments(files)),
+        ] as const;
+      }),
+    ),
+  );
   if (populated) await authorize!();
   return resolved;
 }

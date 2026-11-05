@@ -174,18 +174,13 @@ export class RuntimeTerminalLogs {
     // Ordinary ASCII output without control sequences can be appended in bulk.
     // Keep overflow observation so redaction still sees delimiters beyond the cap.
     if (stream.escape === "text" && /^[\x20-\x7e\t\r\n]*$/.test(text)) {
+      // One forward scan per line break keeps splitting linear in the chunk size.
+      const lineBreak = /[\r\n]/g;
       let start = 0;
       while (start <= text.length) {
-        const newline = text.indexOf("\n", start);
-        const carriage = text.indexOf("\r", start);
-        const index =
-          newline < 0
-            ? carriage < 0
-              ? text.length
-              : carriage
-            : carriage < 0
-              ? newline
-              : Math.min(newline, carriage);
+        lineBreak.lastIndex = start;
+        const match = lineBreak.exec(text);
+        const index = match ? match.index : text.length;
         const segment = text.slice(start, index);
         const room = Math.max(0, 8192 - stream.line.length);
         stream.line += segment.slice(0, room);

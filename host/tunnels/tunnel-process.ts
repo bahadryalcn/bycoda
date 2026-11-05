@@ -188,10 +188,16 @@ export function startLegacyTunnelGuardian(
   });
   // Explicit IPC disconnect can leave `close` pending after exit on Windows.
   // Stdio is ignored here; process exit acknowledges the guardian's lifetime.
+  // An unconfirmed exit still ends the tunnel: report it like the native path and
+  // always emit `exit` so callers clean up. A pending stop() reports stop-failed
+  // through its own rejection, so only an unexpected exit is reported here.
   child.once("exit", () => {
     clearTimeout(startup);
     closed = true;
-    if (!confirmed) emit({ type: "error", issue: "stop-failed" });
+    if (!confirmed) {
+      emit({ type: "error", issue: stopPromise ? "stop-failed" : "unexpected-exit" });
+    }
+    emit({ type: "exit" });
   });
   const stop = (): Promise<void> => {
     if (closed)
