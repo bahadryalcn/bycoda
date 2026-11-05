@@ -1,10 +1,11 @@
 import { execFileAsync as exec } from "../src/shared/lib/processExecution.node";
 import { DatabaseSync } from "node:sqlite";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { runPowerShell } from "./windows";
-import { readStateFileSync, writeFileAtomicSync } from "./storage/atomic-write";
+import { writeFileAtomicSync } from "./storage/atomic-write";
+import { renameWithRetrySync } from "./storage/rename-retry";
 
 type OwnerState = { version: 2; pid: number } | { version: 1; pid: number };
 function parseOwner(text: string): OwnerState {
@@ -31,6 +32,54 @@ function parseOwner(text: string): OwnerState {
 }
 
 export type HostOwnerStatus = "active" | "stopped" | "unknown";
+
+/** Corrupt owner.lock copies kept for inspection; older copies are deleted. */
+const QUARANTINE_LIMIT = 3;
+
+type SentinelRead =
+  | { status: "missing" }
+  | { status: "ok"; value: OwnerState }
+  | { status: "corrupt"; text: string };
+
+function readSentinel(path: string): SentinelRead {
+  let bytes: Buffer;
+  try {
+    bytes = readFileSync(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { status: "missing" };
+    throw error;
+  }
+  const text = bytes.toString("utf8");
+  try {
+    return { status: "ok", value: parseOwner(text) };
+  } catch {
+    return { status: "corrupt", text };
+  }
+}
+
+/** A damaged sentinel may still name the legacy owner it was written by. */
+function recoverLegacyPid(text: string): number | undefined {
+  const match = /"pid"\s*:\s*(\d+)/.exec(text);
+  const pid = match ? Number(match[1]) : Number.NaN;
+  return Number.isSafeInteger(pid) && pid > 0 ? pid : undefined;
+}
+
+/** Move corrupt bytes aside, never over existing evidence, then prune the oldest copies. */
+function quarantineSentinel(path: string): string {
+  const base = `${path}.corrupt-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+  let target = base;
+  for (let attempt = 1; existsSync(target); attempt++) target = `${base}-${attempt}`;
+  renameWithRetrySync(path, target);
+  const directory = dirname(path);
+  const prefix = `${basename(path)}.corrupt-`;
+  // ISO timestamps sort chronologically, so lexical order is age order.
+  const copies = readdirSync(directory)
+    .filter((name) => name.startsWith(prefix))
+    .sort();
+  for (const name of copies.slice(0, Math.max(0, copies.length - QUARANTINE_LIMIT)))
+    rmSync(join(directory, name), { force: true });
+  return target;
+}
 
 async function inspectLegacyOwner(pid: number): Promise<HostOwnerStatus> {
   try {
@@ -68,13 +117,18 @@ export async function probeHostOwner(directory: string): Promise<HostOwnerStatus
         return code !== undefined && [5, 6].includes(code & 0xff) ? "active" : "unknown";
       }
     }
-    const state = readStateFileSync(join(directory, "owner.lock"), parseOwner, {
-      quarantine: false,
-    });
-    if (state.status === "corrupt") return "unknown";
-    if (state.status === "missing") return "stopped";
-    if (state.value.version === 2) return hasDatabase ? "stopped" : "unknown";
-    return await inspectLegacyOwner(state.value.pid);
+    const sentinel = readSentinel(join(directory, "owner.lock"));
+    if (sentinel.status === "missing") return "stopped";
+    if (sentinel.status === "corrupt") {
+      // Without the lease database, damaged bytes cannot be attributed to a stopped owner.
+      if (!hasDatabase) return "unknown";
+      // The lease is held, so only a live legacy PID inside the bytes keeps the state unknown.
+      const pid = recoverLegacyPid(sentinel.text);
+      if (pid === undefined) return "stopped";
+      return (await inspectLegacyOwner(pid)) === "stopped" ? "stopped" : "unknown";
+    }
+    if (sentinel.value.version === 2) return hasDatabase ? "stopped" : "unknown";
+    return await inspectLegacyOwner(sentinel.value.pid);
   } catch {
     return "unknown";
   } finally {
@@ -94,20 +148,29 @@ export async function acquireHostOwner(directory: string): Promise<() => void> {
     } catch {
       throw new Error("A host already owns this data directory");
     }
-    // An incomplete sentinel may come from an interrupted writer, so it is refused and left
-    // in place for inspection rather than overwritten by a new owner.
-    const state = readStateFileSync(path, parseOwner, { quarantine: false });
-    if (state.status === "corrupt")
-      throw new Error("Host lock is incomplete; inspect owner.lock before removing it");
-    if (state.status === "ok") {
-      // Version 2 owners hold the SQLite lock we just acquired. Their leftover
-      // PID file is therefore stale, regardless of which process owns that PID.
-      if (state.value.version === 1 && (await inspectLegacyOwner(state.value.pid)) !== "stopped")
-        throw new Error(
-          "A host already owns this data directory, or its owner could not be verified",
-        );
+    // The exclusive lease above is the ownership proof, so a damaged sentinel alone carries no
+    // authority. It is refused only while its bytes may name a live legacy owner.
+    const sentinel = readSentinel(path);
+    if (sentinel.status === "corrupt") {
+      const pid = recoverLegacyPid(sentinel.text);
+      if (pid !== undefined && (await inspectLegacyOwner(pid)) !== "stopped")
+        throw new Error("Host lock is incomplete; inspect owner.lock before removing it");
+      const evidence = quarantineSentinel(path);
+      console.warn(
+        `Host owner.lock was unreadable; retained evidence at ${evidence} and replacing it.`,
+      );
+    } else if (
+      sentinel.status === "ok" &&
+      sentinel.value.version === 1 &&
+      (await inspectLegacyOwner(sentinel.value.pid)) !== "stopped"
+    ) {
+      throw new Error(
+        "A host already owns this data directory, or its owner could not be verified",
+      );
     }
-    // Old clients cannot mistake this for a dead PID and take ownership.
+    // Version 2 owners hold the SQLite lock we just acquired. Their leftover PID file is
+    // therefore stale, regardless of which process owns that PID. Old clients cannot mistake
+    // this for a dead PID and take ownership.
     writeFileAtomicSync(path, ownerText, {
       mode: 0o600,
     });

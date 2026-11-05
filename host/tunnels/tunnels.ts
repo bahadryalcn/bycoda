@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { readStateFile, writeFileAtomic } from "../storage/atomic-write";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { writeFileAtomic } from "../storage/atomic-write";
+import { renameWithRetry } from "../storage/rename-retry";
+import { access, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   TUNNEL_PROVIDERS,
@@ -51,6 +52,61 @@ function tunnelCredentials(directory: string, environmentId: string): SocialCred
   };
 }
 
+type TunnelRepair = { repaired: true; dropped: number };
+/** Host-only status: the web client reconstructs the public overview and ignores this. */
+export type TunnelStatus = TunnelOverview & { repair?: TunnelRepair };
+type ManifestVerdict =
+  | { kind: "current"; records: ExternalTunnel[] }
+  | { kind: "damaged"; records: ExternalTunnel[]; dropped: number }
+  | { kind: "foreign"; environmentId: string };
+
+const MAX_STATE_BYTES = 128 * 1024;
+const QUARANTINE_LIMIT = 3;
+const CORRUPT_PREFIX = "state.json.corrupt-";
+
+function timestampLabel(): string {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+function safeLabel(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 64) || "unknown";
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+/** Move `from` to `stem + extension`, adding a numeric suffix instead of replacing evidence. */
+async function moveAside(
+  directory: string,
+  stem: string,
+  extension: string,
+  from: string,
+): Promise<string> {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const target = join(directory, `${stem}${attempt ? `-${attempt}` : ""}${extension}`);
+    if (await exists(target)) continue;
+    await renameWithRetry(from, target);
+    return target;
+  }
+  throw new Error("No free name for retained tunnel state");
+}
+
+/** Keep the newest damaged-state copies; ISO-derived names sort chronologically. */
+async function pruneCorruptCopies(directory: string): Promise<void> {
+  const copies = (await readdir(directory))
+    .filter((name) => name.startsWith(CORRUPT_PREFIX))
+    .sort();
+  for (const name of copies.slice(0, Math.max(0, copies.length - QUARANTINE_LIMIT)))
+    await rm(join(directory, name), { force: true });
+}
+
 /** Host-owned control lane. A manifest contains no tokens or reusable PID authority. */
 export class ExternalTunnels {
   private records: ExternalTunnel[] = [];
@@ -59,6 +115,7 @@ export class ExternalTunnels {
   private initialization?: Promise<void>;
   private initialized = false;
   private closing = false;
+  private repair?: TunnelRepair;
   private readonly dependencies: Dependencies;
 
   constructor(
@@ -86,17 +143,7 @@ export class ExternalTunnels {
     this.initialization ??= (async () => {
       try {
         await mkdir(this.directory, { recursive: true, mode: 0o700 });
-        // Unreadable or foreign state is not overwritten and never starts an empty control
-        // lane: the file stays in place and the service refuses to launch until it is repaired.
-        const state = await readStateFile(
-          join(this.directory, "state.json"),
-          (text) => this.parseRecords(text),
-          { quarantine: false },
-        );
-        if (state.status === "missing") return;
-        if (state.status === "corrupt") throw new Error("Tunnel state is unreadable");
-        this.records = state.value;
-        await this.persist();
+        await this.load();
       } catch {
         throw new TunnelError("storage-unavailable");
       }
@@ -110,17 +157,72 @@ export class ExternalTunnels {
     }
   }
 
-  private parseRecords(text: string): ExternalTunnel[] {
-    if (text.length > 128 * 1024) throw new Error();
-    const saved = JSON.parse(text);
+  /** Only real I/O failures keep the control lane closed; damaged state is repaired here. */
+  private async load(): Promise<void> {
+    const path = join(this.directory, "state.json");
+    let bytes: Buffer;
+    try {
+      bytes = await readFile(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+    const manifest = this.inspectManifest(bytes);
+    if (manifest.kind === "foreign") {
+      // Another environment's manifest is evidence: keep it aside, never adopt or delete it.
+      await moveAside(
+        this.directory,
+        `state.foreign-${safeLabel(manifest.environmentId)}`,
+        ".json",
+        path,
+      );
+      this.records = [];
+    } else {
+      if (manifest.kind === "damaged") {
+        // Keep the damaged bytes as evidence before the salvaged manifest replaces them.
+        await moveAside(this.directory, `state.json.corrupt-${timestampLabel()}`, "", path);
+        await pruneCorruptCopies(this.directory);
+        this.repair = { repaired: true, dropped: manifest.dropped };
+      }
+      this.records = manifest.records;
+    }
+    await this.persist();
+  }
+
+  /** Classify saved state without trusting it. Salvaged records are listed, never executed. */
+  private inspectManifest(bytes: Buffer): ManifestVerdict {
+    const damaged: ManifestVerdict = { kind: "damaged", records: [], dropped: 0 };
+    if (bytes.length > MAX_STATE_BYTES) return damaged;
+    let saved: unknown;
+    try {
+      saved = JSON.parse(new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes));
+    } catch {
+      return damaged;
+    }
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return damaged;
+    const manifest = saved as Record<string, unknown>;
+    if (typeof manifest.environmentId === "string" && manifest.environmentId !== this.environmentId)
+      return { kind: "foreign", environmentId: manifest.environmentId };
     if (
-      saved.version !== 1 ||
-      saved.environmentId !== this.environmentId ||
-      !Array.isArray(saved.tunnels) ||
-      saved.tunnels.length > MAX_RECORDS
+      manifest.version !== 1 ||
+      manifest.environmentId !== this.environmentId ||
+      !Array.isArray(manifest.tunnels)
     )
-      throw new Error();
-    return saved.tunnels.map((record: ExternalTunnel) => {
+      return damaged;
+    const records: ExternalTunnel[] = [];
+    let dropped = 0;
+    for (const entry of manifest.tunnels) {
+      const record = this.restoreRecord(entry);
+      if (record && records.length < MAX_RECORDS) records.push(record);
+      else dropped++;
+    }
+    return dropped === 0 ? { kind: "current", records } : { kind: "damaged", records, dropped };
+  }
+
+  /** Copy only the public contract of one saved record, never its process ownership. */
+  private restoreRecord(entry: unknown): ExternalTunnel | undefined {
+    try {
+      const record = entry as ExternalTunnel;
       if (
         !record ||
         !/^[a-f0-9-]{36}$/.test(record.id) ||
@@ -131,8 +233,7 @@ export class ExternalTunnels {
         ) ||
         !Number.isFinite(record.startedAt)
       )
-        throw new Error();
-      // Copy only the public contract, never deserialize process ownership.
+        return undefined;
       return {
         id: record.id,
         provider: record.provider,
@@ -146,7 +247,9 @@ export class ExternalTunnels {
             ? { issue: record.issue }
             : {}),
       };
-    });
+    } catch {
+      return undefined;
+    }
   }
 
   private async persist(): Promise<void> {
@@ -162,7 +265,7 @@ export class ExternalTunnels {
     }
   }
 
-  status(): Promise<TunnelOverview> {
+  status(): Promise<TunnelStatus> {
     return this.serialized(async () => {
       await this.initialize();
       const providers = await Promise.all(
@@ -188,6 +291,7 @@ export class ExternalTunnels {
         providers,
         tunnels: this.records.map((record) => ({ ...record, canStop: this.owned.has(record.id) })),
         publicReachability: "unverified",
+        ...(this.repair ? { repair: { ...this.repair } } : {}),
       };
     });
   }
