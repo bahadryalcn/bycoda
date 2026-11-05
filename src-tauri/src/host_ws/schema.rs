@@ -19,6 +19,8 @@ pub(super) struct Method {
     control: bool,
     control_types: Vec<String>,
     pub timeout: Duration,
+    /// Per-method wait for the Host to admit the request, before dispatch.
+    pub admission: Duration,
 }
 
 impl Method {
@@ -101,6 +103,11 @@ impl Contracts {
                         entry["responseTimeoutMs"]
                             .as_u64()
                             .ok_or_else(|| "Generated Host deadline is missing".to_owned())?,
+                    ),
+                    admission: Duration::from_millis(
+                        entry["admissionTimeoutMs"].as_u64().ok_or_else(|| {
+                            "Generated Host admission deadline is missing".to_owned()
+                        })?,
                     ),
                 },
             );
@@ -250,5 +257,59 @@ mod tests {
         assert!(cursor.is_valid(&json!({"epoch":"epoch.1","sequence":9_007_199_254_740_991u64})));
         assert!(!cursor.is_valid(&json!({"epoch":"epoch.1","sequence":9_007_199_254_740_992u64})));
         assert!(!cursor.is_valid(&json!({"epoch":"epoch.1","sequence":0.5})));
+    }
+
+    #[test]
+    fn admission_budget_is_per_method_and_queue_commands_outlive_reconnects() {
+        let contracts = Contracts::get().unwrap();
+        let default = Duration::from_millis(5_000);
+        let queue_budget = Duration::from_millis(90_000);
+        for method in [
+            "commands.dispatch",
+            "commands.status",
+            "sessions.queue.get",
+            "sessions.queue.change",
+            "sessions.queue.claim",
+            "sessions.queue.finish",
+            "sessions.queue.lease",
+            "sessions.queue.release",
+        ] {
+            assert_eq!(
+                contracts.methods[method].admission, queue_budget,
+                "{method}"
+            );
+        }
+        assert_eq!(contracts.methods["projects.list"].admission, default);
+    }
+
+    #[test]
+    fn admission_budget_comes_from_each_method_descriptor() {
+        let mut manifest: Value = serde_json::from_str(GENERATED).unwrap();
+        manifest["methods"]["projects.list"]["admissionTimeoutMs"] = json!(7_000);
+        manifest["methods"]["commands.dispatch"]["admissionTimeoutMs"] = json!(1_000);
+        let contracts = Contracts::parse(&manifest.to_string()).unwrap();
+        assert_eq!(
+            contracts.methods["projects.list"].admission,
+            Duration::from_millis(7_000)
+        );
+        assert_eq!(
+            contracts.methods["commands.dispatch"].admission,
+            Duration::from_millis(1_000)
+        );
+        // A method's budget must not be inherited from the manifest-wide default.
+        assert_eq!(
+            contracts.methods["commands.status"].admission,
+            Duration::from_millis(90_000)
+        );
+    }
+
+    #[test]
+    fn method_without_admission_budget_is_rejected() {
+        let mut manifest: Value = serde_json::from_str(GENERATED).unwrap();
+        manifest["methods"]["projects.list"]
+            .as_object_mut()
+            .unwrap()
+            .remove("admissionTimeoutMs");
+        assert!(Contracts::parse(&manifest.to_string()).is_err());
     }
 }
