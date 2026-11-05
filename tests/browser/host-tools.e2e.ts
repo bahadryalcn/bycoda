@@ -134,6 +134,8 @@ test("device preview uses the dock height with compact controls", async ({ page 
     await page.setViewportSize({ width, height: 988 });
     await page.goto(`${fixture}?detached=1&lang=tr`);
     await selectTool(page, "Cihazlar");
+    // Opening the panel only observes the device host; connecting is explicit.
+    await page.getByRole("button", { name: "Cihazları bağla", exact: true }).click();
     await page.getByRole("button", { name: "Emülatörü başlat", exact: true }).click();
     const image = page.getByRole("img", { name: "Geçerli cihaz ekranı" });
     await expect(image).toBeVisible();
@@ -647,6 +649,17 @@ test("starts, boots and captures a device and stops live viewing on tab change",
 }) => {
   await page.goto(fixture);
   await selectTool(page, "Devices");
+  // Opening the panel only observes the device host; connecting is explicit.
+  await expect(page.getByRole("button", { name: "Connect devices", exact: true })).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as unknown as { hostToolCalls: { method: string }[] }).hostToolCalls.filter(
+          (call) => call.method === "devices.start",
+        ).length,
+    ),
+  ).toBe(0);
+  await page.getByRole("button", { name: "Connect devices", exact: true }).click();
   await expect(
     page.getByRole("button", {
       name: "Selected device: Demo Android emulator",
@@ -675,7 +688,11 @@ test("starts, boots and captures a device and stops live viewing on tab change",
   await page.getByRole("button", { name: "Start emulator", exact: true }).click();
   await expect(page.getByRole("img", { name: "Current device screen" })).toBeVisible();
   await expect(page.getByRole("switch", { name: "Live view" })).toBeChecked();
-  await page.getByRole("switch", { name: "Allow device control", exact: true }).check();
+  // Control turns on only after the Host grants a lease, so wait for the claim.
+  await page.getByRole("switch", { name: "Allow device control", exact: true }).click();
+  await expect(
+    page.getByRole("switch", { name: "Allow device control", exact: true }),
+  ).toBeChecked();
   await expect(page.getByText("App name or bundle ID", { exact: true })).not.toBeVisible();
   await page.getByRole("button", { name: "Choose app to open", exact: true }).click();
   await expect(page.getByText("App name or bundle ID", { exact: true })).toBeVisible();
@@ -733,8 +750,16 @@ for (const locale of ["en", "tr"]) {
         await selectTool(page, names[index]);
         await expect(page.getByRole("tabpanel")).toBeVisible();
         await expect(page.locator(".host-tools-content .host-tool-panel:visible")).toBeVisible();
-        if (index === 0)
+        if (index === 0) {
+          // Opening the panel only observes the device host; connecting is explicit.
+          await page
+            .getByRole("button", {
+              name: locale === "en" ? "Connect devices" : "Cihazları bağla",
+              exact: true,
+            })
+            .click();
           await expect(page.locator(".device-panel-choice").getByRole("button")).toBeVisible();
+        }
         if (index === 1)
           await expect(
             page.getByRole("button", {

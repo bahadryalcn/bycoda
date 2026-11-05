@@ -16,6 +16,7 @@ import {
 } from "../../src/features/sessions/model/models";
 import { registerHarness } from "../../src/integrations/harness/core/registry";
 import { languageReady } from "../../src/shared/i18n";
+import { flushHostSessionBindings } from "../../src/features/connections/public/sessionExecutionBinding";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import {
   APPEARANCE_DEFAULTS,
@@ -209,7 +210,9 @@ applyAppearancePreferences(
     controlDensity: params.get("density") as "compact" | "comfortable" | "touch",
   }),
 );
-void languageReady.then(() =>
+// The app resolves durable session owners at boot before any pane renders;
+// the fixture mounts SessionPane directly, so it hydrates the same store first.
+void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
   createRoot(document.getElementById("root")!).render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}

@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionPane, type SessionPaneProps } from "../../src/features/sessions/ui/SessionPane";
 import { rememberRemoteProject } from "../../src/features/connections/model/remoteProjects";
+import { flushHostSessionBindings } from "../../src/features/connections/public/sessionExecutionBinding";
 import { ModelSourceContext } from "../../src/features/sessions/ui/modelSource";
 import "../../src/features/connections/model/remoteCommands";
 import { registerHarness } from "../../src/integrations/harness/core/registry";
@@ -611,7 +612,9 @@ function Fixture() {
   );
 }
 setLanguagePreference("en");
-void languageReady.then(() =>
+// The app resolves durable session owners at boot before any pane renders;
+// the fixture mounts SessionPane directly, so it hydrates the same store first.
+void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
   createRoot(document.getElementById("root")!).render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}

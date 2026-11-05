@@ -129,12 +129,12 @@ for (const theme of ["light", "dark"])
       expect(await page.evaluate(() => (window as any).setupVoice.microphoneStarts)).toBe(0);
       await dialog.getByRole("radio", { name: "On this computer", exact: true }).click();
       await dialog.getByRole("button", { name: "Check connection", exact: true }).click();
-      await expect(dialog.getByRole("status")).toContainText("Ready");
+      await expect(dialog.getByRole("status").filter({ hasText: "Ready" })).toBeVisible();
       await capture(2);
       await next();
       await expect(dialog.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
       await dialog.getByRole("button", { name: "Listen", exact: true }).click();
-      await expect(dialog.getByRole("status")).toContainText("Ready");
+      await expect(dialog.getByRole("status").filter({ hasText: "Ready" })).toBeVisible();
       await dialog.getByRole("button", { name: "Stop", exact: true }).click();
       await capture(3);
       await next();
@@ -147,9 +147,9 @@ for (const theme of ["light", "dark"])
         dialog.getByRole("meter", { name: "Microphone level", exact: true }),
       ).toHaveAttribute("value", "0.35");
       await page.evaluate(() => (window as any).setupVoice.transcript());
-      await expect(dialog.getByRole("status")).toContainText(
-        "This is a synthetic microphone sentence.",
-      );
+      await expect(
+        dialog.getByRole("status").filter({ hasText: "This is a synthetic microphone sentence." }),
+      ).toBeVisible();
       await capture(4);
       await next();
       await capture(5);
@@ -485,7 +485,10 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/assistant-room.html?theme=${theme}&summary-refresh=1`);
       await page.getByRole("tab", { name: "Conversations", exact: true }).click();
-      await expect(page.getByText("Updating conversation summary", { exact: true })).toBeVisible();
+      // The visible summary note is mirrored by a screen-reader-only live region.
+      await expect(
+        page.getByRole("paragraph").filter({ hasText: /^Updating conversation summary$/ }),
+      ).toBeVisible();
       expect(await page.evaluate(() => (window as any).__summaryRefreshRequests)).toBeUndefined();
       await page.getByRole("button", { name: "Conversation actions", exact: true }).click();
       await page.screenshot({
@@ -519,8 +522,8 @@ for (const theme of ["light", "dark"])
         .getByRole("menuitem", { name: "Refresh conversation summary", exact: true })
         .click();
       await expect(
-        page.getByText("Conversation summary is waiting. Check its settings or refresh it.", {
-          exact: true,
+        page.getByRole("paragraph").filter({
+          hasText: /^Conversation summary is waiting\. Check its settings or refresh it\.$/,
         }),
       ).toBeVisible();
       await page.screenshot({
@@ -532,7 +535,9 @@ for (const theme of ["light", "dark"])
         .getByRole("menuitem", { name: "Refresh conversation summary", exact: true })
         .click();
       await expect(
-        page.getByText("A verified conversation summary is available.", { exact: true }),
+        page
+          .getByRole("paragraph")
+          .filter({ hasText: /^A verified conversation summary is available\.$/ }),
       ).toBeVisible();
       await page.screenshot({
         animations: "disabled",
@@ -1353,6 +1358,12 @@ for (const theme of ["light", "dark"])
 test("searches all conversations and saved memory through the Host adapter", async ({ page }) => {
   await page.goto("/tests/browser/assistant-room.html?theme=light");
   await page.getByRole("tab", { name: "Conversations", exact: true }).click();
+  // Room opens the Global conversation; start from the project thread so the
+  // search has to reach a message outside the open conversation.
+  await page
+    .getByRole("complementary", { name: "Conversations" })
+    .getByRole("button", { name: /^MonoCode/ })
+    .click();
   await expect(
     page.getByText("Keep an eye on recovery and prepare the release notes.", {
       exact: true,

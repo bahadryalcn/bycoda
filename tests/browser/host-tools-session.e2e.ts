@@ -27,8 +27,11 @@ for (const theme of ["dark", "light"])
         await selectTool(page, name);
         const panel = page.getByRole("tabpanel");
         await expect(panel).toBeVisible();
-        if (index === 0)
+        if (index === 0) {
+          // Opening the panel only observes the device host; connecting is explicit.
+          await page.getByRole("button", { name: "Connect devices", exact: true }).click();
           await expect(page.locator(".device-panel-choice").getByRole("button")).toBeVisible();
+        }
         if (index === 1) {
           await page.getByRole("button", { name: "Open website", exact: true }).click();
           await expect(page.locator("img.host-browser-frame")).toBeVisible();

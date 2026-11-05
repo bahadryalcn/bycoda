@@ -17,6 +17,8 @@ const actions = (page: Page) =>
   );
 async function ready(page: Page, extra = "") {
   await page.goto(`${fixture}${extra}`);
+  // Opening the panel only observes the device host; connecting is explicit.
+  await page.getByRole("button", { name: "Connect devices", exact: true }).click();
   await expect(image(page)).toBeVisible();
   await expect
     .poll(() => image(page).evaluate((node: HTMLImageElement) => node.naturalWidth))
