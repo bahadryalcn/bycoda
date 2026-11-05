@@ -102,7 +102,7 @@ export class SocialMediaEditor {
     this.invalidate();
     const operation = (async () => {
       await Promise.allSettled([...this.pending.values(), ...this.releases.values()]);
-      for (const mediaId of [...this.claims.keys()]) {
+      for (const mediaId of Array.from(this.claims.keys())) {
         try {
           const identity = await this.client.mediaInspect(mediaId);
           if (identity.managed) {

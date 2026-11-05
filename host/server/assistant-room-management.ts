@@ -689,7 +689,7 @@ export function registerRoomManagement(
               async () => valid() && (await authorized()) && valid(),
             ),
           );
-        if (/^inbox\./.test(call.action))
+        if (call.action.startsWith("inbox."))
           throw new Error(
             "Project Room inbox remote transport requires a qualified owner workflow.",
           );

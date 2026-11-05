@@ -73,7 +73,7 @@ export function subscribeRoomPrivacyStatus(listener: () => void): () => void {
 }
 function publish(next: RoomPrivacyStatus) {
   status = next;
-  for (const listener of [...listeners]) {
+  for (const listener of Array.from(listeners)) {
     try {
       listener();
     } catch (error) {

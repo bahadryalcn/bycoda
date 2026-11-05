@@ -226,7 +226,8 @@ describe("useSocialWorkspaceController Host switching", () => {
     await act(async () => latest.actions.setPage("jobs", 50));
     await flush();
     expect(latest.snapshot?.jobs.map((job) => job.id)).toEqual(["retained-job"]);
-    expect((reads("A").at(-1)?.[1] as { offsets?: { jobs?: number } }).offsets?.jobs).toBe(50);
+    const lastRead = reads("A").at(-1)?.[1] as { offsets?: { jobs?: number } };
+    expect(lastRead.offsets?.jobs).toBe(50);
     expect(latest.status.loadError).toContain("requested offset");
   });
 

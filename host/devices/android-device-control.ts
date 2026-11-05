@@ -190,6 +190,7 @@ export async function androidDeviceControl(
     }
     case "snapshot": {
       const path = `/data/local/tmp/bycoda-ui-${randomUUID()}.xml`;
+      const ownedPath = /^\/data\/local\/tmp\/bycoda-ui-[0-9a-f-]{36}\.xml$/.test(path);
       try {
         await run(["uiautomator", "dump", "--compressed", path]);
         const xml = await run(["cat", path], false);
@@ -203,26 +204,29 @@ export async function androidDeviceControl(
           throw new Error("Android accessibility snapshot returned invalid XML.");
         data = { action: action.type, xml };
       } finally {
-        if (!/^\/data\/local\/tmp\/bycoda-ui-[0-9a-f-]{36}\.xml$/.test(path))
-          throw new Error("Invalid owned Android snapshot path.");
-        // Revocation must not strand the exact temporary file this operation
-        // already created. Cleanup cannot issue input or choose another path.
-        if (snapshotStarted && remaining() > 0 && physical.size === 0)
-          await run(["rm", "-f", path], true, true);
-        else if (snapshotStarted) {
-          // A timed-out observer may leave adb running. Wait for this exact
-          // snapshot's physical work before deleting its exact temporary file.
-          const cleanup = Promise.allSettled([...physical]).then(async () => {
-            const work = command(adbPath, ["-s", serial, "shell", "rm", "-f", path], {
-              env: options.env,
-              timeoutMs: 5_000,
+        // An unowned path is never passed to rm; the check after this block reports it.
+        if (ownedPath) {
+          // Revocation must not strand the exact temporary file this operation
+          // already created. Cleanup cannot issue input or choose another path.
+          if (snapshotStarted && remaining() > 0 && physical.size === 0)
+            await run(["rm", "-f", path], true, true);
+          else if (snapshotStarted) {
+            // A timed-out observer may leave adb running. Wait for this exact
+            // snapshot's physical work before deleting its exact temporary file.
+            const cleanup = Promise.allSettled(physical).then(async () => {
+              const work = command(adbPath, ["-s", serial, "shell", "rm", "-f", path], {
+                env: options.env,
+                timeoutMs: 5_000,
+              });
+              successful(await work);
             });
-            successful(await work);
-          });
-          const tracked = options.track ? options.track(cleanup) : cleanup;
-          void tracked.catch(() => {});
+            const tracked = options.track ? options.track(cleanup) : cleanup;
+            void tracked.catch(() => {});
+          }
         }
       }
+      // Outside finally, so a failed cleanup or an earlier error is never replaced by this check.
+      if (!ownedPath) throw new Error("Invalid owned Android snapshot path.");
       break;
     }
     case "pressElement": {

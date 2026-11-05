@@ -38,7 +38,7 @@ try {
   const windowsDirectory = path.join(destination, "windows");
   await mkdir(windowsDirectory, { recursive: true });
   const rendered = new Map();
-  for (const size of [...new Set([...WINDOWS_ICON_SIZES, 30, 44])]) {
+  for (const size of new Set([...WINDOWS_ICON_SIZES, 30, 44])) {
     await page.setViewportSize({ width: size, height: size });
     await page.setContent(
       `<style>html,body{margin:0;background:transparent}svg{display:block}</style>${renderBrandIcon(geometry, size)}`,

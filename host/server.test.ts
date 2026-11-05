@@ -19,7 +19,6 @@ import { HostTasks } from "./tasks/tasks";
 import { HostCrews } from "./crews/crews";
 import { HostGoals } from "./goals/goals";
 import { DesktopSessions } from "./desktop/desktopSessions";
-import { HostTerminals } from "./terminals/terminals";
 import { mockWorkspaceTerminal } from "./workspaces/terminal-test-fixture";
 import { AsyncHostNotes } from "./host-notes-async";
 import { GenericAcpService } from "./providers/generic-acp";

@@ -299,6 +299,7 @@ export const NATIVE_SERVICES_RPC_SCHEMAS = {
 export const NativeAssistantBrowserPanelParamsSchema = NATIVE_SERVICES_RPC_SCHEMAS[
   "native.services.assistant.browser.panel"
 ].params.extend({
+  // oxlint-disable-next-line no-control-regex -- rejects NUL bytes in untrusted project paths
   projectCwd: z.string().regex(/^[^\u0000]{1,4096}(?![\s\S])/),
 });
 export type NativeServiceMethod = keyof typeof NATIVE_SERVICES_RPC_SCHEMAS;

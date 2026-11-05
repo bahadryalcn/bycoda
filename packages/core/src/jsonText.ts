@@ -49,7 +49,7 @@ function selectedJsonObject(raw: string): { start: number; end: number } | null 
   const tails = new IndexTable(length + 1);
   const seenKeys = new Uint8Array(length + 1);
   const stringKeys = new Uint8Array(length + 1);
-  const bodies = new Array<number>(7).fill(0);
+  const bodies = Array.from<number>({ length: 7 }).fill(0);
   const digit = (index: number) => raw.charCodeAt(index) >= 48 && raw.charCodeAt(index) <= 57;
   const space = (index: number) => {
     const code = raw.charCodeAt(index);

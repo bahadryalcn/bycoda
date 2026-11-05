@@ -429,7 +429,7 @@ export function createAssistantDisclosureRuntime(
     const room = await dependencies.assistant.globalRoomBinding();
     if (!room) throw new Error("Assistant global Room source is unavailable.");
     let incomplete = false;
-    for (const projectId of [...new Set(projectIds)]) {
+    for (const projectId of new Set(projectIds)) {
       const authorized = async () =>
         active() &&
         (await dependencies.assistant.globalRoomBinding())?.id === room.id &&

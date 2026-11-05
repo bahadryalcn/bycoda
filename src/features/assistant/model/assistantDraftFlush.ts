@@ -30,8 +30,8 @@ export function registerAssistantDraftFlusher(flush: () => Promise<void>): () =>
 
 /** Window close must not outrun accepted or still-pending native draft writes. */
 export async function flushAssistantDrafts(): Promise<void> {
-  while (operations.size) await Promise.all([...operations]);
-  for (const owner of [...owners]) {
+  while (operations.size) await Promise.all(operations);
+  for (const owner of Array.from(owners)) {
     await owner.flush();
     if (!owner.active) owners.delete(owner);
   }

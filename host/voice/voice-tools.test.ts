@@ -8,7 +8,6 @@ import { HostStore } from "../store";
 import { HostEngine } from "../engine";
 import { createHostServer } from "../server";
 import { socialToolCatalog } from "../social/social-tools";
-import { defaultCrewPolicy } from "../../src/features/crews/model/crew";
 import {
   parseVoiceToolCall,
   prepareVoiceToolDispatch,

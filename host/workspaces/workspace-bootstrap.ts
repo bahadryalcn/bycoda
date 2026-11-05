@@ -440,6 +440,33 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
     let published = false;
     let effectStarted = false;
     let settled = false;
+    let cleanedUp = false;
+    const removeTemporary = async () => {
+      try {
+        await unlink(temporary);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    };
+    // Releases this attempt's lease handles. Runs once: on success before the
+    // result is returned (its failure is the outcome), otherwise from finally,
+    // where a failure must not replace the original error.
+    const cleanup = async () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      try {
+        if (published && (!effectStarted || settled)) {
+          try {
+            if ((await readFile(path, "utf8")) === owner) await unlink(path);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          }
+        }
+      } finally {
+        db?.close();
+        await removeTemporary();
+      }
+    };
     const retireReceipt = async (receiptNonce: string) => {
       const receiptPath = join(cargoTargetDir, `.bycoda-build-retired-${receiptNonce}.json`);
       try {
@@ -699,22 +726,14 @@ export class WorkspaceBootstrapService implements WorkspaceBootstrap {
       db!.exec("COMMIT");
       settled = true;
       await retireSettledReceipt();
+      await cleanup();
       return result;
     } finally {
-      try {
-        if (published && (!effectStarted || settled)) {
-          try {
-            if ((await readFile(path, "utf8")) === owner) await unlink(path);
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-          }
-        }
-      } finally {
-        db?.close();
+      if (!cleanedUp) {
         try {
-          await unlink(temporary);
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          await cleanup();
+        } catch {
+          /* The original outcome of this attempt is kept. */
         }
       }
     }

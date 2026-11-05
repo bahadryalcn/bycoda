@@ -28,6 +28,7 @@ export function questionAttachmentIdentity(
     typeof value === "string" &&
     value.trim().length > 0 &&
     value.length <= 512 &&
+    // oxlint-disable-next-line no-control-regex -- rejects control characters in untrusted question fields
     !/[\u0000-\u001f\u007f-\u009f]/.test(value);
   if (
     (!valid(prompt.occurrenceId) && !valid(prompt.providerTurnId)) ||

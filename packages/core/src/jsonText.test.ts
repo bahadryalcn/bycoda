@@ -67,7 +67,7 @@ it.each([
   '{"x":01} {"message":"after invalid number"}',
   '{"x":[1,]} {"subject":"after trailing comma"}',
   '{"x":"\\q"} {"branch":"after bad escape"}',
-  '"preamble {\"title\":\"quoted\"} suffix"',
+  '"preamble {"title":"quoted"} suffix"',
   '{ "unfinished {\n{"branch":"recovered"}',
   '{"a":"{ } and \\\"quote\\\"","b":{"count":1}}',
 ])("matches legacy candidate preference for %s", (input) => {

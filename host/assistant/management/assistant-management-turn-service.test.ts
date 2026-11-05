@@ -13,10 +13,8 @@ afterEach(async () => {
 async function fixture() {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-room-management-"));
   let store = new HostStore(join(directory, "host.db"));
-  let calls = 0;
   let currentCwd = directory;
   const tools = vi.fn<NonNullable<AssistantPorts["roomManagement"]>>(async (call) => {
-    calls++;
     return {
       value: { state: "completed", title: "Exact current task" },
       source: {
@@ -226,7 +224,8 @@ it("unknown tool provenance stays outside certified retained replies", async () 
       action: call.action,
     },
   }));
-  const message = (await f.request()).messages?.at(-1)!;
+  const message = (await f.request()).messages?.at(-1);
+  if (!message) throw new Error("Expected a room management response message.");
   expect(message.projectIds).toBeUndefined();
   expect(message.visibilityProjectIds).toEqual(["project"]);
   expect(message.unverifiedToolContext).toBe(true);

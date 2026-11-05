@@ -146,11 +146,11 @@ export class HandoffHistoryStore {
     return path;
   }
   private result(manifest: Manifest, sessionId: string): { path: string } {
-    const store = this;
     // Defer the full JSON file until its path is actually consumed.
+    const materialize = () => this.materialize(manifest, sessionId);
     return {
       get path() {
-        return store.materialize(manifest, sessionId);
+        return materialize();
       },
     };
   }
