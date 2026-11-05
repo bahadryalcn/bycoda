@@ -2,7 +2,7 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { useEffect, useId, useRef, useState } from "react";
 import { DateTimeField } from "../../../shared/ui/DateTimePicker";
 import { InlineError } from "../../../shared/ui/InlineError";
-import { useT } from "../../../shared/i18n";
+import { formatDate, useT } from "../../../shared/i18n";
 import { BadgeList } from "../../../shared/ui/BadgeList";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
@@ -23,10 +23,32 @@ import {
 import type { SprintBoardController } from "../model/sprintClient";
 import "./sprints.css";
 
-const dateValue = (value?: number) =>
-  value === undefined ? "" : new Date(value).toISOString().slice(0, 10);
-const dateNumber = (value: string) =>
-  value ? new Date(`${value}T00:00:00Z`).getTime() : undefined;
+// Sprint dates are calendar days in the owner's zone: YYYY-MM-DD maps to local midnight
+// and back, so a day never shifts in zones away from UTC. Older builds stored UTC
+// midnight; such a value that is not local midnight is read as its UTC calendar day.
+const DAY_MS = 86_400_000;
+const isLegacyUtcDay = (value: number) => {
+  const date = new Date(value);
+  const localMidnight = date.getHours() === 0 && date.getMinutes() === 0 && date.getSeconds() === 0;
+  return value % DAY_MS === 0 && !localMidnight;
+};
+const dateValue = (value?: number) => {
+  if (value === undefined) return "";
+  if (isLegacyUtcDay(value)) return new Date(value).toISOString().slice(0, 10);
+  const date = new Date(value);
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+};
+const displayDate = (value: number) =>
+  formatDate(value, {
+    dateStyle: "medium",
+    ...(isLegacyUtcDay(value) ? { timeZone: "UTC" } : {}),
+  });
+const dateNumber = (value: string) => {
+  if (!value) return undefined;
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year!, month! - 1, day!).getTime();
+};
 export { dateValue as sprintDateValue, dateNumber as sprintDateNumber };
 
 export function SprintManagement({
@@ -254,8 +276,13 @@ export function SprintManagement({
                 </span>
                 {selected.startsAt !== undefined || selected.endsAt !== undefined ? (
                   <span>
-                    {dateValue(selected.startsAt) || t("No start date")} ·{" "}
-                    {dateValue(selected.endsAt) || t("No end date")}
+                    {selected.startsAt === undefined
+                      ? t("No start date")
+                      : displayDate(selected.startsAt)}{" "}
+                    ·{" "}
+                    {selected.endsAt === undefined
+                      ? t("No end date")
+                      : displayDate(selected.endsAt)}
                   </span>
                 ) : null}
               </>
