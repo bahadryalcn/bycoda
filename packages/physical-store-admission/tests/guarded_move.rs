@@ -1,10 +1,11 @@
 use bycoda_physical_store_admission::guarded_move::move_with_recovery;
 use cap_std::{ambient_authority, fs::Dir};
-use std::{ffi::OsStr, fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+use std::{ffi::OsStr, fs, path::PathBuf};
 
 fn fixture() -> PathBuf {
-    let root = std::env::temp_dir().join(format!("guarded-move-{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()));
-    for child in ["source", "destination", "recovery", "stage"] { fs::create_dir_all(root.join(child)).unwrap(); }
+    let root = std::env::temp_dir().join(format!("guarded-move-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&root).unwrap();
+    for child in ["source", "destination", "recovery", "stage"] { fs::create_dir(root.join(child)).unwrap(); }
     root
 }
 fn open(root: &std::path::Path, child: &str) -> Dir { Dir::open_ambient_dir(root.join(child), ambient_authority()).unwrap() }

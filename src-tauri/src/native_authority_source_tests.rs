@@ -557,7 +557,7 @@ fn retained_aggregate_two_fixed_reservations_block_third_until_real_close() {
     let start = |store| SourceEndpoint::start(
         binding(store),
         PipeCancellation::default(),
-        SourceEndpointOptions { io_timeout: Duration::from_secs(120) },
+        SourceEndpointOptions { io_timeout: Duration::from_secs(30) },
     ).unwrap();
     let mut held = Vec::new();
     for _ in 0..MAX_RETAINED_EXPORTS {

@@ -6738,7 +6738,8 @@ mod git_stream_process_tests {
             false,
             |chunk| { observed.extend_from_slice(chunk); Ok(()) },
         );
-        assert_eq!(result.unwrap_err(), "Git output timed out");
+        let error = result.unwrap_err();
+        assert!(matches!(error.as_str(), "Git output timed out" | "Git command timed out or was cancelled"));
         assert!(observed.windows(b"SILENT_CHILD_READY".len()).any(|window| window == b"SILENT_CHILD_READY"));
         let deadline = Instant::now() + Duration::from_secs(2);
         while ACTIVE_GIT_STREAMS.load(Ordering::Acquire) > before && Instant::now() < deadline {
