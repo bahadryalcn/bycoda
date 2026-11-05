@@ -36,7 +36,7 @@ export type SessionUsageReport = {
   projectId: string;
   scope: "host-observed-sessions";
   sampledAt: number;
-  window: { start: number; end: number; timeZone: string; attribution: "turn-start" };
+  window: { start: number; end: number; timeZone: "UTC"; attribution: "turn-start" };
   coverage: {
     source: "host-store";
     truncated: boolean;
@@ -148,8 +148,7 @@ export async function readSessionUsage(
     window: {
       start: params.sinceMs,
       end: params.untilMs,
-      // Usage days follow the owner's local day (see ownerLocalDay), not UTC.
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      timeZone: "UTC",
       attribution: "turn-start",
     },
     coverage: {

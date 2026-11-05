@@ -4,7 +4,7 @@ import type { HostGoal } from "../../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
 import { assertAssistantGoalProjects } from "./work/assistant-job-scope";
 import { assistantJobProjectIds } from "../../src/shared/model/assistantProjects";
-import { ownerDay } from "../../src/shared/lib/time/ownerDay";
+import { isoTimestamp } from "../../src/shared/lib/time/timestamps";
 
 export type BriefingApproval = {
   jobId: string;
@@ -127,14 +127,10 @@ export async function readBriefingApprovals(
   }
   return { items, complete };
 }
-/** The owner's local calendar day (YYYY-MM-DD) in the Host's time zone. Daily note
- * titles, usage buckets and briefing keys all use this same day boundary. */
-export const ownerLocalDay = (at: number): string =>
-  ownerDay(at, Intl.DateTimeFormat().resolvedOptions().timeZone) ??
-  new Date(at).toISOString().slice(0, 10);
-/** Matches daily note titles (written with the owner's local day) for today and yesterday. */
+const utcNoteDay = (at: number) => isoTimestamp(at)?.slice(0, 10);
+/** Daily note titles use UTC; briefing schedule/artifact keys separately use Host local dates. */
 export function recentBriefingNotes(notes: readonly AssistantNote[], now: number): AssistantNote[] {
-  const days = new Set([ownerLocalDay(now), ownerLocalDay(now - 24 * 60 * 60 * 1000)]);
+  const days = new Set([utcNoteDay(now), utcNoteDay(now - 24 * 60 * 60 * 1000)]);
   return notes
     .filter(
       (note) =>

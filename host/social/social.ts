@@ -5,7 +5,6 @@ import { readFile } from "node:fs/promises";
 import { SocialMediaCustody } from "./media-custody";
 import { SocialMediaQuarantine } from "./media-quarantine";
 import { SocialJobArchive } from "./social-job-archive";
-import { ownerDayBounds } from "../../src/shared/lib/time/ownerDay";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import type { HostStore } from "../store";
@@ -4960,17 +4959,12 @@ export class SocialService {
       }
       if ((await this.get<SocialAccount>("account", rule.accountId)).platform === "linkedin")
         reason = "LinkedIn third-party API content cannot feed automatic reply generation.";
-      // Daily limits use the owner's local civil day (DST-aware), like the automation schedules.
-      const dayBounds = ownerDayBounds(
-        this.now(),
-        Intl.DateTimeFormat().resolvedOptions().timeZone,
-      );
-      const quotaDayStart = dayBounds?.start ?? Math.floor(this.now() / 86_400_000) * 86_400_000;
-      const quotaDayEnd = dayBounds?.end ?? quotaDayStart + 86_400_000;
+      const day = Math.floor(this.now() / 86_400_000) * 86_400_000;
+      const quotaDayStart = Math.floor(this.now() / 86_400_000) * 86_400_000;
       if (
         (await this.jobArchive.jobCount(
           "json_extract(value,'$.ruleId')=? AND json_extract(value,'$.createdAt')>=? AND json_extract(value,'$.createdAt')<? AND status!='cancelled'",
-          [rule.id, quotaDayStart, quotaDayEnd],
+          [rule.id, quotaDayStart, quotaDayStart + 86_400_000],
         )) >= rule.dailyLimit
       )
         reason = "Daily automatic reply limit reached.";
@@ -4994,8 +4988,8 @@ export class SocialService {
         (await this.list<SocialDraft>("draft")).filter(
           (item) =>
             item.generation?.ruleId === rule.id &&
-            item.createdAt >= quotaDayStart &&
-            item.createdAt < quotaDayEnd,
+            item.createdAt >= day &&
+            item.createdAt < day + 86_400_000,
         ).length >= rule.dailyLimit
       )
         reason = "Daily AI generation limit reached.";
@@ -6016,17 +6010,11 @@ export class SocialService {
             throw new Error("Automatic rule was paused or changed.");
           if (draft.ruleId) {
             const rule = await this.get<SocialRule>("rule", draft.ruleId);
-            // Owner's local civil day, DST-aware, same as the reply quota above.
-            const dayBounds = ownerDayBounds(
-              this.now(),
-              Intl.DateTimeFormat().resolvedOptions().timeZone,
-            );
-            const dayStart = dayBounds?.start ?? Math.floor(this.now() / 86_400_000) * 86_400_000;
-            const dayEnd = dayBounds?.end ?? dayStart + 86_400_000;
+            const day = Math.floor(this.now() / 86_400_000) * 86_400_000;
             if (
               (await this.jobArchive.jobCount(
                 "id!=? AND json_extract(value,'$.ruleId')=? AND json_extract(value,'$.dispatchedAt')>0 AND json_extract(value,'$.dispatchedAt')>=? AND json_extract(value,'$.dispatchedAt')<?",
-                [job.id, rule.id, dayStart, dayEnd],
+                [job.id, rule.id, day, day + 86_400_000],
               )) >= rule.dailyLimit
             )
               throw new Error("Daily automatic send limit reached.");
