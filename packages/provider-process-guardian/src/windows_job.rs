@@ -350,7 +350,12 @@ impl OwnedProcessJob {
                 },
             },
         };
+        // Capacity of the active-process snapshot buffer, not of the job's lifetime.
         const MAX_MEMBERS: usize = 64;
+        // TotalProcesses counts every process the job has ever held, and the
+        // settlement proof needs a handle for each one, so this bounds handles
+        // per job rather than concurrent processes.
+        const MAX_LIFETIME_MEMBERS: usize = 4096;
         // usize storage provides the flexible-array structure's required alignment.
         let mut storage = vec![0usize; MAX_MEMBERS + 1];
         if unsafe {
@@ -431,7 +436,7 @@ impl OwnedProcessJob {
                 ((created.dwHighDateTime as u64) << 32) | created.dwLowDateTime as u64,
             );
             if !members.contains_key(&key) {
-                if members.len() >= MAX_MEMBERS {
+                if members.len() >= MAX_LIFETIME_MEMBERS {
                     return Err(CaptureFailure::Coverage);
                 }
                 members.insert(key, process);

@@ -74,6 +74,30 @@ pub(crate) fn canonical_target(path: &Path) -> Result<PathBuf, String> {
     Ok(result)
 }
 
+/// True when `parent` already grants everything `child` grants: a directory
+/// grant at or above the child's path, with write access if the child has it.
+fn covers(parent: &Grant, child: &Grant) -> bool {
+    parent.directory
+        && (parent.writable || !child.writable)
+        && normalized(&child.path).starts_with(normalized(&parent.path))
+}
+
+/// Returns the grant list with `granted` added, or `None` when an existing grant
+/// already covers it. A new directory grant absorbs the grants it covers, so
+/// the list does not grow with redundant entries under one folder.
+fn coalesced(grants: &[Grant], granted: Grant) -> Option<Vec<Grant>> {
+    if grants.iter().any(|old| covers(old, &granted)) {
+        return None;
+    }
+    let mut next: Vec<Grant> = grants
+        .iter()
+        .filter(|old| !covers(&granted, old))
+        .cloned()
+        .collect();
+    next.push(granted);
+    Some(next)
+}
+
 fn normalized(path: &Path) -> PathBuf {
     #[cfg(windows)]
     {
@@ -318,18 +342,12 @@ impl Registry {
             writable,
         };
         if persistent {
-            let mut next = self.persistent.clone();
-            if !next.iter().any(|old| {
-                old.path == granted.path && old.directory == directory && old.writable == writable
-            }) {
-                next.push(granted);
+            if let Some(next) = coalesced(&self.persistent, granted) {
+                self.save(&next)?;
+                self.persistent = next;
             }
-            self.save(&next)?;
-            self.persistent = next;
-        } else if !self.transient.iter().any(|old| {
-            old.path == granted.path && old.directory == directory && old.writable == writable
-        }) {
-            self.transient.push(granted);
+        } else if let Some(next) = coalesced(&self.transient, granted) {
+            self.transient = next;
         }
         Ok(())
     }

@@ -235,6 +235,48 @@ pub async fn reserve_question_attachment(app: AppHandle, window: tauri::Window, 
     }).await
 }
 
+/// A lock older than this is left by a crashed holder. Listing never writes, so
+/// it inspects such a dir without the lock; the lock itself is still not reaped.
+const QUESTION_LOCK_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Read-only inspection of one operation dir for the recovery list. `Ok(None)`
+/// means nothing to recover; `Err` skips only this dir.
+fn list_draft_in_dir(dir: &Path, operation_name: &std::ffi::OsStr, session_id: &str, question_id: &str, issuer: &str) -> Result<Option<serde_json::Value>, String> {
+    let _lock = match QuestionAttachmentLock::acquire(dir) {
+        Ok(lock) => Some(lock),
+        Err(reason) => {
+            let stale = std::fs::symlink_metadata(dir.with_extension("lock"))
+                .and_then(|metadata| metadata.modified())
+                .ok()
+                .and_then(|modified| modified.elapsed().ok())
+                .is_some_and(|age| age > QUESTION_LOCK_STALE_AFTER);
+            if !stale { return Err(reason); }
+            None
+        }
+    };
+    let marker = dir.join("reserved");
+    let metadata = match std::fs::symlink_metadata(&marker) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.to_string()),
+    };
+    if !metadata.is_file() || metadata.len() > 16 * 1024 { return Err("Question attachment draft is too large or unknown".into()); }
+    let mut bytes = Vec::new();
+    std::fs::File::open(&marker).map_err(|e| e.to_string())?.take(16 * 1024 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() > 16 * 1024 { return Err("Question attachment draft is too large".into()); }
+    let mut record: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| "Question attachment draft is corrupt")?;
+    if record["sessionId"].as_str() != Some(session_id) || record["questionId"].as_str() != Some(question_id) { return Err("Question attachment draft identity changed".into()); }
+    let original_issuer = record["issuer"].as_str().ok_or("Question attachment draft is corrupt")?;
+    let original_claim = record["claimId"].as_str().ok_or("Question attachment draft is corrupt")?;
+    if release_confirmed(dir, original_claim, original_issuer, session_id)? { return Ok(None); }
+    if record["issuer"].as_str() != Some(issuer) { return Err("Question attachment belongs to a previous page and requires recovery".into()); }
+    if record["operationId"].as_str() != operation_name.to_str() { return Err("Question attachment draft identity changed".into()); }
+    let claim = record["claimId"].as_str().ok_or("Question attachment draft is corrupt")?;
+    verify_claim(dir, claim, issuer, session_id)?;
+    record["retained"] = serde_json::Value::Bool(!definitely_absent(&dir.join("retained"))?);
+    Ok(Some(record))
+}
+
 #[tauri::command]
 pub async fn list_question_attachment_drafts(app: AppHandle, window: tauri::Window, webview: tauri::WebviewWindow, session_id: String, question_id: String) -> Result<Vec<serde_json::Value>, String> {
     check_caller(&window, &webview)?;
@@ -257,28 +299,12 @@ pub async fn list_question_attachment_drafts(app: AppHandle, window: tauri::Wind
                 examined += 1;
                 if examined > 100 { return Err("Question attachment recovery capacity exceeded".into()); }
                 let dir = entry.path();
-                let _lock = QuestionAttachmentLock::acquire(&dir)?;
-                let marker = dir.join("reserved");
-                let metadata = match std::fs::symlink_metadata(&marker) {
-                    Ok(metadata) => metadata,
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                    Err(error) => return Err(error.to_string()),
-                };
-                if !metadata.is_file() || metadata.len() > 16 * 1024 { return Err("Question attachment draft is too large or unknown".into()); }
-                let mut bytes = Vec::new();
-                std::fs::File::open(marker).map_err(|e| e.to_string())?.take(16 * 1024 + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-                if bytes.len() > 16 * 1024 { return Err("Question attachment draft is too large".into()); }
-                let mut record: serde_json::Value = serde_json::from_slice(&bytes).map_err(|_| "Question attachment draft is corrupt")?;
-                if record["sessionId"].as_str() != Some(session_id.as_str()) || record["questionId"].as_str() != Some(question_id.as_str()) { return Err("Question attachment draft identity changed".into()); }
-                let original_issuer = record["issuer"].as_str().ok_or("Question attachment draft is corrupt")?;
-                let original_claim = record["claimId"].as_str().ok_or("Question attachment draft is corrupt")?;
-                if release_confirmed(&dir, original_claim, original_issuer, &session_id)? { continue; }
-                if record["issuer"].as_str() != Some(issuer.identity()) { return Err("Question attachment belongs to a previous page and requires recovery".into()); }
-                if record["operationId"].as_str() != entry.file_name().to_str() { return Err("Question attachment draft identity changed".into()); }
-                let claim = record["claimId"].as_str().ok_or("Question attachment draft is corrupt")?;
-                verify_claim(&dir, claim, issuer.identity(), &session_id)?;
-                record["retained"] = serde_json::Value::Bool(!definitely_absent(&dir.join("retained"))?);
-                result.push(record);
+                // One busy, foreign or damaged operation must not hide the other drafts.
+                match list_draft_in_dir(&dir, &entry.file_name(), &session_id, &question_id, issuer.identity()) {
+                    Ok(Some(record)) => result.push(record),
+                    Ok(None) => {}
+                    Err(reason) => eprintln!("Question attachment operation skipped during listing: {reason}"),
+                }
             }
             Ok(result)
         })

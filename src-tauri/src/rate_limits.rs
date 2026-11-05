@@ -847,16 +847,21 @@ fn run_with_timeout(cmd: &mut std::process::Command, timeout: Duration) -> Optio
     use std::io::Read;
     use std::time::Instant;
     let mut child = cmd.spawn().ok()?;
+    // Drain stdout on its own thread: a helper whose output exceeds the pipe
+    // buffer would otherwise block on write and never exit before the timeout.
+    let mut stdout = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut out = String::new();
+        stdout.read_to_string(&mut out).map(|_| out)
+    });
     let started = Instant::now();
     loop {
         match child.try_wait() {
             Ok(Some(status)) => {
+                let out = reader.join().ok()?.ok()?;
                 if !status.success() {
                     return None;
                 }
-                let mut stdout = child.stdout.take()?;
-                let mut out = String::new();
-                stdout.read_to_string(&mut out).ok()?;
                 let trimmed = out.trim();
                 if trimmed.is_empty() {
                     return None;
