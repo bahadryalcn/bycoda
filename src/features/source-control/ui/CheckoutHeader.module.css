@@ -7,8 +7,12 @@
   color: var(--color-content);
 }
 
-.header[data-current-checkout] {
-  background: var(--ui-surface-selected);
+.commitSection {
+  border-block-end: 1px solid var(--color-stroke);
+}
+
+.repository .commitSection {
+  border-block-end: 0;
 }
 
 .disclosure {

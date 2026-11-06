@@ -4,6 +4,37 @@ import path from "node:path";
 
 const evidence = path.resolve("temp/verification/2026-11-04-last-sessions-workspace");
 const titleEvidence = path.resolve("temp/verification/2026-11-04-session-titles");
+for (const light of [false, true]) {
+  for (const width of [1280, 800]) {
+    test(`virtual folder headers do not overlap sessions at ${width} ${light ? "light" : "dark"}`, async ({
+      page,
+    }) => {
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(
+        `/tests/browser/session-row-layout.html?virtual-folders&${light ? "light" : "dark"}`,
+      );
+      const list = page.locator("[data-session-list]").last();
+      await expect(list.locator("[data-pinned-sessions]")).toBeVisible();
+      await expect
+        .poll(async () =>
+          list.evaluate((element) => {
+            const rows = Array.from(element.children).map((row) => row.getBoundingClientRect());
+            return rows.every((row, index) => index === 0 || row.top >= rows[index - 1].bottom - 1);
+          }),
+        )
+        .toBe(true);
+      for (const selector of ["[data-session-folder]", "[data-pinned-sessions]"]) {
+        await expect(list.locator(selector).first()).toHaveCSS("position", "absolute");
+      }
+      const output = path.resolve("temp/verification/2026-11-06-sidebar-overlap");
+      await mkdir(output, { recursive: true });
+      await page.screenshot({
+        path: path.join(output, `${light ? "light" : "dark"}-${width}.png`),
+      });
+    });
+  }
+}
 test("sidebar glass retains selection and grouped action focus without main glass", async ({
   page,
 }) => {

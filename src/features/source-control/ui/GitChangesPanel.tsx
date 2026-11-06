@@ -423,7 +423,7 @@ export function GitChangesPanel({
     <div
       ref={paneRef}
       data-git-repository={repository ? cwd : undefined}
-      className={`@container/changes flex min-h-0 flex-col ${repository ? "shrink-0 border-b border-stroke" : "h-full flex-1 overflow-hidden"}`}
+      className={`@container/changes flex min-h-0 flex-col ${repository ? `shrink-0 ${styles.repository}` : "h-full flex-1 overflow-hidden"}`}
     >
       <header
         className={repository ? styles.header : styles.branchHeader}
@@ -1335,7 +1335,7 @@ function ChangedFiles({
 
   return (
     <aside className={`flex min-h-0 min-w-0 flex-col ${fill ? "flex-1" : "shrink-0"}`}>
-      <div className="shrink-0 border-b border-stroke">
+      <div className={`shrink-0 ${styles.commitSection}`}>
         <div className="flex flex-col gap-1.5 p-2">
           <div className="relative min-w-0">
             <TextareaField

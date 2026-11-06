@@ -255,7 +255,7 @@ export function WorkspaceSourceControl({
         ) : (
           <div
             ref={overviewScrollRef}
-            className="min-h-0 flex-1 overflow-y-auto"
+            className={`min-h-0 flex-1 overflow-y-auto ${styles.overview}`}
             data-checkout-overview={checkouts || undefined}
           >
             {repositories.map((path) => (

@@ -171,6 +171,20 @@ it("bounds an expanded folder containing hundreds of sessions", async () => {
   expect(rowCount()).toBeLessThan(100);
 });
 
+it("does not override virtual folder and pinned header positioning", async () => {
+  props.sessions[1].pinned = true;
+  saveSessionFolders(props.cwd, [
+    { id: "folder", name: "Folder", sessionIds: [props.sessions[0].id], collapsed: false },
+  ]);
+  await render();
+  for (const selector of ['[data-session-folder="folder"]', "[data-pinned-sessions]"]) {
+    const header = projectList()?.querySelector<HTMLElement>(selector);
+    expect(header).not.toBeNull();
+    expect(header?.classList.contains("absolute")).toBe(true);
+    expect(header?.classList.contains("relative")).toBe(false);
+  }
+});
+
 it("keeps select-all state while the large session window stays bounded", async () => {
   await render();
   const select = container.querySelector<HTMLButtonElement>('[aria-label="Select conversations"]')!;

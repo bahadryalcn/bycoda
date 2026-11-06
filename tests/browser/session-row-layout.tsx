@@ -5,6 +5,7 @@ import { buildGlobalRecentSessions } from "../../src/features/sessions/model/glo
 import { pathKey } from "../../src/shared/lib/paths";
 import { LastSessionsRows } from "../../src/app/shell/LastSessionsSection";
 import { Sidebar } from "../../src/app/shell/Sidebar";
+import { saveSessionFolders } from "../../src/features/sessions/model/sessionFolders";
 import type { SessionSummary } from "../../src/features/sessions/data/sessionStore";
 import {
   saveRailBackgrounds,
@@ -25,6 +26,13 @@ import "./session-row-layout.css";
 const params = new URLSearchParams(location.search);
 const cwd = "/fixture/bycoda";
 const now = Date.now();
+if (params.has("virtual-folders")) {
+  saveSessionFolders(cwd, [
+    { id: "first", name: "First folder", sessionIds: ["virtual-0"], collapsed: false },
+    { id: "closed", name: "Closed folder", sessionIds: ["virtual-1"], collapsed: true },
+    { id: "next", name: "Next folder", sessionIds: ["virtual-2"], collapsed: false },
+  ]);
+}
 const demoCwd = "/fixture/demo-repo";
 const demoWorktree = "/fixture/demo-repo-worktree";
 saveTabGroupLabel(demoCwd, "demo-repo");
@@ -107,7 +115,14 @@ function Fixture() {
   const [history, setHistory] = useState(
     params.has("two-rows")
       ? initial.filter((row) => row.id === "row-working" || row.id === "row-long")
-      : initial,
+      : params.has("virtual-folders")
+        ? Array.from({ length: 100 }, (_, index) => ({
+            ...initial[2],
+            id: `virtual-${index}`,
+            title: `Conversation ${index}`,
+            pinned: index >= 5 && index < 10,
+          }))
+        : initial,
   );
   const [selected, setSelected] = useState("");
   const [projectCwd, setProjectCwd] = useState(cwd);

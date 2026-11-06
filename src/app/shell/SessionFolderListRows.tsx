@@ -54,7 +54,7 @@ export function SessionFolderListHeader({
       data-folder-collapsed={expanded ? undefined : "true"}
       data-section-divided={topLevel ? "" : undefined}
       data-section-collapsed={expanded ? undefined : ""}
-      className={`${virtual.className ?? ""} relative ${styles.folder}`}
+      className={`${virtual.className ?? "relative"} ${styles.folder}`}
       style={{ ...virtual.style, paddingInlineStart: depth ? `${depth * 1.375}rem` : undefined }}
     >
       <div className="overflow-hidden rounded-md">
@@ -125,7 +125,7 @@ export function SessionGroupListRow({
       data-reminder-sessions={reminders ? "" : undefined}
       data-section-divided=""
       data-section-collapsed={expanded ? undefined : ""}
-      className={`${virtual.className ?? ""} relative ${styles.folder}`}
+      className={`${virtual.className ?? "relative"} ${styles.folder}`}
       style={virtual.style}
     >
       <div className="overflow-hidden rounded-md">
