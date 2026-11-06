@@ -23,7 +23,6 @@ import {
 } from "../assistant/room/assistant-room-tool-schemas";
 import {
   MANAGEMENT_CONVERSATION_TOOLS,
-  MANAGEMENT_READS,
   describeManagementTool,
 } from "./conversation-management-tools";
 import { THREAD_WORK_EXECUTION_SCHEMA } from "./conversation-thread-work-tools";
@@ -48,32 +47,26 @@ import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools"
 import { REMOTE_PROVIDERS } from "../../src/features/connections/model/protocol";
 import { CONVERSATION_CREW_READ_TOOLS } from "./conversation-crew-tools";
 import { THREAD_CREW_WRITES, threadCrewReviewFields } from "./conversation-thread-crew-tools";
-import {
-  CONVERSATION_FILE_TOOLS,
-  FILE_CONVERSATION_READS,
-  describeFileConversationTool,
-} from "./conversation-file-tools";
+import { CONVERSATION_FILE_TOOLS, describeFileConversationTool } from "./conversation-file-tools";
 import {
   PROJECT_CONVERSATION_TOOLS,
-  PROJECT_READ_ACTIONS,
   describeProjectConversationTool,
 } from "./conversation-project-tools";
 import {
   SERVER_CONVERSATION_TOOLS,
-  SERVER_CONVERSATION_READS,
   serverConversationDescription,
 } from "./conversation-server-tools";
 import { TASK_CONFIGURATION_FIELDS, TASK_READ_TOOLS } from "./conversation-task-tools";
+import { CONVERSATION_READ_ACTIONS } from "./conversation-read-actions";
+import { AGENT_TOOL_SCHEMAS, describeAgentTool } from "../delegation/tools";
 import { GOAL_WRITE_TOOLS, describeGoalWriteTool } from "./conversation-goal-tools";
 import {
   DESKTOP_CONTROL_CONVERSATION_TOOLS,
-  DESKTOP_CONTROL_READ_ACTIONS,
   describeDesktopControlConversationTool,
 } from "./conversation-desktop-control-tools";
 import { TASK_QUEUE_TOOLS, describeTaskQueueTool } from "./conversation-task-queue-tools";
 import {
   BROWSER_ANNOTATION_TOOLS,
-  BROWSER_ANNOTATION_READ_ACTIONS,
   describeBrowserAnnotationTool,
 } from "./conversation-browser-tools";
 import {
@@ -82,7 +75,6 @@ import {
 } from "./conversation-steward-tools";
 import {
   RUNTIME_READ_CONVERSATION_TOOLS,
-  RUNTIME_READ_ACTIONS,
   describeRuntimeReadConversationTool,
 } from "./conversation-runtime-read-tools";
 
@@ -146,6 +138,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
   additionalProperties: false,
 });
 export const CONVERSATION_TOOLS = {
+  ...AGENT_TOOL_SCHEMAS,
   "browser.operation.status": ROOM_BROWSER_STATUS_SCHEMA,
   ...ROOM_TERMINAL_SCHEMAS,
   ...ROOM_SOCIAL_SCHEMAS,
@@ -741,77 +734,6 @@ const ROOM_ONLY_ACTIONS = new Set<string>([
 export function isRoomOnlyConversationAction(action: string): boolean {
   return ROOM_ONLY_ACTIONS.has(action);
 }
-const reads = new Set([
-  "remote.grants.list",
-  "remote.result",
-  "social.send.status",
-  "browser.operation.status",
-  "terminals.operation.status",
-  "files.operation.status",
-  "devServers.operation.status",
-  "devServers.logs",
-  "sessions.submit.status",
-  ...MANAGEMENT_READS,
-  ...DESKTOP_CONTROL_READ_ACTIONS,
-  "visuals.preview",
-  "visuals.render",
-  ...Object.keys(CONVERSATION_CREW_READ_TOOLS),
-  ...FILE_CONVERSATION_READS,
-  ...PROJECT_READ_ACTIONS,
-  ...SERVER_CONVERSATION_READS,
-  ...Object.keys(TASK_READ_TOOLS),
-  ...BROWSER_ANNOTATION_READ_ACTIONS,
-  ...RUNTIME_READ_ACTIONS,
-  "tasks.notes.read",
-  "skills.search",
-  "skills.read",
-  "sessions.list",
-  "sessions.read",
-  "crews.list",
-  "crews.get",
-  "crews.schema",
-  "crews.inspect",
-  "ui.workspace.list",
-  "ui.workspace.status",
-  "ui.tools.status",
-  "notes.list",
-  "notes.read",
-  "automations.list",
-  "automations.get",
-  "automations.runs",
-  "inbox.list",
-  "inbox.providers.status",
-  "inbox.providers.list",
-  "inbox.reviewContext",
-  "inbox.details",
-  "inbox.thread",
-  "inbox.result",
-  "tools.list",
-  "tools.search",
-  "tools.describe",
-  "tools.status",
-  "machines.list",
-  "devices.status",
-  "devices.preflight",
-  "devices.preview.status",
-  "devices.list",
-  "devices.capture",
-  "devices.control.status",
-  "devices.inspect",
-  "terminals.list",
-  "terminals.read",
-  "logs.sources",
-  "logs.read",
-  "logs.monitors.list",
-  "browser.status",
-  "browser.frame",
-  "tasks.list",
-  "tasks.get",
-  "tasks.session.read",
-  "devServers.list",
-  "devServers.details",
-  "resources.read",
-]);
 export const conversationToolName = (action: string) =>
   `conversation_${action.replaceAll(".", "_")}`;
 function conversationToolDescription(action: string) {
@@ -874,6 +796,7 @@ function conversationToolDescription(action: string) {
     return "Host attention Inbox plus connected GitHub/GitLab/Azure DevOps/Linear/Jira APIs. Provider operations return durable queued/running/completed/failed/uncertain receipts: poll inbox.result with the SAME requestId, never report queued as done. Copy only provider/kind/number/repo/id/identifier into item. Comment/PR mutations require native owner approval of the exact target/content; tool input cannot grant approval. Reuse requestId for the exact payload after uncertain replies. Provider credentials remain in the desktop. Social Media Inbox uses bycoda-social and its own policy.";
   if (action.startsWith("devices."))
     return "Use machines.list and an explicit machineId for a connected Mac/iOS target; omitted machineId means this host. Capture returns an image.";
+  if (action.startsWith("agents.")) return describeAgentTool(action);
   if (action.startsWith("tasks."))
     return "Create, inspect and recover this project's tasks using existing scheduler and review gates. Create inherits this session's model and permission mode. Write a concise prompt (goal, scope, acceptance; about 1500 characters or less). Tasks run unattended, correct review findings automatically and report anything left for the owner when they finish. Choose crewDefinitionId to run the task with a reusable team. dependsOn references existing tasks in this project; an empty list clears dependencies. verifyCommand configures the existing local check. Artifacts are metadata only. Reuse taskId only for the identical create payload. Retry only blocked tasks and inspect the result. delete/transfer/notes.resolve require expectedUpdatedAt and exact native owner approval. Delete never discards an unmerged branch. Transfer moves only unstarted independent to-do work to an existing project; it cannot move goals, dependencies, branches or active work. Note resolution changes the selected note only, never verification or task status. An agent cannot modify its own task. No merge or permission changes.";
   if (action.startsWith("crews."))
@@ -937,7 +860,7 @@ export const CONVERSATION_MCP_INSTRUCTIONS =
 /** Scope policy is independent of descriptive MCP effect/idempotency hints. */
 export function conversationAuthorizationScope(action: string): "read" | "write" {
   if (!Object.hasOwn(CONVERSATION_TOOLS, action)) throw new Error("Unknown Conversation Tool.");
-  return reads.has(action) ? "read" : "write";
+  return CONVERSATION_READ_ACTIONS.has(action) ? "read" : "write";
 }
 
 export function conversationToolCatalog() {

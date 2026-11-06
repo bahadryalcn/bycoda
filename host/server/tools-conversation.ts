@@ -74,6 +74,7 @@ export async function handleConversationTools(
     | "crews"
     | "conversationStewards"
     | "conversationTaskQueue"
+    | "conversationDelegation"
     | "conversationGoals"
     | "conversationProject"
     | "browserRuntime"
@@ -486,7 +487,14 @@ export async function handleConversationTools(
         // Agents decide setup from real readiness, not from open:false.
         if (["browser.status", "browser.claim", "browser.release"].includes(action))
           request.result = await dependencies.browserRuntime.describe(request.result as object);
-      } else if (action.startsWith("tasks.")) {
+      } else if (action.startsWith("agents."))
+        request.result = await dependencies.conversationDelegation.call(
+          action,
+          args,
+          { sessionId: boundPrincipal.sessionId, projectId },
+          (sessionId) => dependencies.localSessionReference(sessionId),
+        );
+      else if (action.startsWith("tasks.")) {
         const list = (await dependencies.tasks.list()).filter(
           (task) => task.projectId === projectId,
         );

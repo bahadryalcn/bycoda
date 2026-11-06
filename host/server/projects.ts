@@ -1,5 +1,7 @@
 import { homedir } from "node:os";
+import { dirname } from "node:path";
 import { setHarnessModels } from "../../src/features/sessions/model/models";
+import { ConversationDelegation } from "../delegation/service";
 import { ConversationGoalTools } from "../conversation/conversation-goal-tools";
 import { ConversationProjectTools } from "../conversation/conversation-project-tools";
 import { ConversationRuntimeReadTools } from "../conversation/conversation-runtime-read-tools";
@@ -137,6 +139,15 @@ export function createProjectsRuntime(
     dependencies.featureSession,
   );
   const conversationTaskQueue = new ConversationTaskQueueTools(dependencies.tasks);
+  const conversationDelegation = new ConversationDelegation({
+    engine: dependencies.engine,
+    directory: dirname(dependencies.engine.store.attachmentDir),
+    featureSession: dependencies.featureSession,
+    models,
+    providers: dependencies.providers,
+  });
+  dependencies.engine.onParentStopped = async (sessionId) =>
+    await conversationDelegation.cancelChildren(sessionId);
   const conversationStewards = new ConversationStewardTools(
     dependencies.engine.store,
     dependencies.stewards,
@@ -163,6 +174,7 @@ export function createProjectsRuntime(
     conversationProject,
     conversationGoals,
     conversationTaskQueue,
+    conversationDelegation,
     conversationStewards,
     conversationRuntimeReads,
   };

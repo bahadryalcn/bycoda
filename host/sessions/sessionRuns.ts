@@ -30,6 +30,8 @@ export type SessionRunSpec = {
   runtimeMode: RuntimeMode;
   title: string;
   prompt: string;
+  /** Plan intent asks a harness with plan mode to answer without editing. */
+  intent?: "default" | "plan";
   /** The Host derives execution identity from the authoritative registry. */
   workspaceId?: string;
   workspaceMode?: "current" | "worktree";
@@ -93,6 +95,7 @@ export async function launchSessionRun(
         commandId: spec.requestId ? `${spec.requestId}:send` : randomUUID(),
         sessionId,
         text: spec.prompt,
+        ...(spec.intent ? { intent: spec.intent } : {}),
       });
     if (spec.author && engine.withMessageAuthor) await engine.withMessageAuthor(spec.author, send);
     else await send();

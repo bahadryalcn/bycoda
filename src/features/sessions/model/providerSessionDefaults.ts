@@ -1,3 +1,4 @@
+import { carryCrossDelegation } from "../../../shared/model/host-contracts/delegation";
 import {
   loadProjectProviderSettings,
   normalizeProviderDefaults,
@@ -51,7 +52,7 @@ export function applySessionDefaults(
       next[setting.id] = value;
     }
   }
-  return next;
+  return carryCrossDelegation(defaults.extras, next);
 }
 
 export function saveGlobalSessionDefaults(

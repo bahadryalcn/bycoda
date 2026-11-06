@@ -67,6 +67,7 @@ export function createHttpRuntime(
     | "crews"
     | "conversationStewards"
     | "conversationTaskQueue"
+    | "conversationDelegation"
     | "conversationGoals"
     | "conversationProject"
     | "browserRuntime"

@@ -877,3 +877,77 @@ describe("host ve browser model tercihi storage ayrımı", () => {
     expect(warning).toHaveBeenCalledWith("Model preferences storage failed", error);
   });
 });
+
+describe("cross-provider delegation settings", () => {
+  const delegationModel = {
+    id: "codex:gpt-delegation",
+    harness: "codex" as const,
+    name: "GPT Delegation",
+    settings: [
+      {
+        id: "effort",
+        label: "Reasoning",
+        kind: "select" as const,
+        value: "high",
+        options: [
+          { value: "high", label: "High" },
+          { value: "low", label: "Low" },
+        ],
+      },
+    ],
+  };
+  const subagents = JSON.stringify([{ harness: "claude", model: "claude:opus-5-5" }]);
+  const advisor = JSON.stringify({ harness: "claude", model: "claude:sonnet-5" });
+  const parent = JSON.stringify({
+    parentSessionId: "p",
+    runId: "r",
+    kind: "subagent",
+    model: "codex:gpt-delegation",
+    startedAt: 1,
+  });
+
+  beforeEach(() => {
+    mockLocalStorage();
+    setHarnessModels("codex", [delegationModel]);
+  });
+
+  afterEach(() => {
+    resetHarnessModelOverlays();
+    mockLocalStorage();
+  });
+
+  it("keeps the reserved keys when the model is merged", () => {
+    const merged = mergeModelSettings(delegationModel, {
+      effort: "low",
+      crossSubagents: subagents,
+      crossAdvisor: advisor,
+    });
+    expect(merged).toEqual({ effort: "low", crossSubagents: subagents, crossAdvisor: advisor });
+  });
+
+  it("drops a reserved value that does not decode", () => {
+    const merged = mergeModelSettings(delegationModel, { crossAdvisor: "garbage" });
+    expect(merged).not.toHaveProperty("crossAdvisor");
+  });
+
+  it("carries the parent link through a merge, the way a child keeps its link", () => {
+    const merged = mergeModelSettings(delegationModel, { delegationParent: parent });
+    expect(merged).toEqual({ effort: "high", delegationParent: parent });
+  });
+
+  it("saves the owner's delegation choices as last-used settings", () => {
+    saveLastModelSettings({ effort: "low", crossSubagents: subagents, crossAdvisor: advisor });
+    expect(loadLastModelSettings()).toEqual({
+      effort: "low",
+      crossSubagents: subagents,
+      crossAdvisor: advisor,
+    });
+  });
+
+  it("never saves a delegation parent link as last-used settings", () => {
+    saveLastModelSettings({ effort: "low", delegationParent: parent });
+    expect(loadLastModelSettings()).toEqual({ effort: "low" });
+    saveLastModelSettings({ delegationParent: parent }, "fill");
+    expect(loadLastModelSettings()).not.toHaveProperty("delegationParent");
+  });
+});

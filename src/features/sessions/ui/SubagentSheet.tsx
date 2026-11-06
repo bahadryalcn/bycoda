@@ -20,19 +20,11 @@ import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { Sheet } from "../../../shared/ui/Sheet";
-import { InfoPopover } from "../../../shared/ui/InfoPopover";
-import { TextareaField } from "../../../shared/ui/TextareaField";
 import styles from "./SubagentSheet.module.css";
 import { useSubagentModelName } from "../model/reactiveReads";
+import { SubagentMessageForm, type SubagentRelay } from "./SubagentMessageForm";
 
-export type SubagentRelay = {
-  draft: string;
-  status?: "accepted" | "rejected";
-  blockedReason?: string;
-  setDraft: (draft: string) => void;
-  send: () => void;
-  onOpenConversation: () => void;
-};
+export type { SubagentRelay } from "./SubagentMessageForm";
 
 /**
  * Which delegated run's panel is open in a session pane. The pane that owns the
@@ -127,8 +119,8 @@ export function SubagentSheet({
   onClose: () => void;
   /** Present when the harness can stop this one run without the whole turn. */
   onStop?: () => Promise<void>;
-  /** Returns false when the block could not be found; the sheet then stays open. */
-  onShowInTranscript: (blockId: string) => boolean | void;
+  /** Returns false when the block could not be found; the sheet then stays open. Absent for a delegated child, which is not in the transcript. */
+  onShowInTranscript?: (blockId: string) => boolean | void;
   /** The transcript's authorized full-block loader, for blocks held as remote summaries. */
   onLoadRemoteBlock?: (blockId: string, revision: number) => Promise<void> | void;
   onOpenFile?: (path: string) => void;
@@ -187,21 +179,23 @@ export function SubagentSheet({
                   : t("Stop")}
             </Button>
           ) : null}
-          <Button
-            iconOnly
-            label={t("Show in transcript")}
-            variant="ghost"
-            type="button"
-            onClick={() => {
-              setShowFailedFor(onShowInTranscript(block.id) === false ? block.id : null);
-            }}
-            tooltip={
-              command ? t("Show in transcript") : t("Scroll to this agent in the transcript")
-            }
-            className="shrink-0"
-          >
-            <CornerDownRight className="icon-sm" aria-hidden />
-          </Button>
+          {onShowInTranscript ? (
+            <Button
+              iconOnly
+              label={t("Show in transcript")}
+              variant="ghost"
+              type="button"
+              onClick={() => {
+                setShowFailedFor(onShowInTranscript(block.id) === false ? block.id : null);
+              }}
+              tooltip={
+                command ? t("Show in transcript") : t("Scroll to this agent in the transcript")
+              }
+              className="shrink-0"
+            >
+              <CornerDownRight className="icon-sm" aria-hidden />
+            </Button>
+          ) : null}
         </>
       }
       headerBelow={<SubagentStateLine block={block} busy={busy} steps={steps} model={model} />}
@@ -233,67 +227,7 @@ export function SubagentSheet({
         />
       )}
       {!command && relay ? (
-        <form
-          className={`${styles.composer} flex shrink-0 flex-col gap-2 border-t border-(--ui-pane-border) px-4 py-3`}
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!relay.blockedReason && relay.draft.trim()) relay.send();
-          }}
-        >
-          <TextareaField
-            className={styles.message}
-            label={t("Message for {p0}", { p0: name })}
-            rows={2}
-            value={relay.draft}
-            onChange={(event) => relay.setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (
-                event.key === "Enter" &&
-                (event.ctrlKey || event.metaKey) &&
-                !event.nativeEvent.isComposing
-              ) {
-                event.preventDefault();
-                if (!relay.blockedReason && relay.draft.trim()) relay.send();
-              }
-            }}
-          />
-          {relay.blockedReason ? (
-            <p className="text-ui-caption text-(--ui-text-secondary)">{relay.blockedReason}</p>
-          ) : null}
-          <p
-            role="status"
-            className={`text-ui-caption empty:hidden ${
-              relay.status === "rejected"
-                ? "text-(--ui-tone-danger-fg)"
-                : "text-(--ui-text-secondary)"
-            }`}
-          >
-            {relay.status === "accepted"
-              ? t("Request added to the main conversation. Delivery is not yet confirmed.")
-              : relay.status === "rejected"
-                ? t("Request was not accepted. Your message is kept here; try again.")
-                : null}
-          </p>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <InfoPopover className="mr-auto" label={t("How messaging works")}>
-              <p className="text-ui-secondary">
-                {t(
-                  "Via the main agent. Delivery depends on provider support; replies appear in the main conversation.",
-                )}
-              </p>
-            </InfoPopover>
-            <Button variant="ghost" onClick={relay.onOpenConversation}>
-              {t("Open main conversation")}
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={!!relay.blockedReason || !relay.draft.trim()}
-            >
-              {t("Relay via main agent")}
-            </Button>
-          </div>
-        </form>
+        <SubagentMessageForm name={name} relay={relay} />
       ) : !command ? (
         <p className="shrink-0 px-4 py-2 text-ui-caption text-(--ui-text-secondary)">
           {t("Messaging is unavailable in this conversation.")}

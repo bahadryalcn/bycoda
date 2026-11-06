@@ -13,18 +13,20 @@ import {
   mergeModelSettings,
   subscribeModels,
 } from "../model/models";
-import { offeredDelegationSetting } from "../model/claudeAdvisor";
 import {
   groupSettings,
-  pickerSettings,
+  menuSettings,
   SETTING_GROUP_TITLE,
   settingLabel,
+  settingValueLabel,
   type SettingGroupId,
 } from "../model/modelPickerData";
+import { isDelegationSetting, isSubagentSetting } from "../model/crossDelegation";
+import { isReservedDelegationKey } from "../../../shared/model/host-contracts/delegation";
 import type { ModelSetting } from "../model/models";
-import type { HarnessId } from "../model/session";
-import { HARNESS_TITLE } from "../model/session";
+import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
 import { useModelSource } from "./modelSource";
+import { DelegationSubagentsControl } from "./DelegationSettings";
 
 /** Rows indented under the setting they depend on. */
 const DEPENDENT = new Set(["subagentPolicy", "autoCompactWindow"]);
@@ -33,14 +35,21 @@ const DEPENDENT = new Set(["subagentPolicy", "autoCompactWindow"]);
 function useModelExtras(harness: HarnessId, model: string, values: Record<string, string>) {
   useSyncExternalStore(subscribeModels, getModelSnapshot, getModelSnapshot);
   const source = useModelSource();
+  const t = useT();
   const current = source.resolve(harness, model);
   const merged = mergeModelSettings(current, values);
-  const offered = source.modelsFor(harness);
-  const settings = pickerSettings(current).map((setting) =>
-    offeredDelegationSetting(setting, offered, merged[setting.id] ?? setting.value, current),
-  );
+  const settings = menuSettings({
+    current,
+    harnesses: HARNESSES.filter((id) => source.available(id)),
+    source,
+    values: merged,
+    unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
+  });
   const effective = Object.fromEntries(
-    (current.settings ?? []).map((setting) => [setting.id, merged[setting.id] ?? setting.value]),
+    [...(current.settings ?? []), ...settings.filter(isDelegationSetting)].map((setting) => [
+      setting.id,
+      merged[setting.id] ?? setting.value,
+    ]),
   );
   const isInactive = (id: string) =>
     id === "subagentPolicy"
@@ -100,7 +109,12 @@ export function ModelExtrasPanel({
     const showHelp = explained === setting.id;
     const label = t(settingLabel(setting));
     const update = (next: string) => {
-      if (!disabled) onSettingsChange({ ...effective, [setting.id]: next });
+      if (disabled) return;
+      // Off is an absent delegation key, never a stored empty value.
+      const settings = { ...effective, [setting.id]: next };
+      for (const [key, entry] of Object.entries(settings))
+        if (!entry && isReservedDelegationKey(key)) delete settings[key];
+      onSettingsChange(settings);
     };
     return (
       <div
@@ -142,7 +156,15 @@ export function ModelExtrasPanel({
               disabled={disabled || inactive}
               onCheckedChange={(next) => update(String(next))}
             />
-          ) : ["advisor", "subagentModel"].includes(setting.id) ? (
+          ) : isSubagentSetting(setting) ? (
+            <DelegationSubagentsControl
+              label={label}
+              setting={setting}
+              values={effective}
+              disabled={disabled || inactive}
+              onChange={update}
+            />
+          ) : ["advisor", "subagentModel", "crossAdvisor"].includes(setting.id) ? (
             <NativeSearchableSelect
               label={label}
               aria-label={label}
@@ -298,11 +320,7 @@ export function ModelExtras({
         )}
         {showSummary && changed > 0 && (
           <span data-extras-summary className="max-w-40 truncate text-(--ui-text-secondary)">
-            {active
-              .map((s) =>
-                t(s.options.find((o) => o.value === effective[s.id])?.label ?? effective[s.id]),
-              )
-              .join(" · ")}
+            {active.map((s) => t(settingValueLabel(s, effective))).join(" · ")}
           </span>
         )}
         <ChevronDown className="icon-xs" />

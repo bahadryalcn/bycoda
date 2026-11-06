@@ -11,11 +11,15 @@ import {
   dockStateLabel,
   type ActivityDock,
   type ActivityDockInput,
+  type DockAgent,
 } from "./activityDock";
 import { stopAllControl } from "./backgroundStop";
+import { delegatedChildren, delegatedDockAgents } from "./delegatedAgents";
+import { executionUserIndex } from "./executionTurn";
 import { queuedSteerRoute, queuedTargetSummary } from "./messageQueue";
 import { getModelSnapshot, resolveModel, subscribeModels } from "./models";
-import type { Block, HarnessId, ToolPreview } from "./session";
+import type { Block, HarnessId, Session, ToolPreview } from "./session";
+import { useSessionsSelector } from "./sessionsStore";
 import { resolveToolCallDisplay, subagentModelName } from "./transcriptActivity";
 
 /*
@@ -80,7 +84,15 @@ export function useActivityDock(input: ActivityDockInput): {
 } {
   const catalog = useModelCatalogRevision();
   const locale = useLocale();
-  const { blocks, busy, pendingQuestion, backgroundTasks, backgroundAgents, unseenDone } = input;
+  const {
+    blocks,
+    busy,
+    pendingQuestion,
+    backgroundTasks,
+    backgroundAgents,
+    unseenDone,
+    delegatedAgents,
+  } = input;
   return useMemo(() => {
     const dock = deriveActivityDock({
       blocks,
@@ -89,6 +101,7 @@ export function useActivityDock(input: ActivityDockInput): {
       backgroundTasks,
       backgroundAgents,
       unseenDone,
+      delegatedAgents,
     });
     return { dock, label: dockStateLabel(dock) };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,9 +112,29 @@ export function useActivityDock(input: ActivityDockInput): {
     backgroundTasks,
     backgroundAgents,
     unseenDone,
+    delegatedAgents,
     catalog,
     locale,
   ]);
+}
+
+function sameSessionList(a: readonly Session[], b: readonly Session[]): boolean {
+  return a.length === b.length && a.every((session, index) => session === b[index]);
+}
+
+/** Cross-provider children of one session, as dock rows for its current turn. */
+export function useDelegatedDockAgents(parentId: string, blocks: Block[]): DockAgent[] {
+  const catalog = useModelCatalogRevision();
+  const children = useSessionsSelector(
+    (sessions) => delegatedChildren(sessions, parentId),
+    sameSessionList,
+  );
+  const turnStartedAt = blocks[executionUserIndex(blocks)]?.startedAt;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(
+    () => delegatedDockAgents(children, turnStartedAt),
+    [children, turnStartedAt, catalog],
+  );
 }
 
 export function useDockCountLabel(dock: ActivityDock): string {

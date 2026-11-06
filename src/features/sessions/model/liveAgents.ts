@@ -1,4 +1,8 @@
 export { formatLiveElapsed } from "../../../shared/i18n/format";
+import {
+  DELEGATION_PARENT_KEY,
+  decodeDelegationParent,
+} from "../../../shared/model/host-contracts/delegation";
 import { sessionIssue } from "./sessionIssue";
 import { executionUserIndex } from "./executionTurn";
 import { composeToolTitle } from "../../../integrations/harness/core/preview";
@@ -29,12 +33,16 @@ export type LiveAgent = {
   issue?: "retrying" | "failed";
 };
 
-/** Inbox discussions and orchestration workers have their own panels and
- * never appear as live agents. */
+/** Inbox discussions, orchestration workers and delegated children have their
+ * own panels (or the parent's activity dock) and never appear as live agents. */
 export function isLiveAgentSession(
-  session: Pick<Session, "inboxAsk" | "orchestrationLeadId">,
+  session: Pick<Session, "inboxAsk" | "orchestrationLeadId" | "modelSettings">,
 ): boolean {
-  return !session.inboxAsk && !session.orchestrationLeadId;
+  return (
+    !session.inboxAsk &&
+    !session.orchestrationLeadId &&
+    !decodeDelegationParent(session.modelSettings?.[DELEGATION_PARENT_KEY])
+  );
 }
 
 export function liveAgentsFromSessions(

@@ -235,6 +235,7 @@ export async function createHostServer(
       explicitSkillNames: () => sessionsRuntime.current.explicitSkillNames,
       conversationStewards: () => projectsRuntime.conversationStewards,
       conversationTaskQueue: () => projectsRuntime.conversationTaskQueue,
+      conversationDelegation: () => projectsRuntime.conversationDelegation,
       conversationGoals: () => projectsRuntime.conversationGoals,
       conversationProject: () => projectsRuntime.conversationProject,
       logMonitors: () => devicesRuntime.logMonitors,

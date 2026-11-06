@@ -1,6 +1,6 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { HostStore } from "../store";
-import { sessionRunState } from "./sessionRuns";
+import { launchSessionRun, sessionRunState } from "./sessionRuns";
 import { isSessionRunActivity } from "./session-run-activity";
 
 it("never treats polls, metadata writes or another run's activity as observed output", async () => {
@@ -41,4 +41,42 @@ it("counts actual repeated output but excludes telemetry and periodic background
   expect(
     isSessionRunActivity({ type: "tool.updated", callId: "shell", status: "running" }, false),
   ).toBe(false);
+});
+
+describe("launchSessionRun intent", () => {
+  const spec = {
+    projectId: "p",
+    harness: "codex" as const,
+    model: "codex:gpt-6.1",
+    modelSettings: {},
+    runtimeMode: "default" as never,
+    title: "Advisor",
+    prompt: "Review this",
+  };
+  const fakeEngine = () => {
+    const sends: Record<string, unknown>[] = [];
+    const engine = {
+      command: async (command: Record<string, unknown>) => {
+        if (command.type === "create") return { sessionId: "child" };
+        sends.push(command);
+        return {};
+      },
+      updateSession: async () => undefined,
+    };
+    const store = { session: async () => ({ runId: "turn" }) } as unknown as HostStore;
+    return { sends, engine, store };
+  };
+
+  it("passes intent to the send command only when it is set", async () => {
+    const withIntent = fakeEngine();
+    await launchSessionRun(withIntent.store, withIntent.engine as never, {
+      ...spec,
+      intent: "plan",
+    });
+    expect(withIntent.sends[0]).toMatchObject({ type: "send", intent: "plan" });
+
+    const without = fakeEngine();
+    await launchSessionRun(without.store, without.engine as never, spec);
+    expect(without.sends[0]).not.toHaveProperty("intent");
+  });
 });

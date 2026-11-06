@@ -13,6 +13,7 @@ import {
   turnCarriesRuntimeHint,
   withRuntimeHint,
 } from "./runtimeGuidance";
+import { providerInput, providerInputCopy } from "./providerInput";
 import type { GeneratedSessionTitle } from "../../../features/sessions/model/sessionTitle";
 import type { PrContent } from "../../../features/source-control/model/gitText";
 import {
@@ -405,7 +406,7 @@ function operationContext(
 
 function operationInput<I extends HarnessSessionInput>(input: I, owner: AdapterOperation): I {
   return {
-    ...input,
+    ...providerInput(input),
     nativeControlTurn: owner.control,
     // This is the original operation identity, not a cleanup source cut. A
     // legitimate queued restart can select another construction after this call.
@@ -683,7 +684,7 @@ export function sendHarnessTurn(
       cancelIdlePark(input.sessionId);
       await drainRetirementsBestEffort(input.sessionId, input.harness);
       const guidance = Promise.allSettled([
-        harnessRuntimeHints(input.sessionId),
+        harnessRuntimeHints(input.sessionId, input.modelSettings),
         operationSkillPolicy(input.cwd, input.harness),
       ]);
       const { control: controlTurn, processes } = await beginOperationControl(input, nativeClaim);
@@ -790,10 +791,7 @@ export function canCompactHarnessContext(id: HarnessId): boolean {
 export function compactHarnessContext(
   request: CompactContextInput & { harness: HarnessId },
 ): Promise<void> {
-  const input = {
-    ...request,
-    modelSettings: request.modelSettings ? { ...request.modelSettings } : undefined,
-  };
+  const input = providerInputCopy(request);
   const nativeClaim = captureNativeSessionClaim(input.sessionId);
   const epoch = cancellationEpoch.get(input.sessionId) ?? 0;
   return queueSessionOperation(input.sessionId, async () => {
@@ -940,7 +938,7 @@ export function steerHarnessTurn(request: SteerTurnInput & { harness: HarnessId 
     const prepared = withSkillPolicy(
       "steer",
       {
-        ...input,
+        ...providerInput(input),
         nativeControlTurn: control,
         operationContext: originalContext,
       },
@@ -1327,7 +1325,7 @@ export async function generateHarnessTitle(
 ): Promise<GeneratedSessionTitle | null> {
   const adapter = getHarness(harness);
   if (!adapter?.generateTitle) return null;
-  return adapter.generateTitle(input);
+  return adapter.generateTitle(providerInput(input));
 }
 
 export async function generateHarnessCommitMessage(
@@ -1382,7 +1380,7 @@ export async function warmupHarnessText(
   const adapter = getHarness(harness);
   if (!adapter?.warmupText) return;
   if (!options) return adapter.warmupText(cwd);
-  const input = { ...options };
+  const input = providerInput({ ...options });
   assertHarnessModel(harness, input);
   await adapter.warmupText(cwd, input);
 }
@@ -1423,7 +1421,7 @@ function cancelledTextPrompt(): Error {
 export async function runHarnessTextPrompt(
   request: TextPromptInput & { harness: HarnessId },
 ): Promise<string> {
-  const input = { ...request };
+  const input = providerInput({ ...request });
   assertHarnessModel(input.harness, input);
   const adapter = requireHarness(input.harness);
   if (!adapter.live) {

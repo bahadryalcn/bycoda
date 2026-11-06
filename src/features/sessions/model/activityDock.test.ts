@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  type DockAgent,
   blockLifecycle,
   deriveActivityDock,
   dockCountLabel,
@@ -391,5 +392,78 @@ describe("nextUnseenDone", () => {
   it("holds until cleared, and new work supersedes it", () => {
     expect(nextUnseenDone(true, false, false)).toBe(true);
     expect(nextUnseenDone(true, false, true)).toBe(false);
+  });
+});
+
+describe("delegated child sessions in the dock", () => {
+  const childRow = (patch: Partial<DockAgent> = {}): DockAgent => ({
+    blockId: "delegated:c1",
+    sessionId: "c1",
+    name: "Check the parser",
+    kind: "agent",
+    status: "running",
+    model: "GPT A",
+    detail: "2 steps",
+    ...patch,
+  });
+
+  it("merges child rows after the native rows and counts them", () => {
+    const dock = derive({
+      busy: true,
+      blocks: [user, agent("a", "completed")],
+      delegatedAgents: [
+        childRow(),
+        childRow({ blockId: "delegated:c2", sessionId: "c2", status: "failed" }),
+      ],
+    });
+    expect(dock.agents.map((entry) => entry.sessionId)).toEqual([undefined, "c1", "c2"]);
+    expect(dock).toMatchObject({ running: 1, failed: 1, finished: 1 });
+  });
+
+  it("stays in the background after the parent turn while a child still runs", () => {
+    const dock = derive({ busy: false, blocks: [user], delegatedAgents: [childRow()] });
+    expect(dock.state).toBe("background");
+    expect(dock.backgroundCount).toBe(1);
+    expect(dock.backgroundAgents).toBe(1);
+    expect(dockStateLabel(dock)).toBe("Finished · 1 background agent running");
+  });
+
+  it("goes idle once the children have finished after the parent turn", () => {
+    const dock = derive({
+      busy: false,
+      blocks: [user],
+      delegatedAgents: [childRow({ status: "done" })],
+    });
+    expect(dock.state).toBe("idle");
+    expect(dock.backgroundCount).toBe(0);
+  });
+
+  it("reports needs-input when a running child waits for approval", () => {
+    const dock = derive({
+      busy: false,
+      blocks: [user],
+      delegatedAgents: [childRow({ needsInput: true })],
+    });
+    expect(dock.state).toBe("needs-input");
+  });
+
+  it("does not report needs-input for a child that is no longer running", () => {
+    const dock = derive({
+      busy: false,
+      blocks: [user],
+      delegatedAgents: [childRow({ needsInput: true, status: "done" })],
+    });
+    expect(dock.state).toBe("idle");
+  });
+
+  it("counts a child as a working agent while the parent turn is still busy", () => {
+    const dock = derive({
+      busy: true,
+      blocks: [user],
+      delegatedAgents: [childRow()],
+    });
+    expect(dock.running).toBe(1);
+    expect(dock.backgroundCount).toBe(0);
+    expect(dock.state).toBe("working");
   });
 });

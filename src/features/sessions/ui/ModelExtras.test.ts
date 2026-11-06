@@ -11,12 +11,13 @@ import {
   setHarnessModels,
 } from "../model/models";
 vi.mock("./modelSource", () => ({
-  useModelSource: () => ({ resolve: resolveModel, modelsFor }),
+  useModelSource: () => ({ resolve: resolveModel, modelsFor, available: () => true }),
 }));
 vi.mock("../../../shared/ui/Popover", () => ({
   Popover: ({ children }: { children: ReactNode }) =>
     createElement("div", { role: "dialog" }, children),
 }));
+import { encodeSubagents } from "../../../shared/model/host-contracts/delegation";
 import { ModelExtras } from "./ModelExtras";
 let root: Root;
 let container: HTMLDivElement;
@@ -161,7 +162,8 @@ it("offers only the provider catalog options and removes unsupported settings fr
       }),
     ),
   );
-  expect(container.querySelector("button")).toBeNull();
+  // A provider without catalog settings still offers the any-provider delegation rows.
+  expect(container.querySelector('[aria-label="Extras"]')).not.toBeNull();
 });
 
 it("shows versioned Claude models and forwards their full IDs without changing the main model", () => {
@@ -284,4 +286,39 @@ it("hides turned-off Claude models and labels aliases with their live version", 
     "Opus 5.5",
     "Fable 5.1",
   ]);
+});
+
+it("offers the any-provider subagents row for any harness and writes the picked models as one list", () => {
+  setHarnessModels("codex", [
+    { id: "codex:gpt-6.1-sol", harness: "codex", name: "GPT 6.1 Sol", nativeId: "gpt-6.1-sol" },
+  ]);
+  setHarnessModels("cursor", [
+    { id: "cursor:composer-2", harness: "cursor", name: "Composer 2", nativeId: "composer-2" },
+  ]);
+  const onChange = vi.fn();
+  act(() =>
+    root.render(
+      createElement(ModelExtras, {
+        harness: "codex",
+        model: "codex:gpt-6.1-sol",
+        values: {},
+        onSettingsChange: onChange,
+      }),
+    ),
+  );
+  act(() => container.querySelector<HTMLButtonElement>('[aria-label="Extras"]')!.click());
+  const trigger = container.querySelector<HTMLButtonElement>(
+    '[aria-label="Subagents (any provider)"]',
+  )!;
+  expect(trigger.textContent).toContain("Off");
+  act(() => trigger.click());
+  const composer = [
+    ...document.querySelectorAll<HTMLButtonElement>('[role="menuitemcheckbox"]'),
+  ].find((item) => item.textContent?.includes("Composer 2"))!;
+  act(() => composer.click());
+  expect(onChange).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      crossSubagents: encodeSubagents([{ harness: "cursor", model: "cursor:composer-2" }]),
+    }),
+  );
 });

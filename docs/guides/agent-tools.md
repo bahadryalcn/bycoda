@@ -136,6 +136,36 @@ This command route cannot approve proxy credential use.
 Commands use the saved remote shell setting (POSIX by default, PowerShell when
 configured). Timeout defaults to 60 seconds and can be set up to 300 seconds.
 
+## Cross-provider advisor and subagents
+
+Every model menu has two settings: **Subagents (any provider)** and **Advisor
+(any provider)**. Both list the enabled models of every connected provider, so a
+Claude conversation can hand work to a Codex model, or the reverse. The choice
+applies to the current conversation only.
+
+Pick one subagent model and bycoda uses it for every subagent run. Pick several
+(up to eight) and the main model chooses one for each run by name. The advisor
+takes exactly one model.
+
+The advisor is read-only. It works in plan mode, never edits files or runs
+side-effecting commands, and sees only the question and context the main model
+sends it. It does not see the whole conversation, unlike Claude's native advisor.
+
+Each run uses the quota of its own provider account. A subagent on a Codex model
+consumes Codex usage, not the main model's allowance.
+
+Children appear in the activity dock like native subagents. Open one to read its
+steps, stop it, or message it directly. While it runs, your message steers it; once
+it has finished, the message starts a new turn in that child session. Cancelling
+the parent turn stops its running children. A stopped child keeps the work it has
+already done, so check its files before continuing.
+
+Each child uses its model's own settings, with the reasoning level matched to the
+main model's (for example Low), or the closest level the child's model offers.
+
+Limits: eight subagents can run at once, and one advisor at a time. A subagent
+cannot start its own subagents or advisor, so delegation does not nest.
+
 ## Terminal log capture
 
 Terminal logs continue in the background by default. To capture only while a

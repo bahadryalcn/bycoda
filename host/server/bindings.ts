@@ -96,6 +96,7 @@ import type { createHttpRuntime } from "./http";
 import type { createManagementRuntime } from "./management";
 import type { createMobileRuntime } from "./mobile";
 import type { createNativeRuntime } from "./native";
+import type { ConversationDelegation } from "../delegation/service";
 import type { createProjectsRuntime } from "./projects";
 import type { createRegistryRuntime } from "./registry";
 import type { createSessionLeasesRuntime } from "./session-leases";
@@ -310,6 +311,7 @@ export interface ServerBindings {
   explicitSkillNames: Awaited<ReturnType<typeof createSessionsRuntime>>["explicitSkillNames"];
   conversationStewards: ConversationStewardTools;
   conversationTaskQueue: ConversationTaskQueueTools;
+  conversationDelegation: ConversationDelegation;
   conversationGoals: ConversationGoalTools;
   conversationProject: ConversationProjectTools;
   logMonitors: RuntimeLogMonitors;

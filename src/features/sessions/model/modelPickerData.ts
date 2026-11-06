@@ -5,6 +5,13 @@ import {
   type ModelPickerTab,
 } from "./models";
 import type { HarnessId } from "./session";
+import { offeredDelegationSetting } from "./claudeAdvisor";
+import {
+  crossDelegationSettings,
+  crossDelegationSummary,
+  isDelegationSetting,
+  type DelegationInput,
+} from "./crossDelegation";
 type ModelGroup = {
   id: string;
   name?: string;
@@ -18,6 +25,8 @@ const SETTING_ORDER = [
   "subagentPolicy",
   "subagentModel",
   "advisor",
+  "crossSubagents",
+  "crossAdvisor",
   "autoCompactWindow",
   "autoCompact",
   "context",
@@ -31,10 +40,35 @@ const SETTING_ORDER = [
   "effort",
 ];
 
+/** A row is locked while extras are frozen, or when its parent setting is off. */
+export function isSettingLocked(
+  setting: ModelSetting,
+  current: AgentModel,
+  values: Record<string, string>,
+  extrasDisabled: boolean,
+): boolean {
+  const effectiveValue = (id: string) => {
+    const dependent = current.settings?.find((item) => item.id === id);
+    return dependent ? settingValue(dependent, values) : undefined;
+  };
+  return (
+    extrasDisabled ||
+    (setting.id === "subagentPolicy" &&
+      (!effectiveValue("subagentModel") || effectiveValue("subagentModel") === "default")) ||
+    (setting.id === "autoCompactWindow" && effectiveValue("autoCompact") === "off")
+  );
+}
+
 /** Menu/Extras grouping: delegation first, then Context and model options. */
 export type SettingGroupId = "model" | "context" | "delegation";
 const CONTEXT_SETTINGS = new Set(["context", "autoCompact", "autoCompactWindow"]);
-const DELEGATION_SETTINGS = new Set(["advisor", "subagentModel", "subagentPolicy"]);
+const DELEGATION_SETTINGS = new Set([
+  "advisor",
+  "subagentModel",
+  "subagentPolicy",
+  "crossSubagents",
+  "crossAdvisor",
+]);
 
 /** English titles of the secondary groups; callers translate them. */
 export const SETTING_GROUP_TITLE: Record<SettingGroupId, string> = {
@@ -150,7 +184,24 @@ export function settingValue(setting: ModelSetting, values: Record<string, strin
   return values[setting.id] ?? setting.value;
 }
 
+/** Every menu and Extras row: catalog settings, then the any-provider delegation rows. */
+export function menuSettings(input: DelegationInput): ModelSetting[] {
+  const offered = input.source.modelsFor(input.current.harness);
+  return groupSettings([
+    ...pickerSettings(input.current).map((setting) =>
+      offeredDelegationSetting(
+        setting,
+        offered,
+        settingValue(setting, input.values),
+        input.current,
+      ),
+    ),
+    ...crossDelegationSettings(input),
+  ]).flatMap((group) => group.settings);
+}
+
 export function settingValueLabel(setting: ModelSetting, values: Record<string, string>): string {
+  if (isDelegationSetting(setting)) return crossDelegationSummary(setting, values);
   const value = settingValue(setting, values);
   return setting.options.find((option) => option.value === value)?.label ?? value;
 }

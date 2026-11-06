@@ -225,3 +225,49 @@ describe("provider session defaults", () => {
     expect(providerSessionDefaults("codex")).toEqual({});
   });
 });
+
+describe("provider session defaults carry cross-provider delegation", () => {
+  const subagents = JSON.stringify([{ harness: "codex", model: "codex:gpt-6.1-sol" }]);
+  const advisor = JSON.stringify({ harness: "codex", model: "codex:gpt-6.1-sol" });
+
+  beforeEach(() => {
+    localStorage.clear();
+    setHarnessModels("claude", [
+      {
+        id: "claude:sonnet-5-5",
+        harness: "claude",
+        name: "Sonnet 5.5",
+        nativeId: "claude-sonnet-5-5",
+      },
+    ]);
+  });
+
+  afterEach(() => {
+    resetHarnessModelOverlays();
+    localStorage.clear();
+  });
+
+  it("applies saved subagent and advisor choices to a new session", () => {
+    saveGlobalSessionDefaults("claude", {
+      extras: { crossSubagents: subagents, crossAdvisor: advisor },
+    });
+    expect(newSession("claude", "/repo", "claude:sonnet-5-5").modelSettings).toMatchObject({
+      crossSubagents: subagents,
+      crossAdvisor: advisor,
+    });
+  });
+
+  it("drops a malformed delegation value from the defaults", () => {
+    saveGlobalSessionDefaults("claude", { extras: { crossAdvisor: "{nope" } });
+    expect(newSession("claude", "/repo", "claude:sonnet-5-5").modelSettings).not.toHaveProperty(
+      "crossAdvisor",
+    );
+  });
+
+  it("keeps the delegation choices when last-used settings are saved", () => {
+    saveLastModelSettings({ crossSubagents: subagents });
+    expect(newSession("claude", "/repo", "claude:sonnet-5-5").modelSettings).toMatchObject({
+      crossSubagents: subagents,
+    });
+  });
+});

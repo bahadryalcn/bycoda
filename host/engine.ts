@@ -27,6 +27,7 @@ import type { TurnGitHistory } from "./workspaces/workspace-service-contracts";
 import type { ConversationRewindAdapter } from "./sessions/session-rewind";
 import { durableWrite, refComponent } from "./git/turn-git-history";
 import { previewContextualSession } from "./sessions/contextual-session";
+import { modelSettings } from "./sessions/command-model-settings";
 import {
   composeNoteContext,
   noteContextMeta,
@@ -174,25 +175,6 @@ const text = (value: unknown, label: string, max = 128): string => {
     throw new Error(`Invalid ${label}`);
   return value;
 };
-
-function modelSettings(value: unknown): Record<string, string> {
-  if (value == null) return {};
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Invalid model settings");
-  const entries = Object.entries(value);
-  if (
-    entries.length > 20 ||
-    entries.some(
-      ([key, setting]) =>
-        !/^[a-zA-Z][a-zA-Z0-9]{0,63}$/.test(key) ||
-        typeof setting !== "string" ||
-        setting.length > 128 ||
-        setting.includes("\0"),
-    )
-  )
-    throw new Error("Invalid model settings");
-  return Object.fromEntries(entries) as Record<string, string>;
-}
 
 function contextualInput(v: Record<string, unknown>): ContextualSessionInput {
   if (
@@ -811,6 +793,9 @@ export class HostEngine {
           if (!held) {
             this.deletingSessions.add(id);
             held = true;
+            this.onParentStopped?.(id).catch((error) =>
+              console.warn("Subagent stop failed:", error),
+            );
           }
           await admitted();
           const writer = this.retainedWriterTurns.get(id);
@@ -830,6 +815,15 @@ export class HostEngine {
     } finally {
       if (held) this.deletingSessions.delete(id);
     }
+  }
+  /** Stops the children of a parent turn that was cancelled or whose session is deleted. */
+  onParentStopped?: (sessionId: string) => Promise<void>;
+  private async turnHint(session: Session): Promise<string> {
+    const hints = [
+      await harnessRuntimeHints(session.id, session.modelSettings),
+      await this.ownerInstructions?.(),
+    ];
+    return hints.filter(Boolean).join("\n");
   }
   private closing = false;
   private closePromise?: Promise<void>;
@@ -2871,12 +2865,7 @@ export class HostEngine {
                       : projectChatCitationsForProvider(request);
                   handoffPromptPrepared = true;
                   // A handoff starts a new provider thread, so its hint is sent again.
-                  const hint = [
-                    await harnessRuntimeHints(value.session.id),
-                    await this.ownerInstructions?.(),
-                  ]
-                    .filter(Boolean)
-                    .join("\n");
+                  const hint = await this.turnHint(value.session);
                   const body = [rewindReplay, turnText].filter(Boolean).join("\n\n");
                   const codex = value.session.harness === "codex";
                   const handoffEnvelope = "<previous_agent_context>\n</previous_agent_context>\n\n";
@@ -4415,13 +4404,7 @@ export class HostEngine {
                 harness: session.harness,
                 providerAccountId: session.providerAccountId,
               };
-              const hint = pendingRuntimeHint(
-                session.id,
-                thread,
-                [await harnessRuntimeHints(session.id), await this.ownerInstructions?.()]
-                  .filter(Boolean)
-                  .join("\n"),
-              );
+              const hint = pendingRuntimeHint(session.id, thread, await this.turnHint(session));
               const codex = session.harness === "codex";
               // Codex parses /goal only as the first token; carry replayed
               // context as runtime instructions instead of prefixing it.
@@ -4628,6 +4611,10 @@ export class HostEngine {
             try {
               if (cold) await soft("retirement", () => active.activity?.release());
               active.failureStage = "callback";
+              if (active.cancelled)
+                this.onParentStopped?.(session.id).catch((error) =>
+                  console.warn("Subagent stop failed:", error),
+                );
               await this.onSettled?.(session.id, {
                 ...(active.cancelled ? { cancelled: true } : {}),
                 ...(this.closing || active.persistenceFailed

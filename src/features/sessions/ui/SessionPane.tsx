@@ -99,10 +99,11 @@ import { BtwSheet, useBtwConversation } from "./BtwSheet";
 import { ActivityDock } from "./ActivityDock";
 import { InterruptedNotice } from "./InterruptedNotice";
 import { CONTINUE_PROMPT } from "../model/inFlight";
-import { SubagentSheet, useSubagentSheet } from "./SubagentSheet";
+import { useSubagentSheet } from "./SubagentSheet";
+import { SessionSubagentSheet, useDockActions } from "./SessionSubagentSheet";
 import { useSubagentRelay } from "./useSubagentRelay";
-import { isBackgroundOnly, type DockAgent } from "../model/activityDock";
-import { requestOpenSubagent, requestViewSubagent } from "./subagentFocus";
+import { isBackgroundOnly } from "../model/activityDock";
+import { requestOpenSubagent } from "./subagentFocus";
 import { AgentTranscript } from "./AgentTranscript";
 import type { ApprovalDispatch } from "./ApprovalDecisionContext";
 import { EditFromHereDialog } from "./EditFromHereDialog";
@@ -810,16 +811,17 @@ const LocalSessionPane = memo(function LocalSessionPane({
     stopHarnessBackgroundWork(session.harness, session.id, callId),
   );
   // Only one sheet over the pane at a time: a side question takes over.
-  useEffect(() => {
-    if (btw.open) closeSubagentSheet();
-  }, [btw.open, closeSubagentSheet]);
-  const openDockAgent = useCallback(
-    (agent: DockAgent) => {
-      if (agent.kind === "agent") requestViewSubagent(agent.blockId);
-      else subagentSheet.open(agent.blockId);
-    },
-    [subagentSheet.open],
-  );
+  // Cross-provider children are sessions of their own: dock rows, a panel and Stop.
+  const { delegated, delegatedAgents, openDockAgent, stopDockAgent, stopDockAll } = useDockActions({
+    sessionId: session.id,
+    blocks: stableBlocks,
+    busy: !!session.busy,
+    perItemStop,
+    stopBackground,
+    onStop,
+    native: subagentSheet,
+    btwOpen: btw.open,
+  });
   const jumpRequest = useSyncExternalStore(
     subscribeTranscriptJump,
     () => peekTranscriptJump(session.id),
@@ -1052,12 +1054,6 @@ const LocalSessionPane = memo(function LocalSessionPane({
   const composerPromptHistory = useStableCallback(() =>
     userPromptHistory(currentSessionRef.current),
   );
-  const stopDockAgent = useStableCallback((agent: DockAgent) =>
-    agent.callId ? stopBackground(agent.callId) : Promise.reject(new Error("No call to stop")),
-  );
-  const stopDockAll = useStableCallback(() =>
-    perItemStop ? stopBackground() : Promise.resolve(onStop(session.id)),
-  );
   const continueInterruptedTurn = useStableCallback(() =>
     onSubmit(session.id, CONTINUE_PROMPT, []),
   );
@@ -1190,6 +1186,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
           perItemStop={perItemStop}
           onStopAgent={stopDockAgent}
           onStopAll={stopDockAll}
+          delegatedAgents={delegatedAgents}
         />
       </>
     ),
@@ -1207,6 +1204,7 @@ const LocalSessionPane = memo(function LocalSessionPane({
       perItemStop,
       stopDockAgent,
       stopDockAll,
+      delegatedAgents,
       stableSession,
       interruptedTurn,
       sendBlockedReason,
@@ -1850,39 +1848,30 @@ const LocalSessionPane = memo(function LocalSessionPane({
           onOpenFile={onOpenFile}
           onOpenDiff={onOpenDiff}
         />
-        {subagentSheet.block ? (
-          <SubagentSheet
-            block={subagentSheet.block}
-            busy={!!session.busy}
-            visible={visible}
-            cwd={workCwd}
-            relay={{
-              ...subagentRelay,
-              blockedReason: subagentRelayBlockedReason,
-              onOpenConversation: () => {
-                closeSubagentSheet();
-                jumpToBottomRef.current?.();
-              },
-            }}
-            onClose={closeSubagentSheet}
-            onStop={
-              perItemStop && subagentSheet.block.tool?.callId
-                ? () => stopBackground(subagentSheet.block?.tool?.callId)
-                : undefined
-            }
-            onLoadRemoteBlock={onLoadRemoteBlock}
-            onShowInTranscript={(blockId) => {
+        <SessionSubagentSheet
+          visible={visible}
+          busy={sessionBusy}
+          cwd={workCwd}
+          native={{
+            block: subagentSheet.block,
+            relay: subagentRelay,
+            blockedReason: subagentRelayBlockedReason,
+            close: closeSubagentSheet,
+            open: subagentSheet.open,
+            showInTranscript: showAgentInTranscript,
+            onOpenMain: () => {
               closeSubagentSheet();
-              const shown = showAgentInTranscript(blockId);
-              // Not in the transcript (virtualized away, filtered): keep the
-              // details open rather than losing the reader's context.
-              if (!shown) subagentSheet.open(blockId);
-              return shown;
-            }}
-            onOpenFile={onOpenFile}
-            onOpenDiff={onOpenDiff}
-          />
-        ) : null}
+              jumpToBottomRef.current?.();
+            },
+            stopRun: perItemStop ? stopBackground : undefined,
+          }}
+          delegated={delegated}
+          onSubmitToSession={(sessionId, text, options) => onSubmit(sessionId, text, [], options)}
+          onStopSession={onStop}
+          onLoadRemoteBlock={onLoadRemoteBlock}
+          onOpenFile={onOpenFile}
+          onOpenDiff={onOpenDiff}
+        />
       </div>
     </div>
   );

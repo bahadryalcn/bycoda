@@ -127,3 +127,47 @@ it("keeps tiered verification, feature completeness and build provenance in the 
   );
   expect(hint).toContain("Reads do not authorize sends, merges or publishing");
 });
+
+const delegationSettings = {
+  crossAdvisor: JSON.stringify({ harness: "codex", model: "codex:gpt-6.1-sol" }),
+};
+
+it("adds delegation guidance only when the conversation bridge is available", async () => {
+  forgetRuntimeHint("delegation-no-bridge");
+  expect(await harnessRuntimeHints("delegation-no-bridge", delegationSettings)).toBe("");
+
+  forgetRuntimeHint("delegation-with-bridge");
+  bridges.conversation.mockResolvedValue({ command: "node", args: ["host.mjs"] });
+  const hint = await harnessRuntimeHints("delegation-with-bridge", delegationSettings);
+  expect(hint).toContain("Cross-provider delegation is enabled");
+  expect(hint).toContain("Advisor model: Codex codex:gpt-6.1-sol.");
+  expect(hint).toContain("agents.options");
+});
+
+it("keeps delegation guidance out of ordinary sessions", async () => {
+  forgetRuntimeHint("delegation-off");
+  bridges.conversation.mockResolvedValue({ command: "node", args: ["host.mjs"] });
+  const hint = await harnessRuntimeHints("delegation-off", {});
+  expect(hint).not.toContain("Cross-provider delegation");
+  expect(hint).not.toContain("agents.options");
+});
+
+it("does not let the empty-hint cache hide newly enabled delegation guidance", async () => {
+  forgetRuntimeHint("delegation-cache");
+  // No bridge: an empty answer is cached for this session.
+  expect(await harnessRuntimeHints("delegation-cache")).toBe("");
+  bridges.conversation.mockResolvedValue({ command: "node", args: ["host.mjs"] });
+  // The owner turns delegation on: the cached empty answer must not win.
+  const hint = await harnessRuntimeHints("delegation-cache", delegationSettings);
+  expect(hint).toContain("Cross-provider delegation is enabled");
+});
+
+it("re-delivers the hint when the delegation settings change", () => {
+  const thread = { harness: "claude" as const };
+  const before = "bycoda tools for this session:\nCross-provider delegation is enabled.";
+  const after = "bycoda tools for this session:\nSubagent models: Codex gpt-a.";
+  markRuntimeHintDelivered("delegation-redeliver", thread, before);
+  expect(pendingRuntimeHint("delegation-redeliver", thread, before)).toBe("");
+  expect(pendingRuntimeHint("delegation-redeliver", thread, after)).toBe(after);
+  forgetRuntimeHint("delegation-redeliver");
+});

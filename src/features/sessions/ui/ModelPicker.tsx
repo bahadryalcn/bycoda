@@ -43,10 +43,16 @@ import {
 } from "../../../integrations/harness/core/availability";
 import { useModelSource } from "./modelSource";
 import { offeredDelegationSetting } from "../model/claudeAdvisor";
+import {
+  delegationNextValue,
+  delegationOptionSelected,
+  isSubagentSetting,
+} from "../model/crossDelegation";
 import { HARNESSES, HARNESS_TITLE, type HarnessId } from "../model/session";
 
 import { LAYER } from "../../../shared/lib/layers";
 import { HarnessIcon } from "./HarnessIcon";
+import { DelegationOptionIcon, settingMenuWidth } from "./DelegationSettings";
 import { Popover } from "../../../shared/ui/Popover";
 import { MOD } from "../../../platform/tauri/platform";
 import { keybindingPressed } from "../../settings/public/settings";
@@ -72,9 +78,9 @@ import {
 import {
   effortSetting,
   fastSetting,
-  groupSettings,
   isEffortSetting,
-  pickerSettings,
+  isSettingLocked,
+  menuSettings,
   pillSettings,
   recentMenuModels,
   SETTING_GROUP_TITLE,
@@ -264,19 +270,31 @@ export function ModelPicker({
   useLayoutEffect(() => {
     openRef.current = open;
   }, [open]);
+  const pickerHarnesses = useMemo(() => {
+    void availabilityVersion;
+    void visibilityVersion;
+    void projectVersion;
+    return HARNESSES.filter(
+      (id) =>
+        (!allowedHarnesses || allowedHarnesses.includes(id)) &&
+        !isProviderHidden(project, id) &&
+        showProviderInModelPicker(id, source.available(id), source.probed()),
+    );
+  }, [source, allowedHarnesses, availabilityVersion, visibilityVersion, projectVersion, project]);
   const settings = useMemo(() => {
     void catalogVersion;
     // In beside-picker mode every option row renders as a toolbar pill, so the
     // menu lists models only.
     if (hideSettings || inheritSelected) return [];
-    const offered = source.modelsFor(harness);
     // Delegation and Context lead; Fast and Reasoning stay near Model.
-    return groupSettings(
-      pickerSettings(current).map((setting) =>
-        offeredDelegationSetting(setting, offered, settingValue(setting, values), current),
-      ),
-    ).flatMap((group) => group.settings);
-  }, [catalogVersion, current, harness, hideSettings, inheritSelected, source, values]);
+    return menuSettings({
+      current,
+      harnesses: pickerHarnesses,
+      source,
+      values,
+      unavailable: (name) => t("Unavailable: {p0}", { p0: name }),
+    });
+  }, [catalogVersion, current, hideSettings, inheritSelected, pickerHarnesses, source, t, values]);
   // Model ends the upward-opening menu, directly below Reasoning and Fast.
   const entries = useMemo<MenuEntry[]>(
     () => [
@@ -314,17 +332,6 @@ export function ModelPicker({
       ]
         .filter(Boolean)
         .join(" · ");
-  const pickerHarnesses = useMemo(() => {
-    void availabilityVersion;
-    void visibilityVersion;
-    void projectVersion;
-    return HARNESSES.filter(
-      (id) =>
-        (!allowedHarnesses || allowedHarnesses.includes(id)) &&
-        !isProviderHidden(project, id) &&
-        showProviderInModelPicker(id, source.available(id), source.probed()),
-    );
-  }, [source, allowedHarnesses, availabilityVersion, visibilityVersion, projectVersion, project]);
   const providerKey = pickerHarnesses.join(",");
   const visibleTab = coerceModelPickerTab(tab, (id) => pickerHarnesses.includes(id));
   // Recent models that stopped being offered drop out of the open menu.
@@ -513,18 +520,8 @@ export function ModelPicker({
     };
   }, [hotkeys, source, providerKey, catalogVersion, visibilityVersion, projectVersion]);
 
-  const settingDisabled = (setting: ModelSetting) => {
-    const effectiveValue = (id: string) => {
-      const dependent = current.settings?.find((item) => item.id === id);
-      return dependent ? settingValue(dependent, values) : undefined;
-    };
-    return (
-      extrasDisabled ||
-      (setting.id === "subagentPolicy" &&
-        (!effectiveValue("subagentModel") || effectiveValue("subagentModel") === "default")) ||
-      (setting.id === "autoCompactWindow" && effectiveValue("autoCompact") === "off")
-    );
-  };
+  const settingDisabled = (setting: ModelSetting) =>
+    isSettingLocked(setting, current, values, extrasDisabled);
 
   const setSetting = (setting: ModelSetting, value: string) => {
     if (settingDisabled(setting)) return;
@@ -584,8 +581,9 @@ export function ModelPicker({
 
   const pickSetting = (setting: ModelSetting, value: string) => {
     if (settingDisabled(setting)) return;
-    setSetting(setting, value);
-    dismiss(true);
+    setSetting(setting, delegationNextValue(setting, values, value));
+    // Subagent models toggle in place; every other choice closes the menu.
+    if (!isSubagentSetting(setting)) dismiss(true);
   };
 
   const toggleFavorite = (id: string) => {
@@ -1014,7 +1012,7 @@ export function ModelPicker({
               anchor={activeRow}
               side="right"
               gap={SUBMENU_OVERLAP}
-              width={SETTING_MENU_WIDTH}
+              width={settingMenuWidth(submenu.setting, SETTING_MENU_WIDTH)}
               layer={LAYER.submenu}
               role="menu"
               aria-label={t(settingLabel(submenu.setting))}
@@ -1023,7 +1021,7 @@ export function ModelPicker({
               className="p-1 font-sans"
             >
               {submenu.setting.options.map((option, index) => {
-                const selected = option.value === settingValue(submenu.setting, values);
+                const selected = delegationOptionSelected(submenu.setting, values, option.value);
                 const highlighted = index === activeSetting;
                 return (
                   <Button
@@ -1033,13 +1031,14 @@ export function ModelPicker({
                     variant="item"
                     key={option.value}
                     type="button"
-                    role="menuitemradio"
+                    role={isSubagentSetting(submenu.setting) ? "menuitemcheckbox" : "menuitemradio"}
                     disabled={settingDisabled(submenu.setting)}
                     aria-checked={selected}
                     onMouseDown={(event) => event.preventDefault()}
                     onMouseEnter={() => setActiveSetting(index)}
                     onClick={() => pickSetting(submenu.setting, option.value)}
                   >
+                    <DelegationOptionIcon setting={submenu.setting} value={option.value} />
                     <span className={`min-w-0 flex-1 truncate ${selected ? "font-medium" : ""}`}>
                       {t(option.label)}
                     </span>

@@ -72,6 +72,8 @@ type Props = {
   onStopAgent?: (agent: DockAgent) => Promise<void>;
   /** Stops all background work, or interrupts the turn when it cannot be split. */
   onStopAll?: () => Promise<void>;
+  /** Cross-provider children of this session, already mapped to rows. */
+  delegatedAgents?: DockAgent[];
 };
 
 /**
@@ -95,6 +97,7 @@ export const ActivityDock = memo(function ActivityDock({
   perItemStop = false,
   onStopAgent,
   onStopAll,
+  delegatedAgents,
 }: Props) {
   useLocale();
   const t = useT();
@@ -136,6 +139,7 @@ export const ActivityDock = memo(function ActivityDock({
     pendingQuestion,
     backgroundTasks,
     backgroundAgents,
+    delegatedAgents,
     // A new user block may arrive before the provider's busy acknowledgement.
     // Never label that new turn with the previous turn's completion state.
     unseenDone:
@@ -467,7 +471,7 @@ function DockAgentRow({
   }[agent.status];
   const summary = [agent.name, agent.model, agent.detail, statusWord].filter(Boolean).join(", ");
   const key = agent.callId ?? agent.blockId;
-  const stoppable = canStopAgent(agent, stop.perItem);
+  const stoppable = canStopAgent(agent, stop.perItem) && !!stop.onAgent;
   const stopping = stop.stopping.has(key);
   return (
     <div className="activity-dock-item flex min-w-0 items-start py-0.5">

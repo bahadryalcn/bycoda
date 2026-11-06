@@ -1,5 +1,6 @@
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
 import { withClaudeAdvisor } from "./claudeAdvisor";
+import * as delegation from "../../../shared/model/host-contracts/delegation";
 import { HARNESSES } from "../../../shared/model/harnessIdentity";
 import { loadProjectProviderSettings } from "./projectProviders";
 import {
@@ -752,9 +753,7 @@ function claudeNativeId(harness: HarnessId, native: string): string {
 
 export function defaultModelSettings(model: AgentModel): Record<string, string> {
   const settings: Record<string, string> = {};
-  for (const setting of model.settings ?? []) {
-    settings[setting.id] = setting.value;
-  }
+  for (const setting of model.settings ?? []) settings[setting.id] = setting.value;
   return settings;
 }
 
@@ -769,7 +768,7 @@ export function mergeModelSettings(
     const value = compatibleSettingValue(setting, current[setting.id]);
     if (value != null) next[setting.id] = value;
   }
-  return next;
+  return delegation.carryCrossDelegation(current, next);
 }
 
 const EFFORT_SETTING_IDS = new Set([
@@ -833,7 +832,7 @@ export function saveLastModelSettings(
   mode: "overwrite" | "fill" = "overwrite",
 ) {
   const prev = loadLastModelSettings();
-  const incoming = parseStringRecord(settings);
+  const { [delegation.DELEGATION_PARENT_KEY]: _parent, ...incoming } = parseStringRecord(settings);
   const next = mode === "fill" ? { ...incoming, ...prev } : { ...prev, ...incoming };
   try {
     modelPreferenceStorage()?.setItem(LAST_MODEL_SETTINGS_KEY, JSON.stringify(next));

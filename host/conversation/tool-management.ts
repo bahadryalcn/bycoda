@@ -10,6 +10,7 @@ import {
 } from "../assistant/room/assistant-room-tool-schemas";
 import { SOCIAL_TOOLS } from "../../src/features/social/model/social";
 import { socialAuthorizationScope } from "../social/social-tools";
+import { AGENT_TOOL_SCHEMAS } from "../delegation/tools";
 
 /** Metadata describes existing operations; it never grants permission or dispatches them. */
 export type ManagedToolGroup = "conversation" | "social" | "runtime-logs";
@@ -96,6 +97,7 @@ for (const action of [
 ])
   CONVERSATION_ACTIONS.add(action);
 CONVERSATION_ACTIONS.add("browser.resize");
+for (const action of Object.keys(AGENT_TOOL_SCHEMAS)) CONVERSATION_ACTIONS.add(action);
 for (const action of ["servers.ssh.execute", "servers.ssh.status", "servers.ssh.cancel"])
   CONVERSATION_ACTIONS.add(action);
 for (const action of [
@@ -130,6 +132,7 @@ const READBACKS: Record<string, string[]> = {
   servers: ["servers.get"],
   devServers: ["devServers.details", "devServers.logs"],
   tasks: ["tasks.get"],
+  agents: ["agents.options"],
   browser: ["browser.status", "browser.frame"],
   host: ["host.limits.status"],
   shell: ["shell.profiles"],
@@ -161,6 +164,8 @@ const CANCELLATIONS: Record<string, string[]> = {
   "tasks.start": ["tasks.stop"],
   "tasks.retry": ["tasks.stop"],
   "tasks.review.recheck": ["tasks.stop"],
+  "agents.delegate": ["agents.cancel"],
+  "agents.consult": ["agents.cancel"],
   "browser.claim": ["browser.release"],
   "browser.open": ["browser.release"],
   "browser.input": ["browser.release"],
@@ -258,7 +263,7 @@ function effectFor(group: ManagedToolGroup, action: string, read: boolean): Tool
   if (action === "servers.ssh.cancel") return ["execution", "local-state"];
   if (/^inbox\.(comment|review|prAction)$/.test(action)) return ["external-write"];
   if (
-    /^(devServers\.(start|stop|restart|kill)|terminals\.(write|interrupt|close|create)|devices\.(start|boot|action|preview)|tasks\.(start|retry|stop|review\.recheck)|crews\.(start|assign|respond|answer|stop)|automations\.(runNow|stopRun)|stewards\.(runNow|stopRun)|logs\.monitors\.(start|stop)|goals\.(create|replan|cancel))$/.test(
+    /^(agents\.(delegate|consult|cancel)|devServers\.(start|stop|restart|kill)|terminals\.(write|interrupt|close|create)|devices\.(start|boot|action|preview)|tasks\.(start|retry|stop|review\.recheck)|crews\.(start|assign|respond|answer|stop)|automations\.(runNow|stopRun)|stewards\.(runNow|stopRun)|logs\.monitors\.(start|stop)|goals\.(create|replan|cancel))$/.test(
       action,
     )
   )
@@ -311,6 +316,7 @@ export function createManagedToolCatalog(
         requestFields.length &&
         (/^crews\.(start|assign|request|resolve|respond|answer)$/.test(action) ||
           action.startsWith("inbox.") ||
+          /^agents\.(delegate|consult)$/.test(action) ||
           action === "devices.preview" ||
           action === "terminals.create" ||
           action === "servers.ssh.execute" ||

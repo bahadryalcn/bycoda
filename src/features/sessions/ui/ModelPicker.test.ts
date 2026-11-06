@@ -63,7 +63,6 @@ vi.mock("../../../shared/ui/Popover", () => ({
       children,
     ),
 }));
-
 import { ModelControlPills, ModelPicker, preloadModelPicker } from "./ModelPicker";
 import { ModelSourceContext } from "./modelSource";
 import { renameProviderAccount, saveProviderAccount } from "../../providers/model/providerAccounts";
@@ -74,7 +73,6 @@ import {
   saveRecentModelChoice,
   setHarnessModels,
 } from "../model/models";
-
 let container: HTMLDivElement;
 let root: Root;
 
@@ -1480,6 +1478,8 @@ describe("model picker menu order", () => {
       "# Advisor and subagents",
       "Subagent model",
       "Advisor",
+      "Subagents (any provider)",
+      "Advisor (any provider)",
       "# Context",
       "Auto-compact window",
       "Auto-compact",

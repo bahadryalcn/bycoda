@@ -268,3 +268,41 @@ describe("formatLiveElapsed", () => {
     expect(formatLiveElapsed(0, 3_720_000)).toBe("1h 2m");
   });
 });
+
+describe("delegated child sessions", () => {
+  const link = JSON.stringify({
+    parentSessionId: "lead",
+    runId: "run-1",
+    kind: "advisor",
+    model: "codex:gpt-a",
+    startedAt: 1_000,
+  });
+
+  it("keeps a running delegated child out of the rail; its parent shows instead", () => {
+    const parent = chat("/repo", { id: "lead", busy: true });
+    const delegated = chat("/repo", {
+      id: "child",
+      busy: true,
+      modelSettings: { delegationParent: link },
+    });
+    expect(liveAgentsFromSessions([parent, delegated]).map((agent) => agent.id)).toEqual(["lead"]);
+  });
+
+  it("keeps a failed or unseen-finished delegated child out of the rail too", () => {
+    const delegated = chat("/repo", {
+      id: "child",
+      modelSettings: { delegationParent: link },
+      usageLimit: {} as Session["usageLimit"],
+    });
+    expect(liveAgentsFromSessions([delegated], new Set(["child"]))).toEqual([]);
+  });
+
+  it("drops a malformed parent link, so the session stays an ordinary live agent", () => {
+    const session = chat("/repo", {
+      id: "odd",
+      busy: true,
+      modelSettings: { delegationParent: "{oops" },
+    });
+    expect(liveAgentsFromSessions([session]).map((agent) => agent.id)).toEqual(["odd"]);
+  });
+});

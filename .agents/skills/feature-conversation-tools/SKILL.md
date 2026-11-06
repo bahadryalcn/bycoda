@@ -73,6 +73,7 @@ review keyboard, long labels, annotation recovery and reduced motion as applicab
 - [Control and transfer contracts](references/contracts.md): device admission, discovery,
   presentation, draft transfer and process lifecycle details.
 - [Host contracts](../../../docs/reference/host-runtime.md): common authority and transport.
+- [Decision provenance](references/decisions.md): owner decisions that changed lasting contracts.
 - [Agent tool management](../../../docs/reference/agent-tools.md): exposure and discovery.
 - [User tool guide](../../../docs/guides/agent-tools.md): user-visible operations.
 - [Workbench behavior](../../../docs/guides/workbench.md): dock and detached navigation.

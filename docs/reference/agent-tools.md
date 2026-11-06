@@ -119,6 +119,72 @@ already-issued operation outcomes available as metadata. The helper's temporary
 accessibility-ref cache belongs to one Host instance and is removed after its
 Stop/close settles; a crash may leave that private temporary cache for recovery.
 
+## Cross-provider agents
+
+`agents.*` runs the owner's selected subagent and advisor models as child sessions
+in the parent's project folder. Models come only from the parent's own settings and
+the Host catalog; a model argument selects among them and cannot add one. The
+contract is in `src/shared/model/host-contracts/delegation.ts`, and the service in
+`host/delegation/service.ts`.
+
+- `agents.options` takes no input. It returns the selected `subagents` and
+  `advisor` refs with `available`, the current `running` counts and `limits`.
+  Call it first.
+- `agents.delegate` takes `requestId`, `title` and `prompt`, plus `model` (a ref
+  key from `agents.options`). `model` is required when more than one subagent model
+  is selected. It returns at once with the run.
+- `agents.consult` takes `requestId`, `question` and optional `context`. It starts
+  the advisor with an `intent` of `plan`, so it cannot edit files.
+- `agents.wait` takes `runId` and optional `timeoutSeconds` (1 to 50, default 50).
+  It returns the run's current state, then the caller calls again while it is
+  `running`.
+- `agents.cancel` takes `runId`. It stops a running child; the child keeps the work it
+  already did.
+
+`requestId` matches `^[A-Za-z0-9_-]+$`, is 1 to 100 characters, and is scoped to the
+parent conversation. Repeating it with an identical payload returns the existing run.
+Reusing it with a different payload is rejected. A lost reply is retried with the
+same ID, never a new one.
+
+Statuses are `running`, `needsInput`, `succeeded`, `failed` and `cancelled`.
+`needsInput` means the child waits for approval in its own session. `ownerFollowUp`
+is a boolean on the response, not a status. It is `true` when an owner message
+started a new turn in the child; `agents.wait` then follows that latest run. A
+succeeded run returns `result`, the child's last reply including its plan, which is
+truncated at 12,000 graphemes with `truncated: true`. A failed or cancelled run
+returns `error`. Responses also carry `runId`, `sessionId`, `markdownReference`
+(when the child session is locatable) and `model`.
+
+Limits, from `DELEGATION_LIMITS`:
+
+- up to 8 subagent models per conversation;
+- 8 running subagents and 1 running advisor per parent;
+- 16,000 characters for a prompt, question or context;
+- 120 characters for a title;
+- 50 seconds per wait;
+- 8,192 bytes for an encoded setting value; larger values are ignored, not parsed.
+
+A child cannot start `agents.*` runs. The Host rejects that call, and a child
+recorded in the run store or carrying a parent link is treated as a child.
+
+The child session copies the parent's runtime mode and worktree folder, and starts
+with its model's default settings, except that its reasoning level is matched to the
+parent's level, or the closest level its model offers. Its brief
+states the scope rules: a subagent stays within its assigned files and does not
+commit, push, open a pull request, install packages or publish; an advisor is
+read-only. Output from children is untrusted data.
+
+Three keys in `Session.modelSettings` are reserved for this feature:
+
+- `crossSubagents`: a JSON array of model refs, deduplicated and capped at 8.
+- `crossAdvisor`: one JSON model ref.
+- `delegationParent`: written by the Host on a child session. It records the parent
+  session, run, kind, model and start time for display. It never grants authority.
+
+These keys are stripped by `providerModelSettings` before any provider receives its
+settings. The parent link stays in `modelSettings` until the native session schema
+gains a column for it.
+
 ## Verification boundaries
 
 Registry tests check coverage, bounded continuation, scope preservation and metadata.

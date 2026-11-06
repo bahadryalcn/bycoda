@@ -73,6 +73,10 @@ export type DockAgent = {
   name: string;
   /** Subagents open onto their own trail; commands only have a row. */
   kind: "agent" | "command";
+  /** A delegated child session (cross-provider subagent); its own session id. */
+  sessionId?: string;
+  /** A delegated child waits for approval or an answer in its own session. */
+  needsInput?: boolean;
   status: DockAgentStatus;
   model?: string;
   /** "46 steps, 1 failed", worded exactly as on the transcript row. */
@@ -107,6 +111,8 @@ export type ActivityDockInput = {
   backgroundAgents?: number;
   /** Work finished since the user last looked; see `nextUnseenDone`. */
   unseenDone: boolean;
+  /** Delegated child sessions of this session, already mapped to dock rows. */
+  delegatedAgents?: DockAgent[];
 };
 
 /**
@@ -120,6 +126,7 @@ export function deriveActivityDock({
   backgroundTasks,
   backgroundAgents,
   unseenDone,
+  delegatedAgents = [],
 }: ActivityDockInput): ActivityDock {
   // A steer is another user message in the same execution. Keep the original
   // run's rows and clock visible until a genuinely new execution starts.
@@ -133,24 +140,32 @@ export function deriveActivityDock({
     handoff < 0
       ? execution
       : execution.slice(handoff === execution.length - 1 ? handoff : handoff + 1);
-  const agents = turn.flatMap((block) => dockAgent(block, busy));
+  const agents = [...turn.flatMap((block) => dockAgent(block, busy)), ...delegatedAgents];
   const running = agents.filter((agent) => agent.status === "running").length;
   const failed = agents.filter((agent) => agent.status === "failed").length;
   const stopped = agents.filter((agent) => agent.status === "stopped").length;
   const interrupted = agents.filter((agent) => agent.status === "interrupted").length;
-  const backgroundCount = busy ? (backgroundTasks?.length ?? 0) : 0;
+  // Delegated children run in their own sessions. Once the parent turn has
+  // ended, the ones still running are what keeps the dock open.
+  const delegatedRunning = delegatedAgents.filter((agent) => agent.status === "running").length;
+  const backgroundCount = busy ? (backgroundTasks?.length ?? 0) : delegatedRunning;
   const startedAt = turn.find((block) => block.role === "user")?.startedAt;
 
   let state: DockState = "idle";
+  const childNeedsInput = delegatedAgents.some(
+    (agent) => agent.needsInput && agent.status === "running",
+  );
   if (busy) {
     state =
-      pendingQuestion || hasPendingApproval(blocks)
+      pendingQuestion || hasPendingApproval(blocks) || childNeedsInput
         ? "needs-input"
         : isBackgroundOnly(busy, backgroundTasks, backgroundAgents)
           ? "background"
           : backgroundCount > 0
             ? "waiting"
             : "working";
+  } else if (delegatedRunning > 0) {
+    state = childNeedsInput ? "needs-input" : "background";
   } else if (unseenDone && !turn.some(isNoticeBlock)) {
     // A turn cut short or ended on an error has not "finished" anything.
     state = "done";
@@ -160,7 +175,8 @@ export function deriveActivityDock({
     state,
     startedAt,
     backgroundCount,
-    backgroundAgents: backgroundCount > 0 ? backgroundAgents : undefined,
+    backgroundAgents:
+      backgroundCount > 0 ? (busy ? backgroundAgents : delegatedRunning) : undefined,
     agents,
     running,
     finished: agents.length - running - failed - stopped - interrupted,
@@ -262,7 +278,10 @@ export function dockStateLabel(dock: ActivityDock): string {
     }
     case "background":
       return t("Finished · {p0} running", {
-        p0: plural(dock.backgroundCount, "background command"),
+        p0:
+          dock.backgroundAgents === dock.backgroundCount
+            ? plural(dock.backgroundCount, "background agent")
+            : plural(dock.backgroundCount, "background command"),
       });
     case "needs-input":
       return t("Needs your input");
