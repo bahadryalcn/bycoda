@@ -65,7 +65,14 @@ import { isVisionImage } from "../src/features/sessions/model/attachmentPrompt";
 import { isSessionErrorBlock } from "../src/features/sessions/model/sessionIssue";
 import { adoptedTranscriptLead } from "../src/features/connections/model/adoptedSessions";
 import { transcriptDigests } from "../src/features/sync/model/conversationDigest";
-import { refreshDigests } from "./sessions/refresh-digest-cache";
+import {
+  desktopDigests,
+  forgetDesktopDigests,
+  heldDigests,
+  recordAgreed,
+  rememberHeld,
+  sameByRevisions,
+} from "./sessions/desktop-digest-cache";
 import { LeaseHeldError } from "../src/features/sync/model/runLease";
 import { refuseHost } from "./domains/context";
 import {
@@ -1763,7 +1770,10 @@ export class HostEngine {
         // This revision is host-owned. Desktop snapshot revisions are timestamps,
         // not host sequence numbers, so even equal revisions cannot prove equality.
         const synced = current.desktop.revision === current.revision;
+        // Pure; the fast path of `sameBlocks` relies on it having run for this snapshot.
+        const mine = desktopDigests(this, id, session.blocks, snapshot.blockRevisions);
         const sameBlocks = () => {
+          if (sameByRevisions(this, id, current, snapshot)) return true;
           const incoming = session.blocks;
           const existing = current.session.blocks;
           if (incoming.length !== existing.length) return false;
@@ -1806,7 +1816,7 @@ export class HostEngine {
         );
         // Which side changed since both last held the same transcript, from the
         // digests of the full blocks. Unreadable content falls back to comparing it.
-        const { mine, held } = refreshDigests(session.blocks, current.session.blocks);
+        const held = heldDigests(current.session.blocks);
         const keptBlocks = current.session.blocks.filter((block) => !unseenFailures.has(block));
         // The desktop names the host transcript it last agreed on (and, when the user
         // kept its version of a divergence, the one it replaced); the host remembers
@@ -1884,6 +1894,12 @@ export class HostEngine {
           },
           { type: accepted ? "desktopRefreshed" : same ? "desktopSeen" : "desktopDiverged" },
         );
+        // The saved host transcript equals the snapshot's blocks when accepted, or when
+        // the comparison above found them equal (a stale copy is not compared).
+        if (accepted || (same && !stale)) recordAgreed(this, id, saved.revision, snapshot);
+        // The next refresh holds the transcript just saved: seed its digests.
+        if (accepted && mine && saved.session.blocks === session.blocks)
+          rememberHeld(saved.session.blocks, mine);
         if (accepted) {
           // A desktop provider switch must move its resume identity with its
           // adapter. Otherwise the next mirror sees a third, mixed identity.
@@ -3813,6 +3829,7 @@ export class HostEngine {
       throw error;
     } finally {
       this.rewinding.delete(command.sessionId);
+      forgetDesktopDigests(this, command.sessionId);
       this.onUnblocked?.();
     }
   }

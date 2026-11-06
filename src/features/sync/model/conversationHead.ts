@@ -34,8 +34,46 @@ export function hash128(text: string): string {
   return [h1, h2, h3, h4].map((part) => (part >>> 0).toString(16).padStart(8, "0")).join("");
 }
 
+/** Chains already known for a digests array: `memo[i]` is the chain over the first `i + 1` digests. */
+const chainMemo = new WeakMap<readonly string[], readonly string[]>();
+
+/** Records the chains of `digests` (from `buildChains`) so that `chainAt` answers without hashing. */
+export function rememberChains(digests: readonly string[], chains: readonly string[]): void {
+  if (chains.length !== digests.length)
+    throw new RangeError("rememberChains: one chain per digest");
+  chainMemo.set(digests, chains);
+}
+
+/**
+ * The chain after each digest: `result[i]` is `chainAt(digests, i + 1)`. Reuses
+ * `previousChains` for the longest common prefix with `previousDigests`, so only the
+ * changed suffix is hashed.
+ */
+export function buildChains(
+  digests: readonly string[],
+  previousDigests?: readonly string[],
+  previousChains?: readonly string[],
+): string[] {
+  const chains: string[] = [];
+  let chain = "";
+  let start = 0;
+  if (previousDigests && previousChains) {
+    const limit = Math.min(digests.length, previousDigests.length, previousChains.length);
+    while (start < limit && digests[start] === previousDigests[start]) start++;
+    for (let i = 0; i < start; i++) chains.push(previousChains[i]);
+    if (start > 0) chain = previousChains[start - 1];
+  }
+  for (let i = start; i < digests.length; i++) {
+    chain = hash128(`${chain}:${digests[i]}`);
+    chains.push(chain);
+  }
+  return chains;
+}
+
 /** The chain over the first `count` digests. */
 export function chainAt(digests: readonly string[], count = digests.length): string {
+  const memo = chainMemo.get(digests);
+  if (memo && count <= memo.length) return count === 0 ? "" : memo[count - 1];
   let chain = "";
   for (let i = 0; i < count && i < digests.length; i++) chain = hash128(`${chain}:${digests[i]}`);
   return chain;
