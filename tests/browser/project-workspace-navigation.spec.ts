@@ -328,7 +328,8 @@ test("Inbox review separates unread, draft, review and pending checks and restor
   await search.fill("checks 1");
   const selected = page.getByRole("button", { name: /checks 12, / });
   await selected.click();
-  const scroller = selected.locator("xpath=ancestor::ul/parent::div");
+  // The Inbox list is a shared ContinuousList; its root is the scroll viewport.
+  const scroller = page.locator('[data-continuous-list^="inbox:"]');
   await scroller.evaluate((node) => {
     node.scrollTop = 200;
   });

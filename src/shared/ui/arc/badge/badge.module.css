@@ -1,6 +1,14 @@
 /* Adapted official free Arc source; bycoda semantic theme owns presentation. */
+/* Pin Tailwind's layer order even when this module loads before the global stylesheet. */
+@layer properties, theme, base, components, utilities;
+/* Box display shares the components layer, so consumer Tailwind utilities such as
+   `hidden` or `@max-[140px]/rail:hidden` can hide or reveal a badge. */
+@layer components {
+  .badge {
+    display: inline-flex;
+  }
+}
 .badge {
-  display: inline-flex;
   align-items: center;
   max-inline-size: 100%;
   padding: var(--space-1) var(--space-2);

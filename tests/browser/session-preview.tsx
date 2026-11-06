@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { mockIPC } from "@tauri-apps/api/mocks";
 import { TitleBar } from "../../src/app/shell/TitleBar";
 import { LastSessionsRows } from "../../src/app/shell/LastSessionsSection";
 import { toTitleTab } from "../../src/app/workspace/helpers/tabHelpers";
@@ -13,9 +14,25 @@ import { getComposerDraft, setComposerDraft } from "../../src/features/sessions/
 import { leafIds, newTab } from "../../src/features/workspace/model/layout";
 import { TextareaField } from "../../src/shared/ui/TextareaField";
 
+// Opening a conversation reserves it for this window first, as the native shell does.
+// Mocking IPC makes the page look native, so window chrome commands resolve as no-ops.
+function mockSessionWindowOwnership() {
+  mockIPC((command, args) => {
+    if (command === "claim_session_windows") {
+      const ids = (args as { sessionIds: string[] }).sessionIds;
+      return {
+        status: "owned",
+        tokens: Object.fromEntries(ids.map((id) => [id, `fixture-${id}`])),
+      };
+    }
+    return null;
+  });
+}
+
 // Isolated fixture. Exercises real opening, draft promotion, list and title-strip APIs.
 export function SessionPreviewFixture() {
   const [sessions] = useState(() => {
+    mockSessionWindowOwnership();
     const values = Array.from({ length: 10 }, (_, index) => ({
       ...newDefaultSession("G:/preview-fixture"),
       id: `preview-${index}`,

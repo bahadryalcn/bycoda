@@ -504,7 +504,11 @@ test("bounds a thousand large notes while fetching selected details and moving k
   page,
 }, testInfo) => {
   const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("pageerror", (error) => {
+    // WebKit reports the browser's benign ResizeObserver loop notice as an error event while the
+    // virtual library measures rows that scrolled into view; it is not an application exception.
+    if (!error.message.startsWith("ResizeObserver loop")) errors.push(error.message);
+  });
   await page.goto("/tests/browser/notes.html?count=1000");
   await expect(page.getByLabel("Note title", { exact: true })).toHaveValue("Release planning");
   // The library renders a bounded virtual window instead of 32-note pages.
