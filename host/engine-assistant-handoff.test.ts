@@ -337,7 +337,7 @@ it("never sends after a provider failed compaction even if it emitted a smaller 
   const f = await setup(),
     s = await supervised(f);
   f.provider.compact = vi.fn(async (input) => {
-    input.onEvent({ type: "context", used: 1000, window: 1000000 });
+    input.onEvent({ type: "context.compacted", used: 1000, window: 1000000 });
     throw new Error("Fixture compaction failed");
   });
   const result = await s.managed.request(s.command, { kind: "chief", id: "chief" });
@@ -361,7 +361,7 @@ it("rebinds a managed task and budget ledger at compaction acceptance before sch
   f.provider.compact = vi.fn(async (input) => {
     entered.resolve();
     await release.promise;
-    input.onEvent({ type: "context", used: 1000, window: 1000000 });
+    input.onEvent({ type: "context.compacted", used: 1000, window: 1000000 });
   });
   const pending = s.managed.request(s.command, { kind: "chief", id: "chief" });
   await entered.promise;

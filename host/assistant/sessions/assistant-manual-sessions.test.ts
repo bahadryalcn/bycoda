@@ -617,7 +617,7 @@ it("compacts and continues large manual histories through the same guarded runti
       { type: "fixture.largeContext" },
     );
     f.provider.compact = vi.fn(async (input) => {
-      input.onEvent({ type: "context", used: 1000, window: 1000000 });
+      input.onEvent({ type: "context.compacted", used: 1000, window: 1000000 });
     });
     const sending = f.nudge(grant.id, `context-${used}`);
     await vi.waitFor(() => expect(f.turns).toHaveLength(1));

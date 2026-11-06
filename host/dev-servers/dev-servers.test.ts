@@ -1098,7 +1098,11 @@ it("drains a real owned command on Host close without signalling an unrelated ch
   const quote = (value: string) =>
     windows ? `'${value.replaceAll("'", "''")}'` : `'${value.replaceAll("'", "'\\''")}'`;
   const script = `setInterval(()=>{},1000)`;
-  const command = `${windows ? "& " : ""}${quote(process.execPath)} -e ${quote(script)}`;
+  // bash (macOS /bin/sh) execs a lone `-c` command in place of the shell, which
+  // would leave the owned root without descendants; a trailing command keeps it forked.
+  const command = windows
+    ? `& ${quote(process.execPath)} -e ${quote(script)}`
+    : `${quote(process.execPath)} -e ${quote(script)}; exit $?`;
   const unrelated = spawn(process.execPath, ["-e", script], { windowsHide: true, stdio: "ignore" });
   realChildren.push(unrelated);
   const discovery = new DevServerDiscovery();

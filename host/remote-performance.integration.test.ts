@@ -12,6 +12,11 @@ import type { SendTurnInput } from "../src/integrations/harness/core/types";
 import type { RemoteProvider } from "../src/features/connections/model/protocol";
 import { applySessionSync, type HostSession } from "../src/features/connections/model/protocol";
 
+// Seeding and first-listing ten thousand sessions take about 14 s on Linux and
+// 20 s on macOS CI; Windows runners exceed the 30 s default. The list work itself
+// stays bounded by the build-count assertions, not by this budget.
+if (process.platform === "win32") vi.setConfig({ testTimeout: 120_000 });
+
 const cleanups: Array<() => Promise<void>> = [];
 const closedHosts = new WeakSet<object>();
 afterEach(async () => {
