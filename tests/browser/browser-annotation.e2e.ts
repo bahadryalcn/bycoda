@@ -135,15 +135,24 @@ async function mark(page: Page, target: Page, selector = "#action", language = "
       exact: true,
     })
     .click();
+  // Selection mode arms only after browser.frame and browser.annotation.start
+  // settle; a hover that lands earlier is dropped, so wait for the armed surface.
+  await expect(page.locator('.host-browser-surface[data-selecting="true"]')).toBeVisible();
   const bounds = await target.locator(selector).boundingBox();
   const image = page.locator("img.host-browser-frame");
-  const imageBox = await image.boundingBox();
-  const point = {
-    x: ((bounds!.x + bounds!.width / 2) * imageBox!.width) / 1280,
-    y: ((bounds!.y + bounds!.height / 2) * imageBox!.height) / 720,
-  };
-  await image.hover({ position: point });
-  await expect(page.locator('.host-browser-highlight[data-selected="false"]')).toBeVisible();
+  const highlight = page.locator('.host-browser-highlight[data-selected="false"]');
+  let point = { x: 0, y: 0 };
+  await expect(async () => {
+    const imageBox = await image.boundingBox();
+    point = {
+      x: ((bounds!.x + bounds!.width / 2) * imageBox!.width) / 1280,
+      y: ((bounds!.y + bounds!.height / 2) * imageBox!.height) / 720,
+    };
+    // Re-enter the frame so every attempt dispatches a fresh pointer move.
+    await page.mouse.move(0, 0);
+    await image.hover({ position: point });
+    await expect(highlight).toBeVisible({ timeout: 1_500 });
+  }).toPass({ timeout: 10_000 });
   await image.click({ position: point });
   await expect(page.locator(".host-browser-selection")).toBeVisible();
 }

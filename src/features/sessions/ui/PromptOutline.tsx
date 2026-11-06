@@ -149,6 +149,24 @@ export const PromptOutline = memo(function PromptOutline({
     openTimer.current = null;
   };
   useEffect(() => cancelOpen, []);
+  // A container query hides the rail in narrow panes. WebKit sends no
+  // mouseleave or blur when the hovered or focused bar stops rendering, so
+  // close the card once the rail has no boxes left.
+  useEffect(() => {
+    const el = rail.current;
+    if (!el || (!open && !hover)) return;
+    const observer = new ResizeObserver(() => {
+      if (el.getClientRects().length > 0) return;
+      if (openTimer.current != null) {
+        window.clearTimeout(openTimer.current);
+        openTimer.current = null;
+      }
+      setHover(null);
+      setOpen(false);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [open, hover]);
 
   /** The ripple follows the pointer at once. The card waits out a pass-through. */
   const hoverBar = (id: string, el: HTMLElement) => {

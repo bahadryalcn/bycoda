@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import { flushHostSessionBindings } from "../../src/features/connections/public/sessionExecutionBinding";
 import { SessionWorkspaceActions } from "../../src/features/workspaces/ui/SessionWorkspaceActions";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import { setLanguagePreference } from "../../src/shared/i18n";
@@ -205,7 +206,9 @@ setSessions([
   } as Session,
 ]);
 applyThemePreference(query.get("theme") === "light" ? "light" : "dark");
-void setLanguagePreference("en").then(() =>
+// The app resolves durable session owners at boot before any pane renders;
+// the fixture mounts the actions directly, so it hydrates the same store first.
+void Promise.all([setLanguagePreference("en"), flushHostSessionBindings()]).then(() =>
   createRoot(document.getElementById("root")!).render(
     <main className="min-h-screen bg-(--ui-surface) p-6 text-(--ui-text)">
       <div className="mx-auto grid max-w-4xl gap-6">
