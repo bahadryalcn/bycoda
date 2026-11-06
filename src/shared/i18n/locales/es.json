@@ -11303,5 +11303,6 @@
   "Question attachment ownership cannot be verified. The original draft remains available for recovery.": "No se puede verificar la propiedad del adjunto de la pregunta. El borrador original sigue disponible para su recuperación.",
   "Unable to retain media for this draft.": "No se pueden conservar los medios de este borrador.",
   "Unable to release media for this draft.": "No se pueden liberar los medios de este borrador.",
-  "Clipboard write failed.": "No se pudo escribir en el portapapeles."
+  "Clipboard write failed.": "No se pudo escribir en el portapapeles.",
+  "Could not load session ownership. Your saved draft is still available.": "No se pudo cargar la propiedad de la sesión. Tu borrador guardado sigue disponible."
 }

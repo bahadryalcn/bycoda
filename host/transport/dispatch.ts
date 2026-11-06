@@ -15,7 +15,7 @@ import {
   type HostDomainContext,
 } from "../domains/context";
 import { hostRpcHasEffect } from "../../src/shared/model/host-contracts/effects";
-import { SessionReadError } from "../sessions/read-errors";
+import { SessionReadError } from "../domains/sessions/read-errors";
 import {
   REQUEST_EXPIRED_ERROR_CODE,
   REQUEST_EXPIRED_MESSAGE,

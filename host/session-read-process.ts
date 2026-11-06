@@ -2,7 +2,7 @@ import { fork, type ChildProcess } from "node:child_process";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { HostNotesAdmission } from "./host-notes-admission";
-import { isSessionReadErrorKind, SessionReadError } from "./sessions/read-errors";
+import { isSessionReadErrorKind, SessionReadError } from "./domains/sessions/read-errors";
 
 export type SessionReadRequest =
   | { kind: "host"; path: string; sessionId: string }

@@ -1,7 +1,7 @@
 import type { HostSession } from "../../src/features/connections/model/protocol";
 import { realpathSync, statSync } from "node:fs";
 import type { SessionReadProcesses } from "../session-read-process";
-import { SessionReadError } from "../sessions/read-errors";
+import { SessionReadError } from "../domains/sessions/read-errors";
 import type { DesktopSnapshotRecord, DesktopStampRow } from "./desktopSessions";
 
 /** Internal read provenance, never included in a public session response. */

@@ -15,7 +15,7 @@ registerHooks({
 });
 const { DesktopSessions } = await import("./desktop/desktopSessions.ts");
 const { createHostNotesDatabaseFactory } = await import("./host-notes-admission.ts");
-const { SessionReadError } = await import("./sessions/read-errors.ts");
+const { SessionReadError } = await import("./domains/sessions/read-errors.ts");
 let admitted = false;
 process.on("message", ({ id, request, comparison }) => {
   if (admitted) process.exit(1);

@@ -93,7 +93,11 @@ function entryFor(owner: object, sessionId: string, blocks: number): Entry {
  * digest block the same role, text length and digest. Then `prev.digests` is the answer.
  * False also when unsure; `build` decides whether the digests can be computed at all.
  */
-function unchanged(prev: Entry, blocks: readonly Block[], revisions: Record<string, number>): boolean {
+function unchanged(
+  prev: Entry,
+  blocks: readonly Block[],
+  revisions: Record<string, number>,
+): boolean {
   if (prev.allIds.length !== blocks.length) return false;
   let k = 0;
   for (let i = 0; i < blocks.length; i++) {

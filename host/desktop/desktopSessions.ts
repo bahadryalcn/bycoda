@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { desktopReadSource, readDesktopSnapshot, type DesktopReadSource } from "./snapshot-read";
-import { SessionReadError } from "../sessions/read-errors";
+import { SessionReadError } from "../domains/sessions/read-errors";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 import type {

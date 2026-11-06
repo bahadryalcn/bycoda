@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SessionReadError } from "../../sessions/read-errors";
+import { SessionReadError } from "./read-errors";
 import {
   createSessionReadService,
   type ReadSync,

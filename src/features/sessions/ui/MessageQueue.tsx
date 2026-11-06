@@ -226,6 +226,7 @@ export function MessageQueue({
   const editingMessage = messages.find((message) => message.id === editingId);
   useEffect(() => {
     if (editingId && !editingMessage) {
+      // oxlint-disable-next-line react-hooks-js/set-state-in-effect -- Leave edit mode once the edited row is removed from the queue.
       setEditingId(undefined);
       onEditingChangeRef.current?.();
     }

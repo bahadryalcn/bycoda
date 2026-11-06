@@ -2,7 +2,7 @@ import { EventEmitter } from "node:events";
 import { fork, type ChildProcess } from "node:child_process";
 import { expect, it, vi } from "vitest";
 import { SessionReadProcesses, type SessionReadRequest } from "./session-read-process";
-import { SessionReadError } from "./sessions/read-errors";
+import { SessionReadError } from "./domains/sessions/read-errors";
 const request: SessionReadRequest = {
   kind: "desktop",
   paths: [],

@@ -94,9 +94,9 @@ describe("desktopDigests", () => {
         blocks = blocks.map((block) => ({ ...block })) as Block[];
       }
       const snapshot = rows.checkpoint(blocks);
-      expect(
-        desktopDigests(owner, "s", snapshot.session.blocks, snapshot.blockRevisions),
-      ).toEqual(transcriptDigests(snapshot.session.blocks));
+      expect(desktopDigests(owner, "s", snapshot.session.blocks, snapshot.blockRevisions)).toEqual(
+        transcriptDigests(snapshot.session.blocks),
+      );
     }
   });
 
@@ -119,9 +119,9 @@ describe("desktopDigests", () => {
         blocks[at] = { ...blocks[at], text: `edit ${step}` } as Block;
       }
       const snapshot = rows.checkpoint(blocks);
-      expect(
-        desktopDigests(owner, "s", snapshot.session.blocks, snapshot.blockRevisions),
-      ).toEqual(transcriptDigests(snapshot.session.blocks));
+      expect(desktopDigests(owner, "s", snapshot.session.blocks, snapshot.blockRevisions)).toEqual(
+        transcriptDigests(snapshot.session.blocks),
+      );
       if (blocks.length > 60) blocks = blocksOf(20, `r${step}-`);
     }
   });
@@ -362,7 +362,11 @@ describe("prefix chains", () => {
       const previousChains = buildChains(previous);
       const next = [...previous];
       const cut = Math.floor(random() * (next.length + 1));
-      next.splice(cut, Math.floor(random() * 3), ...randomDigests(random, Math.floor(random() * 4)));
+      next.splice(
+        cut,
+        Math.floor(random() * 3),
+        ...randomDigests(random, Math.floor(random() * 4)),
+      );
       expect(buildChains(next, previous, previousChains)).toEqual(buildChains(next));
     }
   });

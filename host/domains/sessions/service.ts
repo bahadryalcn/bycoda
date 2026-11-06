@@ -2,7 +2,7 @@ import {
   assertDomainAuthority as assertSessionAuthority,
   type HostDomainContext as SessionDomainContext,
 } from "../context";
-import { SessionReadError } from "../../sessions/read-errors";
+import { SessionReadError } from "./read-errors";
 export {
   assertDomainAuthority as assertSessionAuthority,
   type HostDomainContext as SessionDomainContext,

@@ -3,7 +3,7 @@ import { createEnvironmentService } from "../domains/environment/service";
 import { createProjectsService } from "../domains/projects/service";
 import { HostDomainOutcomeError, HostDomainRefusalError } from "../domains/context";
 import { RpcErrorSchema } from "../../src/shared/model/host-contracts";
-import { SessionReadError, type SessionReadErrorKind } from "../sessions/read-errors";
+import { SessionReadError, type SessionReadErrorKind } from "../domains/sessions/read-errors";
 import {
   createHostReadDispatcher,
   HostDispatchError,

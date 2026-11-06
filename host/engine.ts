@@ -95,7 +95,6 @@ import {
   formatSessionTitle,
   titleFromPrompt,
   type Session,
-  type SecondOpinionMeta,
 } from "../src/features/sessions/model/session";
 import { namedWorktreeBranch } from "../src/features/source-control/model/worktrees";
 import {
@@ -151,6 +150,7 @@ import {
   type ShellResult,
 } from "../src/features/sessions/model/shellRun";
 import { newRequestId } from "../src/shared/lib/id/requestId";
+import { secondOpinionMeta } from "./sessions/second-opinion-meta";
 
 // Streamed output is written in batches. Anything a user may need to act on
 // (approvals, questions, errors, completion) is written immediately.
@@ -215,29 +215,6 @@ function contextualInput(v: Record<string, unknown>): ContextualSessionInput {
     harness: v.harness,
     model: text(v.model, "model", 200),
     modelSettings: modelSettings(v.modelSettings),
-  };
-}
-
-function secondOpinionMeta(value: unknown): SecondOpinionMeta | undefined {
-  if (value === undefined) return undefined;
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("Invalid second opinion metadata");
-  const row = value as Record<string, unknown>;
-  if (
-    !isRemoteProvider(row.from) ||
-    !isRemoteProvider(row.to) ||
-    (row.kind !== undefined && row.kind !== "handoff") ||
-    (row.request !== undefined && (typeof row.request !== "string" || row.request.length > 240)) ||
-    (row.files !== undefined &&
-      (!Number.isSafeInteger(row.files) || Number(row.files) < 0 || Number(row.files) > 40))
-  )
-    throw new Error("Invalid second opinion metadata");
-  return {
-    from: row.from,
-    to: row.to,
-    ...(row.request ? { request: row.request as string } : {}),
-    ...(row.files !== undefined ? { files: Number(row.files) } : {}),
-    ...(row.kind ? { kind: "handoff" as const } : {}),
   };
 }
 

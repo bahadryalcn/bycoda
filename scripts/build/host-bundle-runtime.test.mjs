@@ -94,5 +94,10 @@ test("bundled readonly session helper runs with no TypeScript loader or ambient 
     },
   });
   assert.equal(await exit, 0);
-  assert.deepEqual(reply, { id: "packaged-original", value: [], error: undefined });
+  assert.deepEqual(reply, {
+    id: "packaged-original",
+    value: [],
+    error: undefined,
+    errorKind: undefined,
+  });
 });

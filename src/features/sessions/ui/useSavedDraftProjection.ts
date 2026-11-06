@@ -44,6 +44,7 @@ export function useSavedDraftProjection(sessionId: string, block: Block | undefi
   useEffect(() => {
     if (!loaded || !block || !key || !digest) return;
     let cancelled = false;
+    // oxlint-disable-next-line react-hooks-js/set-state-in-effect -- Clear the previous draft's failure before loading the next one.
     setFailure(undefined);
     void hydrateHostSessionBindings()
       .then(() => {

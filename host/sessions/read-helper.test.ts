@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { expect, it } from "vitest";
 import { SessionReadProcesses } from "../session-read-process";
-import { SessionReadError } from "./read-errors";
+import { SessionReadError } from "../domains/sessions/read-errors";
 
 it("preserves an explicit size refusal across the real readonly helper", async () => {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-read-budget-"));
