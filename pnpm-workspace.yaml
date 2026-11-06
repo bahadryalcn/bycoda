@@ -1,5 +1,7 @@
 # The local update coordinator alone decides when dependencies need installation.
 verifyDepsBeforeRun: false
+# Accept the supported engines.pnpm range without switching to the build pin.
+pmOnFail: ignore
 packages:
   - apps/*
   - packages/*

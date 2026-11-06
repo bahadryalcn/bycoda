@@ -105,7 +105,7 @@ workflow. See [releases and updates](docs/reference/fork.md#releases-and-updates
 
 - Install **Node.js 22.12 or newer** (see [.nvmrc](.nvmrc)), **Rust**, and Tauri's native build prerequisites for your
   platform. See [development setup](CONTRIBUTING.md#development-environment).
-- Use the **pnpm version pinned in [package.json](package.json)**.
+- Use **pnpm 12.5.0 or newer**. The version pinned in [package.json](package.json) remains the reproducible build default; local installs accept the `engines.pnpm` range.
 - Install and authenticate at least one supported provider CLI.
 
 ### 2. Run the desktop app
