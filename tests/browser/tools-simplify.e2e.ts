@@ -73,6 +73,8 @@ for (const theme of ["dark", "light"] as const) {
       for (const tool of tools) {
         await selectTool(page, tool.name);
         if (tool.id === "devices") {
+          // Opening the panel only observes the device host; connecting is explicit.
+          await page.getByRole("button", { name: "Connect devices", exact: true }).click();
           await page.getByRole("button", { name: "Start emulator", exact: true }).click();
           await expect(
             page.getByRole("img", { name: "Current device screen", exact: true }),
@@ -228,9 +230,16 @@ test("browser URL and preview stay local while view-only mode prevents input", a
   await page.goto(fixture);
   await selectTool(page, "Host browser");
   await openBrowser(page);
+  // Release lives in the control status popover.
+  await page.getByRole("button", { name: "Control active", exact: true }).click();
   await expect(page.getByRole("button", { name: "Release", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Release", exact: true }).click();
-  await expect(page.getByText("View only", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View only", exact: true })).toBeVisible();
+  await expect(
+    page.getByText("View only · take control to interact", { exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "Claim control", exact: true })).toHaveCount(0);
   await expect(
     page.getByRole("button", { name: "Select element and add to composer", exact: true }),
   ).toBeDisabled();

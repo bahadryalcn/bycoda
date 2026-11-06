@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { createServer, type AddressInfo } from "node:net";
 import {
+  chmodSync,
   copyFileSync,
   mkdtempSync,
   mkdirSync,
@@ -85,6 +86,11 @@ it(
       await expect(run("serve")).rejects.toThrow("A host already owns");
       const before = JSON.parse((await run("connection-info")).stdout);
       const runningPath = join(directory, "running.json");
+      // Check the modes the Host wrote before the fixture below replaces running.json.
+      if (process.platform !== "win32") {
+        expect(statSync(directory).mode & 0o777).toBe(0o700);
+        expect(statSync(runningPath).mode & 0o777).toBe(0o600);
+      }
       const originalRunning = readFileSync(runningPath);
       try {
         const stalled = createServer((socket) => socket.resume());
@@ -107,7 +113,9 @@ it(
         rmSync(runningPath);
         await expect(run("status")).rejects.toThrow("still owns");
       } finally {
-        writeFileSync(runningPath, originalRunning);
+        // The test process has a default umask; keep the secret-bearing file private.
+        writeFileSync(runningPath, originalRunning, { mode: 0o600 });
+        if (process.platform !== "win32") chmodSync(runningPath, 0o600);
       }
       expect((await run("status")).stdout).toContain("Host is running");
       // Connecting to an existing host must not install a service or restart it.
@@ -132,10 +140,6 @@ it(
       expect(
         ((await response.json()) as { result: { environmentId: string } }).result.environmentId,
       ).toBe(device.environmentId);
-      if (process.platform !== "win32") {
-        expect(statSync(directory).mode & 0o777).toBe(0o700);
-        expect(statSync(join(directory, "running.json")).mode & 0o777).toBe(0o600);
-      }
       await run("revoke", device.id);
       await expect(run("revoke", device.id)).rejects.toThrow("Device not found");
       // This CLI is a separate SQLite writer. The running Host checks external
@@ -169,5 +173,7 @@ it(
       rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     }
   },
-  process.platform === "win32" ? 60_000 : 20_000,
+  // A refused `serve` keeps the fixture's leaked handle until exec's 10s deadline, and
+  // the unreachable-owner probe waits 5s, so POSIX runs take about 20s before CI load.
+  process.platform === "win32" ? 60_000 : 45_000,
 );

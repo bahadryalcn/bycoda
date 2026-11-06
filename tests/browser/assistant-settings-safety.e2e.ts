@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const translations = JSON.parse(
   await readFile(new URL("../../src/shared/i18n/locales/tr.json", import.meta.url), "utf8"),
@@ -9,6 +9,21 @@ async function requests(page: Page) {
   return page.evaluate(() => (window as any).__setupRequests ?? []) as Promise<
     Array<{ method: string; input: { op: string } }>
   >;
+}
+// The permission row renders CapabilityStatus: independent permission, readiness
+// and activity axes, each a term/definition pair rather than a live status.
+function capabilityAxis(scope: Locator, axis: "permission" | "readiness" | "activity") {
+  return scope.locator(`[data-capability-axis="${axis}"]`);
+}
+async function expectAxis(
+  scope: Locator,
+  axis: "permission" | "readiness" | "activity",
+  state: string,
+  label: string,
+) {
+  const element = capabilityAxis(scope, axis);
+  await expect(element).toHaveAttribute("data-state", state);
+  await expect(element.getByRole("definition")).toHaveText(tr(label));
 }
 async function openSettings(page: Page, extra = "") {
   await page.goto(
@@ -47,12 +62,22 @@ for (const state of ["disabled", "enabled-idle", "active", "stopped", "unavailab
       await expect(computer.getByText(tr("Verified"), { exact: true })).toHaveCount(0);
     } else {
       await expect(computer.getByRole("status").filter({ hasText: tr("Verified") })).toBeVisible();
-      const permission =
-        state === "stopped" ? "Stopped" : state === "disabled" ? "Disabled" : "Enabled";
-      await expect(computer.getByRole("status").filter({ hasText: tr(permission) })).toBeVisible();
-      await expect(
-        computer.getByText(tr("Desktop operation in progress"), { exact: true }),
-      ).toHaveCount(state === "active" ? 1 : 0);
+      const enabled = state === "enabled-idle" || state === "active";
+      await expectAxis(
+        computer,
+        "permission",
+        enabled ? "enabled" : "disabled",
+        enabled ? "Enabled" : "Disabled",
+      );
+      await expect(computer.getByText(tr("Stopped"), { exact: true })).toHaveCount(
+        state === "stopped" ? 1 : 0,
+      );
+      await expectAxis(
+        computer,
+        "activity",
+        state === "active" ? "running" : "idle",
+        state === "active" ? "Running" : "Idle",
+      );
       if (state === "disabled") {
         await page.evaluate(() => {
           (window as any).__desktopStatusFailure = true;
@@ -98,7 +123,8 @@ test("profile save retains computer draft and only explicit computer save enable
   await expect(application).toHaveValue("Notepad");
   await dialog.getByRole("button", { name: tr("Add application"), exact: true }).click();
   await dialog.getByRole("switch", { name: tr("Enable computer use"), exact: true }).click();
-  await expect(dialog.getByRole("status").filter({ hasText: tr("Disabled") })).toBeVisible();
+  // The switch edits a draft; the observed permission stays disabled until saved.
+  await expectAxis(dialog, "permission", "disabled", "Disabled");
   await page.evaluate(() => {
     (window as any).__desktopHoldConfigure = true;
   });
@@ -117,15 +143,13 @@ test("profile save retains computer draft and only explicit computer save enable
     dialog.getByRole("button", { name: tr("Run setup again"), exact: true }),
   ).toBeDisabled();
   await page.evaluate(() => (window as any).__desktopConfigureRelease());
-  await expect(dialog.getByRole("status").filter({ hasText: tr("Enabled") })).toBeVisible();
+  await expectAxis(dialog, "permission", "enabled", "Enabled");
   expect(await page.evaluate(() => (window as any).__desktopFixtureConfiguration)).toMatchObject({
     enabled: true,
     allowedApps: ["Notepad"],
     allowPhysicalInput: false,
   });
-  await expect(dialog.getByText(tr("Desktop operation in progress"), { exact: true })).toHaveCount(
-    0,
-  );
+  await expectAxis(dialog, "activity", "idle", "Idle");
   await dialog.getByRole("button", { name: tr("Close"), exact: true }).click();
   await expect(dialog).toHaveCount(0);
 });

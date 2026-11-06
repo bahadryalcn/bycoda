@@ -87,10 +87,12 @@ fn actual_browser_relay_streams_bodies_larger_than_a_frame_on_one_private_ws_con
                     .await;
                 }
                 "devServers.bridgeClose" => {
-                    result(&mut socket, &request, json!({"closed":true})).await;
                     assert!(writes >= 5);
                     assert_eq!(cursor, response.len());
+                    // Publish the upload before replying: the relay returns as
+                    // soon as this reply arrives and the test then reads it.
                     *saved.lock().unwrap() = uploaded;
+                    result(&mut socket, &request, json!({"closed":true})).await;
                     break;
                 }
                 method => panic!("unexpected private method {method}"),

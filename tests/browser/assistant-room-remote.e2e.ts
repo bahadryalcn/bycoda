@@ -21,7 +21,9 @@ for (const theme of ["light", "dark"])
       await expect(dialog).toBeVisible();
       await expect(dialog.getByText("This Room is registered on its original Host.")).toBeVisible();
       await expect(
-        dialog.getByText(/Target project privacy and an owner-reviewed policy are required/),
+        dialog.getByText(
+          "The target project must be visible and the native identity trusted by both Hosts. Each connection requires native review.",
+        ),
       ).toBeVisible();
       await expect(dialog.getByRole("button", { name: "Connect" })).toBeDisabled();
       await expect(dialog.getByText("No other paired Host is available.")).toHaveCount(0);

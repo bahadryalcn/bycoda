@@ -2256,9 +2256,12 @@ test("bounded pages search archived rows and preserve selected detail history", 
   await page.getByRole("button", { name: "Yenile", exact: true }).click();
   await selectSection(page, "Gelen kutusu");
   await expect(page.locator(".social-row:visible")).toHaveCount(50);
-  const pages = page.getByRole("group", { name: "Konuşmalar sayfaları", exact: true });
-  await pages.getByRole("button", { name: "Sonraki sayfa", exact: true }).click();
-  await expect(pages).toContainText("51–100 / 125");
+  // Collections continue with an explicit "load more" step that appends the next window.
+  const pages = page
+    .getByRole("navigation", { name: "Daha fazla yükle", exact: true })
+    .locator('[aria-label="Konuşmalar yüklendi"]');
+  await pages.getByRole("button", { name: "Daha fazla yükle", exact: true }).click();
+  await expect(pages).toContainText("Konuşmalar · 100 / 125");
   await page.getByLabel("Konuşma ara", { exact: true }).fill("Archived message needle");
   await page.clock.fastForward(250);
   await expect(page.locator(".social-row:visible")).toHaveCount(1);
@@ -2724,7 +2727,10 @@ test("social workspace guides OAuth setup and keeps sends disabled", async ({ pa
   const detailBounds = (await accountWorkspace.locator(".social-account-detail").boundingBox())!;
   expect(Math.abs(workspaceBounds.x - detailBounds.x)).toBeLessThanOrEqual(1);
   expect(Math.abs(workspaceBounds.width - detailBounds.width)).toBeLessThanOrEqual(2);
-  const projectAccess = accountWorkspace.locator(".social-account-permissions");
+  // Assistant account access is a sibling permissions section; select project access by name.
+  const projectAccess = accountWorkspace
+    .locator(".social-account-permissions")
+    .filter({ has: page.locator("summary", { hasText: "Proje erişimi" }) });
   await expect(projectAccess.locator("summary")).toHaveText("Proje erişimi");
   await expect(projectAccess).toHaveAttribute("open", "");
   await expect(
@@ -3555,9 +3561,10 @@ test("Assistant account grant controls remain readable across themes and widths"
   await selectSection(page, "Hesaplar");
   const details = page
     .locator("details")
-    .filter({ has: page.locator("summary", { hasText: "Assistant account access" }) });
+    .filter({ has: page.locator("summary", { hasText: "Asistanın hesap erişimi" }) });
+  // The social fixture renders in Turkish.
   await details.locator("summary").click();
-  await expect(details.getByText("Assistant permissions")).toBeVisible();
+  await expect(details.getByText("Asistan izinleri")).toBeVisible();
   for (const theme of ["light", "dark"]) {
     await page.evaluate(
       (light) => document.documentElement.classList.toggle("theme-light", light),
@@ -3566,7 +3573,7 @@ test("Assistant account grant controls remain readable across themes and widths"
     for (const width of [1280, 800]) {
       await page.setViewportSize({ width, height: 900 });
       await details.scrollIntoViewIfNeeded();
-      await expect(details.getByText("Assistant permissions")).toBeVisible();
+      await expect(details.getByText("Asistan izinleri")).toBeVisible();
       await page.screenshot({
         path: `temp/verification/assistant-social-account/${theme}-${width}.png`,
         animations: "disabled",

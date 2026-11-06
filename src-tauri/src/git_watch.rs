@@ -656,8 +656,22 @@ mod tests {
         assert!(status.success(), "git {args:?}");
     }
 
+    /// Windows `temp_dir()` can hold 8.3 short names (`RUNNER~1`), while Git records a
+    /// linked worktree's common dir by its long path. Projects open by their canonical
+    /// long path, so the fixture does too. Other platforms keep the raw temp path so
+    /// the macOS `/var` -> `/private/var` resolution stays covered.
+    fn temp_root() -> PathBuf {
+        let temp = std::env::temp_dir();
+        if !cfg!(windows) {
+            return temp;
+        }
+        let canonical = std::fs::canonicalize(&temp).unwrap();
+        let text = canonical.to_string_lossy();
+        PathBuf::from(text.strip_prefix(r"\\?\").unwrap_or(&text))
+    }
+
     fn temp_repo() -> (PathBuf, PathBuf) {
-        let base = std::env::temp_dir().join(format!("git-watch-{}", uuid::Uuid::new_v4()));
+        let base = temp_root().join(format!("git-watch-{}", uuid::Uuid::new_v4()));
         let repo = base.join("repo");
         std::fs::create_dir_all(&repo).unwrap();
         git(&repo, &["init", "-q"]);

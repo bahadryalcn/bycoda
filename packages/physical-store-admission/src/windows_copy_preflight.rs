@@ -116,7 +116,7 @@ pub(crate) fn reject_unpreserved_attributes(file: &File) -> io::Result<()> {
         };
         let bytes = info.StreamNameLength as usize;
         let start = offset + offset_of!(FILE_STREAM_INFO, StreamName);
-        if bytes % 2 != 0 || start.checked_add(bytes).is_none_or(|end| end > length) {
+        if !bytes.is_multiple_of(2) || start.checked_add(bytes).is_none_or(|end| end > length) {
             return Err(io::Error::other("Invalid Windows stream name"));
         }
         let name = unsafe {
@@ -135,7 +135,7 @@ pub(crate) fn reject_unpreserved_attributes(file: &File) -> io::Result<()> {
             break;
         }
         let next = info.NextEntryOffset as usize;
-        if next < size_of::<FILE_STREAM_INFO>() || next % 8 != 0 {
+        if next < size_of::<FILE_STREAM_INFO>() || !next.is_multiple_of(8) {
             return Err(io::Error::other("Invalid Windows stream offset"));
         }
         offset = offset

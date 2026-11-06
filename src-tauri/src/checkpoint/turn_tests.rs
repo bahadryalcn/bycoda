@@ -645,8 +645,16 @@ fn finalization_filters_unrelated_non_utf8_paths_before_decoding() {
     use std::os::unix::ffi::OsStringExt;
     let repo = tmp("turn-non-utf8");
     assert!(init_git_commit(&repo.0, &[("own.txt", "base\n")]));
-    let invalid = repo.0.join(OsString::from_vec(b"external-\xff.txt".to_vec()));
-    std::fs::write(&invalid, "before").unwrap();
+    let invalid = repo
+        .0
+        .join(OsString::from_vec(b"external-\xff.txt".to_vec()));
+    match std::fs::write(&invalid, "before") {
+        Ok(()) => {}
+        // APFS and other Unicode-only filesystems refuse non-UTF-8 names
+        // (EILSEQ), so such a path cannot occur in a repository there.
+        Err(error) if error.raw_os_error() == Some(libc::EILSEQ) => return,
+        Err(error) => panic!("create non-UTF-8 path: {error}"),
+    }
     assert!(git(&repo.0, &["add", "--all"]));
     assert!(git(&repo.0, &["commit", "-m", "external file"]));
     let cwd = repo.0.to_string_lossy().into_owned();
@@ -657,6 +665,9 @@ fn finalization_filters_unrelated_non_utf8_paths_before_decoding() {
     store.capture("session", &cwd, &["own.txt".into()]).unwrap();
     std::fs::write(&invalid, "external").unwrap();
     store.finish_turn("session", &cwd, "one", false).unwrap();
-    assert_eq!(relatives(&store.status("session", &cwd).unwrap()), vec!["own.txt"]);
+    assert_eq!(
+        relatives(&store.status("session", &cwd).unwrap()),
+        vec!["own.txt"]
+    );
     assert_eq!(std::fs::read(&invalid).unwrap(), b"external");
 }

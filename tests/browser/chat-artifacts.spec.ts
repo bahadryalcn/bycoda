@@ -6,7 +6,8 @@ test("background commands wrap without losing their start and remain separate", 
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/transcript.html?chat-layout&background-work");
   const dock = page.getByRole("region", { name: "Turn activity", exact: true });
-  await dock.locator("button[aria-expanded]").click();
+  // The counts info button also reports aria-expanded; open the list toggle itself.
+  await dock.locator("button[data-dock-toggle]").click();
   const rows = dock.locator("[data-dock-agent]");
   await expect(rows).toHaveCount(10);
   await expect(rows.first()).toHaveAttribute("data-dock-agent", "layout-command-9");

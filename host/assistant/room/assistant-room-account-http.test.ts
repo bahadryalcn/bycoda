@@ -19,6 +19,10 @@ import { HostStore } from "../../store";
 import { HostEngine } from "../../engine";
 import { createHostServer } from "../../server";
 
+// About 3s on Linux and macOS runners. Windows runners run this SQLite-heavy flow
+// roughly ten times slower (about 28s), too close to the 30s suite default.
+vi.setConfig({ testTimeout: process.platform === "win32" ? 60_000 : 15_000 });
+
 it("discovers only granted accounts and reads the exact account from a projectless Room over HTTP", async () => {
   const directory = mkdtempSync(join(tmpdir(), "bycoda-room-account-"));
   const store = new HostStore(join(directory, "host.db"));
@@ -435,4 +439,4 @@ it("discovers only granted accounts and reads the exact account from a projectle
     await store.close();
     rmSync(directory, { recursive: true, force: true });
   }
-}, 15000);
+});

@@ -27,7 +27,8 @@ for (const theme of ["dark", "light"])
       );
       const card = page.locator(`section[aria-label="${title}"]`);
       const toolbarButtons = card.getByRole("button");
-      await expect(toolbarButtons).toHaveCount(4);
+      // Source, Open in panel, Expand, Preview restrictions and Reload preview.
+      await expect(toolbarButtons).toHaveCount(5);
       const positions = await toolbarButtons.evaluateAll((buttons) =>
         buttons.map((button) => button.getBoundingClientRect().top),
       );

@@ -422,9 +422,9 @@ export class HostChildBackend implements ChildBackend {
           return (await writers.runWork(hostRun, async () => {
             started = true;
             const workspace = await create(async (cwd) => {
-              slot.cwd = cwd;
-              const identity = await lstat(cwd);
-              slot.identity = { dev: identity.dev, ino: identity.ino };
+              slot.cwd = await canonicalWorkspacePath(cwd); // reclaim needs a symlink-free path
+              const { dev, ino } = await lstat(slot.cwd);
+              slot.identity = { dev, ino };
             });
             const grant = await writers.grantCwd(hostRun, workspace.cwd, "text-sandbox");
             slot.grant = grant;

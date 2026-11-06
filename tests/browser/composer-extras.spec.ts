@@ -36,6 +36,9 @@ test("composer attachment submission stays local and keeps Stop available", asyn
     const original = fixture.__TAURI_INTERNALS__.invoke;
     fixture.__TAURI_INTERNALS__.invoke = async (command, args) => {
       if (command === "clipboard_file_paths") return [];
+      // Pasted images are saved before they join the draft; the isolated path stands in.
+      if (command === "write_attachment")
+        return `C:/isolated-fixture/${(args as { name: string }).name}`;
       if (command === "clipboard_image") {
         await new Promise<void>((resolve) => {
           fixture.finishComposerPaste = resolve;
@@ -1299,6 +1302,23 @@ test("independent scalar model settings preserve the draft caret and sibling val
 test("external drop: the composer shows one mark and one badge that names the attach action", async ({
   page,
 }) => {
+  // A dropped image is saved through the native attachment store before it joins
+  // the draft; only that write is stood in for, with an isolated path.
+  await page.addInitScript(() => {
+    Object.assign(window, {
+      __TAURI_INTERNALS__: {
+        metadata: { currentWebview: { label: "fixture" }, currentWindow: { label: "fixture" } },
+        transformCallback: () => 1,
+        unregisterCallback: () => {},
+        invoke: async (command: string, args?: { name?: string }) => {
+          if (command === "plugin:event|listen") return 1;
+          if (command === "plugin:event|unlisten") return;
+          if (command === "write_attachment") return `C:/isolated-fixture/${args?.name}`;
+          throw new Error(`No native host in composer fixture: ${command}`);
+        },
+      },
+    });
+  });
   await page.goto("/tests/browser/composer-extras.html");
   const box = page.locator("[data-composer-box]").first();
   await expect(box).toBeVisible();

@@ -32,6 +32,8 @@ const status = {
   agentInstalled: true,
   platform: "win32",
   platforms: [{ platform: "android" as const, available: true }],
+  // The panel gates device control on Host-owned control leases.
+  controlProtocol: 1 as const,
 };
 const canvas = document.createElement("canvas");
 canvas.width = 360;
@@ -79,6 +81,20 @@ const api: DevicePanelApi = {
   action: async (_deviceId, action) => {
     await operation(action.type);
     return "Completed";
+  },
+  controlStatus: async (deviceId) => ({ deviceId, busy: false }),
+  claimControl: async (deviceId, requestId) => {
+    await operation("claim");
+    return { deviceId, leaseId: `fixture-lease-${requestId}`, expiresAt: Date.now() + 60_000 };
+  },
+  renewControl: async (deviceId, leaseId) => ({
+    deviceId,
+    leaseId,
+    expiresAt: Date.now() + 60_000,
+  }),
+  releaseControl: async () => {
+    await operation("release");
+    return { released: true };
   },
 };
 const server: DevServer = {

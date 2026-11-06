@@ -1,5 +1,5 @@
 import { test, expect, type Browser, type BrowserContext, type Page } from "@playwright/test";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { SharedBrowser, type BrowserLoader } from "../../host/browser/shared-browser";
 import type { BrowserAnnotationCapture } from "../../src/shared/lib/browserAnnotation";
 
@@ -901,6 +901,8 @@ for (const delay of [0, 80, 150]) {
       };
       expect(output.rpc["browser.frame"].maxFrameBytes).toBeLessThanOrEqual(2 * 1024 * 1024);
       expect(allSent).toHaveLength(26);
+      // Evidence goes to an ignored folder that a fresh checkout does not have yet.
+      mkdirSync("temp/verification/2026-11-04-browser-host", { recursive: true });
       writeFileSync(
         `temp/verification/2026-11-04-browser-host/baseline-${delay}.json`,
         JSON.stringify(output, null, 2),

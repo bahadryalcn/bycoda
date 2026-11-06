@@ -131,12 +131,12 @@ pub fn windows_listeners() -> napi::Result<Vec<WindowsListener>> {
                     0,
                 )
             };
-            if status != ERROR_INSUFFICIENT_BUFFER || bytes < 4 || bytes > 8 * 1024 * 1024 {
+            if status != ERROR_INSUFFICIENT_BUFFER || !(4..=8 * 1024 * 1024).contains(&bytes) {
                 return Err(napi::Error::from_reason(
                     "Windows listener table is unavailable",
                 ));
             }
-            let mut storage = vec![0u64; (bytes as usize + 7) / 8];
+            let mut storage = vec![0u64; (bytes as usize).div_ceil(8)];
             if unsafe {
                 GetExtendedTcpTable(
                     storage.as_mut_ptr().cast(),

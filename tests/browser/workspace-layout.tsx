@@ -21,6 +21,7 @@ import { applyMoveFileBetweenPanes } from "../../src/features/workspace/model/wo
 import { TitleBar } from "../../src/app/shell/TitleBar";
 import { DetachedWorkingBar } from "../../src/app/shell/DetachedWorkingBar";
 import { newSession } from "../../src/features/sessions/model/session";
+import { flushHostSessionBindings } from "../../src/features/connections/public/sessionExecutionBinding";
 import { languageReady } from "../../src/shared/i18n";
 import "./w7-shell.css";
 
@@ -326,7 +327,9 @@ if (new URLSearchParams(location.search).has("html-link")) {
     new URLSearchParams(location.search).get("theme") === "light" ? "light" : "dark",
   );
 }
-void languageReady.then(() =>
+// The app resolves durable session owners at boot before any pane renders;
+// the fixture mounts chat panes directly, so it hydrates the same store first.
+void Promise.all([languageReady, flushHostSessionBindings()]).then(() =>
   createRoot(document.getElementById("root")!).render(
     new URLSearchParams(location.search).has("html-link") ? <HtmlLinkFixture /> : <Fixture />,
   ),

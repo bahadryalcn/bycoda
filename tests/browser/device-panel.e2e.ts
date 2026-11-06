@@ -5,6 +5,8 @@ const captures = "temp/verification/2026-10-26-device-panel";
 
 async function ready(page: Page, detached = true, theme = "dark") {
   await page.goto(`${fixture}?${detached ? "detached=1&" : ""}theme=${theme}`);
+  // Opening the panel only observes the device host; connecting is explicit.
+  await page.getByRole("button", { name: "Connect devices", exact: true }).click();
   await page.getByRole("button", { name: /^Start (emulator|simulator)$/ }).click();
   await expect(page.getByRole("img", { name: "Current device screen", exact: true })).toBeVisible();
 }

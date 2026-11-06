@@ -164,7 +164,8 @@ test("bulk selection spans pages, confirms explicitly and deletes only selected 
   await page.getByRole("button", { name: "Select notes", exact: true }).click();
   await page.getByRole("checkbox", { name: "Select all filtered notes", exact: true }).check();
   await expect(page.getByText("42 selected", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Next page", exact: true }).click();
+  // The library is one continuous list; every filtered note row is selected.
+  await expect(page.locator('.note-selectable-row input[type="checkbox"]')).toHaveCount(42);
   for (const checkbox of await page.locator('.note-selectable-row input[type="checkbox"]').all()) {
     await expect(checkbox).toBeChecked();
   }
@@ -178,7 +179,6 @@ test("bulk selection spans pages, confirms explicitly and deletes only selected 
     ),
   ).toBe(42);
   await page.getByRole("checkbox", { name: "Select all filtered notes", exact: true }).uncheck();
-  await page.getByRole("button", { name: "Previous page", exact: true }).click();
   await page.getByRole("checkbox", { name: "Select note: Release planning", exact: true }).check();
   await page.getByRole("button", { name: "Delete selected", exact: true }).click();
   await page
@@ -507,8 +507,10 @@ test("bounds a thousand large notes while fetching selected details and moving k
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/tests/browser/notes.html?count=1000");
   await expect(page.getByLabel("Note title", { exact: true })).toHaveValue("Release planning");
-  const cards = page.locator("[data-note-library] li button[data-note-id]");
-  await expect.poll(() => cards.count()).toBeLessThanOrEqual(32);
+  // The library renders a bounded virtual window instead of 32-note pages.
+  const cards = page.locator("[data-note-library] button[data-note-id]");
+  const bounded = () => expect.poll(() => cards.count()).toBeLessThanOrEqual(64);
+  await bounded();
   const initialCalls = await page.evaluate(
     () =>
       (window as unknown as { notesFixtureCalls: { command: string; bytes?: number }[] })
@@ -522,12 +524,16 @@ test("bounds a thousand large notes while fetching selected details and moving k
   await page.getByRole("button", { name: "Filters and options", exact: true }).click();
   await choose(page, "Group notes by", "No grouping");
   await page.keyboard.press("Escape");
-  await expect(cards).toHaveCount(32);
+  await expect(page.locator('[data-note-library] [data-note-id="note-1"]')).toBeVisible();
+  await bounded();
+  // ArrowDown from the last rendered card moves past the window edge.
+  const lastId = await cards.last().getAttribute("data-note-id");
+  const nextIndex = Number(lastId!.replace("note-", "")) + 1;
   await cards.last().focus();
   await page.keyboard.press("ArrowDown");
-  await expect(page.locator('[data-note-id="note-32"]')).toBeFocused();
-  await expect(page.getByLabel("Note title", { exact: true })).toHaveValue("Note 32");
-  await expect(cards).toHaveCount(32);
+  await expect(page.locator(`[data-note-id="note-${nextIndex}"]`)).toBeFocused();
+  await expect(page.getByLabel("Note title", { exact: true })).toHaveValue(`Note ${nextIndex}`);
+  await bounded();
   await page.getByLabel("Filter notes", { exact: true }).fill("Search marker past preview 999");
   await expect(cards).toHaveCount(1);
   await cards.first().click();
@@ -539,13 +545,12 @@ test("bounds a thousand large notes while fetching selected details and moving k
   // The list uses a deferred query. Wait until its full-library result has
   // painted before navigating within that result, including on WebKit.
   await expect(page.getByText("1000 notes", { exact: true })).toBeVisible();
-  await expect(cards).toHaveCount(8);
-  await expect.poll(() => cards.count()).toBeLessThanOrEqual(32);
+  await bounded();
   await expect(page.locator('[data-note-library] [aria-current="true"]')).toBeInViewport();
   await page.locator('[data-note-id="note-999"]').focus();
   await page.keyboard.press("Home");
   await expect(page.locator('[data-note-id="note-0"]')).toBeFocused();
-  await expect(cards).toHaveCount(32);
+  await bounded();
   const calls = await page.evaluate(
     () =>
       (
@@ -556,7 +561,7 @@ test("bounds a thousand large notes while fetching selected details and moving k
   );
   expect(calls.filter((call) => call.command === "notes_get").map((call) => call.id)).toEqual([
     "note-0",
-    "note-32",
+    `note-${nextIndex}`,
     "note-999",
   ]);
   expect(

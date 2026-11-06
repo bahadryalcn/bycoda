@@ -299,11 +299,25 @@ for (const width of [1280, 800])
       await expect(page.locator("[data-prompt-anchor]")).toContainText(
         "Keep this work isolated from main",
       );
-      const calls = await page.evaluate(() => (window as any).rewindFixtureCalls);
-      const prepared = calls.find((call: any) => call.method === "workspaces.prepare");
-      const created = calls.find(
-        (call: any) => call.method === "commands.dispatch" && call.params.type === "create",
-      );
+      // The prompt paints before the send awaits durable owner evidence, so the
+      // Host calls arrive after it.
+      const hostCalls = () =>
+        page.evaluate(() => {
+          const calls = (window as any).rewindFixtureCalls as any[];
+          return {
+            prepared: calls.find((call) => call.method === "workspaces.prepare"),
+            created: calls.find(
+              (call) => call.method === "commands.dispatch" && call.params.type === "create",
+            ),
+          };
+        });
+      await expect
+        .poll(async () => {
+          const { prepared, created } = await hostCalls();
+          return !!prepared && !!created;
+        })
+        .toBe(true);
+      const { prepared, created } = await hostCalls();
       expect(prepared.params.owner.id).toBe(created.params.sessionId);
       expect(created.params.workspaceId).toBe("workspace");
       expect(created.params.worktreeCwd).toBe("C:/fixture/rewind-worktrees/session");

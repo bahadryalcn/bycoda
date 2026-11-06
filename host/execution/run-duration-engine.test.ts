@@ -106,11 +106,13 @@ it("does not publish a finish checkpoint if the settled session save fails", asy
       sessionId: created.sessionId,
       text: "Test",
     });
-    await vi.waitFor(() => expect(refused).toBe(true));
+    // The run settles asynchronously after dispatch; slow Windows runners need
+    // more than vi.waitFor's default one second to reach the settled save.
+    await vi.waitFor(() => expect(refused).toBe(true), { timeout: 20_000, interval: 50 });
     expect(await finishedRunProgress(store, created.sessionId, receipt.runId!)).toBeNull();
   } finally {
     await engine.close().catch(() => {}); // The injected persistence failure is retained in cleanup.
     await store.close();
     rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 60_000);

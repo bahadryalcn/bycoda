@@ -39,10 +39,26 @@ function errorLeaves(error: unknown): unknown[] {
   return error instanceof AggregateError ? error.errors.flatMap(errorLeaves) : [error];
 }
 
+// A durable receipt precedes real file-history and Git preparation, which takes
+// seconds per turn on Windows runners. Await the fake provider's actual admission
+// instead of polling for one second; store polls get an explicit bound.
+function signal() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+const POLL = { timeout: 10_000 };
+// Windows runners spend those seconds on every turn; keep one bounded file budget.
+vi.setConfig({ testTimeout: process.platform === "win32" ? 90_000 : 30_000 });
+
 it("seeds a committed follow-up from the revision advanced by a late first-turn title", async () => {
   const folder = mkdtempSync(join(tmpdir(), "bycoda-engine-async-"));
   const store = new HostStore(join(folder, "host.db"));
   const turns: Array<{ input: SendTurnInput; finish: () => void }> = [];
+  const started = [signal(), signal()];
+  const titleRequested = signal();
   let releaseTitle!: (value: { title: string; workItem: null }) => void;
   const title = new Promise<{ title: string; workItem: null }>((resolve) => {
     releaseTitle = resolve;
@@ -53,7 +69,10 @@ it("seeds a committed follow-up from the revision advanced by a late first-turn 
   });
   const provider = {
     send: vi.fn(async (input: SendTurnInput) => {
-      await new Promise<void>((finish) => turns.push({ input, finish }));
+      await new Promise<void>((finish) => {
+        turns.push({ input, finish });
+        started[turns.length - 1]?.resolve();
+      });
     }),
     stop: async () => {
       for (const turn of turns) turn.finish();
@@ -62,7 +81,10 @@ it("seeds a committed follow-up from the revision advanced by a late first-turn 
     bind() {},
     approve() {},
     answer() {},
-    generateTitle: vi.fn(() => title),
+    generateTitle: vi.fn(() => {
+      titleRequested.resolve();
+      return title;
+    }),
   };
   const engine = new HostEngine(store, { codex: provider });
   const errors = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -85,10 +107,9 @@ it("seeds a committed follow-up from the revision advanced by a late first-turn 
       sessionId,
       text: "First turn",
     });
-    await vi.waitFor(() => {
-      expect(turns).toHaveLength(1);
-      expect(provider.generateTitle).toHaveBeenCalledOnce();
-    });
+    await Promise.all([started[0].promise, titleRequested.promise]);
+    expect(turns).toHaveLength(1);
+    expect(provider.generateTitle).toHaveBeenCalledOnce();
     turns[0].input.onEvent({ type: "message.delta", text: "A completed" });
     turns[0].finish();
     await engine.waitForRun(sessionId, first.runId);
@@ -137,11 +158,12 @@ it("seeds a committed follow-up from the revision advanced by a late first-turn 
       expect(named.revision).toBe(receipt.revision + 1);
       expect(named.runId).toBe(receipt.runId);
       expect(named.status).toBe("running");
-    });
+    }, POLL);
     expect(provider.send).toHaveBeenCalledOnce();
     releaseDispatch();
     await dispatching;
-    await vi.waitFor(() => expect(turns).toHaveLength(2));
+    await started[1].promise;
+    expect(turns).toHaveLength(2);
     expect(turns[1].input.sessionId).toBe(sessionId);
     expect(turns[1].input.text).toContain("Second turn");
     turns[1].input.onEvent({ type: "turn.started", providerTurnId: "turn-B" });
@@ -149,7 +171,7 @@ it("seeds a committed follow-up from the revision advanced by a late first-turn 
       const started = await store.session(sessionId);
       expect(started.revision).toBe(receipt.revision + 2);
       expect(started.session.blocks.at(-1)?.providerTurnId).toBe("turn-B");
-    });
+    }, POLL);
     turns[1].input.onEvent({ type: "message.delta", text: "B completed" });
     turns[1].finish();
     await engine.waitForRun(sessionId, receipt.runId);
@@ -199,8 +221,10 @@ it.each(["run", "status"] as const)(
   async (changed) => {
     const folder = mkdtempSync(join(tmpdir(), "bycoda-engine-async-"));
     const store = new HostStore(join(folder, "host.db"));
+    const sent = signal();
     const provider = {
       send: vi.fn(async (input: SendTurnInput) => {
+        sent.resolve();
         input.onEvent({ type: "message.delta", text: "Fresh explicit turn" });
       }),
       stop: async () => {},
@@ -260,7 +284,8 @@ it.each(["run", "status"] as const)(
         sessionId,
         text: "Fresh request",
       });
-      await vi.waitFor(() => expect(provider.send).toHaveBeenCalledOnce());
+      await sent.promise;
+      expect(provider.send).toHaveBeenCalledOnce();
       await engine.waitForRun(sessionId, fresh.runId);
       const settled = await store.session(sessionId);
       expect(settled.status).toBe("idle");
@@ -413,7 +438,7 @@ it("discards optional naming results after shutdown without admitting another SQ
       sessionId: created.sessionId,
       text: "hello",
     });
-    await vi.waitFor(() => expect(provider.generateTitle).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(provider.generateTitle).toHaveBeenCalledOnce(), POLL);
     await engine.waitForRun(created.sessionId, receipt.runId);
     const before = await store.session(created.sessionId);
     const flushAll = store.flushAll.bind(store);
@@ -434,7 +459,7 @@ it("discards optional naming results after shutdown without admitting another SQ
     const closing = engine.close().then(() => {
       closed = true;
     });
-    await vi.waitFor(() => expect(provider.stop).toHaveBeenCalled());
+    await vi.waitFor(() => expect(provider.stop).toHaveBeenCalled(), POLL);
     expect(closed).toBe(false);
     const sql = vi.spyOn(store.db, "scope");
     restoreSql = () => sql.mockRestore();
@@ -466,6 +491,7 @@ it("does not acknowledge or dispatch a locked command until its receipt commits 
   let finish!: () => void;
   let sends = 0;
   let committedBeforeDispatch = false;
+  const dispatched = signal();
   const provider = {
     send: async () => {
       sends++;
@@ -477,6 +503,7 @@ it("does not acknowledge or dispatch a locked command until its receipt commits 
       } finally {
         reader.close();
       }
+      dispatched.resolve();
       await new Promise<void>((resolve) => {
         finish = resolve;
       });
@@ -533,7 +560,8 @@ it("does not acknowledge or dispatch a locked command until its receipt commits 
     expect(sends).toBe(0);
     const receipt = await pending;
     expect(receipt.sessionId).toBe(created.sessionId);
-    await vi.waitFor(() => expect(sends).toBe(1));
+    await dispatched.promise;
+    expect(sends).toBe(1);
     expect(committedBeforeDispatch).toBe(true);
   } finally {
     if (timer) clearTimeout(timer);
@@ -554,11 +582,13 @@ it("re-reads accepted edits after recovery checkpoints and joins started recover
   let finish = () => {};
   let releaseCheckpoint = () => {};
   let releaseSettled = () => {};
+  const admitted = signal();
   const provider = {
     send: vi.fn(
       async () =>
         new Promise<void>((resolve) => {
           finish = resolve;
+          admitted.resolve();
         }),
     ),
     stop: async () => {
@@ -624,7 +654,8 @@ it("re-reads accepted edits after recovery checkpoints and joins started recover
       sessionId: created.sessionId,
       text: "hello",
     });
-    await vi.waitFor(() => expect(provider.send).toHaveBeenCalledOnce());
+    await admitted.promise;
+    expect(provider.send).toHaveBeenCalledOnce();
     finish();
     await checkpointReady;
     await engine.updateSession(created.sessionId, {

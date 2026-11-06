@@ -100,6 +100,7 @@ import { NoteEditablePreview } from "./NoteEditablePreview";
 import { NoteSaveStatus } from "./NoteSaveStatus";
 import { NoteEditorPane } from "./NoteEditorPane";
 import { useNoteEditorMode } from "./useNoteEditorMode";
+import { useNoteInView } from "./useNoteInView";
 import { useNoteFindRequest } from "./useNoteFindRequest";
 import { useNoteImageInsertion } from "./useNoteImageInsertion";
 import {
@@ -392,11 +393,7 @@ export function NotesView({
     rememberedNoteId = selectedId;
   }, [selectedId]);
 
-  useEffect(() => {
-    listScroller.current
-      ?.querySelector<HTMLElement>('[aria-current="true"]')
-      ?.scrollIntoView?.({ block: "nearest" });
-  }, [selectedId, loading]);
+  useNoteInView(listScroller, [selectedId, loading, deferredQuery, projectFilter, tagFilter]);
   useEffect(() => {
     const requested = pendingListFocus.current;
     if (!requested) return;

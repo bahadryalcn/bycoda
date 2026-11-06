@@ -78,21 +78,22 @@ for (const light of [true, false]) {
         light,
       );
       await openHostReports(page);
+      // An empty first Host window keeps an explicit continuation instead of numbered pages.
       await expect(
-        page.getByText("No reports needing recovery on this page.", { exact: true }),
+        page.getByRole("heading", { name: "No earlier file reports.", exact: true }),
       ).toBeVisible();
-      await expect(page.getByRole("button", { name: "Next", exact: true })).toBeEnabled();
+      await expect(page.getByRole("button", { name: "Load more", exact: true })).toBeEnabled();
       await page.screenshot({
         path: info.outputPath(`host-empty-${width}-${light}.png`),
         animations: "disabled",
       });
-      await page.getByRole("button", { name: "Next", exact: true }).click();
+      await page.getByRole("button", { name: "Load more", exact: true }).click();
       await expect(
         page.getByRole("list", { name: "Earlier file reports", exact: true }),
       ).toContainText("Report 3");
       await expect(
         page.getByText(
-          "Some Host reports are unavailable. You can inspect the available reports or refresh to retry.",
+          "This Host result may be incomplete. Inspect available reports or refresh to retry.",
           { exact: true },
         ),
       ).toBeVisible();
@@ -165,7 +166,7 @@ for (const light of [true, false]) {
       );
       await openHostReports(page);
       const reports = page.getByRole("list", { name: "Earlier file reports", exact: true });
-      await expect(reports.locator("li")).toHaveCount(25);
+      await expect(reports.locator("[data-collection-key]")).toHaveCount(25);
       // The pane keeps toolbar, counts and footer in place; the list's own scroller is `.recovery-body`.
       expect(
         await reports.evaluate((element) => {
@@ -303,7 +304,7 @@ async function openEarlierReports(page: Page) {
 const legacyRow = (page: Page) =>
   page
     .getByRole("list", { name: "Earlier file reports", exact: true })
-    .locator("li")
+    .locator("[data-collection-key]")
     .filter({ hasText: "Earlier desktop report" });
 async function sourceUntouched(page: Page) {
   const state = await snapshot(page);
@@ -600,7 +601,7 @@ for (const width of [1280, 800]) {
       await openEarlierReports(page);
       const blocked = page
         .getByRole("list", { name: "Earlier file reports", exact: true })
-        .locator("li")
+        .locator("[data-collection-key]")
         .filter({ hasText: "Uninspectable retained report" });
       await expect(
         blocked.getByRole("button", { name: "Inspect report", exact: true }),

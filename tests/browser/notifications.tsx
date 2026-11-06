@@ -1,6 +1,7 @@
 import { useState, type ComponentProps } from "react";
 import { createRoot } from "react-dom/client";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
+import { flushHostSessionBindings } from "../../src/features/connections/public/sessionExecutionBinding";
 import { ApprovalToasts } from "../../src/features/sessions/ui/ApprovalToasts";
 import { NOTIFICATION_HISTORY_KEY } from "../../src/features/notifications/model/notificationHistory";
 import { rememberNotificationProjects } from "../../src/features/notifications/model/notificationProjects";
@@ -88,4 +89,7 @@ function Fixture() {
     </>
   );
 }
+// The app resolves durable session owners at boot before any approval can bind;
+// the fixture mounts the toasts directly, so it hydrates the same store first.
+await flushHostSessionBindings();
 createRoot(document.getElementById("root")!).render(<Fixture />);
