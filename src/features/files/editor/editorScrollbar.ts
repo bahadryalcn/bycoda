@@ -496,8 +496,11 @@ const scrollbarTheme = EditorView.theme({
     right: "3px",
     minHeight: `${MIN_THUMB_HEIGHT}px`,
     borderRadius: "2px",
-    backgroundColor: "var(--ui-scrollbar-thumb)",
+    backgroundColor: "transparent",
     willChange: "transform",
+  },
+  "&:hover .cm-editorScrollbarThumb, &:focus-within .cm-editorScrollbarThumb": {
+    backgroundColor: "var(--ui-scrollbar-thumb)",
   },
   ".cm-editorScrollbar[data-hover] .cm-editorScrollbarThumb": {
     backgroundColor: "var(--ui-scrollbar-thumb-hover)",
@@ -539,6 +542,9 @@ const scrollbarTheme = EditorView.theme({
   },
   "&:not(.cm-focused) .cm-editorScrollbarCursor": {
     opacity: "0.6",
+  },
+  "@media (hover: none)": {
+    ".cm-editorScrollbarThumb": { backgroundColor: "var(--ui-scrollbar-thumb)" },
   },
   "@media (forced-colors: active)": {
     ".cm-scroller": { scrollbarWidth: "auto" },

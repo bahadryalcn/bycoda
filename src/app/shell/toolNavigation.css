@@ -30,7 +30,6 @@
   block-size: 100%;
   overflow-x: auto;
   overscroll-behavior-inline: contain;
-  scrollbar-width: thin;
 }
 .tool-tabs button {
   display: inline-flex;

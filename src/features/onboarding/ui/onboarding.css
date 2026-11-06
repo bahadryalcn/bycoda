@@ -123,7 +123,6 @@
   min-block-size: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
   /* Room for focus rings and the selected outline at the scroll edges. */
   padding: 2px;
   margin: -2px;

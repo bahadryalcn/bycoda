@@ -1,0 +1,199 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  gap: 16px;
+}
+
+.root > :global(.settings-advanced) {
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+
+.root :global(.settings-group) {
+  padding-block-start: 0;
+}
+
+.storage {
+  min-inline-size: 0;
+}
+
+.policySummary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  inline-size: 100%;
+}
+
+.policySummary > span:first-child {
+  margin-inline-start: auto;
+  color: var(--ui-text-secondary);
+  font-weight: 400;
+}
+
+.root :global(.settings-advanced-content) > :global(.settings-group) {
+  padding-block-start: 12px;
+}
+
+.retentionHint {
+  padding: 8px 16px 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.retentionGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.retentionGrid :global(.settings-row) {
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.retentionGrid :global(.settings-row-control) {
+  margin-inline-start: auto;
+}
+
+.workspaceRow {
+  align-items: flex-start;
+}
+
+.treeIcon {
+  inline-size: var(--ui-icon-md, 16px);
+  block-size: var(--ui-icon-md, 16px);
+  flex-shrink: 0;
+  margin-block-start: 3px;
+  color: var(--ui-text-muted);
+}
+
+.identity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.workspaceHeading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  min-inline-size: 0;
+}
+
+.workspaceTitle {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+}
+
+.lifecycle,
+.branch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.lifecycle {
+  white-space: nowrap;
+}
+
+.ellipsis {
+  min-inline-size: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.details {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.details > summary {
+  cursor: pointer;
+  inline-size: fit-content;
+}
+
+.detailValues {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 12px;
+  padding-block: 8px 4px;
+  overflow-wrap: anywhere;
+}
+
+.detailValues dt,
+.rootPath dt {
+  color: var(--ui-text-muted);
+}
+
+.detailValues dd,
+.rootPath dd {
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.rowActions {
+  flex-shrink: 0;
+  gap: 4px;
+}
+
+.storageMetrics {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 12px 24px;
+  margin: 0;
+  padding: 4px 16px 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.storageMetrics > div {
+  min-inline-size: 0;
+}
+
+.storageMetrics dt {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.storageMetrics dd {
+  margin: 4px 0 8px;
+  overflow-wrap: anywhere;
+  font-size: var(--ui-font-secondary);
+  font-weight: 500;
+}
+
+.rootPath {
+  display: grid;
+  gap: 4px;
+  padding: 8px 16px;
+  overflow-wrap: anywhere;
+  font-size: var(--ui-font-caption);
+}
+
+@media (max-width: 640px) {
+  .retentionGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .detailValues {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .detailValues dd + dt {
+    padding-block-start: 4px;
+  }
+}

@@ -18,6 +18,8 @@ vi.mock("../model/workspaceClient", async (original) => ({
   workspaceRequest: vi.fn(),
 }));
 
+import type { ManagedWorkspace } from "../model/contracts";
+import type { Session } from "../../sessions/model/session";
 import { workspaceRequest } from "../model/workspaceClient";
 import { WorkspacePolicySettings, workspacePolicyDiskErrors } from "./WorkspacePolicySettings";
 
@@ -57,6 +59,7 @@ let root: Root;
 let hostPolicy = policyAt(1, "current");
 let storageFails = false;
 let storageBytes = 2 * GIB;
+let inventory: ManagedWorkspace[] = [];
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   container = document.createElement("div");
@@ -65,8 +68,9 @@ beforeEach(() => {
   hostPolicy = policyAt(1, "current");
   storageFails = false;
   storageBytes = 2 * GIB;
+  inventory = [];
   vi.mocked(workspaceRequest).mockImplementation((async (method: string) => {
-    if (method === "workspaces.list") return [];
+    if (method === "workspaces.list") return inventory;
     if (method === "projects.workspacePolicy.get") return hostPolicy;
     if (method === "workspaces.storage.status") {
       if (storageFails) throw new Error("storage probe failed");
@@ -144,5 +148,64 @@ it("labels stale storage on its own section and retries it without touching the 
   await act(async () => button("Retry")!.click());
   expect(container.textContent).not.toContain("could not refresh and may be out of date");
   expect(container.textContent).toContain("1.0 GiB / 10.0 GiB");
+  expect(pinBox().getAttribute("aria-checked")).toBe("true");
+});
+
+it("keeps exact branch identity distinct when a managed workspace has no session title", async () => {
+  inventory = [
+    {
+      id: "workspace-a",
+      path: "/repo-worktrees/wt-a",
+      owner: { kind: "session", id: "session-a" },
+      branchRef: "refs/heads/bycoda/s/branch-a",
+      state: "idle",
+      directoryState: "present",
+      pinned: false,
+    } as ManagedWorkspace,
+    {
+      id: "workspace-b",
+      path: "/repo-worktrees/wt-b",
+      owner: { kind: "session", id: "session-b" },
+      branchRef: "refs/heads/bycoda/s/branch-b",
+      state: "active",
+      directoryState: "present",
+      pinned: false,
+    } as ManagedWorkspace,
+  ];
+  await act(async () =>
+    root.render(
+      createElement(WorkspacePolicySettings, {
+        cwd: "/repo",
+        liveSessions: [{ id: "session-a", title: "Provider settings parity" } as Session],
+      }),
+    ),
+  );
+  const rows = [...container.querySelectorAll<HTMLElement>('[role="listitem"]')];
+  expect(rows[0].textContent).toContain("Provider settings parity");
+  expect(rows[1].textContent).toContain("bycoda/s/branch-b");
+  const details = rows[0].querySelector("details")!;
+  expect([...details.querySelectorAll("dt")].map((label) => label.textContent)).toEqual([
+    "Folder",
+    "Branch",
+    "Workspace ID",
+    "Owner",
+  ]);
+  expect(details.textContent).toContain("refs/heads/bycoda/s/branch-a");
+  expect(details.textContent).toContain("workspace-a");
+  expect(details.textContent).toContain("session-a");
+});
+
+it("refreshes storage without reloading policy or losing its draft", async () => {
+  await mount();
+  await act(async () => pinBox().click());
+  vi.mocked(workspaceRequest).mockClear();
+  storageBytes = 3 * GIB;
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('[aria-label="Refresh storage"]')!.click(),
+  );
+  expect(vi.mocked(workspaceRequest).mock.calls.map(([method]) => method)).toEqual([
+    "workspaces.storage.status",
+  ]);
+  expect(container.textContent).toContain("3.0 GiB / 10.0 GiB");
   expect(pinBox().getAttribute("aria-checked")).toBe("true");
 });

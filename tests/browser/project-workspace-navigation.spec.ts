@@ -756,9 +756,9 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
       name: /^Working copy: main · api · This session/,
     }),
   ).toBeVisible();
-  await expect(panel.locator("[data-checkout-list]")).toHaveCount(0);
+  await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
   await choose(panel, "Working copy", "All checkouts");
-  const checkouts = panel.locator("[data-checkout-list] li");
+  const checkouts = panel.locator("[data-checkout-overview] [data-git-repository]");
   await expect(checkouts).toHaveCount(2);
   for (const width of [390, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 800 });
@@ -767,17 +767,28 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
       .poll(() => panel.evaluate((node) => node.scrollWidth <= node.clientWidth))
       .toBe(true);
   }
-  await panel
-    .locator("[data-checkout-list]")
-    .getByRole("button", { name: /^mc\/task/ })
-    .click();
-  await panel.getByText("same.ts", { exact: true }).click();
+  const task = panel.locator(
+    '[data-checkout-overview] [data-git-repository="G:/wallet-worktrees/task"]',
+  );
+  const taskToggle = task.locator("header button[aria-expanded]").first();
+  await expect(taskToggle).toHaveAttribute("aria-expanded", "false");
+  await taskToggle.focus();
+  await page.keyboard.press("Enter");
+  await expect(taskToggle).toHaveAttribute("aria-expanded", "true");
+  await task.getByText("same.ts", { exact: true }).click();
   await expect(page.getByRole("status", { name: "Selected review" })).toHaveText(
     "diff:G:/wallet-worktrees/task:G:/wallet-worktrees/task/same.ts",
   );
+  await expect(
+    panel.getByRole("button", { name: "Working copy: All checkouts", exact: true }),
+  ).toBeVisible();
+  await choose(panel, "Working copy", /^mc\/task · task/);
+  await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
   await expect(panel.getByRole("button", { name: /^Working copy: mc\/task · task/ })).toBeVisible();
   await choose(panel, "Working copy", "All checkouts");
   await expect(checkouts).toHaveCount(2);
+  await expect(taskToggle).toHaveAttribute("aria-expanded", "true");
+  await expect(task.getByText("same.ts", { exact: true })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 800 });
   await page.screenshot({
     path: testInfo.outputPath("source-control-worktrees.png"),
@@ -964,7 +975,7 @@ test("rail headers, rows, title bar and session rows grow with the control densi
     const compact = await resolvePx(page, "var(--ui-control-height-compact)");
     await measure(tabs, compact, `${density} title tab`);
     const bar = await tabs.first().evaluate((tab) => {
-      for (let el: HTMLElement | null = tab; el; el = el.parentElement)
+      for (let el: HTMLElement | SVGElement | null = tab; el; el = el.parentElement)
         if (el.style.height || el.style.minHeight) return el.getBoundingClientRect().height;
       return 0;
     });

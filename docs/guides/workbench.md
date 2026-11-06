@@ -1,5 +1,11 @@
 # Workbench navigation
 
+On Windows and Linux, scrollbar thumbs appear when you hover over or focus a
+scrolling area. Touch-only devices and high-contrast mode keep them visible.
+macOS native scrollbars follow the system preference. The editor's custom thumb
+also appears on hover or focus; its diagnostic and cursor marks stay visible.
+Scrolling and dragging remain available without changing the reserved space.
+
 Collections scroll continuously instead of using numbered pages. Search, filters
 and selection remain in place while more records load. Large loaded collections
 keep only a bounded window of rows mounted. Where a provider requires a cursor or

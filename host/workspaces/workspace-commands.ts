@@ -532,7 +532,7 @@ export class WorkspaceCommands {
       case "git_worktrees":
         return await this.gitWorktrees(input.cwd);
       case "git_submodules":
-        return this.gitRoot(input.cwd).then(hostGitSubmodules);
+        return hostGitSubmodules(await this.gitRoot(input.cwd), input.includeRepositories === true);
       case "search_project":
         return await this.searchProject(input.options, owner);
       case "cancel_project_search":

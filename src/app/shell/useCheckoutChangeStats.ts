@@ -5,8 +5,11 @@ import {
   useProjectsDiffStats,
 } from "../../features/source-control/hooks/useProjectDiffStats";
 import { useProjectWorktrees } from "../../features/source-control/hooks/useProjectWorktrees";
+import { useGitSubmodules } from "../../features/source-control/hooks/useGitSubmodules";
 import {
   checkoutOptionLabel,
+  checkoutRepositoryPaths,
+  folderName,
   checkoutSelectionScope,
   loadCheckoutSelection,
   resolveCheckoutSelection,
@@ -52,36 +55,51 @@ export function useCheckoutChangeStats({
     `source-control:checkouts:${checkoutSelectionKey}:selected`,
     () => loadCheckoutSelection(checkoutSelectionKey),
   );
+  const { modules, error: discoveryError } = useGitSubmodules(
+    checkoutPaths,
+    checkoutScopeEnabled,
+    true,
+  );
+  const repositoryTargets = checkoutRepositoryPaths(checkoutPaths, modules);
   const selectedCheckout = checkoutScope
     ? resolveCheckoutSelection(
         storedCheckout,
         gitRoot,
         checkoutPaths,
         Object.fromEntries(checkoutScope.map((tree) => [tree.path, tree])),
+        modules,
       )
     : null;
   const allCheckouts = selectedCheckout === "";
   const statsRoot = selectedCheckout ? selectedCheckout : gitRoot;
   const singleStats = useProjectDiffStats(statsRoot, active && !allCheckouts);
-  const allStats = useProjectsDiffStats(allCheckouts ? checkoutPaths : [], active && allCheckouts);
+  const allStats = useProjectsDiffStats(
+    allCheckouts ? repositoryTargets : [],
+    active && allCheckouts,
+  );
   const changeStats = allCheckouts
-    ? allStats.reduce<{ files: number; additions: number; deletions: number }>(
-        (total, stats) =>
-          stats
-            ? {
-                files: total.files + stats.files,
-                additions: total.additions + stats.additions,
-                deletions: total.deletions + stats.deletions,
-              }
-            : total,
-        { files: 0, additions: 0, deletions: 0 },
-      )
+    ? discoveryError ||
+      checkoutPaths.some((path) => modules[path] === undefined) ||
+      allStats.length !== repositoryTargets.length ||
+      allStats.some((stats) => !stats)
+      ? null
+      : allStats.reduce<{ files: number; additions: number; deletions: number }>(
+          (total, stats) =>
+            stats
+              ? {
+                  files: total.files + stats.files,
+                  additions: total.additions + stats.additions,
+                  deletions: total.deletions + stats.deletions,
+                }
+              : total,
+          { files: 0, additions: 0, deletions: 0 },
+        )
     : singleStats;
   const changeScopeLabel = (() => {
     if (!checkoutScope) return "";
     if (allCheckouts) return t("All checkouts");
     const tree = checkoutScope.find((entry) => sameProjectPath(entry.path, selectedCheckout ?? ""));
-    if (!tree) return "";
+    if (!tree) return selectedCheckout ? folderName(selectedCheckout) : "";
     const own = sessionCheckout(gitRoot, checkoutPaths);
     return checkoutOptionLabel(tree, !!own && sameProjectPath(own, tree.path));
   })();

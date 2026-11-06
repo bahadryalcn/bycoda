@@ -1,4 +1,12 @@
 {
+  "Could not refresh repositories. Refresh source control to retry.": "Repositorys konnten nicht aktualisiert werden. Aktualisieren Sie die Quellcodeverwaltung, um es erneut zu versuchen.",
+  "Defaults for new workspaces": "Standards für neue Arbeitsbereiche",
+  "Active and pinned workspaces are never cleaned up automatically.": "Aktive und angeheftete Arbeitsbereiche werden nie automatisch bereinigt.",
+  "Workspace ID": "Arbeitsbereich-ID",
+  "Owner": "Eigentümer",
+  "Refresh storage": "Speicher aktualisieren",
+  "Directory budget": "Verzeichnisbudget",
+  "Storage folder": "Speicherordner",
   "Enable": "Aktivieren",
   "Disable": "Deaktivieren",
   "Applies to this project for Claude Code.": "Gilt für dieses Projekt in Claude Code.",

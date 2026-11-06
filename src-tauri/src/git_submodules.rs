@@ -46,14 +46,24 @@ impl IndexRecords {
 }
 
 #[tauri::command]
-pub async fn git_submodules(cwd: String) -> Result<Vec<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || list(&expand_home(&cwd)))
-        .await
-        .map_err(|error| error.to_string())?
+pub async fn git_submodules(
+    cwd: String,
+    include_repositories: Option<bool>,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        list_options(&expand_home(&cwd), include_repositories.unwrap_or(false))
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 /// Discover initialized gitlinks without fetching or moving any working tree.
+#[cfg(test)]
 fn list(cwd: &Path) -> Result<Vec<String>, String> {
+    list_options(cwd, false)
+}
+
+fn list_options(cwd: &Path, include_repositories: bool) -> Result<Vec<String>, String> {
     let root = cwd.canonicalize().map_err(|error| error.to_string())?;
     let deadline = Instant::now() + GIT_LOCAL_TIMEOUT;
     let mut queue = vec![root.clone()];
@@ -125,8 +135,159 @@ fn list(cwd: &Path) -> Result<Vec<String>, String> {
         )?;
         parser.finish()?;
     }
+    if include_repositories {
+        discover_repositories(&root, deadline, &mut seen, &mut paths)?;
+    }
     paths.sort();
     Ok(paths)
+}
+
+const SKIP_DIRECTORIES: &[&str] = &[
+    ".git",
+    ".hg",
+    ".svn",
+    "node_modules",
+    ".pnpm",
+    ".yarn",
+    ".cache",
+    ".next",
+    ".nuxt",
+    ".output",
+    ".turbo",
+    ".expo",
+    "target",
+    "dist",
+    "build",
+    "coverage",
+    "temp",
+];
+
+fn linked(metadata: &std::fs::Metadata) -> bool {
+    if metadata.file_type().is_symlink() {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        if metadata.file_attributes() & 0x400 != 0 {
+            return true;
+        }
+    }
+    false
+}
+
+/// Read-only opt-in discovery includes ignored source roots, skipping all directory links.
+fn discover_repositories(
+    root: &Path,
+    deadline: Instant,
+    seen: &mut HashSet<PathBuf>,
+    paths: &mut Vec<String>,
+) -> Result<(), String> {
+    let mut queue = vec![(root.to_path_buf(), 0usize)];
+    let mut index = 0usize;
+    let mut entries = 0usize;
+    while index < queue.len() {
+        if Instant::now() >= deadline {
+            return Err("Repository discovery timed out".into());
+        }
+        if index >= 10_000 {
+            return Err("Repository discovery directory limit exceeded".into());
+        }
+        let (directory, depth) = queue[index].clone();
+        index += 1;
+        // Recheck queued paths at the read boundary; this is not an atomic snapshot.
+        let metadata = std::fs::symlink_metadata(&directory).map_err(|error| error.to_string())?;
+        if !metadata.is_dir()
+            || linked(&metadata)
+            || directory
+                .canonicalize()
+                .map_err(|error| error.to_string())?
+                != directory
+            || !directory.starts_with(root)
+        {
+            return Err("Repository discovery directory changed".into());
+        }
+        #[cfg(windows)]
+        for ancestor in directory.ancestors() {
+            let metadata =
+                std::fs::symlink_metadata(ancestor).map_err(|error| error.to_string())?;
+            if !metadata.is_dir() || linked(&metadata) {
+                return Err("Repository discovery directory changed".into());
+            }
+        }
+        for entry in std::fs::read_dir(&directory).map_err(|error| error.to_string())? {
+            if Instant::now() >= deadline {
+                return Err("Repository discovery timed out".into());
+            }
+            entries += 1;
+            if entries > 200_000 {
+                return Err("Repository discovery entry limit exceeded".into());
+            }
+            let entry = entry.map_err(|error| error.to_string())?;
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            let skip = if cfg!(windows) {
+                name.to_ascii_lowercase()
+            } else {
+                name.into_owned()
+            };
+            if SKIP_DIRECTORIES.contains(&skip.as_str()) {
+                continue;
+            }
+            let path = entry.path();
+            let metadata = std::fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+            if !metadata.is_dir() || linked(&metadata) {
+                continue;
+            }
+            if depth >= 64 {
+                return Err("Repository discovery depth limit exceeded".into());
+            }
+            let child = path.canonicalize().map_err(|error| error.to_string())?;
+            if child != path || !child.starts_with(root) {
+                continue;
+            }
+            let git = match std::fs::symlink_metadata(child.join(".git")) {
+                Ok(metadata) => Some(metadata),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(error.to_string()),
+            };
+            if git.is_some_and(|metadata| {
+                !linked(&metadata) && (metadata.is_file() || metadata.is_dir())
+            }) && !seen.contains(&child)
+            {
+                let mut top = Vec::new();
+                git_stream_output(
+                    &child,
+                    &["rev-parse", "--show-toplevel"],
+                    deadline,
+                    true,
+                    |chunk| {
+                        if top.len().saturating_add(chunk.len()) > MAX_INDEX_RECORD_BYTES {
+                            return Err("Repository path is too large".into());
+                        }
+                        top.extend_from_slice(chunk);
+                        Ok(())
+                    },
+                )?;
+                let top = String::from_utf8_lossy(&top);
+                if PathBuf::from(top.trim()).canonicalize().ok().as_ref() == Some(&child) {
+                    if paths.len() >= 256 {
+                        return Err("Too many nested repositories".into());
+                    }
+                    paths.push(
+                        child
+                            .strip_prefix(root)
+                            .map_err(|error| error.to_string())?
+                            .to_string_lossy()
+                            .replace(std::path::MAIN_SEPARATOR, "/"),
+                    );
+                    seen.insert(child.clone());
+                }
+            }
+            queue.push((child, depth + 1));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -289,6 +450,83 @@ mod tests {
         run(&child, &["submodule", "deinit", "-f", "--", "nested"]);
         assert_eq!(list(&parent).unwrap(), vec!["core pack"]);
         assert!(list(&source).unwrap().is_empty());
+    }
+
+    #[test]
+    fn opt_in_discovers_ignored_repositories_and_gitfiles_without_following_links() {
+        let fixture = Fixture::new();
+        let parent = fixture.repo("parent");
+        let mobile = fixture.repo("parent/mobile");
+        let outside = fixture.repo("outside");
+        fixture.repo("parent/node_modules/dependency");
+        std::fs::write(parent.join(".gitignore"), "mobile/\nnode_modules/\n").unwrap();
+        std::fs::write(mobile.join("file.txt"), "independent draft\n").unwrap();
+        run(&mobile, &["add", "file.txt"]);
+        std::fs::write(mobile.join("file.txt"), "independent unsaved change\n").unwrap();
+        let review = parent.join("review-copy");
+        run(
+            &outside,
+            &["worktree", "add", "-qb", "review", review.to_str().unwrap()],
+        );
+        #[cfg(windows)]
+        {
+            let mut command = std::process::Command::new("cmd");
+            crate::hide_window_console(&mut command);
+            let output = crate::fs::git_cmd_output(
+                command
+                    .args(["/c", "mklink", "/J"])
+                    .arg(parent.join("external"))
+                    .arg(&outside),
+            )
+            .unwrap();
+            assert!(output.status.success());
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, parent.join("external")).unwrap();
+        let mut seen = HashSet::new();
+        let mut paths = Vec::new();
+        assert!(discover_repositories(
+            &parent.join("external"),
+            Instant::now() + GIT_LOCAL_TIMEOUT,
+            &mut seen,
+            &mut paths
+        )
+        .unwrap_err()
+        .contains("directory changed"));
+        let before = run(&parent, &["status", "--porcelain"]);
+        let index = run(&mobile, &["diff", "--cached"]);
+        assert!(list(&parent).unwrap().is_empty());
+        assert_eq!(
+            list_options(&parent, true).unwrap(),
+            vec!["mobile", "review-copy"]
+        );
+        assert_eq!(run(&parent, &["status", "--porcelain"]), before);
+        assert_eq!(run(&mobile, &["diff", "--cached"]), index);
+        assert_eq!(
+            std::fs::read_to_string(mobile.join("file.txt")).unwrap(),
+            "independent unsaved change\n"
+        );
+    }
+
+    #[test]
+    fn opt_in_reports_depth_and_deadline_limits_instead_of_empty_success() {
+        let fixture = Fixture::new();
+        let parent = fixture.repo("parent");
+        let mut nested = parent.clone();
+        for _ in 0..66 {
+            nested = nested.join("d");
+        }
+        std::fs::create_dir_all(nested).unwrap();
+        assert!(list_options(&parent, true)
+            .unwrap_err()
+            .contains("depth limit"));
+        let mut seen = HashSet::new();
+        let mut paths = Vec::new();
+        assert!(
+            discover_repositories(&parent, Instant::now(), &mut seen, &mut paths)
+                .unwrap_err()
+                .contains("timed out")
+        );
     }
 
     #[test]

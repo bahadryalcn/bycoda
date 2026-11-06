@@ -1,9 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import { fixtureSourceScan } from "./fixtureSourceScan.ts";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [fixtureSourceScan(), react(), tailwindcss()],
   build: {
     outDir: "temp/build/browser-worktrees",
     emptyOutDir: false,

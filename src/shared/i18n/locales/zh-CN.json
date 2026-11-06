@@ -1,4 +1,12 @@
 {
+  "Could not refresh repositories. Refresh source control to retry.": "无法刷新仓库。请刷新源代码管理后重试。",
+  "Defaults for new workspaces": "新工作区的默认设置",
+  "Active and pinned workspaces are never cleaned up automatically.": "活动和已固定的工作区绝不会被自动清理。",
+  "Workspace ID": "工作区 ID",
+  "Owner": "所有者",
+  "Refresh storage": "刷新存储",
+  "Directory budget": "目录配额",
+  "Storage folder": "存储文件夹",
   "Enable": "启用",
   "Disable": "禁用",
   "Applies to this project for Claude Code.": "适用于 Claude Code 的此项目。",

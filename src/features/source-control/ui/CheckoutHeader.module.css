@@ -13,8 +13,8 @@
 
 .disclosure {
   display: flex;
-  /* Zero basis: the full-width item button must not claim the actions' room. */
-  flex: 1 1 0;
+  /* Keep a readable folder name while the branch control yields space first. */
+  flex: 1 1 40%;
   align-items: center;
   gap: 4px;
   min-inline-size: 4rem;
@@ -25,13 +25,15 @@
 .identity {
   display: flex;
   flex: 1;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
   min-inline-size: 0;
 }
 
 .name,
 .path {
+  max-inline-size: 100%;
   overflow: clip;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -56,8 +58,7 @@
   color: var(--ui-tone-accent-fg);
 }
 
-/* One row: name on the left, count, branch and actions on the right. The name
-   truncates first, then the branch label; the count hides in a narrow panel. */
+/* The branch label shrinks before the folder identity; numeric counts and actions remain. */
 .actions {
   display: flex;
   flex: 0 1 auto;
@@ -66,6 +67,7 @@
   justify-content: flex-end;
   gap: 6px;
   min-inline-size: 0;
+  max-inline-size: 60%;
   margin-inline-start: auto;
 }
 
@@ -138,7 +140,7 @@
 }
 
 @container changes (max-width: 340px) {
-  .summary {
+  .conflicts {
     display: none;
   }
 }

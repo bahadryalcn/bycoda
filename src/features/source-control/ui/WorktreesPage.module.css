@@ -162,12 +162,11 @@
   color: var(--ui-text-muted);
 }
 
-.fixedHeader {
-  position: sticky;
-  inset-block-start: 0;
-  z-index: 1;
-  background: var(--color-background-base);
-  padding-block: 8px;
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
 }
 .toolbar {
   display: flex;

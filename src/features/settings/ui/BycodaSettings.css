@@ -129,7 +129,6 @@
     border-block-end: 1px solid var(--color-stroke);
     overflow-x: auto;
     overflow-y: hidden;
-    scrollbar-width: thin;
   }
   .bycoda-settings-category-group,
   .bycoda-settings-category-tabs {

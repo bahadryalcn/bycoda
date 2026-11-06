@@ -1,0 +1,5 @@
+.nested {
+  margin-inline-start: 12px;
+  border-inline-start: 1px solid var(--color-stroke);
+  min-inline-size: 0;
+}

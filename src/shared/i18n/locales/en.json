@@ -1,4 +1,12 @@
 {
+  "Could not refresh repositories. Refresh source control to retry.": "Could not refresh repositories. Refresh source control to retry.",
+  "Defaults for new workspaces": "Defaults for new workspaces",
+  "Active and pinned workspaces are never cleaned up automatically.": "Active and pinned workspaces are never cleaned up automatically.",
+  "Workspace ID": "Workspace ID",
+  "Owner": "Owner",
+  "Refresh storage": "Refresh storage",
+  "Directory budget": "Directory budget",
+  "Storage folder": "Storage folder",
   "Enable": "Enable",
   "Disable": "Disable",
   "Applies to this project for Claude Code.": "Applies to this project for Claude Code.",

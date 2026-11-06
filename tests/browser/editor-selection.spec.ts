@@ -1,6 +1,35 @@
 import { expect, test } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 
+test("editor scrollbar reveals on hover and focus without moving content", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "__TAURI_INTERNALS__", {
+      value: { invoke: async () => null, transformCallback: () => 0 },
+      configurable: true,
+    });
+  });
+  await page.goto("/tests/browser/editor-selection.html?readability=large");
+  const editor = page.locator(".cm-editor").first();
+  const thumb = editor.locator(".cm-editorScrollbarThumb");
+  const scroller = editor.locator(".cm-scroller");
+  await expect(thumb).toBeVisible();
+  await editor.locator(".cm-content").evaluate((element) => (element as HTMLElement).blur());
+  await page.mouse.move(1, 1);
+  await expect(thumb).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  const width = await scroller.evaluate((element) => element.clientWidth);
+  await editor.hover();
+  await expect(thumb).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await page.mouse.move(1, 1);
+  await editor.locator(".cm-content").focus();
+  await expect(thumb).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  await page.keyboard.press("Control+End");
+  await expect.poll(() => scroller.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  expect(await scroller.evaluate((element) => element.clientWidth)).toBe(width);
+  await page.emulateMedia({ forcedColors: "active" });
+  await expect(editor.locator(".cm-editorScrollbar")).toBeHidden();
+  await expect(scroller).toHaveCSS("scrollbar-width", "auto");
+});
+
 for (const mode of ["file", "inline", "split"]) {
   test(`editor context menu works in ${mode}`, async ({ page, context, browserName }, info) => {
     // WebKit grants clipboard reads; writes still use the actual Copy gesture.

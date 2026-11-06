@@ -344,7 +344,6 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-top: 6px;
-  scrollbar-width: thin;
 }
 .options {
   position: relative;

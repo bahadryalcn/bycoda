@@ -78,8 +78,6 @@
   margin: -6px;
   padding: 6px;
   overscroll-behavior-x: contain;
-  scrollbar-color: var(--border-strong) transparent;
-  scrollbar-width: thin;
 }
 .canvas {
   --gap: 3px;

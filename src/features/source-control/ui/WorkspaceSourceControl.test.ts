@@ -8,15 +8,21 @@ import type { Worktree } from "../model/worktrees";
 import { saveWorkspaceProjectNames } from "../../workspace/model/tabGroups";
 import { OPEN_WORKTREE_MANAGEMENT } from "../model/worktreeManagement";
 
-const { notify, discovery } = vi.hoisted(() => ({
+const { notify, discovery, discover } = vi.hoisted(() => ({
   notify: vi.fn(),
+  discover: vi.fn(),
   discovery: {
     modules: {} as Record<string, string[]>,
     error: undefined as string | undefined,
     refresh: vi.fn(),
   },
 }));
-vi.mock("../hooks/useGitSubmodules", () => ({ useGitSubmodules: () => discovery }));
+vi.mock("../hooks/useGitSubmodules", () => ({
+  useGitSubmodules: (...args: unknown[]) => {
+    discover(...args);
+    return discovery;
+  },
+}));
 vi.mock("../../../platform/tauri/fs", () => ({
   basename: (path: string) => path.split("/").pop(),
   notifyGitChanged: notify,
@@ -80,6 +86,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   opened.mockClear();
   notify.mockClear();
+  discover.mockClear();
   discovery.modules = {};
   discovery.error = undefined;
   discovery.refresh.mockClear();
@@ -268,7 +275,7 @@ it("retains known repositories on a discovery error and offers refresh", async (
   await render();
   expect(host.querySelectorAll("section")).toHaveLength(3);
   expect(host.querySelector('[role="status"]')?.textContent).toContain(
-    "Could not refresh submodules",
+    "Could not refresh repositories",
   );
   await act(async () =>
     host.querySelector<HTMLButtonElement>('[aria-label="Refresh source control"]')!.click(),
@@ -314,6 +321,32 @@ const renderCheckouts = (cwd = "/t/mine/src", worktrees: Record<string, Worktree
       }),
     ),
   );
+it("shows editable checkout sections and discovered child repositories in the all view", async () => {
+  discovery.modules = { "/repo": ["/repo/mobile"], "/t/mine": [], "/t/idle": [] };
+  await renderCheckouts();
+  await choose("");
+  expect([...host.querySelectorAll("section")].map((panel) => panel.dataset.cwd)).toEqual([
+    "/repo",
+    "/repo/mobile",
+    "/t/mine",
+    "/t/idle",
+  ]);
+  expect(discover).toHaveBeenLastCalledWith(Object.keys(trees), true, true);
+  const current = host.querySelector('[data-cwd="/t/mine"] button')!;
+  expect(current.getAttribute("aria-expanded")).toBe("true");
+  const mobile = host.querySelector('[data-cwd="/repo/mobile"]')!;
+  expect(mobile.textContent).toContain("mobile");
+  expect(mobile.querySelector("button")!.getAttribute("aria-expanded")).toBe("false");
+  await act(async () =>
+    [...mobile.querySelectorAll("button")].find((button) => button.textContent === "diff")!.click(),
+  );
+  expect(opened).toHaveBeenLastCalledWith({
+    type: "diff",
+    cwd: "/repo/mobile",
+    path: "same.ts",
+    kind: "staged",
+  });
+});
 it("defaults checkouts mode to the session checkout with the full panel", async () => {
   await renderCheckouts();
   expect(host.querySelectorAll("section")).toHaveLength(1);
@@ -329,35 +362,40 @@ it("falls back to the main folder outside every checkout", async () => {
   await renderCheckouts("/elsewhere");
   expect(host.querySelector("section")!.dataset.cwd).toBe("/repo");
 });
-it("shows a lightweight overview for all checkouts and selects from its rows", async () => {
+it("independently expands checkout changes and preserves expansion across target selection", async () => {
   await renderCheckouts();
   await choose("");
-  expect(host.querySelector("section")).toBeNull();
-  const list = host.querySelector("[data-checkout-list]")!;
-  expect(list.textContent).toContain("This session");
-  expect(list.textContent).toContain("Main folder");
-  expect(list.textContent).not.toContain("idle");
-  const toggle = [...list.querySelectorAll("button")].find((b) => b.hasAttribute("aria-expanded"))!;
+  expect(host.querySelectorAll("section")).toHaveLength(3);
+  const overview = host.querySelector<HTMLElement>("[data-checkout-overview]")!;
+  overview.scrollTop = 120;
+  overview.dispatchEvent(new Event("scroll"));
+  const toggle = host.querySelector<HTMLButtonElement>('[data-cwd="/t/idle"] button')!;
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   await act(async () => toggle.click());
-  expect(list.textContent).toContain("idle");
-  await act(async () =>
-    [...list.querySelectorAll("button")].find((b) => b.textContent?.includes("idle"))!.click(),
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(host.querySelector('[data-cwd="/t/mine"] button')!.getAttribute("aria-expanded")).toBe(
+    "true",
   );
+  await choose("/t/idle");
   expect(host.querySelector("section")!.dataset.cwd).toBe("/t/idle");
+  await choose("");
+  expect(host.querySelector('[data-cwd="/t/idle"] button')!.getAttribute("aria-expanded")).toBe(
+    "true",
+  );
+  expect(host.querySelector<HTMLElement>("[data-checkout-overview]")!.scrollTop).toBe(120);
 });
-it("routes worktree deletion from the overview without selecting or deleting a checkout", async () => {
+it("opens worktree management from the overview without retargeting or deleting a checkout", async () => {
   const request = vi.fn();
   window.addEventListener(OPEN_WORKTREE_MANAGEMENT, request);
   try {
     await renderCheckouts();
     await choose("");
-    const buttons = host.querySelectorAll<HTMLButtonElement>('[aria-label="Delete worktree"]');
+    const buttons = host.querySelectorAll<HTMLButtonElement>('[aria-label="Manage worktrees…"]');
     expect(buttons).toHaveLength(1);
     await act(async () => buttons[0].click());
     expect((request.mock.calls[0][0] as CustomEvent).detail).toEqual({
       cwd: "/t/mine/src",
-      deletePath: "/t/mine",
+      deletePath: undefined,
     });
     expect(host.querySelector("select")!.value).toBe("");
     expect(opened).not.toHaveBeenCalled();
@@ -377,5 +415,20 @@ it("persists the checkout choice, including all checkouts, across remounts", asy
   await act(async () => root.unmount());
   root = createRoot(host);
   await renderCheckouts();
-  expect(host.querySelector("[data-checkout-list]")).not.toBeNull();
+  expect(host.querySelector("[data-checkout-overview]")).not.toBeNull();
+});
+
+it("retains a selected child repository while discovery is pending and falls back only after confirmed removal", async () => {
+  discovery.modules = { "/repo": ["/repo/mobile"] };
+  await renderCheckouts();
+  await choose("/repo/mobile");
+  expect(host.querySelector("section")!.dataset.cwd).toBe("/repo/mobile");
+  await remount();
+  discovery.modules = {};
+  await renderCheckouts();
+  expect(host.querySelector("select")!.value).toBe("/repo/mobile");
+  expect(host.querySelector("section")!.dataset.cwd).toBe("/repo/mobile");
+  discovery.modules = { "/repo": [] };
+  await renderCheckouts();
+  expect(host.querySelector("section")!.dataset.cwd).toBe("/t/mine");
 });

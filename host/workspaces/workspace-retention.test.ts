@@ -294,6 +294,24 @@ describe("storage policy", () => {
     for (const root of roots.splice(0))
       rmSync(root, { recursive: true, force: true, maxRetries: 5 });
   });
+  it("measures repository files without following ordinary source links", async () => {
+    const root = mkdtempSync(join(tmpdir(), "workspace-storage-"));
+    roots.push(root);
+    const managed = join(root, "managed");
+    const first = join(managed, "first");
+    const outside = join(root, "outside");
+    mkdirSync(first, { recursive: true });
+    mkdirSync(outside);
+    writeFileSync(join(first, "source"), "source");
+    writeFileSync(join(outside, "sentinel"), "outside data must not count");
+    symlinkSync(outside, join(first, "assets"), process.platform === "win32" ? "junction" : "dir");
+    const status = await measureWorkspaceStorage({
+      root: managed,
+      workspaces: [{ path: first, directoryState: "present" }],
+    });
+    expect(status.materializedBytes).toBe(6);
+    expect(status.materialization).toBe("allowed");
+  });
   it.each([
     { linkedAncestor: false, namespaced: false },
     { linkedAncestor: true, namespaced: false },

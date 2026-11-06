@@ -1,5 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -70,6 +78,39 @@ it("skips an uninitialized submodule instead of treating it as its parent reposi
   f.git(parent, "submodule", "deinit", "-f", "--", "core-pack");
   expect(await hostGitSubmodules(parent)).toEqual([]);
   expect(await hostGitSubmodules(source)).toEqual([]);
+});
+
+it("opts into ignored independent repositories and worktree gitfiles without following directory links", async () => {
+  const f = fixture();
+  const parent = f.repo("parent");
+  const mobile = f.repo("parent/mobile");
+  f.repo("parent/Türkçe proje");
+  const outside = f.repo("outside");
+  mkdirSync(join(parent, "node_modules"));
+  f.repo("parent/node_modules/dependency");
+  writeFileSync(join(parent, ".gitignore"), "mobile/\nnode_modules/\n");
+  writeFileSync(join(mobile, "file.txt"), "independent draft\n");
+  f.git(mobile, "add", "file.txt");
+  writeFileSync(join(mobile, "file.txt"), "independent unsaved change\n");
+  const linkedWorktree = join(parent, "review-copy");
+  f.git(outside, "worktree", "add", "-qb", "review", linkedWorktree);
+  symlinkSync(outside, join(parent, "external"), process.platform === "win32" ? "junction" : "dir");
+  const before = [f.git(parent, "status", "--porcelain"), f.git(mobile, "diff", "--cached")];
+  expect(await hostGitSubmodules(parent)).toEqual([]);
+  expect(await hostGitSubmodules(parent, true)).toEqual(["Türkçe proje", "mobile", "review-copy"]);
+  expect([f.git(parent, "status", "--porcelain"), f.git(mobile, "diff", "--cached")]).toEqual(
+    before,
+  );
+  expect(readFileSync(join(mobile, "file.txt"), "utf8")).toBe("independent unsaved change\n");
+});
+
+it("reports incomplete discovery when the physical folder depth limit is exceeded", async () => {
+  const f = fixture();
+  const parent = f.repo("parent");
+  mkdirSync(join(parent, ...Array.from({ length: 66 }, () => "d")), { recursive: true });
+  await expect(hostGitSubmodules(parent, true)).rejects.toThrow(
+    "Repository discovery depth limit exceeded",
+  );
 });
 
 it("deduplicates conflicted gitlink stages and preserves recursive discovery without index mutation", async () => {

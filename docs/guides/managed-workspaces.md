@@ -52,6 +52,23 @@ Save appears only while there are unsaved changes, and **Reset to Host defaults*
 storage each keep their last loaded data with their own Retry when a read fails.
 For remote projects, creating and deleting managed directories is unavailable;
 listing and reveal still work.
+
+The Worktrees view keeps the selected project and create/refresh actions together.
+Managed rows show the conversation title when available, otherwise the branch name.
+Expand **Details** for the exact folder, branch, workspace ID and owner. Review and
+directory actions keep their existing ownership checks. **Workspace policy** holds
+creation defaults, pinning, retention and storage limits; expand only the settings
+you need. The storage summary stays visible even when policy settings are closed.
+**Refresh storage** rereads usage without discarding unsaved policy changes.
+
+New managed directories require known usage within the directory budget and enough
+free disk space. **Unknown** is not zero: an unreadable folder or an unrecognized
+filesystem entry can keep creation blocked even when the disk has plenty of free
+space. Storage accounting skips recognized symbolic links and Windows junctions
+without reading their targets; linked external content is not charged to directory
+usage. Cleanup keeps its stricter link checks. If a refresh still shows unknown
+usage, check access to the reported workspace root rather than raising the budget.
+
 If the bundled local Host update is waiting for active sessions, the composer
 explains that it will install automatically after those sessions finish. You can
 wait for the update, or choose **Use current checkout** for this draft. An explicit

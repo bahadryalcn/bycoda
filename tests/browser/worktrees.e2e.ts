@@ -64,9 +64,9 @@ for (const theme of ["dark", "light"]) {
       });
       expect(overflow.content).toBe(0);
       expect(overflow.page).toBeLessThanOrEqual(overflow.viewport + 1);
-      mkdirSync("temp/verification/2026-10-18-worktrees", { recursive: true });
+      mkdirSync("temp/verification/2026-11-06-worktrees", { recursive: true });
       await page.screenshot({
-        path: `temp/verification/2026-10-18-worktrees/${theme}-${width}.png`,
+        path: `temp/verification/2026-11-06-worktrees/${theme}-${width}.png`,
       });
       const search = surface.getByRole("textbox", {
         name: "Search worktrees",
@@ -84,7 +84,7 @@ for (const theme of ["dark", "light"]) {
       await expect(list.getByRole("listitem")).toHaveCount(4);
       await expect(details).toContainText("New worktrees are created in");
       await page.screenshot({
-        path: `temp/verification/2026-10-18-worktrees/${theme}-${width}-details.png`,
+        path: `temp/verification/2026-11-06-worktrees/${theme}-${width}-details.png`,
       });
       expect(errors).toEqual([]);
     });
@@ -101,7 +101,7 @@ for (const theme of ["light", "dark"]) {
       await expect(surface.getByText("Cleanup blocked", { exact: true })).toBeVisible();
       await expect(surface.getByText("Pinned", { exact: true })).toBeVisible();
       // The policy is a closed disclosure in the Worktrees dialog; Save appears once edited.
-      await surface.getByRole("button", { name: "Workspace policy", exact: true }).click();
+      await surface.getByRole("button", { name: /^Workspace policy/ }).click();
       await expect(
         surface.getByRole("button", {
           name: "Save workspace policy",
@@ -109,14 +109,16 @@ for (const theme of ["light", "dark"]) {
         }),
       ).toHaveCount(0);
       await expect(surface.getByText("New workspaces are paused.", { exact: false })).toBeVisible();
-      mkdirSync("temp/verification/s5", { recursive: true });
+      mkdirSync("temp/verification/2026-11-06-worktrees", { recursive: true });
       await page.screenshot({
-        path: `temp/verification/s5/workspace-policy-${theme}-${width}.png`,
+        path: `temp/verification/2026-11-06-worktrees/workspace-policy-${theme}-${width}.png`,
       });
       const retention = surface.locator('[data-setting-id="workspace-retention"]');
       await retention.getByRole("button", { name: /^Directory retention/ }).focus();
       await page.keyboard.press("Enter");
-      await expect(retention.getByText("Never", { exact: true }).first()).toBeVisible();
+      await expect(retention).toContainText(
+        "Active and pinned workspaces are never cleaned up automatically.",
+      );
       await retention.getByRole("button", { name: /^Idle retention:/ }).click();
       await page.getByRole("option", { name: "Never", exact: true }).click();
       await surface.getByRole("switch", { name: "Pin new workspaces", exact: true }).click();
@@ -147,7 +149,7 @@ for (const theme of ["light", "dark"]) {
       });
       expect(update.params.idempotencyKey).toBeTruthy();
       await page.screenshot({
-        path: `temp/verification/s5/workspace-retention-${theme}-${width}.png`,
+        path: `temp/verification/2026-11-06-worktrees/workspace-retention-${theme}-${width}.png`,
       });
       const disk = surface.locator('[data-setting-id="workspace-disk-policy"]');
       await disk.getByRole("button", { name: /^Storage limits/ }).click();
@@ -163,7 +165,7 @@ for (const theme of ["light", "dark"]) {
       await expect(surface.getByText("Unknown", { exact: true })).toBeVisible();
       await disk.scrollIntoViewIfNeeded();
       await page.screenshot({
-        path: `temp/verification/s5/workspace-storage-${theme}-${width}.png`,
+        path: `temp/verification/2026-11-06-worktrees/workspace-storage-${theme}-${width}.png`,
       });
       await surface
         .getByRole("listitem")
@@ -177,7 +179,7 @@ for (const theme of ["light", "dark"]) {
       });
       await expect(dialog).toBeVisible();
       await page.screenshot({
-        path: `temp/verification/s5/workspace-cleanup-${theme}-${width}.png`,
+        path: `temp/verification/2026-11-06-worktrees/workspace-cleanup-${theme}-${width}.png`,
       });
       const before = await page.evaluate(
         () =>
@@ -212,21 +214,60 @@ for (const theme of ["light", "dark"]) {
         await surface.evaluate((node) => {
           const panel = node.closest<HTMLElement>('[role="dialog"]')!;
           const box = panel.getBoundingClientRect();
-          for (let up: HTMLElement | null = panel; up; up = up.parentElement)
-            if (up.scrollWidth > up.clientWidth + 1) return false;
-          return [...node.querySelectorAll("*")].every((child) => {
-            const rect = child.getBoundingClientRect();
-            return rect.width === 0 || (rect.left >= box.left - 1 && rect.right <= box.right + 1);
+          const issues: Record<string, unknown>[] = [];
+          const describe = (element: Element) => ({
+            tag: element.tagName,
+            className: element.getAttribute("class"),
+            text: element.textContent?.trim().slice(0, 100),
           });
+          for (let up: HTMLElement | null = panel; up; up = up.parentElement) {
+            if (up.scrollWidth > up.clientWidth + 1)
+              issues.push({
+                kind: "ancestor-horizontal-scroll",
+                ...describe(up),
+                scrollWidth: up.scrollWidth,
+                clientWidth: up.clientWidth,
+              });
+          }
+          for (const child of node.querySelectorAll("*")) {
+            const rect = child.getBoundingClientRect();
+            if (rect.width === 0) continue;
+            let left = rect.left;
+            let right = rect.right;
+            // Translated content can extend beyond its layout box while a control clips
+            // its paint. Check painted bounds, retaining the ancestor scroll guard above.
+            for (let ancestor = child.parentElement; ancestor; ancestor = ancestor.parentElement) {
+              if (
+                ["hidden", "clip", "auto", "scroll"].includes(getComputedStyle(ancestor).overflowX)
+              ) {
+                const bounds = ancestor.getBoundingClientRect();
+                const clipLeft = bounds.left + ancestor.clientLeft;
+                left = Math.max(left, clipLeft);
+                right = Math.min(right, clipLeft + ancestor.clientWidth);
+              }
+            }
+            if (right > left && (left < box.left - 1 || right > box.right + 1))
+              issues.push({
+                kind: "descendant-outside-panel",
+                ...describe(child),
+                left,
+                right,
+                layoutLeft: rect.left,
+                layoutRight: rect.right,
+                panelLeft: box.left,
+                panelRight: box.right,
+              });
+          }
+          return issues;
         }),
-      ).toBe(true);
+      ).toEqual([]);
     });
   }
 }
 
 test("older Host explains update; failed policy save keeps the draft", async ({ page }) => {
   await page.goto("/tests/browser/worktrees.html?theme=light");
-  await page.getByRole("button", { name: "Workspace policy", exact: true }).click();
+  await page.getByRole("button", { name: /^Workspace policy/ }).click();
   await expect(
     page.getByText("Update the execution Host to configure worktree defaults and retention.", {
       exact: true,
@@ -234,7 +275,7 @@ test("older Host explains update; failed policy save keeps the draft", async ({ 
   ).toBeVisible();
   await page.goto("/tests/browser/worktrees.html?managed&saveError&theme=light");
   const surface = page.getByTestId("workspace-policy-settings");
-  await surface.getByRole("button", { name: "Workspace policy", exact: true }).click();
+  await surface.getByRole("button", { name: /^Workspace policy/ }).click();
   await surface.getByRole("switch", { name: "Pin new workspaces", exact: true }).click();
   await surface.getByRole("button", { name: "Save workspace policy", exact: true }).click();
   await expect(surface.getByRole("alert")).toContainText("Fixture policy save failed");
@@ -249,7 +290,7 @@ test("older Host explains update; failed policy save keeps the draft", async ({ 
 test("cleanup blockers prevent owner removal and preserve unsaved policy", async ({ page }) => {
   await page.goto("/tests/browser/worktrees.html?managed&hardBlock&theme=light");
   const surface = page.getByTestId("workspace-policy-settings");
-  await surface.getByRole("button", { name: "Workspace policy", exact: true }).click();
+  await surface.getByRole("button", { name: /^Workspace policy/ }).click();
   await surface.getByRole("switch", { name: "Pin new workspaces", exact: true }).click();
   await surface
     .getByRole("listitem")
@@ -349,9 +390,9 @@ for (const theme of ["light", "dark"])
       await expect(dialog.getByRole("button", { name: "Create PR", exact: true })).toBeEnabled();
       await dialog.focus();
       await page.mouse.move(4, 4);
-      mkdirSync("temp/verification/i2a", { recursive: true });
+      mkdirSync("temp/verification/2026-11-06-worktrees", { recursive: true });
       await page.screenshot({
-        path: `temp/verification/i2a/managed-review-${theme}-${width}.png`,
+        path: `temp/verification/2026-11-06-worktrees/managed-review-${theme}-${width}.png`,
         fullPage: true,
       });
       await dialog
@@ -367,13 +408,13 @@ for (const theme of ["light", "dark"])
       await page.getByRole("dialog", { name: "Worktrees", exact: true }).focus();
       await page.mouse.move(4, 4);
       await page.screenshot({
-        path: `temp/verification/i2a/managed-policy-${theme}-${width}.png`,
+        path: `temp/verification/2026-11-06-worktrees/managed-policy-${theme}-${width}.png`,
         fullPage: true,
       });
     });
   }
 
-const l3Directory = "temp/verification/2026-10-28-ui-redesign/l3";
+const l3Directory = "temp/verification/2026-11-06-worktrees";
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800]) {
@@ -444,7 +485,7 @@ for (const theme of ["light", "dark"])
       const storage = policy.locator('[data-setting-id="workspace-storage-status"]');
       await storage.scrollIntoViewIfNeeded();
       await expect(storage).toContainText("42.0 GiB / 50.0 GiB");
-      await expect(storage).toContainText("18.0 GiB");
+      await expect(storage).toContainText("153.5 GiB");
       await expect(storage).toContainText("Storage warning");
       expect(
         await storage.evaluate((node) =>
@@ -571,3 +612,59 @@ test("populated source control for a remote project keeps restrictions visible",
     path: `${l3Directory}/source-control-remote-light-1280.png`,
   });
 });
+
+const worktreeEvidence = "temp/verification/2026-11-06-worktrees";
+
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800]) {
+    test(`worktree storage recovery and readable details: ${theme} ${width}`, async ({ page }) => {
+      const errors: string[] = [];
+      page.on("pageerror", (error) => errors.push(error.message));
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.setViewportSize({ width, height: 1000 });
+      await page.goto(`/tests/browser/worktrees.html?managed&unknownStorage&theme=${theme}`);
+      const surface = page.getByTestId("workspace-policy-settings");
+      const list = surface.getByRole("list", { name: "Worktrees", exact: true });
+      const workspace = list.getByRole("listitem").filter({
+        hasText: "Provider settings parity across AI providers",
+      });
+      await expect(workspace).toBeVisible();
+      await expect(workspace).toContainText("bycoda/s/settings-draft");
+      await expect(workspace.locator("dl")).not.toBeVisible();
+      mkdirSync(worktreeEvidence, { recursive: true });
+      await page.screenshot({ path: `${worktreeEvidence}/list-${theme}-${width}.png` });
+      await workspace.locator("summary").focus();
+      await page.keyboard.press("Enter");
+      const details = workspace.locator("dl");
+      await expect(details).toBeVisible();
+      for (const label of ["Folder", "Branch", "Workspace ID", "Owner"])
+        await expect(details.locator("dt").getByText(label, { exact: true })).toBeVisible();
+      await expect(details).toContainText("/fixture/worktrees/wt-mc-851db1b6");
+      await expect(details).toContainText("session-readable");
+      await page.screenshot({ path: `${worktreeEvidence}/details-${theme}-${width}.png` });
+      await surface.getByRole("button", { name: /^Workspace policy/ }).click();
+      const pin = surface.getByRole("switch", { name: "Pin new workspaces", exact: true });
+      await pin.click();
+      const storage = surface.locator('[data-setting-id="workspace-storage-status"]');
+      await storage.scrollIntoViewIfNeeded();
+      await expect(storage).toContainText("153.5 GiB");
+      await expect(storage).toContainText("Unknown / 50.0 GiB");
+      await expect(storage).toContainText("unknown");
+      await page.screenshot({ path: `${worktreeEvidence}/storage-unknown-${theme}-${width}.png` });
+      await page.evaluate(() =>
+        (
+          window as unknown as { workspaceFixtureSetStorage: (mode: string) => void }
+        ).workspaceFixtureSetStorage("allowed"),
+      );
+      await storage.getByRole("button", { name: "Refresh storage", exact: true }).click();
+      await expect(storage).toContainText("42.0 GiB");
+      await expect(storage).not.toContainText("Storage availability is unknown");
+      await expect(pin).toBeChecked();
+      await expect(
+        surface.getByRole("button", { name: "Save workspace policy", exact: true }),
+      ).toBeEnabled();
+      await surface.getByRole("button", { name: "Discard changes", exact: true }).click();
+      await expect(pin).not.toBeChecked();
+      expect(errors).toEqual([]);
+    });
+  }

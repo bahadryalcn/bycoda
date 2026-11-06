@@ -111,8 +111,8 @@ export function WorktreesPage({
           if (inventory !== null) setManagedWorkspaces(inventory);
         }}
         renderHeader={(refreshManaged, managedBusy, managedDisabled) => (
-          <header className={styles.fixedHeader}>
-            <h2 className="settings-section-title">{t("Worktrees")}</h2>
+          <header className={styles.header}>
+            {boundary && <h2 className="settings-section-title">{t("Worktrees")}</h2>}
             <div className={styles.toolbar}>
               <SearchableProjectPicker
                 cwd={project || "~"}

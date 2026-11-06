@@ -1,4 +1,12 @@
 {
+  "Could not refresh repositories. Refresh source control to retry.": "リポジトリを更新できませんでした。ソース管理を更新して再試行してください。",
+  "Defaults for new workspaces": "新しいワークスペースの既定値",
+  "Active and pinned workspaces are never cleaned up automatically.": "使用中および固定されたワークスペースは自動的にクリーンアップされません。",
+  "Workspace ID": "ワークスペース ID",
+  "Owner": "所有者",
+  "Refresh storage": "ストレージを更新",
+  "Directory budget": "ディレクトリ容量上限",
+  "Storage folder": "保存フォルダー",
   "Enable": "有効にする",
   "Disable": "無効にする",
   "Applies to this project for Claude Code.": "Claude Code のこのプロジェクトに適用されます。",

@@ -74,15 +74,44 @@ export function saveCheckoutSelection(scope: string, selection: string): void {
   }
 }
 
+/** Each checkout and its discovered child repositories are separate Git targets. */
+export function checkoutRepositoryPaths(
+  paths: readonly string[],
+  modules: Readonly<Record<string, readonly string[]>>,
+): string[] {
+  const seen = new Set<string>();
+  return paths
+    .flatMap((root) => [
+      root,
+      ...(modules[root] ?? []).filter((child) => isEqualOrInside(child, root)),
+    ])
+    .filter((path) => {
+      const key = pathKey(path);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
 /** Resolves a stored/explicit choice to a live checkout path, "" (all) or the default. */
 export function resolveCheckoutSelection(
   choice: string | null,
   cwd: string,
   paths: readonly string[],
   worktrees: Readonly<Record<string, Worktree>>,
+  modules?: Readonly<Record<string, readonly string[]>>,
 ): string {
   if (choice === "") return "";
-  const match = choice === null ? undefined : paths.find((path) => same(path, choice));
+  const candidates = modules ? checkoutRepositoryPaths(paths, modules) : paths;
+  const match = choice === null ? undefined : candidates.find((path) => same(path, choice));
+  // A saved child repository may precede discovery; a missing read is not removal.
+  if (
+    !match &&
+    choice &&
+    modules &&
+    paths.some((root) => modules[root] === undefined && isEqualOrInside(choice, root))
+  )
+    return choice;
   return match ?? defaultCheckout(cwd, paths, worktrees);
 }
 

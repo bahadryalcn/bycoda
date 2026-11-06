@@ -1019,8 +1019,13 @@ html:not(.is-mac) ::-webkit-scrollbar-track {
 }
 
 html:not(.is-mac) ::-webkit-scrollbar-thumb {
-  background: var(--ui-scrollbar-thumb);
+  background: transparent;
   border-radius: 9999px;
+}
+
+html:not(.is-mac) :hover::-webkit-scrollbar-thumb,
+html:not(.is-mac) :focus-within::-webkit-scrollbar-thumb {
+  background: var(--ui-scrollbar-thumb);
 }
 
 html:not(.is-mac) ::-webkit-scrollbar-thumb:hover {
@@ -1033,6 +1038,22 @@ html:not(.is-mac) ::-webkit-scrollbar-thumb:active {
 
 html:not(.is-mac) ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+@media (hover: none) {
+  html:not(.is-mac) ::-webkit-scrollbar-thumb {
+    background: var(--ui-scrollbar-thumb);
+  }
+}
+
+@media (forced-colors: active) {
+  html:not(.is-mac) ::-webkit-scrollbar-thumb,
+  html:not(.is-mac) :hover::-webkit-scrollbar-thumb,
+  html:not(.is-mac) :focus-within::-webkit-scrollbar-thumb,
+  html:not(.is-mac) ::-webkit-scrollbar-thumb:hover,
+  html:not(.is-mac) ::-webkit-scrollbar-thumb:active {
+    background: CanvasText;
+  }
 }
 
 /* Tint-less transparent rather than `transparent`, which browsers interpolate

@@ -131,6 +131,13 @@ removal. Active work always retains Never regardless of policy overrides.
 Inactivity does not imply abandonment. Removing a directory preserves
 the conversation, local branch and recovery refs; resume rematerializes it.
 
+Storage admission counts physical files once and does not follow recognized source
+symbolic links or Windows junctions, including links outside dependency folders.
+Read-only accounting may skip those links; this does not authorize cleanup to
+detach or remove them. Unknown reparse entries, unreadable files and invalid roots
+still produce unknown usage and block new materialization. Known over-budget or
+low-free-space measurements pause materialization until the policy is satisfied.
+
 The retention scheduler runs on startup, lifecycle transitions and hourly. Fresh
 ownership, canonical path, branch/HEAD, clean source and activity checks precede
 removal. Failed status reads mean unknown. Dirty work blocks automatic cleanup;

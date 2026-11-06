@@ -15,6 +15,8 @@ import { HostEngine } from "../engine";
 import { HostStore } from "../store";
 import { createManagedWorkspaceRuntime } from "./managed-workspace-runtime";
 import { createManagedNativeRewind } from "./managed-native-rewind";
+import * as workspaceRetention from "../workspaces/workspace-retention";
+import { DEFAULT_WORKSPACE_POLICY } from "../workspaces/workspace-contracts";
 
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => {
@@ -85,6 +87,65 @@ async function fixture(
   };
   return { root, git, store, engine, runtime, project, request, send };
 }
+
+it.each([
+  { materializedBytes: 2e12, freeBytes: 1e12, reason: "workspace directory quota exceeded" },
+  { materializedBytes: 1, freeBytes: 0, reason: "minimum free disk space not met" },
+  {
+    materializedBytes: null,
+    freeBytes: 1e12,
+    reason: "workspace directory size could not be measured",
+  },
+  { materializedBytes: 1, freeBytes: null, reason: "free disk space could not be measured" },
+  {
+    materializedBytes: 1,
+    freeBytes: 1e12,
+    invalidPolicy: true,
+    reason: "workspace storage policy could not be verified",
+  },
+])(
+  "explains storage rejection: $reason",
+  async ({ materializedBytes, freeBytes, reason, invalidPolicy }) => {
+    const f = await fixture();
+    await f.runtime.recover();
+    vi.spyOn(workspaceRetention, "measureWorkspaceStorage").mockResolvedValueOnce(
+      workspaceRetention.evaluateWorkspaceStorage(
+        join(f.root, "worktrees"),
+        { materializedBytes, freeBytes, sharedCacheBytes: null, recoveryBytes: null },
+        invalidPolicy ? { ...DEFAULT_WORKSPACE_POLICY.disk, warningRatio: 0 } : undefined,
+      ),
+    );
+    await expect(f.runtime.registry.prepare(f.request)).rejects.toThrow(reason);
+  },
+);
+
+it("prepares another worktree when an existing workspace contains a source junction", async () => {
+  const f = await fixture();
+  await f.runtime.recover();
+  const first = (await f.runtime.registry.prepare(f.request)).workspace;
+  const outside = join(f.root, "external-assets");
+  mkdirSync(outside);
+  writeFileSync(join(outside, "sentinel"), "outside source must remain untouched");
+  symlinkSync(
+    outside,
+    join(first.path, "assets"),
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  const status = await f.runtime.storageStatus({
+    projectId: f.project.id,
+    environmentId: f.store.environmentId,
+  });
+  expect(status.materialization).toBe("allowed");
+  const next = await f.runtime.registry.prepare({
+    ...f.request,
+    owner: { kind: "session", id: "another-session" },
+    slug: "another",
+    idempotencyKey: "prepare-another",
+  });
+  expect(next.workspace.path).not.toBe(first.path);
+  expect(existsSync(join(next.workspace.path, "source.txt"))).toBe(true);
+  expect(existsSync(join(outside, "sentinel"))).toBe(true);
+});
 
 it("reads legacy registry paths beneath an aliased ancestor and rejects a linked workspace entry", async () => {
   const f = await fixture();

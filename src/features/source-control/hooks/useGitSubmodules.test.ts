@@ -12,8 +12,16 @@ vi.mock("../../../platform/tauri/fs", () => ({
 let root: Root;
 let host: HTMLDivElement;
 let current: ReturnType<typeof useGitSubmodules>;
-function Harness({ cwd, enabled = true }: { cwd: string; enabled?: boolean }) {
-  const value = useGitSubmodules([cwd], enabled);
+function Harness({
+  cwd,
+  enabled = true,
+  includeRepositories = false,
+}: {
+  cwd: string;
+  enabled?: boolean;
+  includeRepositories?: boolean;
+}) {
+  const value = useGitSubmodules([cwd], enabled, includeRepositories);
   useLayoutEffect(() => {
     current = value;
   }, [value]);
@@ -31,8 +39,8 @@ afterEach(async () => {
   await act(async () => root.unmount());
   vi.unstubAllGlobals();
 });
-const render = (cwd: string, enabled = true) =>
-  act(async () => root.render(createElement(Harness, { cwd, enabled })));
+const render = (cwd: string, enabled = true, includeRepositories = false) =>
+  act(async () => root.render(createElement(Harness, { cwd, enabled, includeRepositories })));
 
 it("renders known submodules synchronously on remount while revalidating and survives failed revalidation", async () => {
   bridge.invoke.mockResolvedValueOnce(["core-pack"]);
@@ -83,4 +91,39 @@ it("ignores stale responses after changing projects and retries on focus", async
   bridge.invoke.mockResolvedValueOnce(["new-module", "another"]);
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(current!.modules["/new"]).toHaveLength(2);
+});
+
+it("opts into standalone repository discovery without sharing incomplete submodule-only cache entries", async () => {
+  bridge.invoke.mockResolvedValueOnce(["core-pack"]);
+  await render("/repo");
+  expect(bridge.invoke).toHaveBeenLastCalledWith("git_submodules", { cwd: "/repo" });
+  let finish!: (value: string[]) => void;
+  bridge.invoke.mockImplementationOnce(
+    () =>
+      new Promise<string[]>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await render("/repo", true, true);
+  expect(bridge.invoke).toHaveBeenLastCalledWith("git_submodules", {
+    cwd: "/repo",
+    includeRepositories: true,
+  });
+  expect(current!.modules).toEqual({});
+  await act(async () => finish(["core-pack", "mobile"]));
+  expect(current!.modules).toEqual({ "/repo": ["/repo/core-pack", "/repo/mobile"] });
+  bridge.invoke.mockRejectedValueOnce(new Error("Repository discovery timed out"));
+  await act(async () => current!.refresh());
+  expect(current!.modules["/repo"]).toEqual(["/repo/core-pack", "/repo/mobile"]);
+  expect(current!.error).toContain("timed out");
+  let finishSubmodules!: (value: string[]) => void;
+  bridge.invoke.mockImplementationOnce(
+    () =>
+      new Promise<string[]>((resolve) => {
+        finishSubmodules = resolve;
+      }),
+  );
+  await render("/repo");
+  expect(current!.modules["/repo"]).toEqual(["/repo/core-pack"]);
+  await act(async () => finishSubmodules(["core-pack"]));
 });

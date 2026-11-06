@@ -152,8 +152,8 @@ it("opens the session checkout, lists others in the overview, and scopes diffs a
     select.value = "";
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  expect(container.querySelector("section")).toBeNull();
-  expect(container.textContent).toContain("mc/task");
+  expect(container.querySelectorAll("section")).toHaveLength(2);
+  expect(container.querySelector('[data-cwd="/trees/task"]')).not.toBeNull();
   expect(container.textContent).not.toContain("mc/deleted");
 });
 it("selects a remote worktree without changing machine identity and returns to all checkouts", async () => {
@@ -182,8 +182,7 @@ it("selects a remote worktree without changing machine identity and returns to a
     select.value = "";
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
-  expect(container.querySelector("section")).toBeNull();
-  expect(container.querySelectorAll("[data-checkout-list] li")).toHaveLength(2);
+  expect(container.querySelectorAll("[data-checkout-overview] section")).toHaveLength(2);
 });
 it("preserves the ordinary panel when discovery fails and keeps a usable list on refresh failure", async () => {
   state.snapshot = { error: "Unavailable" };
@@ -224,7 +223,7 @@ it("shows the parent and nested submodules separately and opens each diff in its
     "/repo/core-pack/nested",
   ]);
   const module = container.querySelector('[data-cwd="/repo/core-pack"]')!;
-  expect(module.textContent).toContain("Submodule · core-pack");
+  expect(module.textContent).toContain("core-pack");
   await act(async () => module.querySelectorAll("button")[1].click());
   expect(opened).toHaveBeenLastCalledWith({
     type: "diff",

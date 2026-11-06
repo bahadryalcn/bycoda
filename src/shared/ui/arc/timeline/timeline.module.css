@@ -21,8 +21,6 @@
   max-height: var(--timeline-height);
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-color: var(--border-strong) transparent;
-  scrollbar-width: thin;
   mask-image: linear-gradient(
     to bottom,
     var(--palette-hex000) calc(100% - var(--timeline-feather)),

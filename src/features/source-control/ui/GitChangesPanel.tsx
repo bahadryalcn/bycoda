@@ -141,6 +141,7 @@ import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import type { Worktree } from "../model/worktrees";
 import { requestWorktreeManagement } from "../model/worktreeManagement";
 import styles from "./CheckoutHeader.module.css";
+import { CheckoutIdentity } from "./CheckoutIdentity";
 import { InlineAction } from "../../../shared/ui/ActionHost";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { WorkingIndicator } from "../../../shared/ui/WorkingIndicator";
@@ -418,11 +419,6 @@ export function GitChangesPanel({
       ) : null}
     </>
   );
-  const checkoutBranch = index ? index.branch : repository?.checkout?.branch;
-  const repositoryName = repository?.checkout
-    ? (checkoutBranch ??
-      `${t("Detached")} · ${(index?.head ?? repository.checkout.head).slice(0, 7)}`)
-    : repository?.name;
   return (
     <div
       ref={paneRef}
@@ -440,7 +436,7 @@ export function GitChangesPanel({
             motion="none"
             aria-expanded={detailsOpen}
             onClick={() => repository.onToggle(!detailsOpen)}
-            tooltip={`${repositoryName} · ${cwd}`}
+            tooltip={`${repository.name} · ${cwd}`}
             className={styles.disclosure}
           >
             {detailsOpen ? (
@@ -448,15 +444,13 @@ export function GitChangesPanel({
             ) : (
               <ChevronRight className="icon-xs shrink-0" />
             )}
-            <span className={styles.identity}>
-              <span className={styles.name}>{repositoryName}</span>
-              {repository.checkout ? (
-                <span className={styles.path} title={cwd}>
-                  {t(repository.checkout.isMain ? "Main working copy" : "Worktree")} ·{" "}
-                  {basename(cwd)}
-                </span>
-              ) : null}
-            </span>
+            <CheckoutIdentity
+              cwd={cwd}
+              name={repository.name}
+              checkout={repository.checkout}
+              index={index}
+              showReference={!branchControl}
+            />
             {repository.current ? <span className={styles.current}>{t("Current")}</span> : null}
           </Button>
         ) : (

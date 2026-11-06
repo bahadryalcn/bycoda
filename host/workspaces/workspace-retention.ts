@@ -249,7 +249,11 @@ export async function measureWorkspaceStorage(
       for (const entry of roots) {
         const { target: root } = await validateWorkspaceCleanupPaths(entry, entry);
         const links = await inventoryWorkspaceLinks(root);
-        if (links.some((link) => link.kind === "unsafe")) return null;
+        // Cleanup rejects source links, but accounting can skip known links without
+        // following them. Unknown reparse tags and special entries still fail closed.
+        for (const link of links) {
+          if (link.kind === "unsafe" && !(await lstat(link.path)).isSymbolicLink()) return null;
+        }
         const linked = new Set(links.map((link) => link.path));
         const visit = async (path: string): Promise<void> => {
           const metadata = await lstat(path, { bigint: true });

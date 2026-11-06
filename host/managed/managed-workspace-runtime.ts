@@ -172,8 +172,19 @@ export function createManagedWorkspaceRuntime(
     beforeMaterialize: async (workspace) => {
       // Creation journals themselves are pending here; do not re-enter the writer fence.
       const status = await storageStatus(workspace);
-      if (status.materialization !== "allowed")
-        throw new Error("Workspace storage admission is paused or unknown; inspect storage status");
+      if (status.materialization !== "allowed") {
+        const reason =
+          status.materialization === "paused"
+            ? status.materializedBytes !== null && status.materializedBytes > status.budgetBytes
+              ? "workspace directory quota exceeded"
+              : "minimum free disk space not met"
+            : status.materializedBytes === null
+              ? "workspace directory size could not be measured; check workspace paths, links, and read permissions"
+              : status.freeBytes === null
+                ? "free disk space could not be measured"
+                : "workspace storage policy could not be verified";
+        throw new Error(`Workspace storage admission is ${status.materialization}: ${reason}`);
+      }
     },
   });
   const workspace = async (workspaceId: string) => {

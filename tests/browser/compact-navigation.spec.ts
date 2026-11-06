@@ -56,6 +56,41 @@ async function installNavigationFixture(page: Page) {
   });
 }
 
+test("session scrollbar preserves geometry and follows pointer or keyboard interaction", async ({
+  page,
+}) => {
+  await installNavigationFixture(page);
+  await page.setViewportSize({ width: 1280, height: 500 });
+  for (const interaction of ["idle", "hover", "focus"] as const) {
+    await page.mouse.move(1200, 450);
+    await page.goto("/tests/browser/compact-navigation.html");
+    const rail = page.locator("[data-session-list-panel]").first();
+    await expect(rail).toBeVisible();
+    const geometry = await rail.evaluate((element) => ({
+      width: element.clientWidth,
+      overflow: element.scrollHeight > element.clientHeight,
+    }));
+    expect(geometry.overflow).toBe(true);
+    if (interaction === "hover") await rail.hover({ position: { x: 50, y: 50 } });
+    if (interaction === "focus") await rail.locator("[data-session-select]").first().focus();
+    // Chromium caches native pseudo computed styles across hover changes. Read
+    // each state on a fresh navigation; normal scroll/focus assertions stay live.
+    const color = await rail.evaluate(
+      (element) => getComputedStyle(element, "::-webkit-scrollbar-thumb").backgroundColor,
+    );
+    if (interaction === "idle") expect(color).toBe("rgba(0, 0, 0, 0)");
+    else expect(color).not.toBe("rgba(0, 0, 0, 0)");
+    expect(await rail.evaluate((element) => element.clientWidth)).toBe(geometry.width);
+    if (interaction === "focus") {
+      const before = await rail.evaluate((element) => element.scrollTop);
+      await page.keyboard.press("ArrowDown");
+      await expect
+        .poll(() => rail.evaluate((element) => element.scrollTop))
+        .toBeGreaterThan(before);
+    }
+  }
+});
+
 test("session detail closes on ancestor scroll and cancels a pending hover", async ({
   page,
 }, testInfo) => {

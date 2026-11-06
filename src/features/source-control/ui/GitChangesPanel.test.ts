@@ -778,7 +778,7 @@ it("shows live detached HEAD instead of a stale worktree branch label", async ()
         enabled: true,
         embedded: true,
         repository: {
-          name: "old-branch · /repo-detached",
+          name: "repo-detached",
           checkout: {
             path: "/repo-detached",
             branch: "old-branch",

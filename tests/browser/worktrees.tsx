@@ -13,7 +13,9 @@ import "../../src/features/settings/ui/BycodaSettings.css";
 import type {
   ManagedWorkspace,
   WorkspacePolicy,
+  WorkspaceStorageStatus,
 } from "../../src/features/workspaces/model/contracts";
+import type { Session } from "../../src/features/sessions/model/session";
 
 const query = new URLSearchParams(location.search);
 // `?populated` is the realistic Source Control settings composition: global Git preferences, a
@@ -22,6 +24,11 @@ const query = new URLSearchParams(location.search);
 const populated = query.has("populated");
 const remote = query.has("remote");
 const managed = query.has("managed") || populated;
+let storageMode: WorkspaceStorageStatus["materialization"] = query.has("unknownStorage")
+  ? "unknown"
+  : query.has("allowedStorage") || populated
+    ? "allowed"
+    : "paused";
 const machine = {
   id: "workspace-fixture-machine",
   environmentId: "workspace-fixture-env",
@@ -150,8 +157,29 @@ let workspaces: ManagedWorkspace[] = populated
       },
     ];
 const workspaceCalls: { method: string; params: Record<string, unknown> }[] = [];
+const liveSessions: Session[] = workspaces
+  .filter((workspace) => workspace.owner.kind === "session")
+  .map((workspace, index) => ({
+    id: workspace.owner.id,
+    harness: "claude",
+    model: "fixture-model",
+    modelSettings: {},
+    runtimeMode: "supervised",
+    title: [
+      "Provider settings parity across AI providers",
+      "Worktree recovery with an unusually long session title that must remain readable",
+      "Archive search",
+      "Mobile pairing recovery",
+    ][index % 4],
+    cwd: project.cwd,
+    blocks: [],
+    busy: workspace.state === "active",
+  }));
 Object.assign(window, {
   workspaceFixtureCalls: workspaceCalls,
+  workspaceFixtureSetStorage: (next: WorkspaceStorageStatus["materialization"]) => {
+    storageMode = next;
+  },
   // Simulates another editor saving the Host policy while this page holds unsaved edits.
   workspaceFixtureHostChangesPolicy: () => {
     policy = { ...policy, defaultMode: policy.defaultMode === "worktree" ? "current" : "worktree" };
@@ -308,15 +336,16 @@ mockIPC((command, args = {}) => {
     if (method === "workspaces.storage.status")
       return {
         root: "/fixture/worktrees",
-        materializedBytes: 42 * 1_073_741_824,
-        sharedCacheBytes: 8 * 1_073_741_824,
+        materializedBytes: storageMode === "unknown" ? null : 42 * 1_073_741_824,
+        sharedCacheBytes: storageMode === "unknown" ? null : 8 * 1_073_741_824,
         recoveryBytes: populated ? Math.round(1.4 * 1_073_741_824) : null,
-        freeBytes: 18 * 1_073_741_824,
+        freeBytes: (storageMode === "paused" ? 18 : 153.5) * 1_073_741_824,
         budgetBytes: policy.disk.budgetBytes,
         warningRatio: policy.disk.warningRatio,
         minimumFreeBytes: policy.disk.minimumFreeBytes,
-        materialization: populated ? "allowed" : "paused",
-        requiredFreeBytes: 2 * 1_073_741_824,
+        materialization: storageMode,
+        requiredFreeBytes:
+          storageMode === "unknown" ? null : storageMode === "paused" ? 2 * 1_073_741_824 : 0,
       };
     if (method === "workspaces.cleanup.plan") {
       const workspace = workspaces.find((entry) => entry.id === params.workspaceId)!;
@@ -369,44 +398,50 @@ const fixtureCwd = remote ? `remote://${machine.environmentId}${project.cwd}` : 
 const removeDisabled = async () => {
   throw new Error("Deletion is disabled in this fixture");
 };
-void Promise.all([setLanguagePreference("en"), setDomainLanguagePreference("git", "app")]).then(
-  () => {
-    createRoot(document.getElementById("root")!).render(
-      populated ? (
-        // Mirrors the Settings workspace track: category rail, then the wide presentation scroller.
-        // The app shell locks the document, so the track scrolls inside itself as in Settings.
-        <main
-          className="bg-background-base text-content"
-          style={{ display: "flex", height: "100vh" }}
+void Promise.all([
+  setLanguagePreference(query.get("lang") === "tr" ? "tr" : "en"),
+  setDomainLanguagePreference("git", "app"),
+]).then(() => {
+  createRoot(document.getElementById("root")!).render(
+    populated ? (
+      // Mirrors the Settings workspace track: category rail, then the wide presentation scroller.
+      // The app shell locks the document, so the track scrolls inside itself as in Settings.
+      <main
+        className="bg-background-base text-content"
+        style={{ display: "flex", height: "100vh" }}
+      >
+        <nav
+          aria-hidden="true"
+          style={{ flex: "none", inlineSize: 200, background: "var(--ui-surface-panel)" }}
+        />
+        <div
+          className="bycoda-settings-workbench"
+          data-testid="populated-scroller"
+          style={{ flex: 1, minInlineSize: 0, overflowY: "auto" }}
         >
-          <nav
-            aria-hidden="true"
-            style={{ flex: "none", inlineSize: 200, background: "var(--ui-surface-panel)" }}
-          />
-          <div
-            className="bycoda-settings-workbench"
-            data-testid="populated-scroller"
-            style={{ flex: 1, minInlineSize: 0, overflowY: "auto" }}
-          >
-            <div data-settings-scroller data-settings-width="workspace">
-              <div className="bycoda-settings-form" data-testid="populated-settings">
-                <div className="settings-topics">
-                  <SourceControlSettings />
-                  <WorktreesPage boundary cwd={fixtureCwd} onRemove={removeDisabled} />
-                </div>
+          <div data-settings-scroller data-settings-width="workspace">
+            <div className="bycoda-settings-form" data-testid="populated-settings">
+              <div className="settings-topics">
+                <SourceControlSettings />
+                <WorktreesPage
+                  boundary
+                  cwd={fixtureCwd}
+                  liveSessions={liveSessions}
+                  onRemove={removeDisabled}
+                />
               </div>
             </div>
           </div>
-        </main>
-      ) : (
-        <main className="min-h-screen bg-background-base p-6 text-content">
-          <Modal title="Worktrees" size="lg" onClose={() => {}}>
-            <div className="bycoda-settings-workbench p-4">
-              <WorktreesPage cwd={fixtureCwd} onRemove={removeDisabled} />
-            </div>
-          </Modal>
-        </main>
-      ),
-    );
-  },
-);
+        </div>
+      </main>
+    ) : (
+      <main className="min-h-screen bg-background-base p-6 text-content">
+        <Modal title="Worktrees" size="lg" onClose={() => {}}>
+          <div className="bycoda-settings-workbench p-4">
+            <WorktreesPage cwd={fixtureCwd} liveSessions={liveSessions} onRemove={removeDisabled} />
+          </div>
+        </Modal>
+      </main>
+    ),
+  );
+});

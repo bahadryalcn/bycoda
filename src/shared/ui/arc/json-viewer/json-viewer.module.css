@@ -82,7 +82,6 @@
   font-size: var(--ui-font-secondary);
   font-variant-ligatures: none;
   letter-spacing: 0;
-  scrollbar-width: thin;
 }
 .row {
   position: relative;

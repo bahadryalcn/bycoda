@@ -5,10 +5,29 @@ when the containing folder is itself a repository. Root and nested repositories
 keep separate changes, commit drafts and action targets.
 
 The Git panel reviews the repository or checkout selected in its target picker.
-The **Reviewing** path identifies that target. Workspace/session focus, the Git
+Its folder name, branch and full-path tooltip identify that target. Workspace/session focus, the Git
 review target and the checkout where an agent executes are separate choices.
 When checkout discovery fails, the current panel remains available with local
 **Retry** and diagnostic details; a failed read does not establish an empty list.
+
+**All checkouts** shows the current checkout, other worktrees and discovered child
+repositories as expandable changes panels. Folder names lead, branches remain
+visible, and child repositories are indented beneath their checkout. The current
+session's checkout starts expanded; each panel keeps its own expanded state and
+commit draft when collapsed or when you review another target. Selecting a review
+target does not change where the agent executes.
+
+Each panel's staging, unstaging, commit and sync actions apply only to that exact
+repository. A file with the same relative name in another checkout is a separate
+target. Select one repository in the picker for its full history graph and stash
+controls. The Changes tab totals include discovered child repositories in All
+checkouts and wait for every target's reading before showing a complete total.
+
+Repository discovery includes initialized submodules and independent repositories
+inside the selected checkout, including ignored source folders such as a separate
+`mobile` repository. It skips dependency/build directories and directory links.
+Discovery is bounded; an access or limit error keeps the previous inventory and
+offers Refresh rather than presenting an incomplete scan as an empty result.
 
 Changes retain staged and unstaged sections and the saved list/tree presentation.
 File rows expose the exact relative path and emphasize parent directories when
