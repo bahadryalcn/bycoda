@@ -15,3 +15,4 @@ $cpu = (Get-CimInstance Win32_Processor | Measure-Object -Property LoadPercentag
 Write-Output "cpuLoad=$cpu%"
 Get-ChildItem Env: | Where-Object { $_.Name -match '^GIT_' } | ForEach-Object { "  env $($_.Name)=$($_.Value)" }
 & git config --global --list 2>&1 | ForEach-Object { "  gitcfg $_" }
+exit 0
