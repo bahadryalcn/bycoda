@@ -16,6 +16,7 @@ import { dirname, join, relative } from "node:path";
 import { execFileAsync } from "../../src/shared/lib/processExecution.node";
 import { safeGitPath } from "../workspaces/workspace";
 import { writeFileAtomic } from "../storage/atomic-write";
+import { tmark as __tm, tnow as __tn } from "../tmp-timing";
 import type { HarnessFileChange } from "../../src/integrations/harness/core/types";
 
 type Image = { raw: string; mode: number } | null;
@@ -665,11 +666,14 @@ export class SessionFileRevert {
   async begin(session: string, cwd: string, turnId: string, userBlockId = turnId) {
     validId(turnId);
     validId(userBlockId);
+    let __t = __tn();
     cwd = await realpath(cwd);
     if (this.active.get(session)?.turn.id === turnId) return;
     if (this.active.has(session))
       await this.finish(session, cwd, this.active.get(session)!.turn.id, true);
+    __t = __tm("revert.begin.realpath+finishPrev", __t, cwd);
     const index = await this.readIndex(session, cwd, true);
+    __t = __tm("revert.begin.readIndex", __t);
     if (index.turns.some((previous) => previous.id === turnId))
       throw new Error("File history turn was already recorded; a new turn ID is required");
     const turn: Turn = {
@@ -679,7 +683,9 @@ export class SessionFileRevert {
       unavailable: "Turn file capture was interrupted",
     };
     const entry = await this.storeTurn(session, turn);
+    __t = __tm("revert.begin.storeTurn", __t);
     await this.writeIndex(session, cwd, [...index.turns, entry], index.turns);
+    __t = __tm("revert.begin.writeIndex", __t);
     const active: Active = {
       cwd,
       turn,
@@ -696,7 +702,9 @@ export class SessionFileRevert {
     this.active.set(session, active);
     let size = 0;
     try {
-      for (const path of await this.paths(cwd)) {
+      const __paths = await this.paths(cwd);
+      __t = __tm("revert.begin.paths", __t, `n=${__paths.length} ${__paths.slice(0, 40).join(",")}`);
+      for (const path of __paths) {
         try {
           const value = await image(cwd, path);
           size += value?.raw.length ?? 0;
@@ -709,9 +717,11 @@ export class SessionFileRevert {
           active.excluded.set(path, await fingerprint(cwd, path));
         }
       }
-    } catch {
+    } catch (__e) {
       active.complete = false;
+      __tm("revert.begin.FAILED", __t, String(__e));
     }
+    __tm("revert.begin.images", __t, `bytes=${size} excluded=${active.excluded.size}`);
   }
   /** Must run immediately before the session's structured write, paired with
    * claim after it. Post-edit provider events alone cannot prove a shared baseline. */

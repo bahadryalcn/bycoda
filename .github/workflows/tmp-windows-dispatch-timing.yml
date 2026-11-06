@@ -1,0 +1,48 @@
+# TEMPORARY timing probe for the Windows engine-async-persistence slowdown. Removed after use.
+name: TEMP Windows dispatch timing
+on:
+  push:
+    branches: [claude/funny-lamport-uas0gu]
+permissions:
+  contents: read
+jobs:
+  timing:
+    if: contains(github.event.head_commit.message, '[timing]')
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-deps
+        with:
+          node-version: 24
+      - name: Raw primitive probe
+        shell: pwsh
+        run: node scripts/tmp-timing/probe.mjs
+      - name: Timed slow file
+        shell: pwsh
+        continue-on-error: true
+        env:
+          BYCODA_TIMING_LOG: ${{ github.workspace }}\timing-slow.log
+          NODE_OPTIONS: --import=./scripts/tmp-timing/preload.mjs
+        run: pnpm exec vitest run --config host/vitest.config.ts host/engine-async-persistence.test.ts --reporter=verbose
+      - name: Timed fast comparison file
+        shell: pwsh
+        continue-on-error: true
+        env:
+          BYCODA_TIMING_LOG: ${{ github.workspace }}\timing-fast.log
+          NODE_OPTIONS: --import=./scripts/tmp-timing/preload.mjs
+        run: pnpm exec vitest run --config host/vitest.config.ts host/engine-run-writers.test.ts --reporter=verbose
+      - name: Print timing logs
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Output "===== SLOW ====="; Get-Content timing-slow.log -ErrorAction SilentlyContinue
+          Write-Output "===== FAST ====="; Get-Content timing-fast.log -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: tmp-dispatch-timing-${{ github.run_id }}
+          path: timing-*.log
+          retention-days: 3

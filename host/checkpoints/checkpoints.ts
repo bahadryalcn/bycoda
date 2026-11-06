@@ -21,6 +21,7 @@ import type {
 } from "../../src/features/sessions/model/checkpoint-types";
 import { safeGitPath } from "../workspaces/workspace";
 import { CheckpointLeases } from "./checkpoint-leases";
+import { tmark as __tm, tnow as __tn } from "../tmp-timing";
 import {
   SessionFileRevert,
   assertFileRevertAuthority,
@@ -210,14 +211,21 @@ export class HostCheckpoints {
   /** Lightweight default turn hooks: no private Git index, tree or refs. Call
    * with the actual user block ID, which differs from the provider run ID. */
   beginFilesTurn(session: string, cwd: string, turn: string, userBlockId = turn) {
+    const __q = __tn();
     return this.queue(session, [cwd], async () => {
+      let __t = __tm("beginFilesTurn.queue(realpath+hasGit+rev-parse+blockers)", __q, cwd);
       cwd = await realpath(cwd);
+      __t = __tm("beginFilesTurn.realpath", __t, cwd);
       await this.leases.publish(session, turn, cwd);
+      __t = __tm("beginFilesTurn.leases.publish", __t);
       try {
         await this.fileHistory.begin(session, cwd, turn, userBlockId);
+        __t = __tm("beginFilesTurn.fileHistory.begin", __t);
         const previous = await this.load(session);
         if (previous?.cwd === cwd && !previous.active) await this.retireResolved(session, previous);
+        __t = __tm("beginFilesTurn.load+retireResolved", __t);
         const currentHead = await head(cwd);
+        __t = __tm("beginFilesTurn.head", __t);
         const files = previous?.cwd === cwd ? previous.files : Object.create(null);
         // A new clean turn can review its own files without authorizing older
         // ambiguous aggregate entries. Preserve their restriction per file.
@@ -234,6 +242,7 @@ export class HostCheckpoints {
           noGit: !(await hasGit(cwd)),
           active: { id: turn, tree: "", dirty: Object.create(null), modes: Object.create(null) },
         });
+        __t = __tm("beginFilesTurn.hasGit+save", __t);
       } catch (error) {
         await this.leases.release(session, turn);
         throw error;
@@ -241,7 +250,9 @@ export class HostCheckpoints {
     });
   }
   finishFilesTurn(session: string, cwd: string, turn: string, _interrupted = false) {
+    const __q = __tn();
     return this.queue(session, [cwd], async () => {
+      __tm("finishFilesTurn.queue", __q, cwd);
       try {
         const captured = await this.fileHistory.finish(
           session,

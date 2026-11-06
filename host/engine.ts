@@ -142,6 +142,7 @@ import {
   type ShellResult,
 } from "../src/features/sessions/model/shellRun";
 import { newRequestId } from "../src/shared/lib/id/requestId";
+import { tmark as __tm, tnow as __tn } from "./tmp-timing";
 
 // Streamed output is written in batches. Anything a user may need to act on
 // (approvals, questions, errors, completion) is written immediately.
@@ -913,13 +914,18 @@ export class HostEngine {
   }
 
   private async executionActivity(value: HostSession, kind: "provider" | "shell") {
+    let __t = __tn();
     await assertShellOwnershipAvailable(this.store, value.session.worktreeCwd ?? value.session.cwd);
+    __t = __tm("executionActivity.assertShellOwnership#1", __t, value.session.cwd);
     if (isTaskWorktreeRemoving(value.session.worktreeCwd ?? value.session.cwd))
       throw new Error("The task checkout is being removed; wait before starting work");
     const workspace = await this.managedWorkspace(value);
+    __t = __tm("executionActivity.managedWorkspace", __t);
     const exactGitRewind = await this.exactGitRewindEnabled();
+    __t = __tm("executionActivity.exactGitRewind", __t);
     const executionCwd = workspace?.path ?? value.session.worktreeCwd ?? value.session.cwd;
     await assertShellOwnershipAvailable(this.store, executionCwd);
+    __t = __tm("executionActivity.assertShellOwnership#2", __t);
     if (isTaskWorktreeRemoving(executionCwd))
       throw new Error("The task checkout is being removed; wait before starting work");
     if (!exactGitRewind) return undefined;
@@ -4317,7 +4323,11 @@ export class HostEngine {
         try {
           if (!writerAdmitted)
             throw writerAdmissionFailure ?? new Error("Host run writer admission failed.");
+          let __t = __tn();
+          const __t0 = __t;
+          const __s = `sid=${session.id.slice(0, 8)} cwd=${session.cwd}`;
           await this.store.assertAuthority(session.id, active.authorityGeneration);
+          __t = __tm("dispatch.assertAuthority#1", __t, __s);
           if (!this.closing && !active.cancelled) {
             active.activity = this.reserveProviderActivity(session.id, provider);
             try {
@@ -4325,15 +4335,18 @@ export class HostEngine {
                 () => this.executionActivity(value, "provider"),
                 session.harness,
               );
+              __t = __tm("dispatch.activity.start(executionActivity)", __t, __s);
             } catch (reason) {
               active.admissionRefused = true;
               throw reason;
             }
             const workspace = await this.managedWorkspace(value);
+            __t = __tm("dispatch.managedWorkspace", __t, __s);
             active.managed = !!workspace;
             if (workspace?.path)
               session = { ...session, cwd: workspace.path, worktreeCwd: workspace.path };
             await this.runWriters.setExecutionCwd(active.hostRun!, session.cwd);
+            __t = __tm("dispatch.setExecutionCwd", __t, __s);
             if (this.closing || active.cancelled) throw new Error("Turn cancelled");
             const managedBoundary = active.managed
               ? await this.beginManagedTurn(value, userBlockId!)
@@ -4350,7 +4363,9 @@ export class HostEngine {
             if (this.closing || active.cancelled) throw new Error("Turn cancelled");
             // Message file history is independent of experimental whole-tree rewind.
             // Current checkouts and lightweight worktrees share the bounded journal.
+            __t = __tm("dispatch.managedTurn+reset", __t, __s);
             active.filesTurn = active.managed || !(await this.exactGitRewindEnabled());
+            __t = __tm("dispatch.exactGitRewindEnabled", __t, __s);
             if (active.filesTurn || !active.managed)
               await (
                 active.filesTurn
@@ -4362,6 +4377,7 @@ export class HostEngine {
                 // refuses): warn and run without a baseline, like the renderer.
                 console.warn("Workspace checkpoint failed", error);
               });
+            __t = __tm("dispatch.checkpoints.beginFilesTurn", __t, __s);
             if (this.closing || active.cancelled) throw new Error("Turn cancelled");
             // Startup binds from mirror columns without the account; a provider
             // thread lives in its account's profile, so resume it from there.
@@ -4420,17 +4436,20 @@ export class HostEngine {
                       session.harness,
                     )
                   : projectChatCitationsForProvider(prompt);
+              __t = __tm("dispatch.preparePrompt", __t, __s);
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               const thread = {
                 harness: session.harness,
                 providerAccountId: session.providerAccountId,
               };
+              const __hints = await harnessRuntimeHints(session.id);
+              __t = __tm("dispatch.harnessRuntimeHints", __t, __s);
+              const __owner = await this.ownerInstructions?.();
+              __t = __tm("dispatch.ownerInstructions", __t, __s);
               const hint = pendingRuntimeHint(
                 session.id,
                 thread,
-                [await harnessRuntimeHints(session.id), await this.ownerInstructions?.()]
-                  .filter(Boolean)
-                  .join("\n"),
+                [__hints, __owner].filter(Boolean).join("\n"),
               );
               const codex = session.harness === "codex";
               // Codex parses /goal only as the first token; carry replayed
@@ -4473,19 +4492,25 @@ export class HostEngine {
                     ),
                   )),
               };
+              __t = __tm("dispatch.attachments", __t, __s);
               const finalProviderInput = await (prepareSendPolicy?.(providerInput) ??
                 provider.prepareOperationPolicy?.(providerInput) ??
                 providerInput);
+              __t = __tm("dispatch.prepareSendPolicy", __t, __s);
               if (this.running.get(session.id) !== active) throw new Error("Turn cancelled");
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               if (active.managedTurns[0])
                 await this.managedTurns!.assertWritable(active.managedTurns[0].workspaceId);
               await this.store.assertAuthority(session.id, active.authorityGeneration);
+              __t = __tm("dispatch.assertAuthority#2", __t, __s);
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               const admission = this.commandAdmissions.getStore();
               if (admission)
                 await admission.check({ phase: "provider", sessionId: session.id, runId });
+              __t = __tm("dispatch.admission.check", __t, __s);
               await this.checkProviderSchedule(session.id, runId);
+              __t = __tm("dispatch.checkProviderSchedule", __t, __s);
+              __tm("dispatch.TOTAL-before-send", __t0, __s);
               if (this.closing || active.cancelled) throw new Error("Turn cancelled");
               active.providerEntered = true;
               await provider.send(finalProviderInput);
@@ -5019,6 +5044,7 @@ export class HostEngine {
       void work.catch(() => {});
     };
     // Capture every original cohort and method before awaiting any stop/store call.
+    let __t = __tn();
     for (const [id, active] of originals)
       if (active.activity) retainStop(id, active.provider, () => this.stopOriginalTurn(id, active));
     const remaining = [
@@ -5041,12 +5067,19 @@ export class HostEngine {
         }),
       ),
     );
+    __t = __tm("close.stops", __t, `n=${originals.length}`);
     await join(originals.map(([, active]) => active.done));
+    __t = __tm("close.originals.done", __t);
     await join(this.recoveryWork.values());
+    __t = __tm("close.recoveryWork", __t);
     await join([this.operations.drain()]);
+    __t = __tm("close.operations.drain", __t);
     await join([this.providerActivities.drain()]);
+    __t = __tm("close.providerActivities.drain", __t);
     await join([this.runWriters.drain()]);
+    __t = __tm("close.runWriters.drain", __t);
     await join([this.store.flushAll()]);
+    __t = __tm("close.store.flushAll", __t);
     if (failures.length) throw new AggregateError(failures, "Host session shutdown failed.");
   }
 }
