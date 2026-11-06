@@ -33,18 +33,25 @@ function gate() {
   const promise = new Promise<void>((done) => (resolve = done));
   return { promise, resolve };
 }
+// The root turn's durable receipt precedes real file-history and Git preparation,
+// which takes seconds per turn on Windows runners. Await the fake provider's actual
+// admission instead of polling for one second; store polls get an explicit bound.
+const POLL = { timeout: 10_000 };
+vi.setConfig({ testTimeout: process.platform === "win32" ? 90_000 : 30_000 });
 async function fixture(enabled = true) {
   const directory = realpathSync.native(mkdtempSync(join(tmpdir(), "assistant-questions-"))),
     store = new HostStore(join(directory, "host.db"));
   await store.ready;
   const project = await store.addProject(directory, "Question fixture"),
-    turns: Array<{ input: SendTurnInput; finish: () => void }> = [];
+    turns: Array<{ input: SendTurnInput; finish: () => void }> = [],
+    rootAdmitted = gate();
   const provider: HostProvider = {
     send: vi.fn(
       (input) =>
         new Promise<void>((finish) => {
           turns.push({ input, finish });
           input.onAccepted?.();
+          rootAdmitted.resolve();
         }),
     ),
     stop: vi.fn(async () => {}),
@@ -136,7 +143,8 @@ async function fixture(enabled = true) {
       sessionId,
       text: "Write the assigned local report using existing source data",
     });
-  await vi.waitFor(() => expect(turns).toHaveLength(1));
+  await rootAdmitted.promise;
+  expect(turns).toHaveLength(1);
   await tasks.save({
     id: "question-task",
     projectId: project.id,
@@ -203,13 +211,16 @@ async function fixture(enabled = true) {
         },
       ],
     });
-    await vi.waitFor(async () =>
-      expect((await store.session(sessionId)).session.pendingQuestion?.requestId).toBe(requestId),
+    await vi.waitFor(
+      async () =>
+        expect((await store.session(sessionId)).session.pendingQuestion?.requestId).toBe(requestId),
+      POLL,
     );
   };
   turns[0].input.onEvent({ type: "context", used: 1000, window: 1000000 });
-  await vi.waitFor(async () =>
-    expect((await store.session(sessionId)).session.context?.used).toBe(1000),
+  await vi.waitFor(
+    async () => expect((await store.session(sessionId)).session.context?.used).toBe(1000),
+    POLL,
   );
   const source = async () =>
     readAssistantQuestionStatus(
@@ -348,12 +359,14 @@ it("keeps off-policy and authority/publication questions with the owner and neve
     requestId: 91,
     title: "Allow a command?",
   });
-  await vi.waitFor(async () =>
-    expect(
-      (await f.store.session(f.sessionId)).session.blocks.some(
-        (block) => !!block.approval && !block.approval.decided,
-      ),
-    ).toBe(true),
+  await vi.waitFor(
+    async () =>
+      expect(
+        (await f.store.session(f.sessionId)).session.blocks.some(
+          (block) => !!block.approval && !block.approval.decided,
+        ),
+      ).toBe(true),
+    POLL,
   );
   await expect(f.managed.request(await f.answer("approval"), chief)).rejects.toThrow();
   expect(f.provider.answer).not.toHaveBeenCalled();
