@@ -3853,7 +3853,7 @@ function SidebarComponent({
               {lastSessionsData?.rows.length ? (
                 <CollectionFooter
                   loading={lastSessionsData.loading}
-                  error={lastSessionsData.error}
+                  error={lastSessionsData.error && t("Couldn’t load sessions")}
                   onRetry={lastSessionsData.refresh}
                   partial={
                     lastSessionsData.remoteHistoryLimited
