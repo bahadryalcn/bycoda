@@ -132,10 +132,18 @@ mockIPC(
   },
   { shouldMockEvents: true },
 );
-await listen(
-  "quick_composer_catalog_request",
-  () => void emit("quick_composer_catalog", { models: {}, availableHarnesses: ["codex"] }),
-);
+// Answer like a current workspace: echo the request identity so the catalog is
+// accepted at once instead of through the delayed fallback for older workspaces.
+await listen("quick_composer_catalog_request", (event) => {
+  const catalog = { models: {}, availableHarnesses: ["codex"] };
+  const request = event.payload as { requestId?: unknown; generation?: unknown } | null;
+  void emit(
+    "quick_composer_catalog",
+    request && typeof request === "object" && typeof request.requestId === "string"
+      ? { requestId: request.requestId, generation: request.generation, catalog }
+      : catalog,
+  );
+});
 applyThemePreference(params.get("theme") === "light" ? "light" : "dark");
 await languageReady;
 createRoot(document.getElementById("root")!).render(

@@ -189,27 +189,19 @@ for (const theme of ["light", "dark"])
       const connections = page.locator("#setting-mcp-servers");
       const list = connections.getByRole("region", { name: "MCP connections", exact: true });
       // One row per connection; each row owns exactly one actions menu button.
-      const details = list.locator(":scope > div:has(button[aria-haspopup='menu'])");
-      // Connections load in batches of 16 and extend with "Show more connections".
-      await expect(details).toHaveCount(16);
-      await expect(connections.getByRole("status")).toHaveText("1–16 of 25 connections");
+      const details = list.locator("[data-collection-key]:has(button[aria-haspopup='menu'])");
+      // The continuous list renders every loaded connection below its window threshold,
+      // without a "Show more connections" continuation or a range status.
+      await expect(details).toHaveCount(25);
+      await expect(
+        connections.getByRole("button", { name: "Show more connections", exact: true }),
+      ).toHaveCount(0);
+      for (const row of await details.all())
+        await expect(row.locator("button[aria-haspopup='menu']")).toHaveCount(1);
       await page.screenshot({
         path: `temp/verification/2026-10-16-ui-system/W5a-SETTINGS-mcp-${theme}-${width}.png`,
       });
       const scroller = page.locator("[data-settings-scroller]");
-      const showMore = connections.getByRole("button", {
-        name: "Show more connections",
-        exact: true,
-      });
-      await expect(showMore).toBeVisible();
-      await expect(showMore).toBeEnabled();
-      // Scrolling the continuation into the list viewport also reveals the next batch and
-      // unmounts the button, so a scrolling click() can lose that race; dispatch the click
-      // in place to exercise the button itself.
-      await showMore.dispatchEvent("click");
-      await expect(details).toHaveCount(25);
-      // The range status only shows while more connections remain to reveal.
-      await expect(connections.getByRole("status")).toHaveCount(0);
       await connections.getByRole("searchbox", { name: "Search MCP servers" }).fill("server-24");
       await expect(details).toHaveCount(1);
       await details.locator("summary").click();

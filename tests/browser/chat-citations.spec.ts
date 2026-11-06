@@ -26,17 +26,24 @@ test("interrupted recovery keeps Continue on the right above a distinct composer
       expect(Math.abs(b.y + b.height / 2 - c.y - c.height / 2)).toBeLessThan(3);
       expect(n.x + n.width - b.x - b.width).toBeLessThanOrEqual(18);
       if (theme === "dark") {
-        const color = await page.locator("[data-composer-box]").evaluate((element) => {
-          const canvas = document.createElement("canvas");
-          canvas.width = canvas.height = 1;
-          const context = canvas.getContext("2d")!;
-          context.fillStyle = getComputedStyle(element).backgroundColor;
-          context.fillRect(0, 0, 1, 1);
-          return Array.from(context.getImageData(0, 0, 1, 1).data);
+        // The composer is a glass surface shared with the queue and activity dock: it
+        // paints the dock glass token through a backdrop filter instead of an opaque fill.
+        const surface = await page.locator("[data-composer-box]").evaluate((element) => {
+          const probe = document.createElement("div");
+          probe.style.background = "var(--ui-activity-dock-glass)";
+          element.parentElement!.append(probe);
+          const expected = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          const style = getComputedStyle(element);
+          return {
+            background: style.backgroundColor,
+            expected,
+            filter: style.backdropFilter || style.getPropertyValue("-webkit-backdrop-filter"),
+          };
         });
-        expect(color[0]).toBeGreaterThanOrEqual(20);
-        expect(color[0]).toBeLessThanOrEqual(26);
-        expect(Math.abs(color[0] - color[1])).toBeLessThanOrEqual(2);
+        expect(surface.background).toBe(surface.expected);
+        expect(surface.background).not.toBe("rgba(0, 0, 0, 0)");
+        expect(surface.filter).not.toBe("none");
       }
       await page
         .getByTestId("composer-pane")

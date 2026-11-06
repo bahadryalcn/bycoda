@@ -18,7 +18,8 @@ for (const theme of ["light", "dark"] as const) {
     await expect(server).toBeVisible();
     for (let index = 0; index < 2; index++) {
       await page.getByRole("button", { name: "Send follow-up", exact: true }).click();
-      await expect(toggle).toContainText("2 running");
+      // The dock toggle is icon-only; its accessible name carries the count.
+      await expect(toggle).toHaveAccessibleName(/2 running/);
       await expect(research).toBeVisible();
       await expect(server).toBeVisible();
       await expect(dock.getByRole("button", { name: "Stop all", exact: true })).toBeVisible();

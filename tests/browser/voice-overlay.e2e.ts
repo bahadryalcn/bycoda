@@ -262,7 +262,9 @@ for (const theme of ["light", "dark"])
       await expect(panel.locator("div:has(> .sr-only)").filter({ hasText: "You:" })).toContainText(
         "Keep my full request together.",
       );
-      await expect(panel.getByRole("status").filter({ hasText: "Reply:" })).toBeVisible();
+      await expect(
+        panel.locator("div:has(> .sr-only)").filter({ hasText: "Reply:" }),
+      ).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-listening.png`) });
       const controls = ["Pause mic", "Silence", "Disconnect voice"];
       const actionBoxes = await Promise.all(
@@ -305,7 +307,9 @@ for (const theme of ["light", "dark"])
           true,
         ),
       );
-      await expect(panel.locator("details")).not.toHaveAttribute("open", "");
+      await expect(
+        panel.locator("details").filter({ hasText: "Error details" }),
+      ).not.toHaveAttribute("open", "");
       await expect(panel.getByRole("button", { name: "Start voice", exact: true })).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-attention.png`) });
       await panel.locator('summary:has-text("Error details")').click();
@@ -478,7 +482,9 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("radio", { name: "Delete job only", exact: true }).click();
       await panel.getByRole("button", { name: "Send answer", exact: true }).click();
       await expect(
-        panel.getByText("The selected assistant job was deleted.", { exact: true }),
+        panel
+          .getByRole("paragraph")
+          .getByText("The selected assistant job was deleted.", { exact: true }),
       ).toBeVisible();
       expect(await page.evaluate(() => (window as any).fixtureVoice.actions)).toContain(
         "assistant.delete",
@@ -634,7 +640,9 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("radio", { name: /Clinic/ }).click();
       await panel.getByRole("button", { name: "Send answer", exact: true }).click();
       await expect(
-        panel.getByText("Your project choice has been recorded.", { exact: true }),
+        panel
+          .getByRole("paragraph")
+          .getByText("Your project choice has been recorded.", { exact: true }),
       ).toBeVisible();
       expect(await page.evaluate(() => (window as any).fixtureVoice.submits)).toBe(0);
       await page.evaluate(() => (window as any).fixtureVoice.speech("give jobs"));
@@ -647,7 +655,7 @@ for (const theme of ["light", "dark"])
       await panel.screenshot({ path: join(output, `${theme}-${width}-job-review.png`) });
       await panel.getByRole("button", { name: "Start jobs", exact: true }).click();
       await expect(
-        panel.getByText("The reviewed jobs were accepted.", { exact: true }),
+        panel.getByRole("paragraph").getByText("The reviewed jobs were accepted.", { exact: true }),
       ).toBeVisible();
       expect(await page.evaluate(() => (window as any).fixtureVoice.jobs)).toMatchObject([
         { title: "Review recovery carefully" },

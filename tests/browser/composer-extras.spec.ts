@@ -115,20 +115,24 @@ test("Steer explains a prolonged wait and preserves the paused queue at narrow w
     await page.setViewportSize({ width: 320, height: 800 });
     const card = page.locator("[data-message-queue-card]");
     await card.getByRole("button", { name: "Steer", exact: true }).press("Enter");
+    // Pending stages are a compact summary indicator; the notice is for outcomes only.
+    const pending = card.locator("[data-delivery-pending]");
     const progress = page.locator("[data-delivery-progress]");
-    await expect(progress).toContainText("Synchronizing the message queue");
+    await expect(pending).toHaveAttribute("title", "Synchronizing the message queue…");
+    await expect(pending.getByRole("status")).toHaveText("Synchronizing the message queue…");
+    await expect(progress).toHaveCount(0);
     await expect(card.getByRole("button", { name: "Sending…", exact: true })).toBeDisabled();
     await page.clock.runFor(11_000);
-    await expect(progress).toContainText("11s elapsed");
-    await expect(progress).toContainText("you do not need to write it again");
-    expect(await progress.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
-      true,
-    );
+    await expect(pending).toHaveAttribute("title", "Synchronizing the message queue…");
+    expect(await card.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     await page.screenshot({
       path: `temp/verification/2026-10-21-steer-investigation/${light ? "light" : "dark"}-320-waiting.png`,
     });
     await page.clock.runFor(1000);
-    await expect(progress).toContainText("Waiting for provider confirmation");
+    await expect(pending).toHaveAttribute(
+      "title",
+      "Sending the message. Waiting for provider confirmation…",
+    );
     await page.clock.runFor(1000);
     await expect(progress).toHaveAttribute("data-delivery-progress", "rejected");
     await expect(card.getByRole("alert")).toHaveText(
@@ -162,7 +166,8 @@ test("queue actions expose progress and recovery in both themes at narrow widths
     await steer.focus();
     await steer.press("Enter");
     await expect(card.getByRole("button", { name: "Sending…", exact: true })).toBeDisabled();
-    await expect(card.locator("[data-queue-feedback]")).toHaveText("Waiting for confirmation…");
+    // The pending action is carried by the button label alone, without a feedback line.
+    await expect(card.locator("[data-queue-feedback]")).toHaveCount(0);
     await expect(steer).toBeEnabled();
     await expect(card.getByRole("button", { name: "Resume", exact: true })).toBeEnabled();
     await expect(card.locator("[data-queue-feedback]")).toHaveCount(0);
@@ -177,7 +182,9 @@ test("queue actions expose progress and recovery in both themes at narrow widths
   }
   await card.getByRole("button", { name: "Resume", exact: true }).click();
   await expect(card.getByRole("button", { name: "Resuming…", exact: true })).toBeDisabled();
-  await expect(card.locator("[data-queue-feedback]")).toContainText("when this turn finishes");
+  // A resumed queue is shown by its state, not by an inferred acceptance line.
+  await expect(card.getByRole("button", { name: "Resume", exact: true })).toHaveCount(0);
+  await expect(card.locator("[data-queue-feedback]")).toHaveCount(0);
   await page.screenshot({
     path: "temp/verification/2026-10-20-git-reliability/queue-feedback.png",
   });

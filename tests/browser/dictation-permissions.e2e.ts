@@ -90,9 +90,12 @@ test("switches are independent, keyboard accessible and never open the microphon
   await expect(companion).toBeChecked();
   await expect(page.getByRole("button", { name: "Dictate", exact: true })).toHaveCount(0);
   await companion.click();
+  await expect(companion).not.toBeChecked();
+  // The permission check stays available with both features off; showing it never opens
+  // the microphone.
   await expect(
     page.getByRole("button", { name: "Check microphone access", exact: true }),
-  ).toHaveCount(0);
+  ).toBeVisible();
   expect(await page.evaluate(() => (window as any).fixtureDictation.microphoneRequests)).toBe(0);
   await expect(page.getByRole("textbox", { name: "Message draft" })).toHaveValue(
     "Unsent draft remains here.",
