@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   accountApi,
   accountDeviceInfo,
@@ -33,7 +33,9 @@ export function useAccountPlatform(): void {
   }, []);
   useAnonymousStats();
   const machinesRef = useRef(machines);
-  machinesRef.current = machines;
+  useLayoutEffect(() => {
+    machinesRef.current = machines;
+  }, [machines]);
   useDiagnostics({
     api: accountApi,
     deviceInfo: accountDeviceInfo,
@@ -41,6 +43,7 @@ export function useAccountPlatform(): void {
     onFailure: reportAccountFailure,
     environment: () => appDiagnosticsFacts(machinesRef.current),
     readPerformance: readLocalHostPerformance,
+    // oxlint-disable-next-line react-hooks-js/refs -- the getter reads the ref only when a report is collected, never during render
     remoteHosts: remoteHostLogSource(() => machinesRef.current),
   });
   useActivityTracker(hostId);

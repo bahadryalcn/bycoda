@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import {
   accountApi,
   approvePairRequest,
@@ -59,7 +59,9 @@ export function PhoneAccountConnect() {
   const deviceId = isSignedIn(account) ? account.deviceId : null;
   const { confirm, dialog } = useConfirm();
   const confirmRef = useRef(confirm);
-  confirmRef.current = confirm;
+  useLayoutEffect(() => {
+    confirmRef.current = confirm;
+  }, [confirm]);
 
   useEffect(() => {
     if (!enabled || !deviceId) return;

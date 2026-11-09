@@ -21,7 +21,7 @@ const handlers = (): DesktopLiveHandlers => ({ stop: vi.fn(), approve: vi.fn(), 
 const notices = () => getRemoteActivityNotices().map((n) => ({ ...n }));
 
 afterEach(() => {
-  for (const notice of [...getRemoteActivityNotices()]) dismissRemoteActivityNotice(notice);
+  for (const notice of getRemoteActivityNotices().slice()) dismissRemoteActivityNotice(notice);
 });
 
 const tick = (

@@ -19,11 +19,15 @@ export function makeDeps(overrides: { logs?: Partial<NativeLogs>; signedIn?: boo
     hostCrash: null,
     ...overrides.logs,
   };
-  const sendDiagnosticReport = vi.fn(async (_: { body: unknown }) => ({
+  const sendDiagnosticReport = vi.fn<
+    (input: { body: unknown }) => Promise<{ id: string; createdAt: string }>
+  >(async () => ({
     id: "r1",
     createdAt: "x",
   }));
-  const sendAnonymousDiagnosticReport = vi.fn(async (_: { body: unknown }) => ({
+  const sendAnonymousDiagnosticReport = vi.fn<
+    (input: { body: unknown }) => Promise<{ id: string; createdAt: string }>
+  >(async () => ({
     id: "r2",
     createdAt: "x",
   }));

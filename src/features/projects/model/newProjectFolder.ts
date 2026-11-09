@@ -52,6 +52,7 @@ export function projectFolderName(name: string): string {
     .normalize("NFC")
     .trim()
     .toLocaleLowerCase()
+    // oxlint-disable-next-line no-control-regex -- control characters are invalid in folder names
     .replace(/[<>:"/\\|?*\u0000-\u001f]/g, " ")
     .replace(/[^\p{L}\p{N}._-]+/gu, "-")
     .replace(/-{2,}/g, "-")
