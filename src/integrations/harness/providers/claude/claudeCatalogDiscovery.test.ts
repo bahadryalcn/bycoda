@@ -19,6 +19,10 @@ vi.mock("../../core/child", () => ({
 vi.mock("../../../../platform/tauri/fs", () => ({
   homeDir: async () => "/home/test",
 }));
+vi.mock("../../../../features/providers/model/providerAccounts", async (load) => ({
+  ...(await load<object>()),
+  defaultProviderAccountId: () => "terminal-max",
+}));
 import { discoverClaudeModels } from "./claudeCatalog";
 
 it("backs off a hung probe across projects and retries after the cooldown", async () => {
@@ -30,6 +34,8 @@ it("backs off a hung probe across projects and retries after the cooldown", asyn
     expect((await first).length).toBeGreaterThan(0);
     expect((await discoverClaudeModels("/two")).length).toBeGreaterThan(0);
     expect(spawn).toHaveBeenCalledTimes(1);
+    // A signed-out ambient profile lists only aliases; probe the session account.
+    expect(spawn.mock.calls[0][4]).toEqual({ provider: "claude", id: "terminal-max" });
     await vi.advanceTimersByTimeAsync(300_001);
     const retry = discoverClaudeModels("/three");
     await vi.advanceTimersByTimeAsync(15_001);

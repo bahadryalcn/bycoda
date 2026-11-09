@@ -540,6 +540,15 @@ describe("live catalog overlays", () => {
     expect(hasLiveCatalog("omp")).toBe(false);
   });
 
+  it("does not count a stand-in fallback list as the live catalog", () => {
+    const fallback = [{ id: "pi:opus", harness: "pi" as const, name: "Opus", nativeId: "opus" }];
+    setHarnessModels("pi", fallback, false);
+    expect(modelsFor("pi").map((model) => model.id)).toEqual(["pi:opus"]);
+    expect(hasLiveCatalog("pi")).toBe(false);
+    setHarnessModels("pi", fallback);
+    expect(hasLiveCatalog("pi")).toBe(true);
+  });
+
   it("keeps saved Claude versions distinct from a live alias", () => {
     const live = [
       {

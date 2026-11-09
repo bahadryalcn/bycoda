@@ -92,7 +92,6 @@ export const MODELS: AgentModel[] = [
     name: "Opus 4.5",
     nativeId: "claude-opus-4-5",
   },
-
   {
     id: "cursor:composer-2.5",
     harness: "cursor",
@@ -117,7 +116,6 @@ export const MODELS: AgentModel[] = [
     name: "Cursor Grok 4.6",
     nativeId: "grok-4.6",
   },
-
   {
     id: "grok:grok-4.6",
     harness: "grok",
@@ -159,7 +157,6 @@ export const MODELS: AgentModel[] = [
       },
     ],
   },
-
   { id: "opencode:glm-5", harness: "opencode", name: "GLM 5" },
   { id: "opencode:minimax-m2.5", harness: "opencode", name: "MiniMax M2.5" },
   { id: "opencode:kimi-k2.5", harness: "opencode", name: "Kimi K2.5" },
@@ -256,6 +253,7 @@ const EMPTY_MODELS: AgentModel[] = [];
 
 let overlays: Partial<Record<HarnessId, AgentModel[]>> = {};
 let overlayDefaults: Partial<Record<HarnessId, string>> = {};
+const provisional = new Set<HarnessId>();
 let catalogVersion = 0;
 const listeners = new Set<() => void>();
 
@@ -280,8 +278,9 @@ export function getModelSnapshot(): number {
   return catalogVersion;
 }
 
-export function setHarnessModels(harness: HarnessId, models: AgentModel[]) {
+export function setHarnessModels(harness: HarnessId, models: AgentModel[], live = true) {
   if (models.length === 0 && harness !== "acp") return;
+  provisional[live ? "delete" : "add"](harness);
   models = foldFastVariants(models);
   models = models.map((model) => withClaudeAdvisor(model, models));
   const defaultId = pickDefaultId(harness, models);
@@ -381,9 +380,9 @@ function sameModelCatalog(a: AgentModel[], b: AgentModel[]): boolean {
   }
 }
 
-/** True after a live CLI catalog has replaced the built-in fallback list. */
+/** True after a live CLI catalog (not a `live = false` stand-in) replaced the bundled list. */
 export function hasLiveCatalog(harness: HarnessId): boolean {
-  return overlays[harness] != null;
+  return overlays[harness] != null && !provisional.has(harness);
 }
 
 /** Test seam. */

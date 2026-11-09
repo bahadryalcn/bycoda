@@ -447,6 +447,19 @@ describe("modelsForClaudeVersion", () => {
     expect(missing).not.toContain("claude-opus-5-5");
   });
 
+  it("offers Fable 5.1 from 2.1.255 and Fable 5.2 from 2.1.319", () => {
+    const before = modelsForClaudeVersion("2.1.254").map((model) => model.nativeId);
+    expect(before).not.toContain("claude-fable-5-1");
+    const fable51 = modelsForClaudeVersion("2.1.318").map((model) => model.nativeId);
+    expect(fable51).toContain("claude-fable-5-1");
+    expect(fable51).not.toContain("claude-fable-5-2");
+    const fable52 = modelsForClaudeVersion("2.1.319").map((model) => model.nativeId);
+    expect(fable52).toContain("claude-fable-5-2");
+    expect(modelsForClaudeVersion(null).map((model) => model.nativeId)).not.toContain(
+      "claude-fable-5-2",
+    );
+  });
+
   it("hides Sonnet 5 until 2.1.197, and rejects a missing version", () => {
     const beforeMinimum = modelsForClaudeVersion("2.1.196").map((model) => model.nativeId);
     expect(beforeMinimum).not.toContain("claude-sonnet-5");

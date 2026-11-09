@@ -32,6 +32,34 @@ describe("Claude advisor selection", () => {
       { value: "claude-fable-5-1", label: "Fable 5.1" },
     ]);
   });
+  it("offers Fable 5.2 as an advisor and gives it an advisor setting", () => {
+    const main = model("opus", "Opus 5.5", "claude-opus-5-5");
+    const offered = [main, model("claude-fable-5-2", "Fable 5.2")];
+    const setting = claudeAdvisorSetting("opus")!;
+    expect(offeredDelegationSetting(setting, offered, undefined, main).options).toContainEqual({
+      value: "claude-fable-5-2",
+      label: "Fable 5.2",
+    });
+    expect(claudeAdvisorSetting("claude-fable-5-2")?.id).toBe("advisor");
+  });
+  it("ranks releases newer than the known table without an app update", () => {
+    const main = model("claude-opus-6", "Opus 6");
+    const offered = [
+      main,
+      model("claude-opus-5-5", "Opus 5.5"),
+      model("claude-sonnet-6", "Sonnet 6"),
+      model("claude-fable-6", "Fable 6"),
+    ];
+    const setting = claudeAdvisorSetting(main.nativeId!)!;
+    expect(setting.id).toBe("advisor");
+    expect(
+      offeredDelegationSetting(setting, offered, undefined, main).options.map((o) => o.value),
+    ).toEqual(["default", "off", "claude-opus-6", "claude-fable-6"]);
+    // Older or in-between ids that the table never listed stay unsupported.
+    expect(claudeAdvisorSetting("claude-opus-4-1")).toBeUndefined();
+    expect(claudeAdvisorSetting("claude-opus-4-9")).toBeUndefined();
+    expect(claudeAdvisorSetting("claude-haiku-4-5-20251001")).toBeUndefined();
+  });
   it("uses version-only catalogs and retains a saved advisor missing from offered models", () => {
     const main = model("claude-fable-5-1", "Fable 5.1");
     const offered = [

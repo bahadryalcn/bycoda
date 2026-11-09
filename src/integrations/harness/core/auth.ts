@@ -1,6 +1,9 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { homeDir } from "../../../platform/tauri/fs";
-import { supportsProviderAccounts } from "../../../features/providers/model/providerAccounts";
+import {
+  defaultProviderAccountId,
+  supportsProviderAccounts,
+} from "../../../features/providers/model/providerAccounts";
 import { HARNESS_TITLE, type HarnessId } from "../../../features/sessions/model/session";
 import * as child from "./child";
 import { harnessLoginArgs } from "./authSupport";
@@ -12,6 +15,11 @@ export {
   latestTurnNeedsHarnessLogin,
   supportsHarnessLogin,
 } from "./authSupport";
+
+/** Account new sessions run under; a model catalog depends on its sign-in. */
+export function defaultHarnessAccount(provider: "claude" | "codex") {
+  return { provider, id: defaultProviderAccountId(provider) };
+}
 
 const LOGIN_TIMEOUT_MS = 10 * 60_000;
 const LOGIN_CHILD_PREFIX = "bycoda-provider-login-";

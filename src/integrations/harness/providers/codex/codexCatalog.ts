@@ -5,6 +5,7 @@ import {
   withProviderRetirement,
 } from "../../core/providerRetirement";
 import { homeDir } from "../../../../platform/tauri/fs";
+import { defaultHarnessAccount } from "../../core/auth";
 import { PRODUCT_IDENTITY } from "../../../../shared/lib/productIdentity";
 import {
   setHarnessModels,
@@ -87,7 +88,9 @@ export async function discoverCodexModels(workingDirectory?: string): Promise<Ag
 
   return withProviderRetirement(
     async () => {
-      await spawnChild(probeProcess, path, ["app-server"], cwd, undefined, "codex");
+      // The catalog depends on the signed-in account; probe the session account.
+      const account = defaultHarnessAccount("codex");
+      await spawnChild(probeProcess, path, ["app-server"], cwd, account, "codex");
       return await withTimeout(
         DISCOVERY_TIMEOUT_MS,
         async () => {

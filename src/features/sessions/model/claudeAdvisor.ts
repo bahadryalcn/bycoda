@@ -2,17 +2,15 @@ import type { AgentModel, ModelSetting } from "./models";
 import { CLAUDE_COMPACT_SETTINGS } from "./claudeCompact";
 import { CLAUDE_SUBAGENT_SETTINGS } from "./claudeSubagents";
 
+const FAMILIES = new Set(["haiku", "sonnet", "opus", "fable"]);
+
 /** Conservative family pairings; the CLI/account remains the authority. */
 export function claudeAdvisorSetting(native: string): ModelSetting | undefined {
   const id = native
     .replace(/\[.*$/, "")
     .replace(/\./g, "-")
     .replace(/^claude-/, "");
-  const supported =
-    /^(opus-(?:4-[678]|5(?:-5)?)|sonnet-(?:4-6|5(?:-5)?)|haiku-(?:4-5|5-5)|fable-5(?:-1)?|opus|sonnet|haiku|fable)$/.test(
-      id,
-    );
-  if (!supported) return undefined;
+  if (!FAMILIES.has(id) && advisorRank(id) == null) return undefined;
   const families = id.startsWith("fable")
     ? ["fable"]
     : /^(sonnet|haiku)/.test(id)
@@ -36,23 +34,64 @@ export function claudeAdvisorSetting(native: string): ModelSetting | undefined {
   };
 }
 
-// Mirrors Claude Code's advisor compatibility table. Unknown IDs stay out of
-// the advisor list; subagents can still use models returned by the catalog.
+// Anchors from Claude Code's advisor compatibility table, oldest first.
+const ADVISOR_ANCHORS: [string, number][] = [
+  ["haiku-4-5", 0],
+  ["sonnet-4-6", 1],
+  ["opus-4-6", 2],
+  ["sonnet-5", 3],
+  ["haiku-5-5", 3],
+  ["opus-4-7", 4],
+  ["opus-4-8", 4],
+  ["sonnet-5-5", 5],
+  ["opus-5", 6],
+  ["opus-5-5", 6],
+  ["fable-5", 7],
+  ["fable-5-1", 8],
+];
+
+function familyVersion(id: string): { family: string; version: number[] } | undefined {
+  const match = /^([a-z]+)-(\d+(?:-\d+)*)$/.exec(id);
+  if (!match || !FAMILIES.has(match[1]) || /\d{8}/.test(match[2])) return undefined;
+  return { family: match[1], version: match[2].split("-").map(Number) };
+}
+
+function compareVersions(a: number[], b: number[]): number {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+/**
+ * Advisor compatibility rank. A release newer than every anchor of its family
+ * (Fable 5.2, a future Opus 6) ranks just above that family's newest older
+ * anchor, so new models work without an app release. Older unknown ids stay out.
+ */
 function advisorRank(native: string): number | undefined {
   const id = native
     .replace(/\[.*$/, "")
     .replace(/\./g, "-")
     .replace(/^claude-/, "");
-  if (id === "haiku-4-5") return 0;
-  if (id === "sonnet-4-6") return 1;
-  if (id === "opus-4-6") return 2;
-  if (id === "sonnet-5" || id === "haiku-5-5") return 3;
-  if (id === "opus-4-7" || id === "opus-4-8") return 4;
-  if (id === "sonnet-5-5") return 5;
-  if (id === "opus-5" || id === "opus-5-5") return 6;
-  if (id === "fable-5") return 7;
-  if (id === "fable-5-1") return 8;
-  return undefined;
+  const exact = ADVISOR_ANCHORS.find(([anchor]) => anchor === id);
+  if (exact) return exact[1];
+  const parsed = familyVersion(id);
+  if (!parsed) return undefined;
+  const older = ADVISOR_ANCHORS.flatMap(([anchor, rank]) => {
+    const known = familyVersion(anchor);
+    return known?.family === parsed.family && compareVersions(known.version, parsed.version) < 0
+      ? [{ version: known.version, rank }]
+      : [];
+  });
+  const newestFamily = ADVISOR_ANCHORS.filter(([anchor]) => anchor.startsWith(`${parsed.family}-`));
+  // Only releases past the family's newest anchor; a gap between anchors is unknown.
+  const newer = newestFamily.some(
+    ([anchor]) => compareVersions(familyVersion(anchor)!.version, parsed.version) > 0,
+  );
+  if (older.length === 0 || newer) return undefined;
+  const base = older.reduce((a, b) => (compareVersions(a.version, b.version) >= 0 ? a : b));
+  return base.rank + 0.5;
 }
 
 export function withClaudeAdvisor(model: AgentModel, catalog: AgentModel[] = []): AgentModel {
@@ -92,8 +131,6 @@ export function withClaudeAdvisor(model: AgentModel, catalog: AgentModel[] = [])
     }),
   };
 }
-
-const FAMILIES = new Set(["haiku", "sonnet", "opus", "fable"]);
 
 function advisorNative(model: AgentModel): string {
   return model.aliasTarget ?? model.nativeId ?? model.id.replace(/^claude:/, "");

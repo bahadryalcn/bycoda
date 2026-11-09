@@ -5,8 +5,10 @@ import {
   withProviderRetirement,
 } from "../../core/providerRetirement";
 import { homeDir } from "../../../../platform/tauri/fs";
+import { defaultHarnessAccount } from "../../core/auth";
 import { withClaudeAdvisor } from "../../../../features/sessions/model/claudeAdvisor";
 import {
+  hasLiveCatalog,
   setHarnessModels,
   type AgentModel,
   type ModelSetting,
@@ -26,6 +28,8 @@ import {
   compareSemver,
   isClaudeInitMessage,
   listModelsFromControlResponse,
+  MINIMUM_CLAUDE_FABLE_5_1_VERSION,
+  MINIMUM_CLAUDE_FABLE_5_2_VERSION,
   MINIMUM_CLAUDE_FABLE_5_VERSION,
   MINIMUM_CLAUDE_OPUS_4_7_VERSION,
   MINIMUM_CLAUDE_OPUS_4_8_VERSION,
@@ -125,6 +129,20 @@ function contextWindow(defaultValue: "200k" | "1m"): ModelSetting {
 
 /** Fallback catalog when `list_models` is unavailable. */
 export const CLAUDE_MODEL_CATALOG: AgentModel[] = [
+  {
+    id: "claude:fable-5-2",
+    harness: "claude",
+    name: "Claude Fable 5.2",
+    nativeId: "claude-fable-5-2",
+    settings: [EFFORT_WITH_XHIGH, contextWindow("1m")],
+  },
+  {
+    id: "claude:fable-5-1",
+    harness: "claude",
+    name: "Claude Fable 5.1",
+    nativeId: "claude-fable-5-1",
+    settings: [EFFORT_WITH_XHIGH, contextWindow("1m")],
+  },
   {
     id: "claude:fable-5",
     harness: "claude",
@@ -229,9 +247,11 @@ const probeRetryAt = new Map<string, number>();
 
 export function refreshClaudeCatalog(): Promise<void> {
   if (inflight) return inflight;
-  inflight = discoverClaudeModels()
-    .then((models) => {
-      if (models.length > 0) setHarnessModels("claude", models);
+  inflight = discoverClaudeCatalog()
+    .then(({ models, live }) => {
+      // A timed-out probe must not replace a live list with the static fallback.
+      if (models.length === 0 || (!live && hasLiveCatalog("claude"))) return;
+      setHarnessModels("claude", models, live);
     })
     .catch((error: unknown) => {
       assertOptionalProviderProbeError(error);
@@ -244,8 +264,19 @@ export function refreshClaudeCatalog(): Promise<void> {
 }
 
 export async function discoverClaudeModels(workingDirectory?: string): Promise<AgentModel[]> {
+  return (await discoverClaudeCatalog(workingDirectory)).models;
+}
+
+/** `live` is false when the version-gated fallback stands in for `list_models`. */
+async function discoverClaudeCatalog(
+  workingDirectory?: string,
+): Promise<{ models: AgentModel[]; live: boolean }> {
+  const fallback = async () => ({
+    models: await discoverViaVersion(workingDirectory),
+    live: false,
+  });
   const { path } = await resolveClaudeBinary();
-  if ((probeRetryAt.get(path) ?? 0) > Date.now()) return discoverViaVersion(workingDirectory);
+  if ((probeRetryAt.get(path) ?? 0) > Date.now()) return fallback();
   const listed = await discoverViaListModels(workingDirectory, path).catch((error: unknown) => {
     assertOptionalProviderProbeError(error);
     console.debug("[bycoda] claude list_models catalog failed", error);
@@ -257,8 +288,8 @@ export async function discoverClaudeModels(workingDirectory?: string): Promise<A
     }
     return [];
   });
-  if (listed.length > 0) return listed;
-  return discoverViaVersion(workingDirectory);
+  if (listed.length > 0) return { models: listed, live: true };
+  return fallback();
 }
 
 async function discoverViaListModels(
@@ -319,7 +350,8 @@ async function discoverViaListModels(
         path,
         buildClaudeSpawnArgs({ isolated: true, sessionId }),
         cwd,
-        undefined,
+        // A signed-out profile lists only generic aliases; probe the session account.
+        defaultHarnessAccount("claude"),
         "claude",
       );
       pending.catch(() => undefined);
@@ -555,6 +587,12 @@ function claudeLaunchId(valueId: string, resolvedId: string): string {
 export function modelsForClaudeVersion(version: string | null | undefined): AgentModel[] {
   const models = CLAUDE_MODEL_CATALOG.filter((model) => {
     const slug = model.nativeId ?? "";
+    if (slug === "claude-fable-5-2") {
+      return version ? compareSemver(version, MINIMUM_CLAUDE_FABLE_5_2_VERSION) >= 0 : false;
+    }
+    if (slug === "claude-fable-5-1") {
+      return version ? compareSemver(version, MINIMUM_CLAUDE_FABLE_5_1_VERSION) >= 0 : false;
+    }
     if (slug === "claude-opus-5-5") {
       return version ? compareSemver(version, MINIMUM_CLAUDE_OPUS_5_5_VERSION) >= 0 : false;
     }
