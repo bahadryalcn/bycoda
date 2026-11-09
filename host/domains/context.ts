@@ -70,6 +70,8 @@ export interface HostDomainContext {
   authorized(): Promise<boolean>;
   /** Opaque authenticated identity; never a bearer credential. */
   readonly principalId?: string;
+  /** Name of the requesting paired device, when known; never the credential. */
+  requesterName?(): Promise<string | undefined>;
   readonly signal?: AbortSignal;
   closing?(): boolean;
   /** Request-scoped grant; credentials remain in transport composition. */

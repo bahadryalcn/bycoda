@@ -51,6 +51,7 @@ import { LanguageSettings } from "./LanguageSettings";
 import { BuildIdentityDetails } from "./BuildIdentityDetails";
 import { UpdateChannelRow } from "./UpdateChannelRow";
 import { SessionFolderGroup, restoreSessionFolderDefault } from "./SessionFolderSettings";
+import { NewProjectFolderGroup, restoreNewProjectFolderDefault } from "./NewProjectFolderSettings";
 import { DiagnosticsGroup, restorePerformanceTraceDefault } from "./DiagnosticsSettings";
 import { Group, Row, Toggle, useSettingsPageReset } from "./settingsControls";
 import { ProductDetails } from "./GeneralProductDetails";
@@ -99,6 +100,7 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
     saveKeepAwakeHoldAfter(KEEP_AWAKE_HOLD_AFTER_DEFAULT);
     saveKeepAwakeScreen(KEEP_AWAKE_SCREEN_DEFAULT);
     restorePerformanceTraceDefault();
+    restoreNewProjectFolderDefault();
     await Promise.allSettled([
       restoreSessionFolderDefault(),
       setLanguagePreference("system"),
@@ -257,6 +259,8 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
       </Group>
 
       <SessionFolderGroup />
+
+      <NewProjectFolderGroup />
 
       <DiagnosticsGroup />
 

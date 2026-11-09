@@ -54,6 +54,15 @@ export class RemoteSessionLists {
     return this.entries.get(JSON.stringify([machineId, projectId]))?.etag;
   }
 
+  /** The list and etag held, for reading what an incoming change alters. */
+  held(
+    machineId: string,
+    projectId: string,
+  ): { sessions: HostSessionSummary[]; etag?: string } | undefined {
+    const entry = this.entries.get(JSON.stringify([machineId, projectId]));
+    return entry && { sessions: entry.value, etag: entry.etag };
+  }
+
   verifiedAt(machineId: string, projectId: string): number | undefined {
     return this.entries.get(JSON.stringify([machineId, projectId]))?.at;
   }

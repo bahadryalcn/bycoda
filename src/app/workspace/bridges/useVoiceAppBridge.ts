@@ -6,6 +6,7 @@ import {
 import { voiceProjectNames } from "../../../features/voice/model/voiceProjectNames";
 import { useVoiceWorkspaceActions } from "./useVoiceWorkspaceActions";
 import type {
+  VoiceProjectCreate,
   VoiceSessionCreate,
   VoiceWorkspaceActionsDeps,
   VoiceWorkspaceProject,
@@ -37,6 +38,12 @@ import {
 } from "../../../features/sessions/model/sessionsStore";
 import type { VoiceWorkspaceSession } from "../../../features/voice/model/voiceWorkspaceActions";
 import { pathKey } from "../../../shared/lib/paths";
+import { createPath, homeDir } from "../../../platform/tauri/fs";
+import {
+  newProjectFolderSetting,
+  newProjectParent,
+  projectFolderName,
+} from "../../../features/projects/model/newProjectFolder";
 
 type Deps = {
   projects: readonly VoiceWorkspaceProject[];
@@ -180,6 +187,23 @@ export function useVoiceAppBridge(deps: Deps) {
     assertVisible(request.projectPath);
     return session.id;
   };
+  const onCreateProject = async (request: VoiceProjectCreate) => {
+    const select = latest.current.onSelectProject;
+    if (!select) throw new Error("This window cannot add projects.");
+    const folder = projectFolderName(request.name);
+    const parent =
+      request.parentPath ??
+      newProjectParent(
+        newProjectFolderSetting.load(),
+        latest.current.projects.map((entry) => entry.path),
+        await homeDir(),
+      );
+    if (isRemoteProjectPath(parent)) throw new Error("New projects are created on this computer.");
+    // The native command refuses an existing folder and asks for file access when needed.
+    const path = await createPath(parent, folder, true);
+    await select(path, request.workspaceRequestId);
+    return path;
+  };
   const listSessions = async (path: string): Promise<VoiceWorkspaceSession[]> => {
     assertVisible(path);
     if (!isRemoteProjectPath(path)) {
@@ -226,6 +250,7 @@ export function useVoiceAppBridge(deps: Deps) {
     },
     listSessions,
     onCreate,
+    onCreateProject,
     onSelectProject: deps.onSelectProject,
     onOpen: async (id, workspaceRequestId) => {
       const remote = listedSessions.current.get(id);

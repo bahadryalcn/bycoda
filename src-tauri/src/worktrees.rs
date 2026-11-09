@@ -1254,7 +1254,7 @@ pub(crate) fn reconcile_removals(conn: &rusqlite::Connection) -> Result<(), Stri
                         continue;
                     }
                     if let Err(error) = recover_remnants(root, Path::new(&path)) {
-                        eprintln!("Worktree cleanup remains pending: {error}");
+                        log::warn!("Worktree cleanup remains pending: {error}");
                         continue;
                     }
                     crate::worktree_lifecycle::finish_removal_recovery(Path::new(&path));
@@ -1262,7 +1262,7 @@ pub(crate) fn reconcile_removals(conn: &rusqlite::Connection) -> Result<(), Stri
                 Ok(_) => {}
                 Err(error) => {
                     crate::worktree_lifecycle::block_removal_recovery(Path::new(&path));
-                    eprintln!("Cannot reconcile pending worktree cleanup: {error}");
+                    log::warn!("Cannot reconcile pending worktree cleanup: {error}");
                     continue;
                 }
             }
@@ -1349,7 +1349,7 @@ fn remove_with_sessions(
     // Git has succeeded and the sessions are already durably detached. A
     // cleanup failure must not tell the UI to resume them in the deleted path.
     if let Err(error) = finish_removal(conn, &tree.path, &[]) {
-        eprintln!("Worktree removed; recovery journal cleanup will retry on restart: {error}");
+        log::warn!("Worktree removed; recovery journal cleanup will retry on restart: {error}");
     }
     Ok(WorktreeRemoval {
         session_ids: ids,

@@ -107,8 +107,15 @@ export function roomManagementDiscovery(
   input: Record<string, unknown>,
   projectId?: string,
 ) {
-  const catalog = voiceToolCatalog().filter((tool) =>
-    roomManagementToolAllowed(tool.family, tool.action, projectId),
+  // Global discovery also lists project tools so the manager can find them; calling one
+  // still requires an explicit visible projectId, which the dispatcher re-verifies.
+  const catalog = voiceToolCatalog().flatMap((tool) =>
+    roomManagementToolAllowed(tool.family, tool.action, projectId)
+      ? [tool]
+      : !projectId &&
+          roomManagementToolAllowed(tool.family, tool.action, "explicit-project-required")
+        ? [{ ...tool, requiresProject: true as const }]
+        : [],
   );
   const id = (tool: (typeof catalog)[number]) => `${tool.family}:${tool.action}`;
   if (action === "tools.describe") {
@@ -183,6 +190,7 @@ export function roomManagementDiscovery(
       action: tool.action,
       description: tool.description,
       annotations: tool.annotations,
+      ...("requiresProject" in tool ? { requiresProject: true } : {}),
       ...(action === "tools.status" ? { availability: "unknown" } : {}),
     })),
     total: filtered.length,

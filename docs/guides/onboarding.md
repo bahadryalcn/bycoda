@@ -35,8 +35,9 @@ The language selector applies immediately. Reopen the flow from Settings → Gen
   the original uncles and the Star Wars, Lord of the Rings and Matrix crews. Users
   can hide the crew or disable
   decorative animations independently; on displays refreshing at 120 Hz or more,
-  decorative animations start off until the user turns them on. Existing
-  appearance settings are reused.
+  decorative animations start off until the user turns them on. Decorative
+  pulses, the crew and the pacing walker hold their last frame while the bycoda
+  window is behind another application. Existing appearance settings are reused.
   Settings → Appearance is split into Theme, Background, Interface, Typography
   and Motion tabs; search opens the tab that holds a setting. Theme holds the
   palette, mode, accent, tone (hue, saturation, dark lightness) and Interaction

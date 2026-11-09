@@ -145,7 +145,10 @@ export function createCommandsRuntime(
             throw new Error("Question changed while resolving attachments");
           resolved = { ...parsed, reply: { ...parsed.reply, attachments } };
         }
-        const prepared = await dependencies.desktop.live.prepareDesktop(resolved);
+        const prepared = await dependencies.desktop.live.prepareDesktop(
+          resolved,
+          await context.requesterName?.(),
+        );
         return {
           ...prepared,
           revalidate: async () => {

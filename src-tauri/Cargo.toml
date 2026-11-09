@@ -32,6 +32,7 @@ ring = "=0.17.14"
 unicode-normalization = "0.1"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
+flate2 = "1"
 chromium-storage-indexeddb-core = "=0.2.0"
 blob-decoder = { version = "=0.2.2", default-features = false }
 snap = "1"
@@ -53,7 +54,7 @@ futures-util = { version = "=0.3.34", features = ["sink"] }
 jsonschema = { version = "=0.60.2", default-features = false }
 url = "2.5"
 semver = "1"
-time = { version = "0.3", features = ["parsing"] }
+time = { version = "0.3", features = ["parsing", "formatting"] }
 tauri-plugin-process = "2"
 tauri-plugin-global-shortcut = "2"
 arboard = { version = "3.6", features = ["wayland-data-control"] }
@@ -69,6 +70,7 @@ quick-xml = "0.42"
 mail-parser = { version = "0.11.9", default-features = false }
 ruzstd = "0.9"
 notify = "8"
+log = "0.4"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

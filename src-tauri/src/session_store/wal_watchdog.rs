@@ -103,7 +103,7 @@ pub(super) fn start(app: &AppHandle) {
             }
         });
     if let Err(error) = spawned {
-        eprintln!("session wal watchdog thread: {error}");
+        log::warn!("session wal watchdog thread: {error}");
     }
 }
 
@@ -173,9 +173,9 @@ pub(super) fn tick<C: Deref<Target = Connection> + ReopenWriter>(
         "after": after.map(|checkpoint| wal_json(checkpoint, None)),
     })
     .to_string();
-    eprintln!("{line}");
+    log::debug!("{line}");
     if let Err(error) = append_capped(&log_dir.join(LOG_FILE), &line) {
-        eprintln!("session wal watchdog log: {error}");
+        log::warn!("session wal watchdog log: {error}");
     }
     true
 }

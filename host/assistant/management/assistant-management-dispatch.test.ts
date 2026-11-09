@@ -189,3 +189,19 @@ it("requires Host-branded Native observation provenance", async () => {
     contributorNativeProofs: [proof],
   });
 });
+
+it("lists project tools in Global discovery as requiring an explicit project", () => {
+  const global = roomManagementDiscovery("tools.search", { query: "crews", limit: 20 });
+  const start = global.tools.find((tool) => tool.action === "crews.start");
+  expect(start).toMatchObject({ requiresProject: true });
+  // Within a project the same tool is directly executable and carries no marker.
+  const scoped = roomManagementDiscovery("tools.search", { query: "crews", limit: 20 }, "project");
+  expect(scoped.tools.find((tool) => tool.action === "crews.start")).not.toHaveProperty(
+    "requiresProject",
+  );
+  // Global-only tools stay unmarked.
+  const notebook = roomManagementDiscovery("tools.search", { query: "notebook", limit: 20 });
+  expect(notebook.tools.find((tool) => tool.action === "notebook.list")).not.toHaveProperty(
+    "requiresProject",
+  );
+});

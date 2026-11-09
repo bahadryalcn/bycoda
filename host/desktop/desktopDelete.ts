@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-type Job = { id: string; sessionId: string; cwd: string };
+/** `requestedBy`: the requesting device's name, so the desktop can say who deleted. */
+type Job = { id: string; sessionId: string; cwd: string; requestedBy?: string };
 type Pending = {
   job: Job;
   client?: string;
@@ -17,6 +18,7 @@ export class DesktopDelete {
     sessionId: string,
     cwd: string,
     authorized: () => boolean | Promise<boolean>,
+    requestedBy?: string,
   ): Promise<void> {
     if (![...this.clients.values()].some((at) => Date.now() - at < 20_000))
       return Promise.reject(
@@ -43,7 +45,11 @@ export class DesktopDelete {
         if (error) reject(new Error(error));
         else resolve();
       };
-      this.pending.set(id, { job: { id, sessionId, cwd }, authorized, finish });
+      this.pending.set(id, {
+        job: { id, sessionId, cwd, ...(requestedBy ? { requestedBy } : {}) },
+        authorized,
+        finish,
+      });
     });
   }
 

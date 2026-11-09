@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
-import { Save } from "../../../../../shared/ui/icons";
+import { Plus, Save } from "../../../../../shared/ui/icons";
 import { SAVED_THEMES_MAX, useSavedThemes } from "../../../model/savedThemes";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import { saveCurrentLook } from "./savedThemeActions";
@@ -14,9 +14,12 @@ import { ThemeNameDialog } from "./ThemeNameDialog";
 export function SaveLookButton({
   appearance,
   iconOnly = false,
+  card = false,
 }: {
   appearance: AppearanceSettings;
   iconOnly?: boolean;
+  /** Renders as a dashed grid card (the saved-themes grid) instead of a button. */
+  card?: boolean;
 }) {
   useLocale();
   const [asking, setAsking] = useState(false);
@@ -26,7 +29,18 @@ export function SaveLookButton({
   const open = () => setAsking(true);
   return (
     <>
-      {iconOnly ? (
+      {card ? (
+        <Button
+          variant="item"
+          className="theme-saved-add"
+          startIcon={<Plus />}
+          disabled={full}
+          disabledReason={blocked}
+          onClick={open}
+        >
+          {label}
+        </Button>
+      ) : iconOnly ? (
         <Button
           iconOnly
           size="sm"

@@ -12,10 +12,12 @@ export function InterfaceSection({ appearance }: { appearance: AppearanceSetting
   return (
     <AppearanceSection id="reading" title={t("Interface")}>
       <div className="interface-grid">
-        <InterfaceSizeGroup appearance={appearance} />
+        <div className="interface-column">
+          <InterfaceSizeGroup appearance={appearance} />
+          <InterfaceBehaviorGroup appearance={appearance} />
+        </div>
         <div className="interface-column">
           <InterfaceReadabilityGroup appearance={appearance} />
-          <InterfaceBehaviorGroup appearance={appearance} />
           <ScrollbarGroup />
         </div>
       </div>

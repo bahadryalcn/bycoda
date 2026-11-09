@@ -62,10 +62,18 @@
   --bar-scale: 0.6;
 }
 
+/* Stepped, not eased: the compositor swaps one frame per step instead of one per
+   vsync (measured on a 240 Hz display: 240 swaps a second from the pulses alone,
+   37 with steps), so the GPU process idles between steps. */
 @media (prefers-reduced-motion: no-preference) {
   .indicator {
-    animation: working-signal 1.25s ease-in-out infinite;
+    animation: working-signal 1.25s steps(8, jump-none) infinite;
   }
+}
+
+/* Behind another window the pulse holds its frame, like the row status dots. */
+:global(html[data-window-focus="off"]) .indicator {
+  animation-play-state: paused;
 }
 
 :global(html[data-decorative-motion="off"]) .indicator {

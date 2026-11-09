@@ -23,6 +23,8 @@
 .crew-scene__labels {
   position: absolute;
   inset: 0;
+  /* Labels resolve `cqh` against the whole scene so they can stop under the sign. */
+  container-type: size;
   pointer-events: none;
   overflow: visible;
 }

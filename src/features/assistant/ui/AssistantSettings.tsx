@@ -12,13 +12,14 @@ import { Modal } from "../../../shared/ui/Modal";
 import { TabStrip } from "../../../shared/ui/Tabs";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
-import { Check, RefreshCw } from "../../../shared/ui/icons";
+import { Check, RefreshCw, Sparkles } from "../../../shared/ui/icons";
 import { AssistantProfileFields, type ProfileSection } from "./AssistantProfileFields";
 import { AssistantPresenceStatus } from "./AssistantPresenceStatus";
 import { AssistantKeepAwakeStatus } from "./AssistantKeepAwakeStatus";
 import { ManualSessionSupervision } from "./ManualSessionSupervision";
 import { DesktopControlSettings } from "../../host-tools/DesktopControlSettings";
 import { Group } from "../../settings/public/settingsControls";
+import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
 import { ProfileRowsProvider } from "./settings/SettingsProfileRow";
 import { AssistantRetentionField } from "./settings/AssistantUsageSettings";
 import { AssistantScheduleInfo } from "./settings/AssistantScheduleFields";
@@ -95,6 +96,7 @@ export function AssistantSettings({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [savedNotice, setSavedNotice] = useState(false);
+  const [builderOpen, setBuilderOpen] = useState(false);
   const formId = useId();
   const [page, setPage] = useState<SettingsPage>("personal");
   const contentRef = useRef<HTMLDivElement>(null);
@@ -300,7 +302,22 @@ export function AssistantSettings({
             {tab(
               "personal",
               <>
-                <Group title={t("Identity")}>{profile("identity")}</Group>
+                <Group
+                  title={t("Identity")}
+                  action={
+                    <Button
+                      type="button"
+                      size="sm"
+                      startIcon={<Sparkles className="icon-sm" />}
+                      tooltip={t("Answer a few questions and let AI draft your whole profile")}
+                      onClick={() => setBuilderOpen(true)}
+                    >
+                      {t("Create with AI")}
+                    </Button>
+                  }
+                >
+                  {profile("identity")}
+                </Group>
                 <Group title={t("Language")}>{profile("language")}</Group>
                 <Group title={t("Personality")}>{profile("personality")}</Group>
                 <Group title={t("Conversation")}>{profile("behavior")}</Group>
@@ -395,6 +412,16 @@ export function AssistantSettings({
           </ProfileRowsProvider>
         </div>
       </form>
+      {builderOpen && (
+        <AssistantBuilderDialog
+          current={draft}
+          onClose={() => setBuilderOpen(false)}
+          onApply={(patch) => {
+            setSavedNotice(false);
+            setDraft((current) => ({ ...current, ...patch }));
+          }}
+        />
+      )}
     </Modal>
   );
 }

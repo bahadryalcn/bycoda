@@ -59,3 +59,30 @@ it("copies the live child's questions without mutating the Host snapshot and cle
   );
   expect(remoteSessionFor("other-shell")).toBe("child");
 });
+
+it("remembers a listed session that is not this parent's child, so the next poll asks by revision", async () => {
+  const parent = { id: "parent", cwd: "/project" } as Session;
+  const unrelated = {
+    projectId: "project",
+    revision: 4,
+    status: "idle",
+    updatedAt: 1,
+    session: { id: "stray", cwd: "/project", title: "Stray", blocks: [] },
+  } as unknown as HostSession;
+  const reads: (HostSession | undefined)[] = [];
+  const port: DelegatedDiscoveryPort = {
+    host: async () => ({
+      machine: { id: "machine", environmentId: "env" } as RemoteMachine,
+      projectId: "project",
+    }),
+    list: async () => [{ id: "stray" } as HostSessionSummary],
+    read: async (_machine, _id, known) => {
+      reads.push(known);
+      return unrelated;
+    },
+  };
+  const known = new Map<string, HostSession>();
+  expect(await discoverDelegatedRuns(parent, port, known, () => true)).toEqual([]);
+  expect(await discoverDelegatedRuns(parent, port, known, () => true)).toEqual([]);
+  expect(reads).toEqual([undefined, unrelated]);
+});

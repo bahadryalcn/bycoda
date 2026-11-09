@@ -107,3 +107,29 @@
   color: var(--ui-text-muted);
   font-size: 0.65625rem;
 }
+
+/* Scrollbar preview: a scrollable code snippet at full row width. */
+.scrollbar-preview {
+  block-size: 7.5rem;
+  inline-size: 100%;
+  overflow: auto;
+  padding: 4px 8px;
+  border: 1px solid var(--ui-settings-group-border);
+  border-radius: var(--ui-control-radius);
+  background: var(--ui-surface);
+  color: var(--ui-text-secondary);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+.scrollbar-preview-row {
+  display: flex;
+  gap: 12px;
+  white-space: pre;
+}
+.scrollbar-preview-gutter {
+  flex: none;
+  min-inline-size: 1.5ch;
+  color: var(--ui-text-muted);
+  text-align: end;
+}

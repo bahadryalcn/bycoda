@@ -29,6 +29,7 @@ it("starts the independent desktop heartbeat parts together and keeps the result
     heartbeatEffects: Promise.resolve(),
     withinBeat: (work: () => Promise<unknown>) => work(),
     desktopDelete: { beat: () => waitFor("deletions") },
+    remoteActivity: { since: () => ({ seq: 0, events: [], reset: true }) },
     providerInbox: { beat: () => waitFor("inbox") },
     hostNotes: { revision: 7 },
     sessionQueues: { changesSince: () => ({ seq: 3 }) },
@@ -60,5 +61,6 @@ it("starts the independent desktop heartbeat parts together and keeps the result
     adopted: { seq: 5, ids: ["a"] },
     queueLeases: { q1: null },
     runLeases: { s1: null },
+    activity: { seq: 0, events: [], reset: true },
   });
 });

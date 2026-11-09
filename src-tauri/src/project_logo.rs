@@ -175,7 +175,7 @@ fn persist_logo_bytes(
     // The replacement is already committed. Cleanup failure must not report a
     // failed save and leave the caller pointing at a retired extension.
     if let Err(error) = remove_existing_logos_except(dir, project, Some(&dest)) {
-        eprintln!("Could not remove retired project logo: {error}");
+        log::warn!("Could not remove retired project logo: {error}");
     }
     Ok(dest.to_string_lossy().into_owned())
 }

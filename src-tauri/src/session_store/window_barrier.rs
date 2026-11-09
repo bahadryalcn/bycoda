@@ -254,7 +254,7 @@ impl WindowBarrier {
 
     fn lock(&self) -> Result<MutexGuard<'_, State>, BarrierError> {
         Ok(self.state.lock().unwrap_or_else(|poisoned| {
-            eprintln!("Recovering poisoned native window barrier lock");
+            log::warn!("Recovering poisoned native window barrier lock");
             poisoned.into_inner()
         }))
     }

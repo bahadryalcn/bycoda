@@ -12,6 +12,7 @@ export type * as modelCodeWorkspaceApi from "./public/codeWorkspace";
 export type * as modelImportGroupingApi from "./public/importGrouping";
 export type * as modelMobileProjectDirectoryApi from "./public/mobileProjectDirectory";
 export type * as modelMobileProjectLogosApi from "./public/mobileProjectLogos";
+export type * as modelNewProjectFolderApi from "./public/newProjectFolder";
 export type * as modelProjectChatBackgroundApi from "./public/projectChatBackground";
 export type * as modelProjectGroupsApi from "./public/projectGroups";
 export type * as modelProjectNamesApi from "./public/projectNames";

@@ -172,10 +172,13 @@ pub async fn voice_overlay_open(
         let _ = existing.set_focus();
         return Ok(label);
     }
-    let overlay = WebviewWindowBuilder::new(
+    let overlay = crate::webview_args::inherit_main_browser_args(
         &app,
-        &label,
-        WebviewUrl::App(format!("voice-overlay.html?owner={owner}").into()),
+        WebviewWindowBuilder::new(
+            &app,
+            &label,
+            WebviewUrl::App(format!("voice-overlay.html?owner={owner}").into()),
+        ),
     )
     .title(&app.package_info().name)
     .inner_size(width, height)

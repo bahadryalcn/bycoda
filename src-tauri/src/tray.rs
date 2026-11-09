@@ -540,7 +540,7 @@ pub(crate) fn presence_update(app: &AppHandle, view: crate::assistant_presence::
         guard.presence = view;
     }
     if let Err(error) = refresh(app, &state) {
-        eprintln!("Availability menu refresh failed: {error}");
+        log::warn!("Availability menu refresh failed: {error}");
     }
 }
 
@@ -565,7 +565,7 @@ pub fn window_closed(app: &AppHandle, label: &str) {
     let state = app.state::<Mutex<TrayState>>();
     locked(&state).windows.remove(label);
     if let Err(error) = refresh(app, &state) {
-        eprintln!("Session menu refresh failed: {error}");
+        log::warn!("Session menu refresh failed: {error}");
     }
 }
 

@@ -8,21 +8,75 @@
   align-items: start;
   min-inline-size: 0;
 }
+.layout > .listPane {
+  padding-inline-end: 12px;
+  border-inline-end: 1px solid var(--ui-pane-border);
+}
 @container (max-width: 640px) {
   .layout {
     grid-template-columns: minmax(0, 1fr);
     gap: 16px;
   }
+  .layout > .listPane {
+    padding-inline-end: 0;
+    border-inline-end: 0;
+  }
 }
 
+/* List column: a selection header over hairline-separated rows. */
+.listPane {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-inline-size: 0;
+}
+.listHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 2rem;
+  padding-inline: 8px 4px;
+  border-block-end: 1px solid var(--ui-pane-border);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+.listHead > :first-child {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
 .list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-inline-size: 0;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+.item {
+  gap: 0;
+  padding-inline-start: 8px;
+}
+.check {
+  flex: none;
+  opacity: 0;
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.item:hover .check,
+.item:focus-within .check,
+.check:checked,
+.check[data-visible] {
+  opacity: 1;
+}
+@media (hover: none), (pointer: coarse) {
+  .check {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .check {
+    transition: none;
+  }
 }
 .row {
   display: flex;
@@ -71,6 +125,7 @@
   gap: 16px;
   min-inline-size: 0;
   max-inline-size: 48rem;
+  padding-block-start: 4px;
 }
 .readerHeader {
   display: flex;

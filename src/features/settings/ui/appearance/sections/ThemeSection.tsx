@@ -17,7 +17,6 @@ import {
 import { AccentRing } from "../controls/AccentRing";
 import { CanvasBackgroundRow } from "../controls/CanvasBackgroundRow";
 import { PaletteCards } from "../controls/PaletteCards";
-import { SaveLookButton } from "../controls/SaveLookButton";
 import { SavedThemes } from "../controls/SavedThemes";
 import { StateLadder } from "../controls/StateLadder";
 import { ThemePreview } from "../controls/ThemePreview";
@@ -26,7 +25,7 @@ import { AppearanceSection } from "./AppearanceSection";
 
 /**
  * Theme tab order: a live preview first, then the colour choices (mode and palettes, tone, accent,
- * interaction). Generation sits above the tabs because it changes every Appearance topic. Every control writes through the existing setters.
+ * interaction). Generation sits under the tabs because it changes every Appearance topic. Every control writes through the existing setters.
  */
 export function ThemeSection({ appearance }: { appearance: AppearanceSettings }) {
   useLocale();
@@ -78,10 +77,7 @@ export function ThemeSection({ appearance }: { appearance: AppearanceSettings })
           <PaletteCards appearance={appearance} />
         </Row>
         <Row id="saved-themes" stacked label={t("Saved themes")}>
-          <div className="theme-saved-row">
-            <SavedThemes appearance={appearance} />
-            <SaveLookButton appearance={appearance} />
-          </div>
+          <SavedThemes appearance={appearance} />
         </Row>
       </Group>
       <Group

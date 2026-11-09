@@ -26,7 +26,6 @@ export const THEME_SUGGESTION_SCHEMES = ["light", "dark"] as const;
 export const THEME_SUGGESTION_CANVASES = ["pure", "tinted"] as const;
 export const THEME_SUGGESTION_CODE_THEMES = ["github", "dracula"] as const;
 export const THEME_SUGGESTION_DENSITIES = ["compact", "comfortable", "touch"] as const;
-export const THEME_SUGGESTION_CHAT_WIDTHS = ["comfortable", "wide", "full"] as const;
 /** Same range as the dark-lightness slider (THEME_DARK_LIGHTNESS_MIN/MAX in appearance.ts). */
 export const THEME_SUGGESTION_DARK_LIGHTNESS_MAX = APPEARANCE_RANGES.darkLightness.max;
 export const THEME_SUGGESTION_IMAGE_PROMPT_MAX = 400;
@@ -48,7 +47,6 @@ export type ThemeSuggestion = {
   codeFont?: string;
   codeTheme?: (typeof THEME_SUGGESTION_CODE_THEMES)[number];
   density?: (typeof THEME_SUGGESTION_DENSITIES)[number];
-  chatWidth?: (typeof THEME_SUGGESTION_CHAT_WIDTHS)[number];
   /** Code size, ligatures and the terminal's font, size, weight and line height. */
   typography?: ThemeTypography;
   /** Interface scale, contrast, diff colors, row display, scrollbars, hover tint, working rows. */
@@ -76,7 +74,6 @@ function optionalThemeFields(value: Record<string, unknown>): Partial<ThemeSugge
     canvas: oneOf(THEME_SUGGESTION_CANVASES, value.canvas),
     codeTheme: oneOf(THEME_SUGGESTION_CODE_THEMES, value.codeTheme),
     density: oneOf(THEME_SUGGESTION_DENSITIES, value.density),
-    chatWidth: oneOf(THEME_SUGGESTION_CHAT_WIDTHS, value.chatWidth),
   };
   if (typeof value.darkLightness === "number" && Number.isFinite(value.darkLightness))
     fields.darkLightness = clamp(
@@ -268,7 +265,7 @@ export function suggestionAreas(suggestion: ThemeSuggestion): ThemeSuggestionAre
     suggestion.typography
   )
     areas.push("typography");
-  if (suggestion.density || suggestion.chatWidth || suggestion.interface) areas.push("interface");
+  if (suggestion.density || suggestion.interface) areas.push("interface");
   if (suggestion.gradient || suggestion.background || suggestion.image) areas.push("background");
   if (suggestion.motion) areas.push("motion");
   return areas;

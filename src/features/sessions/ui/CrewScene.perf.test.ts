@@ -11,6 +11,8 @@ vi.mock("../../settings/model/decorativeMotion", () => ({
 vi.mock("./crewCodeArt", () => ({
   CODE_WIDTH: 1040,
   CODE_HEIGHT: 300,
+  SIGN_TOP: 14,
+  SIGN_HEIGHT: 58,
   CREW_TOP: 0,
   loadCrewSignLogo: () => Promise.resolve(),
   createCodeArtPainter: () => Object.assign(state.paint, { dispose: state.dispose }),

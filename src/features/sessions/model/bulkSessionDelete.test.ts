@@ -48,6 +48,26 @@ describe("bulk session delete", () => {
     expect(order).toEqual(["start a", "end a", "start b", "end b"]);
   });
 
+  it("runs up to the concurrency limit at once and still records every outcome", async () => {
+    let active = 0;
+    let peak = 0;
+    const result = await deleteSessionsInBulk(["a", "b", "c", "d", "e"], {
+      isRunning: (id) => id === "c",
+      concurrency: 2,
+      deleteOne: async (id) => {
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        active -= 1;
+        if (id === "e") throw new Error("disk full");
+      },
+    });
+    expect(peak).toBe(2);
+    expect([...result.deleted].sort()).toEqual(["a", "b", "d"]);
+    expect(result.skipped).toEqual(["c"]);
+    expect(result.failed).toEqual([{ sessionId: "e", error: "disk full" }]);
+  });
+
   it("reports progress after each resolved result and names successful deletions", async () => {
     const progress = vi.fn();
     const result = await deleteSessionsInBulk(["a", "b", "c"], {
@@ -66,7 +86,9 @@ describe("bulk session delete", () => {
     expect(bulkDeleteOutcome(result)).toBe(
       "1 conversation deleted. 1 running conversation was skipped. 1 conversation could not be deleted: disk full.",
     );
-    expect(bulkDeleteOutcome({ deleted: ["a", "b"], skipped: [], failed: [] })).toBe("");
+    expect(bulkDeleteOutcome({ deleted: ["a", "b"], skipped: [], failed: [] })).toBe(
+      "2 conversations deleted.",
+    );
   });
 
   it("words the confirmation for the count and the skipped ones", () => {

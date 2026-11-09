@@ -233,27 +233,27 @@ impl LiveChild {
         let deadline = Instant::now() + STOP_DEADLINE;
         let left = || deadline.saturating_duration_since(Instant::now());
         if let Err(error) = self.request_stop() {
-            eprintln!("[harness] stop request failed: {error}");
+            log::warn!("stop request failed: {error}");
         }
         match self.writers.drain_timeout(left()) {
-            None => eprintln!("[harness] writer drain timed out during stop"),
-            Some(Err(error)) => eprintln!("[harness] writer settled with failure: {error}"),
+            None => log::warn!("writer drain timed out during stop"),
+            Some(Err(error)) => log::warn!("writer settled with failure: {error}"),
             Some(Ok(())) => {}
         }
         if let Some(process) = &self.process {
             match process.wait_actual_timeout(left()) {
-                None => eprintln!("[harness] process wait timed out during stop"),
-                Some(Err(error)) => eprintln!("[harness] process wait failed during stop: {error}"),
+                None => log::warn!("process wait timed out during stop"),
+                Some(Err(error)) => log::warn!("process wait failed during stop: {error}"),
                 Some(Ok(_)) => {
                     if let Err(error) = process.retirement().require_verified() {
-                        eprintln!("[harness] provider retirement unverified: {error}");
+                        log::warn!("provider retirement unverified: {error}");
                     }
                 }
             }
         }
         if let Some(exit) = &self.exit {
             if let Err(error) = exit.wait(left()) {
-                eprintln!("[harness] provider exit not confirmed during stop: {error}");
+                log::warn!("provider exit not confirmed during stop: {error}");
             }
         }
         Ok(())
@@ -969,7 +969,7 @@ fn finish_spawn_authority(
 ) -> Result<(), String> {
     // Best-effort: the process was waited, so release admission even if retirement is unproven.
     if let Err(error) = retirement.require_verified() {
-        eprintln!("[harness] provider retirement unverified: {error}");
+        log::warn!("provider retirement unverified: {error}");
     }
     authority.finish()
 }
@@ -1459,7 +1459,7 @@ impl HarnessHost {
                 .as_ref()
                 .is_some_and(|original| Arc::ptr_eq(original, issuer))
             {
-                eprintln!("[harness] stopping original session process from another window");
+                log::info!("stopping original session process from another window");
             }
         }
         let current = inner
@@ -1644,9 +1644,7 @@ impl HarnessHost {
             // Do not capture files until the retained provider exit succeeds.
             if let Err(error) = exit.wait(deadline.saturating_duration_since(Instant::now())) {
                 if tolerate_settled_failure && exit.settled() {
-                    eprintln!(
-                        "[harness] earlier provider exit settled with failure; continuing: {error}"
-                    );
+                    log::warn!("earlier provider exit settled with failure; continuing: {error}");
                     continue;
                 }
                 return Err(format!(
@@ -2694,7 +2692,7 @@ fn configure_optional_tool_grants(
     crate::runtime_logs_bridge::strip_child_env(cmd);
     let fallback = crate::conversation_tools_bridge::prepare_child(session_id, cmd, stamp);
     let Some(deadline) = crate::session_tools_bridge::optional_host_deadline() else {
-        eprintln!("[harness] Host is unhealthy; starting the provider without Host tools");
+        log::warn!("Host is unhealthy; starting the provider without Host tools");
         return;
     };
     type Issued = Result<Vec<(&'static str, String)>, String>;
@@ -2730,7 +2728,7 @@ fn configure_optional_tool_grants(
                 healthy = false;
                 // An unpaired local Host is the ordinary no-tools setup.
                 if !error.starts_with("Connect the local bycoda Host") {
-                    eprintln!("[harness] continuing without {group} tools: {error}");
+                    log::warn!("continuing without {group} tools: {error}");
                 }
             }
         }
@@ -3138,7 +3136,7 @@ fn harness_spawn_blocking(
     }
     let window_lifetime = window_claim
         .commit()
-        .map_err(|error| eprintln!("[harness] ownership tracking unavailable: {error}"))
+        .map_err(|error| log::warn!("ownership tracking unavailable: {error}"))
         .ok();
     tool_spawn.disarm();
 
@@ -3221,7 +3219,7 @@ fn harness_spawn_blocking(
         drop(done_rx);
         let writers = wait_live.writers.drain();
         if let Err(error) = &writers {
-            eprintln!("[harness] provider writer settled with failure: {error}");
+            log::warn!("provider writer settled with failure: {error}");
         }
         let settlement = settlement
             .and_then(|_| workspace_activity.map_or(Ok(()), |activity| activity.settled()));
@@ -3550,8 +3548,8 @@ fn link_shared_agents(shared_dir: &Path, account_dir: &Path) {
         return;
     }
     if let Err(error) = link_dir(&source, &link) {
-        eprintln!(
-            "[harness] could not share {} with {}: {error}",
+        log::warn!(
+            "could not share {} with {}: {error}",
             source.display(),
             link.display()
         );
@@ -4717,7 +4715,7 @@ fn harness_sse_open_blocking(
     })?;
     let window_lifetime = window_claim
         .commit()
-        .map_err(|error| eprintln!("[harness] ownership tracking unavailable: {error}"))
+        .map_err(|error| log::warn!("ownership tracking unavailable: {error}"))
         .ok();
 
     let output_reader = output.reader(0);
@@ -5500,7 +5498,7 @@ fn exec_command_output(
 ) -> Result<std::process::Output, String> {
     let captured = exec_command_observed_output(cmd, command, timeout)?;
     if let Err(error) = captured.retirement.require_verified() {
-        eprintln!("[harness] command retirement unverified: {error}");
+        log::warn!("command retirement unverified: {error}");
     }
     Ok(captured.output)
 }

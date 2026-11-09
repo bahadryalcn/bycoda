@@ -253,11 +253,11 @@ pub(crate) fn page_retired(
                 })
             })();
             if let Err(error) = result {
-                eprintln!("[sync-owner] retirement remains unknown: {error}");
+                log::warn!("retirement remains unknown: {error}");
             }
         });
         if let Err(error) = work.await {
-            eprintln!("[sync-owner] retirement worker failed: {error}");
+            log::warn!("retirement worker failed: {error}");
         }
     });
 }

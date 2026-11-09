@@ -1,7 +1,26 @@
 import { emptyMinutes, setMinute } from "../activity.ts";
 import { defaultNotificationSettings } from "../notifications.ts";
-import type { Announcement, DataExport, Device, EntitlementsSummary, User } from "../models.ts";
+import type {
+  Announcement,
+  ConnectInfoUpdate,
+  DataExport,
+  Device,
+  EntitlementsSummary,
+  User,
+} from "../models.ts";
 import type { NotificationItem, NotificationSettings } from "../notifications.ts";
+
+export interface MockPairRequest {
+  id: string;
+  computerDeviceId: string;
+  phoneDeviceId: string;
+  phonePublicKey: string;
+  state: "pending" | "sealed" | "delivered" | "denied" | "expired";
+  desktopPublicKey?: string;
+  sealed?: string;
+  createdAt: string;
+  expiresAt: string;
+}
 
 export interface MockState {
   user: User;
@@ -10,6 +29,9 @@ export interface MockState {
   /** Device the mock treats as the caller, set by `POST /v1/devices`. */
   currentDeviceId: string | null;
   pushTokens: Map<string, string>;
+  /** Desktop device id to published connect info. */
+  connectInfo: Map<string, ConnectInfoUpdate & { updatedAt: string }>;
+  pairRequests: Map<string, MockPairRequest>;
   /** `${deviceId}|${date}` to `{ timeZone, minutes }`. */
   activity: Map<string, { deviceId: string; date: string; timeZone: string; minutes: Uint8Array }>;
   settings: NotificationSettings;
@@ -18,6 +40,7 @@ export interface MockState {
   exports: Map<string, DataExport>;
   tickets: { id: string; createdAt: string }[];
   feedback: { id: string; createdAt: string; signedIn: boolean }[];
+  diagnostics: { id: string; createdAt: string; signedIn: boolean; trigger: string }[];
   pings: unknown[];
   nextId: number;
 }
@@ -67,6 +90,8 @@ export function createMockState(seed: MockSeed = {}): MockState {
     devices: new Map([[sampleDevice.id, sampleDevice]]),
     currentDeviceId: null,
     pushTokens: new Map(),
+    connectInfo: new Map(),
+    pairRequests: new Map(),
     activity: new Map([
       [
         `${sampleDevice.id}|${date}`,
@@ -97,6 +122,7 @@ export function createMockState(seed: MockSeed = {}): MockState {
     exports: new Map(),
     tickets: [],
     feedback: [],
+    diagnostics: [],
     pings: [],
     nextId: 1,
   };

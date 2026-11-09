@@ -655,7 +655,7 @@ pub fn show_hidden_or_open_new(app: &AppHandle) -> Result<(), String> {
         let app = app.clone();
         tauri::async_runtime::spawn_blocking(move || {
             if let Err(error) = open_new_window(&app) {
-                eprintln!("Could not open workspace window: {error}");
+                log::warn!("Could not open workspace window: {error}");
             }
         });
         return Ok(());

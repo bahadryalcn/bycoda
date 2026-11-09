@@ -1,5 +1,5 @@
 import * as dto from "../../../src/shared/model/host-contracts/projects";
-import { assertDomainAuthority, type HostDomainContext } from "../context";
+import { HostDomainRefusalError, assertDomainAuthority, type HostDomainContext } from "../context";
 
 export type ProjectsReadOptions = { signal?: AbortSignal };
 export interface ProjectDirectoryPorts {
@@ -71,12 +71,36 @@ export function createProjectsService<Project>(dependencies: {
       const params = (
         options.legacy ? dto.ProjectsOpenParamsSchema.strip() : dto.ProjectsOpenParamsSchema
       ).parse(raw);
-      const result = await ports().open(params.cwd, async () => {
-        await assertDomainAuthority(context);
-        return true;
-      });
+      let result;
+      try {
+        result = await ports().open(params.cwd, async () => {
+          await assertDomainAuthority(context);
+          return true;
+        });
+      } catch (error) {
+        // The folder is checked before anything is recorded: a definitive refusal
+        // clients can stop repeating, not an unknown outcome to reconcile.
+        if (isMissingFolder(error))
+          throw new HostDomainRefusalError(
+            "PROJECT_FOLDER_MISSING",
+            "validation",
+            false,
+            `Project folder not found on this machine: ${params.cwd}`,
+            { cause: error },
+          );
+        throw error;
+      }
       await assertDomainAuthority(context);
       return result;
     },
   };
+}
+
+function isMissingFolder(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error.code === "ENOENT" || error.code === "ENOTDIR")
+  );
 }

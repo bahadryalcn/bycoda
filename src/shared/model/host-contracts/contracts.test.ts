@@ -158,6 +158,25 @@ describe("Host WS method contracts", () => {
     ).toThrow();
   });
 
+  it("accepts assistant-managed session summaries the Host emits", () => {
+    // A single assistant-managed row used to fail the whole sessions.list frame.
+    const resultSchema = getHostRpcMethod("sessions.list")!.resultSchema;
+    const summary = {
+      projectId: "project-a",
+      revision: 1,
+      status: "idle",
+      lastActivityAt: 1,
+      updatedAt: 1,
+      id: "session-a",
+      title: "Plan",
+      harness: "codex",
+      managedBy: { assistant: true, jobId: "job-a", managedAt: 1 },
+    };
+    expect(resultSchema.parse([summary])).toEqual([summary]);
+    expect(() =>
+      resultSchema.parse([{ ...summary, managedBy: { ...summary.managedBy, extra: 1 } }]),
+    ).toThrow();
+  });
   it("accepts only JSON results and notifications, not native values or mixed outcomes", () => {
     const response = {
       jsonrpc: "2.0",

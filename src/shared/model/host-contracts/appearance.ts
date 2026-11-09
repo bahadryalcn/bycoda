@@ -45,7 +45,6 @@ export const AppearanceThemeSuggestionSchema = z.strictObject({
   codeFont: z.string().min(1).max(60).optional(),
   codeTheme: z.enum(["github", "dracula"]).optional(),
   density: z.enum(["compact", "comfortable", "touch"]).optional(),
-  chatWidth: z.enum(["comfortable", "wide", "full"]).optional(),
   typography: AppearanceThemeFieldGroupSchema.optional(),
   interface: AppearanceThemeFieldGroupSchema.optional(),
   background: AppearanceThemeFieldGroupSchema.optional(),

@@ -2,6 +2,7 @@ import { t } from "../../../../shared/i18n";
 import { Button } from "../../../../shared/ui/Button";
 import { X } from "../../../../shared/ui/icons";
 import { assistantJobVisible } from "../../model/assistantJobs";
+import { restoreNotesInOrder } from "./noteBulkDelete";
 import styles from "./RoomShell.module.css";
 import { useAssistantRoom } from "./assistantRoomContext";
 
@@ -39,16 +40,20 @@ export function RoomUndoBars() {
                 disabled={Boolean(pending)}
                 onClick={() =>
                   run("undo", t("Restoring..."), async () => {
-                    const result = await assistantRequest(
-                      { op: "trash.restore", id: undo.id },
-                      undo.environmentId,
+                    const { remaining, error } = await restoreNotesInOrder(
+                      undo.ids ?? [undo.id],
+                      (id) => assistantRequest({ op: "trash.restore", id }, undo.environmentId),
                     );
-                    if (result.ok !== true)
+                    if (remaining.length) {
+                      // Keep only what is still deleted so a retry never restores twice.
+                      if (undo.ids) setUndo({ ...undo, id: remaining[0]!, ids: remaining });
+                      if (error) throw error;
                       throw new Error(
                         t(
                           "The restore could not be confirmed. Check Recently deleted before retrying.",
                         ),
                       );
+                    }
                     setUndo(null);
                   })
                 }

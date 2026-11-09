@@ -4,7 +4,7 @@
 //! The app works fully signed out; nothing here is required for local use.
 pub(crate) mod commands;
 mod config;
-mod device;
+pub(crate) mod device;
 mod error;
 mod flow;
 mod keychain;

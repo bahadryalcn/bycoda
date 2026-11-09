@@ -5,9 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveCrewTheme } from "../../settings/model/settings";
 import { PacingUncle } from "./PacingUncle";
 
-const state = vi.hoisted(() => ({ motion: true, paint: vi.fn() }));
+const state = vi.hoisted(() => ({ motion: true, focused: true, paint: vi.fn() }));
 vi.mock("../../settings/model/decorativeMotion", () => ({
   useDecorativeMotionEnabled: () => state.motion,
+  useWindowHasFocus: () => state.focused,
 }));
 vi.mock("./pacingUncleArt", () => ({ drawPacingUncle: state.paint }));
 let root: Root;
@@ -17,6 +18,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   state.motion = true;
+  state.focused = true;
   state.paint.mockClear();
   vi.stubGlobal("IntersectionObserver", undefined);
   vi.stubGlobal("ResizeObserver", undefined);
@@ -58,6 +60,19 @@ describe("pacing uncle animation gate", () => {
     render();
     expect(vi.getTimerCount()).toBe(0);
     state.motion = true;
+    render();
+    expect(vi.getTimerCount()).toBe(1);
+  });
+  it("holds the walker while the window is behind another application", () => {
+    render();
+    expect(vi.getTimerCount()).toBe(1);
+    state.focused = false;
+    render();
+    expect(vi.getTimerCount()).toBe(0);
+    const painted = state.paint.mock.calls.length;
+    act(() => vi.advanceTimersByTime(1000));
+    expect(state.paint).toHaveBeenCalledTimes(painted);
+    state.focused = true;
     render();
     expect(vi.getTimerCount()).toBe(1);
   });

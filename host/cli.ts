@@ -21,6 +21,7 @@ import { createNativeAuthorityBootstrap } from "./native-authority/bootstrap";
 import { writeFileAtomic } from "./storage/atomic-write";
 import { readRunningHost, verifyHostStopped, type RunningHost as Running } from "./lifecycle-state";
 import { probeHostOwner } from "./owner";
+import { startHostDiagnostics, type HostDiagnostics } from "./diagnostics/host-lifecycle";
 
 process.umask(0o077);
 // npm-based providers can launch Node subprocesses without a separate Node
@@ -354,6 +355,8 @@ Connect another computer using an SSH forward to the loopback port.`);
     }
     throw new Error(`Host did not start. See ${join(directory, "host.log")}`);
   }
+  const diagnostics: HostDiagnostics | undefined =
+    command === "serve" ? startHostDiagnostics({ dataDir: directory, version }) : undefined;
   const { HostStore } = await import("./store");
   const { armShutdownDeadline } = await import("./server/lifecycle");
   const store = new HostStore(join(directory, "host.db"));
@@ -459,7 +462,7 @@ Connect another computer using an SSH forward to the loopback port.`);
       environmentId: store.environmentId,
     });
     let stopping: Promise<void> | undefined;
-    let stop: () => Promise<void>;
+    let stop: (reason?: string) => Promise<void>;
     // A separate local administrative credential cannot be used as a paired
     // client credential, and is never sent to the desktop.
     const server = await createHostServer(
@@ -524,8 +527,9 @@ Connect another computer using an SSH forward to the loopback port.`);
     backend.setSocialAccess(server.social, `http://127.0.0.1:${port}`);
     backend.setRuntimeLogAccess(server.runtimeLogAccess, `http://127.0.0.1:${port}`);
     backend.setConversationAccess(server.conversationAccess, `http://127.0.0.1:${port}`);
-    stop = () =>
+    stop = (reason = "lifecycle") =>
       (stopping ??= (async () => {
+        diagnostics?.stopping(reason);
         let failed = false;
         const pendingSteps = new Set<string>();
         // A drain that never settles must not keep a dead listener alive.
@@ -579,10 +583,10 @@ Connect another computer using an SSH forward to the loopback port.`);
       mode: 0o600,
     });
     process.once("SIGTERM", () => {
-      void stop();
+      void stop("SIGTERM");
     });
     process.once("SIGINT", () => {
-      void stop();
+      void stop("SIGINT");
     });
     console.log(`bycoda Host ${store.environmentId} listening on 127.0.0.1:${port}`);
     console.log(

@@ -3,4 +3,5 @@ export {
   prefersReducedMotion,
   useDecorativeMotionEnabled,
   usePrefersReducedMotion,
+  useWindowHasFocus,
 } from "../model/decorativeMotion";

@@ -122,19 +122,19 @@ export function AppearancePage({
           {t("Could not save changes. Your previous appearance remains active.")}
         </SettingsFeedback>
       ) : null}
-      {/* Generation edits every topic, so it stays pinned above the tabs while they switch. */}
+      {/* The tabs lead the page; generation edits every topic, so its toolbar stays pinned with them. */}
       <div ref={sentinel} aria-hidden="true" className="appearance-generator-sentinel" />
-      <div ref={generator} className="appearance-generator">
-        <ThemeGenerator appearance={appearance} />
-      </div>
       <Tabs value={section} onValueChange={select}>
-        <TabList label={t("Appearance")}>
-          {sections.map(({ id, label }) => (
-            <Tab key={id} value={id}>
-              {label}
-            </Tab>
-          ))}
-        </TabList>
+        <div ref={generator} className="appearance-generator">
+          <TabList label={t("Appearance")}>
+            {sections.map(({ id, label }) => (
+              <Tab key={id} value={id}>
+                {label}
+              </Tab>
+            ))}
+          </TabList>
+          <ThemeGenerator appearance={appearance} />
+        </div>
         {sections.map(({ id, content }) => (
           <TabPanel key={id} value={id} keepMounted data-appearance-section={id}>
             {content}

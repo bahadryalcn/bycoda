@@ -3,6 +3,7 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { browseHostDirectories, createHostDirectory } from "../../browser/browse";
+import { HostDomainRefusalError } from "../context";
 import { createProjectsService } from "./service";
 
 const roots: string[] = [];
@@ -86,6 +87,26 @@ it("rechecks directory/list disclosure and grants at the injected open effect", 
   const legacy = createProjectsService({ list: async () => ["retained"] });
   expect(await legacy.list()).toEqual(["retained"]);
   await expect(legacy.list({}, f.context)).rejects.toThrow("revoked");
+});
+it("refuses a missing folder as a known outcome and passes other failures through", async () => {
+  const f = await fixture();
+  const gone = join(f.root, "gone");
+  f.directoryPorts.open.mockRejectedValueOnce(
+    Object.assign(new Error(`ENOENT: no such file or directory, realpath '${gone}'`), {
+      code: "ENOENT",
+    }),
+  );
+  const error: unknown = await f.service.open({ cwd: gone }, f.context).catch((e: unknown) => e);
+  expect(error).toBeInstanceOf(HostDomainRefusalError);
+  expect(error).toMatchObject({
+    code: "PROJECT_FOLDER_MISSING",
+    category: "validation",
+    retryable: false,
+    delivery: "not-sent",
+    message: `Project folder not found on this machine: ${gone}`,
+  });
+  f.directoryPorts.open.mockRejectedValueOnce(new Error("database is locked"));
+  await expect(f.service.open({ cwd: f.root }, f.context)).rejects.toThrow("database is locked");
 });
 it("keeps strict WS params and tolerant HTTP extension fields without retries", async () => {
   const f = await fixture();

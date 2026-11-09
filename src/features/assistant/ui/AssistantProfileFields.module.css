@@ -72,6 +72,11 @@
   gap: 6px;
   min-inline-size: 0;
   inline-size: 100%;
+  /* A compact select ends on the row's right edge, like the other row controls. */
+  justify-items: end;
+}
+.presetControls > * {
+  max-inline-size: 100%;
 }
 .unit {
   color: var(--ui-text-secondary);

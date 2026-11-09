@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
+import { DiagnosticsSharingSetting } from "../../diagnostics";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { Switch } from "../../../shared/ui/Switch";
 import {
@@ -14,16 +15,22 @@ export function AccountPrivacy() {
   useLocale();
   const statsOn = useSyncExternalStore(subscribeAnonymousStats, isAnonymousStatsEnabled);
   return (
-    <section className={styles.section} aria-labelledby="account-privacy">
-      <SectionLabel labelId="account-privacy">{t("Statistics")}</SectionLabel>
-      <Switch
-        label={t("Share anonymous usage statistics")}
-        description={t(
-          "Once a day bycoda sends the app version and operating system with a random install id. Never your sessions, prompts, code or file names. Off by default.",
-        )}
-        checked={statsOn}
-        onCheckedChange={setAnonymousStatsEnabled}
-      />
-    </section>
+    <>
+      <section className={styles.section} aria-labelledby="account-privacy">
+        <SectionLabel labelId="account-privacy">{t("Statistics")}</SectionLabel>
+        <Switch
+          label={t("Share anonymous usage statistics")}
+          description={t(
+            "Once a day bycoda sends the app version and operating system with a random install id. Never your sessions, prompts, code or file names. Off by default.",
+          )}
+          checked={statsOn}
+          onCheckedChange={setAnonymousStatsEnabled}
+        />
+      </section>
+      <section className={styles.section} aria-labelledby="account-diagnostics">
+        <SectionLabel labelId="account-diagnostics">{t("Diagnostic logs")}</SectionLabel>
+        <DiagnosticsSharingSetting />
+      </section>
+    </>
   );
 }

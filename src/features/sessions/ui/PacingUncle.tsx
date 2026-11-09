@@ -1,5 +1,8 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
+import {
+  useDecorativeMotionEnabled,
+  useWindowHasFocus,
+} from "../../settings/public/decorativeMotion";
 import { loadCrewTheme, subscribeCrewTheme } from "../../settings/public/settings";
 import { drawPacingUncle } from "./pacingUncleArt";
 
@@ -14,6 +17,8 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
   const ref = useRef<HTMLCanvasElement>(null);
   const elapsed = useRef(0);
   const motion = useDecorativeMotionEnabled();
+  // Behind another application the walker holds its pose, like the other canvas loops.
+  const focused = useWindowHasFocus();
   const theme = useSyncExternalStore(subscribeCrewTheme, loadCrewTheme, loadCrewTheme);
   useEffect(() => {
     const canvas = ref.current;
@@ -48,7 +53,7 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       }
       paint();
-      if (motion && visible && intersects && width > 0) {
+      if (motion && focused && visible && intersects && width > 0) {
         last = performance.now();
         timer = setTimeout(tick, FRAME_MS);
       }
@@ -71,7 +76,7 @@ export function PacingUncle({ visible = true }: { visible?: boolean }) {
       resize?.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, [motion, visible, theme]);
+  }, [motion, focused, visible, theme]);
   return (
     <canvas
       ref={ref}

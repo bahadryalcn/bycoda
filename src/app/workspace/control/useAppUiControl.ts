@@ -16,6 +16,7 @@ import {
   type AppUiContext,
   type AppUiInput,
 } from "../../model/appUiControl";
+import { useNavigationBreadcrumbs } from "./useNavigationBreadcrumbs";
 import type { useOpenSessionTargets } from "../sessions/useOpenSessionTargets";
 import type {
   useSettingsSurfaceActions,
@@ -83,6 +84,7 @@ export function useAppUiControl({
   isDetachedSessionWindow,
   terminalControl,
 }: AppUiControlDeps): void {
+  useNavigationBreadcrumbs(surface);
   const {
     settingsOpen,
     searchViewOpen,

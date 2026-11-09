@@ -273,6 +273,7 @@ export async function createHostServer(
       taskChangeEtag: () => sessionListRuntime.current.taskChangeEtag,
       gitWatches: () => projectsRuntime.gitWatches,
       desktopDelete: () => sessionsRuntime.current.desktopDelete,
+      remoteActivity: () => sessionsRuntime.current.remoteActivity,
       invalidateSessionCopies: () => subscriptionsRuntime.invalidateSessionCopies,
       withinBeat: () => sessionLeasesRuntime.withinBeat,
       desktopCommandDelivery: () => sessionServicesRuntime.desktopCommandDelivery,

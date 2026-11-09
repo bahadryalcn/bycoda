@@ -111,6 +111,7 @@ export const HOST_REFUSAL_ERROR_CODES = [
   "COMMAND_INVALID",
   "CONTEXT_CHANGED",
   "NATIVE_ADMISSION_UNENROLLED",
+  "PROJECT_FOLDER_MISSING",
 ] as const;
 export type HostRefusalErrorCode = (typeof HOST_REFUSAL_ERROR_CODES)[number];
 

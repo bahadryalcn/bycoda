@@ -131,9 +131,10 @@ describe("optional Appearance fields", () => {
       codeFont: "JetBrains Mono",
       codeTheme: "dracula",
       density: "compact",
-      chatWidth: "wide",
       imagePrompt: "misty pine forest at night",
     });
+    // Chat width is a Chat setting the owner keeps for themselves; the model may not move it.
+    expect(entry).not.toHaveProperty("chatWidth");
   });
 
   it("drops invalid optional fields without dropping the theme", () => {

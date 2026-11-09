@@ -726,7 +726,10 @@ describe("sidebar session bulk actions", () => {
       finish(true);
     });
     expect(container.textContent).not.toContain("Deleting conversations…");
-    expect(container.querySelector("[data-session-delete-status]")).toBeNull();
+    // Success is reported too, so this machine says what happened like the other one does.
+    expect(container.querySelector("[data-session-delete-status]")?.textContent).toContain(
+      "3 conversations deleted.",
+    );
     expect(container.textContent).toContain("Sessions you start will show up here");
     expect(selectedIds()).toEqual([]);
   });

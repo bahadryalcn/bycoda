@@ -95,12 +95,16 @@ describe("applyAppearanceSnapshot", () => {
     });
   });
 
-  it("keeps word wrap and skips settings the snapshot does not hold", () => {
+  it("keeps word wrap and chat width and skips settings the snapshot does not hold", () => {
     const { appearance, fns } = mockAppearance();
     applyAppearanceSnapshot(appearance, {
-      preferences: { ...APPEARANCE_DEFAULTS, wordWrap: false, codeSize: 16 },
+      preferences: { ...APPEARANCE_DEFAULTS, wordWrap: false, chatWidth: "full", codeSize: 16 },
     });
-    expect(fns.onPreferences.mock.calls[0]![0]).toMatchObject({ codeSize: 16, wordWrap: true });
+    expect(fns.onPreferences.mock.calls[0]![0]).toMatchObject({
+      codeSize: 16,
+      wordWrap: true,
+      chatWidth: "comfortable",
+    });
     expect(fns.onTint).not.toHaveBeenCalled();
     expect(fns.onOpacity).not.toHaveBeenCalled();
     expect(fns.onAccentColor).not.toHaveBeenCalled();

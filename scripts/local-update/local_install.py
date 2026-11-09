@@ -341,7 +341,10 @@ def verify_windows_host_process(runtime, pid):
 
 
 def verify_host(runtime):
-    deadline = time.monotonic() + 30
+    # A host with a large database starts slowly (legacy cleanup on its first start) and
+    # `pragma quick_check` alone took 23 s on the owner's 64 MB-WAL database; a 30 s window
+    # reported a healthy host as failed and left its rollback half applied (2026-11-09).
+    deadline = time.monotonic() + 180
     while time.monotonic() < deadline:
         try:
             pid = lifecycle('status')

@@ -204,6 +204,8 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   }
   const [undo, setUndo] = useState<{
     id: string;
+    /** Every recovery id one undo restores (a bulk note deletion); `id` alone otherwise. */
+    ids?: string[];
     label: string;
     projectId?: string;
     projectIds?: string[];

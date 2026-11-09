@@ -161,10 +161,10 @@ export function useDesktopLive(
           projectDirectory,
           handlers: {
             retireWriter: retireHarnessWriter,
-            delete: (sessionId, cwd) => {
+            delete: (sessionId, cwd, requestedBy) => {
               const handler = handlersRef.current.delete;
               if (!handler) return Promise.reject(new Error("Desktop deletion is unavailable."));
-              return handler(sessionId, cwd);
+              return handler(sessionId, cwd, requestedBy);
             },
             stop: (sessionId, current) => handlersRef.current.stop(sessionId, current),
             captureApproval: (...args) => handlersRef.current.captureApproval?.(...args),

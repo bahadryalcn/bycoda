@@ -6,6 +6,8 @@ import { sessionWorkCwd, type Session } from "../../sessions/public/session";
 
 import {
   getSession,
+  setSessionArchived,
+  setSessionPinned,
   storedSessionUpdatedAt,
   upsertSession,
   upsertSessionIfUnchanged,
@@ -23,6 +25,7 @@ import {
   type AdoptedMirrorDeps,
   type AdoptedResolution,
 } from "./adoptedSessions";
+import { createHostMetadataMirror } from "./adoptedSessionMetadata";
 import { loadRemoteCapabilities, loadRemoteSession, remoteRequest } from "./connections";
 import { isLocalSyncMachine } from "./localSync";
 import type { HostProject, RemoteMachine } from "./protocol";
@@ -77,6 +80,18 @@ export function useAdoptedSessions(
     let listed: readonly AdoptedEntry[] = [];
     const refreshes = new Map<string, Promise<boolean>>();
     const mirrored = new Map<string, number>();
+    /** Archive and pin changes other computers made on the host copy; they live
+     * in this desktop's own store, not in the transcript the mirror merges. */
+    const metadata = createHostMetadataMirror(async (sessionId, projectId, patch) => {
+      if (patch.archived !== undefined) await setSessionArchived(sessionId, patch.archived);
+      if (patch.pinned !== undefined) await setSessionPinned(sessionId, patch.pinned);
+      const project = (await projectsFor()).find((candidate) => candidate.id === projectId);
+      if (project)
+        window.dispatchEvent(
+          new CustomEvent<string>(ADOPTED_SESSION_ADDED, { detail: project.cwd }),
+        );
+    });
+    let projectsFor: () => Promise<HostProject[]> = async () => [];
     /** Host copies this desktop could not save (nothing persistable yet), by the host
      * revision judged: the same revision is not fetched again, and is not outstanding work. */
     const declined = new Map<string, number>();
@@ -114,10 +129,13 @@ export function useAdoptedSessions(
         // A host that sends digests lets a copy be compared without its full content.
         const digests = capabilities?.includes(DIGESTS_CAPABILITY) === true;
         let projects: HostProject[] | undefined;
+        projectsFor = async () =>
+          (projects ??= await remoteRequest<HostProject[]>(machine.id, "projects.list", {}));
         const deps: AdoptedMirrorDeps = {
           list: async () => {
             const entries = await remoteRequest<AdoptedEntry[]>(machine.id, "sessions.adopted", {});
             listed = entries;
+            metadata.start(entries.map((entry) => entry.id));
             for (const id of declined.keys())
               if (!entries.some((entry) => entry.id === id)) declined.delete(id);
             if (
@@ -133,6 +151,7 @@ export function useAdoptedSessions(
             const host = await loadRemoteSession(machine.id, sessionId, known, { digests });
             if (host.session.id !== sessionId || (target && host.projectId !== target.projectId))
               throw new Error("This conversation belongs to another project.");
+            await metadata.observe(host).catch(() => undefined);
             return host;
           },
           local: () =>
@@ -214,6 +233,7 @@ export function useAdoptedSessions(
               declined.set(entry.id, entry.revision);
               return false;
             }
+            await metadata.observe(host, true).catch(() => undefined);
             declined.delete(entry.id);
             window.dispatchEvent(
               new CustomEvent<string>(ADOPTED_SESSION_ADDED, {

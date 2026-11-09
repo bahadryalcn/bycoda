@@ -59,7 +59,11 @@ export function DesktopControlSettings({
       if (result.configuration)
         setDraft((current) =>
           current
-            ? { ...current, version: result.configuration!.version, enabled: false }
+            ? {
+                ...current,
+                version: result.configuration!.version,
+                enabled: false,
+              }
             : result.configuration,
         );
     } catch (cause) {
@@ -100,9 +104,10 @@ export function DesktopControlSettings({
         draft.binarySha256 !== saved.binarySha256 ||
         draft.allowPhysicalInput !== saved.allowPhysicalInput ||
         JSON.stringify(draft.allowedApps) !== JSON.stringify(saved.allowedApps)));
+  // Helper preparation runs on the Host and survives closing, so it does not hold the dialog.
   useEffect(() => {
-    onDraftStateChange?.({ dirty, pending: pending || stopping || helperPending });
-  }, [dirty, pending, stopping, helperPending, onDraftStateChange]);
+    onDraftStateChange?.({ dirty, pending: pending || stopping });
+  }, [dirty, pending, stopping, onDraftStateChange]);
   async function perform(
     op: "configure" | "stop" | "resume" | "status",
     options: { rethrow?: boolean } = {},
@@ -130,7 +135,9 @@ export function DesktopControlSettings({
                 allowPhysicalInput: draft.allowPhysicalInput,
               },
             })
-          : await desktopControlRequest({ op: op === "configure" ? "status" : op });
+          : await desktopControlRequest({
+              op: op === "configure" ? "status" : op,
+            });
       if (captured !== generation.current) {
         if (options.rethrow)
           throw new Error(t("Computer controls changed while saving. Review them and save again."));
@@ -190,11 +197,15 @@ export function DesktopControlSettings({
   const computerOn =
     !!status?.enabled || !!status?.active || !!draft?.enabled || pending || stopping;
   const computerBadge = status?.active ? (
-    <Badge tone="info">{t("Running")}</Badge>
+    <Badge tone="info" appearance="subtle">
+      {t("Running")}
+    </Badge>
   ) : status?.stopped ? (
-    <Badge tone="warning">{t("Stopped")}</Badge>
+    <Badge tone="warning" appearance="subtle">
+      {t("Stopped")}
+    </Badge>
   ) : draft?.enabled && !helperReady ? (
-    <Badge tone={helperPending ? "info" : "warning"}>
+    <Badge tone={helperPending ? "info" : "warning"} appearance="subtle">
       {helperPending ? t("Preparing helper…") : t("Helper not ready")}
     </Badge>
   ) : null;
@@ -210,154 +221,183 @@ export function DesktopControlSettings({
       onClick={() => void perform("status")}
     />
   );
-  return (
-    <div className={styles.settings}>
-      {!refreshRef && <div className={styles.toolbar}>{refresh}</div>}
-      <div className={styles.rows}>
-        <DesktopHelperSetup
-          disabled={pending || stopping}
-          autoPrepare={!!draft?.enabled}
-          selectedPath={draft?.binaryPath ?? ""}
-          onPendingChange={setHelperPending}
-          onReadyChange={setHelperReady}
-          onUse={(helper) =>
-            setDraft((current) =>
-              current
-                ? {
-                    ...current,
-                    binaryPath: helper.binaryPath,
-                    binarySha256: helper.binarySha256,
-                  }
-                : current,
-            )
-          }
-        />
-        {draft && (
-          <>
-            <Row
-              label={t("Enable computer use")}
-              description={t("Each action still needs your request and approval.")}
-            >
-              <Toggle
-                label={t("Enable computer use")}
-                on={draft.enabled}
-                disabled={pending}
-                onChange={(enabled) => setDraft({ ...draft, enabled })}
-              />
-              {computerBadge}
-              {status?.stopped && (
-                <Button type="button" disabled={pending} onClick={() => void perform("resume")}>
-                  {t("Resume")}
-                </Button>
-              )}
-              {computerOn && (
-                <Button
-                  type="button"
-                  tone="danger"
-                  loading={stopping}
-                  onClick={() => void emergencyStop()}
-                >
-                  {t("Stop computer use")}
-                </Button>
-              )}
-            </Row>
-            <Row label={t("Allowed apps")} stacked>
-              <div className={styles.applicationEntry}>
-                <SearchableSelect
-                  hideLabel
-                  multiple
-                  label={t("Allowed apps")}
-                  value={draft.allowedApps}
-                  options={draft.allowedApps.map((value) => ({ value, label: value }))}
-                  onChange={(allowedApps) => setDraft({ ...draft, allowedApps })}
-                  disabled={pending}
-                />
-                <TextField
-                  label={t("Application name")}
-                  hideLabel
-                  value={app}
-                  onChange={(event) => setApp(event.target.value)}
-                  maxLength={200}
-                />
-                <Button
-                  type="button"
-                  className={styles.addButton}
-                  disabled={pending || !app.trim() || draft.allowedApps.length >= 50}
-                  onClick={() => {
-                    setDraft({
-                      ...draft,
-                      allowedApps: [...new Set([...draft.allowedApps, app.trim()])],
-                    });
-                    setApp("");
-                  }}
-                >
-                  {t("Add application")}
-                </Button>
-              </div>
-            </Row>
-            <Row
-              label={t("Physical input")}
-              description={t("Allows pointer and focus changes, only on your direct request.")}
-            >
-              <Toggle
-                label={t("Allow physical input")}
-                on={draft.allowPhysicalInput}
-                disabled={pending}
-                onChange={(allowPhysicalInput) => setDraft({ ...draft, allowPhysicalInput })}
-              />
-            </Row>
-          </>
-        )}
-      </div>
-      {error && <InlineError>{error}</InlineError>}
+  // In the settings dialog the rows are direct children of the dialog's group, so the shared row
+  // layout (hairlines, padding, closing disclosure) applies; standalone they keep their own list.
+  const embedded = !!refreshRef;
+  const rows = (
+    <>
+      <DesktopHelperSetup
+        disabled={pending || stopping}
+        autoPrepare={!!draft?.enabled}
+        selectedPath={draft?.binaryPath ?? ""}
+        onPendingChange={setHelperPending}
+        onReadyChange={setHelperReady}
+        onUse={(helper) =>
+          setDraft((current) =>
+            current
+              ? {
+                  ...current,
+                  binaryPath: helper.binaryPath,
+                  binarySha256: helper.binarySha256,
+                }
+              : current,
+          )
+        }
+      />
       {draft && (
         <>
-          <AdvancedSettings title={t("Custom helper")} defaultOpen={false} keepMounted>
-            <p className={styles.note}>
-              {t(
-                "Use a helper you built or trust instead of the verified one. Its checksum must match.",
-              )}
-            </p>
-            <Row label={t("Helper file")} stacked>
-              <TextField
-                label={t("Helper file")}
+          <Row
+            label={t("Enable computer use")}
+            description={t("Each action still needs your request and approval.")}
+            feedback={
+              status?.stopped || computerOn ? (
+                <div className={styles.stopActions}>
+                  {status?.stopped && (
+                    <Button type="button" disabled={pending} onClick={() => void perform("resume")}>
+                      {t("Resume")}
+                    </Button>
+                  )}
+                  {computerOn && (
+                    <Button
+                      type="button"
+                      tone="danger"
+                      loading={stopping}
+                      onClick={() => void emergencyStop()}
+                    >
+                      {t("Stop computer use")}
+                    </Button>
+                  )}
+                </div>
+              ) : undefined
+            }
+          >
+            {computerBadge}
+            <Toggle
+              label={t("Enable computer use")}
+              on={draft.enabled}
+              disabled={pending}
+              onChange={(enabled) => setDraft({ ...draft, enabled })}
+            />
+          </Row>
+          <Row label={t("Allowed apps")} stacked>
+            <div className={styles.applicationEntry}>
+              <SearchableSelect
                 hideLabel
-                value={draft.binaryPath}
-                onChange={(event) => setDraft({ ...draft, binaryPath: event.target.value })}
+                multiple
+                label={t("Allowed apps")}
+                value={draft.allowedApps}
+                options={draft.allowedApps.map((value) => ({
+                  value,
+                  label: value,
+                }))}
+                onChange={(allowedApps) => setDraft({ ...draft, allowedApps })}
                 disabled={pending}
-                monospace
               />
-            </Row>
-            <Row label={t("Checksum (SHA-256)")} stacked>
               <TextField
-                label={t("Checksum (SHA-256)")}
+                label={t("Application name")}
                 hideLabel
-                value={draft.binarySha256}
-                onChange={(event) => setDraft({ ...draft, binarySha256: event.target.value })}
-                disabled={pending}
-                monospace
-                maxLength={64}
+                value={app}
+                onChange={(event) => setApp(event.target.value)}
+                maxLength={200}
               />
-            </Row>
-          </AdvancedSettings>
-          {!saveRef && (
-            <div className={styles.saveArea}>
-              <p>{t("Computer controls save separately from assistant settings.")}</p>
-              {saveConfirmed && !dirty && <p role="status">{t("Computer controls saved.")}</p>}
-              <div className={styles.actions}>
-                <Button
-                  type="button"
-                  variant="primary"
-                  loading={pending}
-                  onClick={() => void perform("configure")}
-                >
-                  {t("Save computer controls")}
-                </Button>
-              </div>
+              <Button
+                type="button"
+                disabled={pending || !app.trim() || draft.allowedApps.length >= 50}
+                onClick={() => {
+                  setDraft({
+                    ...draft,
+                    allowedApps: [...new Set([...draft.allowedApps, app.trim()])],
+                  });
+                  setApp("");
+                }}
+              >
+                {t("Add application")}
+              </Button>
             </div>
-          )}
+          </Row>
+          <Row
+            label={t("Physical input")}
+            description={t("Allows pointer and focus changes, only on your direct request.")}
+          >
+            <Toggle
+              label={t("Allow physical input")}
+              on={draft.allowPhysicalInput}
+              disabled={pending}
+              onChange={(allowPhysicalInput) => setDraft({ ...draft, allowPhysicalInput })}
+            />
+          </Row>
         </>
       )}
+    </>
+  );
+  const errorLine = error && (
+    <div className={embedded ? styles.embeddedError : undefined}>
+      <InlineError>{error}</InlineError>
+    </div>
+  );
+  const custom = draft && (
+    <>
+      <AdvancedSettings title={t("Custom helper")} defaultOpen={false} keepMounted>
+        <Row
+          label={t("Helper file")}
+          description={t(
+            "Use a helper you built or trust instead of the verified one. Its checksum must match.",
+          )}
+          stacked
+        >
+          <TextField
+            label={t("Helper file")}
+            hideLabel
+            value={draft.binaryPath}
+            onChange={(event) => setDraft({ ...draft, binaryPath: event.target.value })}
+            disabled={pending}
+            monospace
+          />
+        </Row>
+        <Row label={t("Checksum (SHA-256)")} stacked>
+          <TextField
+            label={t("Checksum (SHA-256)")}
+            hideLabel
+            value={draft.binarySha256}
+            onChange={(event) => setDraft({ ...draft, binarySha256: event.target.value })}
+            disabled={pending}
+            monospace
+            maxLength={64}
+          />
+        </Row>
+      </AdvancedSettings>
+      {!saveRef && (
+        <div className={styles.saveArea}>
+          <p>{t("Computer controls save separately from assistant settings.")}</p>
+          {saveConfirmed && !dirty && <p role="status">{t("Computer controls saved.")}</p>}
+          <div className={styles.actions}>
+            <Button
+              type="button"
+              variant="primary"
+              loading={pending}
+              onClick={() => void perform("configure")}
+            >
+              {t("Save computer controls")}
+            </Button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+  if (embedded)
+    return (
+      <>
+        {rows}
+        {errorLine}
+        {custom}
+      </>
+    );
+  return (
+    <div className={styles.settings}>
+      <div className={styles.toolbar}>{refresh}</div>
+      <div className={styles.rows}>{rows}</div>
+      {errorLine}
+      {custom}
     </div>
   );
 }

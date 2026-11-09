@@ -55,7 +55,7 @@ pub(crate) fn note_optional_host_outcome(deadline: std::time::Instant, ok: bool)
         *until = None;
     } else if now + Duration::from_millis(200) >= deadline {
         if !until.is_some_and(|until| until > now) {
-            eprintln!(
+            log::warn!(
                 "[session tools] Host did not answer an optional tool request in time; skipping Host tools for {} s",
                 OPTIONAL_HOST_BACKOFF.as_secs()
             );

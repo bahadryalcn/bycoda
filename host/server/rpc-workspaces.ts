@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { WorkspaceRpcRequest } from "../workspaces/workspace-rpc-contracts";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
+import { recordRemoteActivity } from "./remote-activity-record";
 export async function handleWorkspacesRpc(
   dependencies: Pick<
     ServerBindings,
@@ -13,6 +14,7 @@ export async function handleWorkspacesRpc(
     | "tasks"
     | "workspaceOwnerDeviceId"
     | "featureClaims"
+    | "remoteActivity"
   >,
   request: OwnerRpcRequest,
 ): Promise<void> {
@@ -158,6 +160,10 @@ export async function handleWorkspacesRpc(
           await dependencies.managed.retention.onLifecycle(value.id);
           return receipt;
         });
+      if (request.input.method !== "workspaces.delivery.review")
+        await recordRemoteActivity(dependencies, request, "worktreeChanged", {
+          projectId: value.projectId,
+        });
       break;
     }
 
@@ -242,8 +248,10 @@ export async function handleWorkspacesRpc(
     case "workspaces.finish":
 
     case "workspaces.close": {
-      if (!(await dependencies.workspaceForOwnerRpc(request.params.workspaceId)))
-        throw new Error("Managed workspace not found");
+      const lifecycleWorkspace = await dependencies.workspaceForOwnerRpc(
+        request.params.workspaceId,
+      );
+      if (!lifecycleWorkspace) throw new Error("Managed workspace not found");
       const action =
         request.input.method === "workspaces.resume"
           ? "resume"
@@ -254,6 +262,10 @@ export async function handleWorkspacesRpc(
         request.params as unknown as WorkspaceRpcRequest<"workspaces.resume">,
       );
       await dependencies.managed.retention.onLifecycle(String(request.params.workspaceId));
+      if (action !== "resume")
+        await recordRemoteActivity(dependencies, request, "worktreeChanged", {
+          projectId: lifecycleWorkspace.projectId,
+        });
       break;
     }
 

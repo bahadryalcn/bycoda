@@ -108,12 +108,12 @@ impl Drop for Scratch {
                     identity,
                 };
                 if let Err(error) = record.cleanup() {
-                    eprintln!("[control] scratch retirement: {error}");
+                    log::warn!("scratch retirement: {error}");
                 }
                 std::mem::forget(record);
             })
         {
-            eprintln!("[control] scratch retirement worker unavailable: {error}");
+            log::warn!("scratch retirement worker unavailable: {error}");
         }
     }
 }

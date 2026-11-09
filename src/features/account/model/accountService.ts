@@ -64,3 +64,13 @@ export function accountDeviceInfo() {
   accountController(); // -- picks the real or the mock native before the lookup.
   return nativeInUse.deviceInfo();
 }
+
+/** What diagnostic reports need to know about the account: whether it exists, the route, the e-mail to redact. */
+export function accountIdentity(): { available: boolean; signedIn: boolean; email: string | null } {
+  const state = accountController().getState();
+  return {
+    available: state.phase !== "unavailable",
+    signedIn: state.phase === "signed-in",
+    email: state.phase === "signed-in" ? state.context.user.email : null,
+  };
+}

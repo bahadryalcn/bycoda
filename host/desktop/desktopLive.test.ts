@@ -751,3 +751,35 @@ it("publishes an omitted busy-to-idle transition before pruning its empty metada
   expect(cache.sessions.has("original")).toBe(false);
   expect(idle).toHaveBeenCalledTimes(1);
 });
+describe("remote requester on desktop commands", () => {
+  const pageToken = "7e1c4dc0-6f53-4a8c-b8d8-000000000001";
+  const turnReceipt = {
+    version: 1 as const,
+    sessionId: "s",
+    turnId: "7e1c4dc0-6f53-4a8c-b8d8-000000000002",
+  };
+  const setup = () => {
+    const live = new DesktopLive();
+    live.beat({
+      clientId: "owner",
+      pageToken,
+      sessions: [{ id: "s", busy: true, turnReceipt }],
+    });
+    return live;
+  };
+  it("carries a trimmed requestedBy on cancel and omits it when unknown", async () => {
+    const live = setup();
+    const named = await live.prepareDesktop(
+      { type: "cancel", commandId: "named", sessionId: "s", runId: "desktop" },
+      `  ${"p".repeat(200)}  `,
+    );
+    expect(JSON.parse(named.delivery).requestedBy).toBe("p".repeat(160));
+    const unknown = await live.prepareDesktop({
+      type: "cancel",
+      commandId: "unknown",
+      sessionId: "s",
+      runId: "desktop",
+    });
+    expect("requestedBy" in JSON.parse(unknown.delivery)).toBe(false);
+  });
+});

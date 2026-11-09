@@ -685,7 +685,7 @@ impl OutputSource {
             Err(error)
                 if logical.is_some() && error == "NATIVE_OUTPUT_LOGICAL_SESSION_UNAVAILABLE" =>
             {
-                eprintln!("[harness] {session}: logical session unavailable; continuing without persisted output");
+                log::warn!("{session}: logical session unavailable; continuing without output");
                 let mut source = Self::capture(app, window, session, None)?;
                 source.target = logical.unwrap_or_else(|| logical_session(session)).into();
                 source.row = None;
@@ -700,10 +700,7 @@ impl OutputSource {
     pub(crate) fn check_target_before_start(&self, explicit: bool) -> Result<(), String> {
         match self.assert_explicit_target_current(explicit) {
             Err(error) if explicit => {
-                eprintln!(
-                    "[harness] {}: {error}; continuing without persisted output",
-                    self.session
-                );
+                log::warn!("{}: {error}; continuing without persisted output", self.session);
                 Ok(())
             }
             result => result,
@@ -924,7 +921,7 @@ impl NativeOutputChild {
             // Unverified job retirement is best-effort and does not.
             output.invalidate(UnavailableReason::TerminalError);
         } else if let Err(error) = self.retirement().require_verified() {
-            eprintln!("[harness] provider retirement unverified: {error}");
+            log::warn!("provider retirement unverified: {error}");
         }
         output.terminal_complete(result.is_ok(), cancelled);
         result

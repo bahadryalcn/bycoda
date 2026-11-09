@@ -178,3 +178,22 @@ test("keybinding rows keep command and key on one line at 800px", async ({ page 
   expect(sampled.length).toBeGreaterThan(5);
   for (const row of sampled) expect(row.sameLine).toBe(true);
 });
+
+test("a wide row preview keeps its height when the row stacks at 800px", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.goto("/tests/browser/settings.html?section=appearance&theme=dark&lang=en");
+  await page.getByRole("tab", { name: "Motion", exact: true }).click();
+  const slot = page.locator("#setting-crew-theme > .settings-row-feedback");
+  const stage = page.locator("#setting-crew-theme .crew-stage-card");
+  const picker = page.locator("#setting-crew-theme > .settings-row-control");
+  await expect(stage).toBeVisible();
+  const [slotBox, stageBox, pickerBox] = await Promise.all([
+    slot.boundingBox(),
+    stage.boundingBox(),
+    picker.boundingBox(),
+  ]);
+  // The feedback slot holds its whole preview, and the picker starts below it (no overlap).
+  expect(slotBox!.height).toBeGreaterThanOrEqual(stageBox!.height - 1);
+  expect(pickerBox!.y).toBeGreaterThanOrEqual(stageBox!.y + stageBox!.height - 1);
+});

@@ -46,12 +46,14 @@ export async function discoverDelegatedRuns(
     if (!isCurrent()) return [];
     const host = await port.read(machine.id, summary.id, known.get(summary.id));
     if (!isCurrent()) return [];
+    // Remembered before the filter: a listed session that is not this parent's child
+    // is still asked for by revision on the next poll, never as a full snapshot again.
+    known.set(summary.id, host);
     if (
       host.projectId !== projectId ||
       sessionDelegationParent(host.session)?.parentSessionId !== hostParentId
     )
       continue;
-    known.set(summary.id, host);
     let child = desktopCopyOf(host, parent.cwd, sameProjectPath);
     // Unlike a generic adopted history copy, the parent's live child needs its
     // current input requests. Copy them so local UI state cannot mutate Host data.

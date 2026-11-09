@@ -84,7 +84,10 @@ export function ManualSessionSupervision({
       setSelected(data.policy.projectIds.filter((id) => projectIds.has(id)));
   }, [data?.policy.version, projects]);
   useEffect(() => {
-    onDraftStateChange?.({ dirty: dirty.current, pending: !!pending || stopping });
+    onDraftStateChange?.({
+      dirty: dirty.current,
+      pending: !!pending || stopping,
+    });
   }, [onDraftStateChange, selected, draftEnabled, pending, stopping, data?.policy.version]);
   const selectedVisible = selected.filter((id) => projectIds.has(id));
   const scopeChanged =
@@ -194,71 +197,48 @@ export function ManualSessionSupervision({
       ? t("Requires Autonomy “Supervise assigned jobs” in Work.")
       : t("Chief autonomy is required for manual session supervision.")
     : "";
-  return (
-    <section
-      className={settings ? styles.section : sessionStyles.frame}
-      aria-label={t("Manual session supervision")}
-    >
-      {settings ? (
-        // In the settings shell the refresh action sits in the section title row (the shell
-        // renders it); standalone settings keep their own.
-        <div className={panelStyles.header}>
+  // Settings rows are direct children of the dialog's group so the shared row layout applies.
+  if (settings)
+    return (
+      <>
+        <Row
+          label={t("Supervise my conversations")}
+          description={t("Only conversations you enroll in selected projects are supervised.")}
+        >
           {off}
           {!draftMode && refresh}
-        </div>
-      ) : (
-        <>
-          <div className={sessionStyles.statusRow}>
-            <div className={sessionStyles.statusText}>
-              <div className={sessionStyles.titleGroup}>
-                <h2>{t("Manual session supervision")}</h2>
-                <Badge size="sm" tone={status === "Enabled" ? "success" : "neutral"}>
-                  {t(status)}
-                </Badge>
-              </div>
-              <p className={sessionStyles.description}>
-                {t("Only enrolled conversations in selected projects are supervised.")}
-              </p>
-            </div>
-            <div className={sessionStyles.actions}>
-              {onSettings && (
-                <Button onClick={onSettings}>{t("Choose projects in Settings")}</Button>
-              )}
-              {off}
-              {refresh}
-            </div>
-          </div>
-        </>
-      )}
-      <LiveText className={styles.muted} text={chiefNotice} />
-      {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
-      <LiveText
-        className={styles.muted}
-        text={
-          !data
-            ? t(pending ? "Loading…" : "Manual supervision state is unavailable. Refresh to retry.")
-            : ""
-        }
-      />
-      {settings ? (
-        <>
-          <Row
-            label={t("Supervise my conversations")}
-            description={t("Only conversations you enroll in selected projects are supervised.")}
-          >
-            <Switch
-              aria-label={t("Supervise my conversations")}
-              checked={shownEnabled}
-              disabled={stopping || (!shownEnabled && (!!pending || !chief || !data))}
-              onCheckedChange={(value) => {
-                if (draftMode) {
-                  markDirty();
-                  setDraftEnabled(value);
-                } else if (value) void commit(true);
-                else void controller.off();
-              }}
-            />
-          </Row>
+          <Switch
+            aria-label={t("Supervise my conversations")}
+            checked={shownEnabled}
+            disabled={stopping || (!shownEnabled && (!!pending || !chief || !data))}
+            onCheckedChange={(value) => {
+              if (draftMode) {
+                markDirty();
+                setDraftEnabled(value);
+              } else if (value) void commit(true);
+              else void controller.off();
+            }}
+          />
+        </Row>
+        <div className={panelStyles.notices}>
+          <LiveText className={styles.muted} text={chiefNotice} />
+          {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
+          <LiveText
+            className={styles.muted}
+            text={
+              !data
+                ? t(
+                    pending
+                      ? "Loading…"
+                      : "Manual supervision state is unavailable. Refresh to retry.",
+                  )
+                : ""
+            }
+          />
+          <LiveText
+            className={styles.muted}
+            text={scopeChanged ? t("Project scope changed. Your unsaved selection is kept.") : ""}
+          />
           <LiveText
             className={styles.muted}
             text={
@@ -267,31 +247,12 @@ export function ManualSessionSupervision({
                 : ""
             }
           />
-          <SearchableSelect
-            multiple
-            label={t("Selected projects")}
-            searchPlaceholder={t("Search projects…")}
-            noOptionsLabel={t("No visible projects are available.")}
-            value={selectedVisible}
-            options={visible.map((project) => ({
-              value: project.id!,
-              label: project.name,
-              description: project.path,
-              keywords: project.id,
-            }))}
-            showSelectedValues={false}
-            disabled={!!pending || stopping || !chief || !data || !shownEnabled}
-            onChange={(projectIds) => {
-              markDirty();
-              setSelected(projectIds);
-            }}
-          />
-          <LiveText
-            className={styles.muted}
-            text={scopeChanged ? t("Project scope changed. Your unsaved selection is kept.") : ""}
-          />
-          {scopeChanged && (
-            <div className={styles.feedback}>
+        </div>
+        <Row
+          label={t("Selected projects")}
+          stacked
+          feedback={
+            scopeChanged ? (
               <Button
                 onClick={() => {
                   dirty.current = false;
@@ -302,144 +263,203 @@ export function ManualSessionSupervision({
               >
                 {t("Reload saved scope")}
               </Button>
-            </div>
-          )}
-          {!saveRef && (
-            <>
-              <div className={styles.toolbar}>
+            ) : undefined
+          }
+        >
+          <div className={panelStyles.picker}>
+            <SearchableSelect
+              hideLabel
+              multiple
+              label={t("Selected projects")}
+              searchPlaceholder={t("Search projects…")}
+              noOptionsLabel={t("No visible projects are available.")}
+              value={selectedVisible}
+              options={visible.map((project) => ({
+                value: project.id!,
+                label: project.name,
+                description: project.path,
+                keywords: project.id,
+              }))}
+              showSelectedValues={false}
+              disabled={!!pending || stopping || !chief || !data || !shownEnabled}
+              onChange={(projectIds) => {
+                markDirty();
+                setSelected(projectIds);
+              }}
+              footer={({ close }) => (
                 <Button
-                  loading={pending === "policy"}
-                  disabled={!!pending || stopping || !chief || !data}
-                  onClick={() => void commit(enabled)}
+                  variant="ghost"
+                  size="sm"
+                  disabled={selectedVisible.length === visible.length}
+                  onClick={() => {
+                    markDirty();
+                    setSelected(visible.map((project) => project.id!));
+                    close();
+                  }}
                 >
-                  {t("Save project scope")}
+                  {t("Select all projects")}
                 </Button>
-              </div>
-              <p className={styles.muted}>
-                {t(
-                  "Saving project scope does not enroll conversations. Choose each conversation in Sessions.",
-                )}
-              </p>
-            </>
-          )}
-        </>
-      ) : (
-        <>
-          <LiveText
-            className={styles.muted}
-            text={data && !enabled ? t("Manual session supervision is off.") : ""}
-          />
-          {grants
-            .filter((grant) =>
-              matching(
-                grant.title ||
-                  candidates.find((candidate) => candidate.sessionId === grant.sessionId)?.title ||
-                  "",
-              ),
-            )
-            .map((grant) => {
-              const candidate = candidates.find((value) => value.sessionId === grant.sessionId);
-              const title = grant.title || candidate?.title || t("Enrolled conversation");
-              const effective =
-                enabled && chief && data?.policy.projectIds.includes(grant.source.projectId);
-              return (
-                <div className={panelStyles.row} key={grant.id}>
-                  <div className={panelStyles.rowText}>
-                    <strong>{title}</strong>
-                    <p>{visible.find((project) => project.id === grant.source.projectId)?.name}</p>
-                    <span className={styles.muted}>
-                      {t(effective ? "Enrollment saved" : "Supervision paused")}
-                    </span>
-                    <LiveText
-                      className={styles.muted}
-                      text={
-                        candidate?.enrolledSourceChanged
-                          ? t("Execution changed. Enroll again to supervise this source.")
-                          : ""
-                      }
-                    />
-                    {candidate && !candidate.eligible && (
-                      <p className={styles.muted}>
-                        {t(
-                          candidate.reason ?? "This conversation is not eligible for supervision.",
-                        )}
-                      </p>
-                    )}
-                  </div>
-                  {onOpenSession && (
-                    <Button
-                      disabled={!!opening}
-                      loading={opening === grant.sessionId}
-                      onClick={() => void open(grant.sessionId)}
-                    >
-                      {t("Open session")}
-                    </Button>
-                  )}
-                  {candidate?.enrolledSourceChanged && (
-                    <Button
-                      loading={pending === `enroll:${candidate.sessionId}`}
-                      disabled={!!pending || stopping || !effective || !candidate.eligible}
-                      onClick={() => void controller.enroll(candidate)}
-                    >
-                      {t("Enroll again")}
-                    </Button>
-                  )}
-                  <Button
-                    loading={pending === `revoke:${grant.id}`}
-                    disabled={!!pending || stopping}
-                    onClick={() => void controller.revoke(grant)}
-                  >
-                    {t("Revoke supervision")}
-                  </Button>
-                </div>
-              );
-            })}
-          {candidates
-            .filter(
-              (candidate) =>
-                !grants.some((grant) => grant.sessionId === candidate.sessionId) &&
-                matching(candidate.title),
-            )
-            .map((candidate) => {
-              const inScope = data?.policy.projectIds.includes(candidate.projectId);
-              return (
-                <div className={panelStyles.row} key={candidate.sessionId}>
-                  <div className={panelStyles.rowText}>
-                    <strong>{candidate.title || t("Untitled session")}</strong>
-                    <p>{visible.find((project) => project.id === candidate.projectId)?.name}</p>
-                    {!candidate.eligible && (
-                      <p className={styles.muted}>
-                        {t(
-                          candidate.reason ?? "This conversation is not eligible for supervision.",
-                        )}
-                      </p>
-                    )}
-                    {candidate.eligible && !inScope && (
-                      <p className={styles.muted}>
-                        {t("Select this project in Settings before enrolling.")}
-                      </p>
-                    )}
-                  </div>
-                  <Button
-                    loading={pending === `enroll:${candidate.sessionId}`}
-                    disabled={
-                      !!pending || stopping || !enabled || !chief || !inScope || !candidate.eligible
-                    }
-                    onClick={() => void controller.enroll(candidate)}
-                  >
-                    {t("Enroll conversation")}
-                  </Button>
-                </div>
-              );
-            })}
-          {data && !grants.length && !candidates.length && (
-            <p className={styles.empty}>
-              {t("No visible conversations are available for enrollment.")}
+              )}
+            />
+          </div>
+        </Row>
+        {!saveRef && (
+          <div className={panelStyles.footerAction}>
+            <p className={styles.muted}>
+              {t(
+                "Saving project scope does not enroll conversations. Choose each conversation in Sessions.",
+              )}
             </p>
-          )}
-          {openError && <InlineError className={styles.error}>{t(openError)}</InlineError>}
-        </>
+            <Button
+              loading={pending === "policy"}
+              disabled={!!pending || stopping || !chief || !data}
+              onClick={() => void commit(enabled)}
+            >
+              {t("Save project scope")}
+            </Button>
+          </div>
+        )}
+      </>
+    );
+  return (
+    <section className={sessionStyles.frame} aria-label={t("Manual session supervision")}>
+      <div className={sessionStyles.statusRow}>
+        <div className={sessionStyles.statusText}>
+          <div className={sessionStyles.titleGroup}>
+            <h2>{t("Manual session supervision")}</h2>
+            <Badge size="sm" tone={status === "Enabled" ? "success" : "neutral"}>
+              {t(status)}
+            </Badge>
+          </div>
+          <p className={sessionStyles.description}>
+            {t("Only enrolled conversations in selected projects are supervised.")}
+          </p>
+        </div>
+        <div className={sessionStyles.actions}>
+          {onSettings && <Button onClick={onSettings}>{t("Choose projects in Settings")}</Button>}
+          {off}
+          {refresh}
+        </div>
+      </div>
+      <LiveText className={styles.muted} text={chiefNotice} />
+      {error && <InlineError className={styles.error}>{t(error)}</InlineError>}
+      <LiveText
+        className={styles.muted}
+        text={
+          !data
+            ? t(pending ? "Loading…" : "Manual supervision state is unavailable. Refresh to retry.")
+            : ""
+        }
+      />
+      <LiveText
+        className={styles.muted}
+        text={data && !enabled ? t("Manual session supervision is off.") : ""}
+      />
+      {grants
+        .filter((grant) =>
+          matching(
+            grant.title ||
+              candidates.find((candidate) => candidate.sessionId === grant.sessionId)?.title ||
+              "",
+          ),
+        )
+        .map((grant) => {
+          const candidate = candidates.find((value) => value.sessionId === grant.sessionId);
+          const title = grant.title || candidate?.title || t("Enrolled conversation");
+          const effective =
+            enabled && chief && data?.policy.projectIds.includes(grant.source.projectId);
+          return (
+            <div className={panelStyles.row} key={grant.id}>
+              <div className={panelStyles.rowText}>
+                <strong>{title}</strong>
+                <p>{visible.find((project) => project.id === grant.source.projectId)?.name}</p>
+                <span className={styles.muted}>
+                  {t(effective ? "Enrollment saved" : "Supervision paused")}
+                </span>
+                <LiveText
+                  className={styles.muted}
+                  text={
+                    candidate?.enrolledSourceChanged
+                      ? t("Execution changed. Enroll again to supervise this source.")
+                      : ""
+                  }
+                />
+                {candidate && !candidate.eligible && (
+                  <p className={styles.muted}>
+                    {t(candidate.reason ?? "This conversation is not eligible for supervision.")}
+                  </p>
+                )}
+              </div>
+              {onOpenSession && (
+                <Button
+                  disabled={!!opening}
+                  loading={opening === grant.sessionId}
+                  onClick={() => void open(grant.sessionId)}
+                >
+                  {t("Open session")}
+                </Button>
+              )}
+              {candidate?.enrolledSourceChanged && (
+                <Button
+                  loading={pending === `enroll:${candidate.sessionId}`}
+                  disabled={!!pending || stopping || !effective || !candidate.eligible}
+                  onClick={() => void controller.enroll(candidate)}
+                >
+                  {t("Enroll again")}
+                </Button>
+              )}
+              <Button
+                loading={pending === `revoke:${grant.id}`}
+                disabled={!!pending || stopping}
+                onClick={() => void controller.revoke(grant)}
+              >
+                {t("Revoke supervision")}
+              </Button>
+            </div>
+          );
+        })}
+      {candidates
+        .filter(
+          (candidate) =>
+            !grants.some((grant) => grant.sessionId === candidate.sessionId) &&
+            matching(candidate.title),
+        )
+        .map((candidate) => {
+          const inScope = data?.policy.projectIds.includes(candidate.projectId);
+          return (
+            <div className={panelStyles.row} key={candidate.sessionId}>
+              <div className={panelStyles.rowText}>
+                <strong>{candidate.title || t("Untitled session")}</strong>
+                <p>{visible.find((project) => project.id === candidate.projectId)?.name}</p>
+                {!candidate.eligible && (
+                  <p className={styles.muted}>
+                    {t(candidate.reason ?? "This conversation is not eligible for supervision.")}
+                  </p>
+                )}
+                {candidate.eligible && !inScope && (
+                  <p className={styles.muted}>
+                    {t("Select this project in Settings before enrolling.")}
+                  </p>
+                )}
+              </div>
+              <Button
+                loading={pending === `enroll:${candidate.sessionId}`}
+                disabled={
+                  !!pending || stopping || !enabled || !chief || !inScope || !candidate.eligible
+                }
+                onClick={() => void controller.enroll(candidate)}
+              >
+                {t("Enroll conversation")}
+              </Button>
+            </div>
+          );
+        })}
+      {data && !grants.length && !candidates.length && (
+        <p className={styles.empty}>
+          {t("No visible conversations are available for enrollment.")}
+        </p>
       )}
+      {openError && <InlineError className={styles.error}>{t(openError)}</InlineError>}
     </section>
   );
 }

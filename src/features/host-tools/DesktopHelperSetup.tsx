@@ -10,9 +10,23 @@ import { Badge } from "../../shared/ui/Badge";
 type VerifiedHelper = NonNullable<DesktopHelperResponse["helper"]>;
 
 /**
+ * True when `selected` is the same bundled helper inside an earlier versioned runtime folder
+ * (`…/runtime/<version>/…`). An update removes that folder, so the old path no longer exists.
+ */
+export function isEarlierBundledHelper(selected: string, verified: string) {
+  const parts = (path: string) => path.replace(/\\/g, "/").toLowerCase().split("/");
+  const a = parts(selected),
+    b = parts(verified);
+  const runtime = b.lastIndexOf("runtime");
+  if (runtime < 0 || a.length !== b.length || a[runtime + 1] === b[runtime + 1]) return false;
+  return a.every((part, index) => index === runtime + 1 || part === b[index]);
+}
+
+/**
  * The "Helper" row. It only discovers until an owner or `autoPrepare` starts the same pinned,
  * checksum-verified preparation. `autoPrepare` (computer use switched on) prepares a missing
- * helper once and offers the verified helper to an empty selection; it never enables control.
+ * helper once and offers the verified helper to an empty selection or one left behind by an
+ * earlier runtime version; it never enables control.
  */
 export function DesktopHelperSetup({
   disabled,
@@ -24,7 +38,7 @@ export function DesktopHelperSetup({
 }: {
   disabled?: boolean;
   autoPrepare?: boolean;
-  /** Currently selected helper path. An empty selection receives the verified helper automatically. */
+  /** Currently selected helper path. An empty or stale bundled selection receives the verified helper automatically. */
   selectedPath?: string;
   onUse: (helper: VerifiedHelper) => void;
   onPendingChange?: (pending: boolean) => void;
@@ -96,7 +110,8 @@ export function DesktopHelperSetup({
         .catch(() => undefined);
   }, [autoPrepare, pending, state]);
   useEffect(() => {
-    if (!autoPrepare || applied.current || !helper || selectedPath) return;
+    if (!autoPrepare || applied.current || !helper) return;
+    if (selectedPath && !isEarlierBundledHelper(selectedPath, helper.binaryPath)) return;
     applied.current = true;
     onUse(helper);
   }, [autoPrepare, helper, onUse, selectedPath]);
@@ -115,6 +130,7 @@ export function DesktopHelperSetup({
     <Row label={t("Helper")} feedback={message ? <InlineError>{message}</InlineError> : undefined}>
       <Badge
         role="status"
+        appearance="subtle"
         tone={preparing ? "info" : helper ? "success" : failed ? "danger" : "neutral"}
       >
         {label}

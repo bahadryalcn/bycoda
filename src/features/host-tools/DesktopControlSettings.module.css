@@ -18,25 +18,29 @@
   justify-content: flex-end;
 }
 
+/* Allowed apps: the list picker on its own line, then the name field and its Add action. */
 .applicationEntry {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   inline-size: 100%;
   min-inline-size: 0;
-  flex-wrap: wrap;
 }
 
 .applicationEntry > * {
-  flex: 1 1 160px;
   min-inline-size: 0;
 }
 
-.applicationEntry > .addButton {
-  flex: 0 0 auto;
+.applicationEntry > :first-child {
+  grid-column: 1 / -1;
 }
 
-.note,
+.embeddedError {
+  padding: 8px 16px;
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+
 .saveArea > p {
   margin: 0;
   color: var(--ui-text-secondary);
@@ -54,5 +58,14 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  gap: 8px;
+}
+
+/* Resume and emergency stop sit under the enable row, on the controls' right edge. */
+.stopActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }

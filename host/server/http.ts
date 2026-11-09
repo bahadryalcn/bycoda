@@ -9,6 +9,8 @@ import { elapsedSince } from "../../src/shared/lib/time/timestamps";
 import { AssistantResponseValidationSchema } from "../../src/shared/model/host-contracts/assistant";
 import { mcpMetricName, perfMetrics } from "../diagnostics/perf-metrics";
 import { HostDomainAuthorizationError, HostDomainOutcomeError } from "../domains/context";
+import { requestingDeviceName } from "../desktop/remoteActivity";
+import { memoized } from "../desktop/requester-name";
 import { RequestAuthorizationError } from "../store-db";
 import { serializedResponse } from "../sync/sync-transfer";
 import { HostVoiceToolDisclosure } from "../voice/voice-tool-disclosure";
@@ -132,6 +134,7 @@ export function createHttpRuntime(
     | "adopt"
     | "startWorkspaceActivity"
     | "desktopDelete"
+    | "remoteActivity"
     | "invalidateSessionCopies"
     | "sessionQueues"
     | "commandService"
@@ -358,6 +361,7 @@ export function createHttpRuntime(
             }),
             workspaceOwner: dependencies.requestWorkspaceOwner(token),
             principalId: tokenHash,
+            requesterName: memoized(() => requestingDeviceName(dependencies.engine.store, token)),
             devServerAccess: (
               method: string,
               params: Record<string, unknown>,

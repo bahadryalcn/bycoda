@@ -21,8 +21,9 @@ export function splitRunningSessions(
 }
 
 /**
- * Delete one conversation at a time. A failure is recorded and the rest still
- * run; a conversation that started running in the meantime is skipped.
+ * Delete conversations, at most `concurrency` at a time (default one). A
+ * failure is recorded and the rest still run; a conversation that started
+ * running in the meantime is skipped.
  */
 export async function deleteSessionsInBulk(
   sessionIds: readonly string[],
@@ -31,6 +32,7 @@ export async function deleteSessionsInBulk(
     /** Resolves false when the conversation was kept; throws on an error. */
     deleteOne: (sessionId: string) => Promise<boolean | void>;
     onProgress?: (completed: number, total: number) => void;
+    concurrency?: number;
   },
 ): Promise<BulkSessionDeleteResult> {
   const result: BulkSessionDeleteResult = {
@@ -38,15 +40,15 @@ export async function deleteSessionsInBulk(
     skipped: [],
     failed: [],
   };
-  options.onProgress?.(0, sessionIds.length);
-  for (const sessionId of sessionIds) {
+  const report = () =>
+    options.onProgress?.(
+      result.deleted.length + result.skipped.length + result.failed.length,
+      sessionIds.length,
+    );
+  const deleteNext = async (sessionId: string) => {
     if (options.isRunning(sessionId)) {
       result.skipped.push(sessionId);
-      options.onProgress?.(
-        result.deleted.length + result.skipped.length + result.failed.length,
-        sessionIds.length,
-      );
-      continue;
+      return;
     }
     try {
       if ((await options.deleteOne(sessionId)) === false) {
@@ -59,19 +61,23 @@ export async function deleteSessionsInBulk(
       if (RUNNING_REFUSAL.test(detail)) result.skipped.push(sessionId);
       else result.failed.push({ sessionId, error: detail });
     }
-    options.onProgress?.(
-      result.deleted.length + result.skipped.length + result.failed.length,
-      sessionIds.length,
-    );
-  }
+  };
+  options.onProgress?.(0, sessionIds.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < sessionIds.length) {
+      await deleteNext(sessionIds[next++]!);
+      report();
+    }
+  };
+  const workers = Math.max(1, Math.min(options.concurrency ?? 1, sessionIds.length));
+  await Promise.all(Array.from({ length: workers }, worker));
   return result;
 }
 
 export function bulkDeleteOutcome(result: BulkSessionDeleteResult): string {
   const success =
-    result.deleted.length > 0 && (result.skipped.length > 0 || result.failed.length > 0)
-      ? `${conversations(result.deleted.length)} deleted.`
-      : "";
+    result.deleted.length > 0 ? `${conversations(result.deleted.length)} deleted.` : "";
   return [success, bulkDeleteSummary(result)].filter(Boolean).join(" ");
 }
 

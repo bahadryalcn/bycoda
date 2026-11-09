@@ -93,4 +93,26 @@ describe("submitFeedback", () => {
     });
     expect(onFailure).toHaveBeenCalledOnce();
   });
+  it("sends the linked logs after the receipt and never lets them change the result", async () => {
+    const api = make();
+    const sendLogs = vi.fn(async () => "failed" as const);
+    const result = await submitFeedback(api as never, { ...draft, attachLogs: true }, true, {
+      ...deps(),
+      sendLogs,
+    });
+    expect(result).toEqual({ status: "sent", reference: "fb_1", logs: "failed" });
+    expect(sendLogs).toHaveBeenCalledWith({ feedbackId: "fb_1", note: "Dark mode please" });
+
+    const throwing = await submitFeedback(api as never, { ...draft, attachLogs: true }, true, {
+      ...deps(),
+      sendLogs: async () => {
+        throw new Error("boom");
+      },
+    });
+    expect(throwing).toMatchObject({ status: "sent", logs: "failed" });
+
+    const unticked = vi.fn(async () => "sent" as const);
+    await submitFeedback(api as never, draft, true, { ...deps(), sendLogs: unticked });
+    expect(unticked).not.toHaveBeenCalled();
+  });
 });

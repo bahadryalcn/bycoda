@@ -9,6 +9,78 @@
   border: 1px solid var(--ui-tone-neutral-border);
   background: var(--ui-surface-floating);
 }
+/* Sidebar footer dock beside Settings (voiceLauncherSlot.tsx). Empty while the companion is
+   open; it stays rendered so the dock can tell a visible footer from a hidden copy. */
+.launcherSlot {
+  display: flex;
+  align-items: center;
+  min-inline-size: 0;
+}
+.launcherSlot:not([data-compact]) {
+  flex: 0 1 auto;
+}
+.launcherButton[data-docked] {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+/* Avatar with a status dot on its corner; the mark draws the name's initial when empty. */
+.launcherAvatar {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+.launcherMark {
+  display: grid;
+  place-items: center;
+  inline-size: 20px;
+  block-size: 20px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--ui-fill-subtle);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-micro);
+  font-weight: 500;
+  line-height: 1;
+}
+.launcherMark:empty::before {
+  content: attr(data-initial);
+}
+.launcherDot {
+  position: absolute;
+  inset-inline-end: -1px;
+  inset-block-end: -1px;
+  box-shadow: 0 0 0 2px var(--ui-surface-floating);
+}
+.launcherAvatar:is(
+    [data-state="listening"],
+    [data-state="user"],
+    [data-state="thinking"],
+    [data-state="assistant"]
+  )
+  .launcherDot {
+  animation: voice-launcher-pulse 1.6s var(--motion-ease-standard) infinite;
+}
+@keyframes voice-launcher-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .launcherAvatar .launcherDot {
+    animation: none;
+  }
+}
+/* Docked in the sidebar, the open panel starts above that footer instead of the far corner. */
+:global(:root:has([data-voice-launcher-slot][data-active]:not([data-compact]))) .panel {
+  right: auto;
+  left: 12px;
+  bottom: 56px;
+}
+:global(:root:has([data-voice-launcher-slot][data-active][data-compact])) .panel {
+  right: auto;
+  left: 60px;
+  bottom: 12px;
+}
 .panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;

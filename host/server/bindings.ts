@@ -46,6 +46,7 @@ import { HostDesktopHelper } from "../desktop-helper";
 import { DesktopCommandDelivery } from "../desktop/desktop-command-delivery";
 import { HostDesktopControl } from "../desktop/desktop-control-host";
 import { DesktopDelete } from "../desktop/desktopDelete";
+import type { RemoteActivityFeed } from "../desktop/remoteActivity";
 import { DesktopSessions } from "../desktop/desktopSessions";
 import { DevServerAccess } from "../dev-servers/dev-server-access";
 import { DevServersService } from "../dev-servers/dev-servers";
@@ -349,6 +350,8 @@ export interface ServerBindings {
   taskChangeEtag: Awaited<ReturnType<typeof createSessionListRuntime>>["taskChangeEtag"];
   gitWatches: GitWatches;
   desktopDelete: DesktopDelete;
+  /** Remote changes the desktop shows a notice for; read on its heartbeat. */
+  remoteActivity: RemoteActivityFeed;
   invalidateSessionCopies: ReturnType<typeof createSubscriptionsRuntime>["invalidateSessionCopies"];
   withinBeat: ReturnType<typeof createSessionLeasesRuntime>["withinBeat"];
   desktopCommandDelivery: DesktopCommandDelivery;

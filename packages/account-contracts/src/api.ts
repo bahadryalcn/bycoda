@@ -1,7 +1,9 @@
 /**
  * Route table of the client-visible API. Paths are relative to the API base URL and always
  * start with `/v1/`. No route accepts session content, prompts, code, file paths or project
- * names; request schemas are strict so such fields fail with `validation_failed`.
+ * names as fields; request schemas are strict so such fields fail with `validation_failed`.
+ * The one exception is the consented diagnostic report (0.9.0), whose redacted log text can
+ * mention technical file names; see `diagnostics.ts`.
  */
 import { z } from "zod";
 import {
@@ -10,6 +12,7 @@ import {
   ActivitySummaryQuery,
   ActivityUploadResult,
 } from "./activity-schema.ts";
+import { DiagnosticReportCreate, DiagnosticReportReceipt } from "./diagnostics.ts";
 import {
   AccountContext,
   AccountStatus,
@@ -19,6 +22,13 @@ import {
   SecurityActivityQuery,
   AnnouncementList,
   AnonymousPing,
+  ComputerList,
+  ConnectInfoUpdate,
+  PairRequestCreate,
+  PairRequestCreated,
+  PairRequestStatus,
+  PairTicket,
+  PendingPairRequestList,
   DataExport,
   DataExportRequest,
   DeletionCancel,
@@ -184,6 +194,22 @@ export const ACCOUNT_API = {
     body: FeedbackCreate,
     response: FeedbackReceipt,
   }),
+  /** Added in 0.9.0. Consented diagnostic log report from a signed-in user, linked to the account. */
+  sendDiagnosticReport: route({
+    method: "POST",
+    path: "/v1/diagnostics/reports",
+    auth: "user",
+    body: DiagnosticReportCreate,
+    response: DiagnosticReportReceipt,
+  }),
+  /** Added in 0.9.0. Diagnostic log report without an account; stored with no user, device or install id. */
+  sendAnonymousDiagnosticReport: route({
+    method: "POST",
+    path: "/v1/diagnostics/reports/anonymous",
+    auth: "none",
+    body: DiagnosticReportCreate,
+    response: DiagnosticReportReceipt,
+  }),
   requestExport: route({
     method: "POST",
     path: "/v1/me/export",
@@ -247,6 +273,65 @@ export const ACCOUNT_API = {
     auth: "user",
     query: SecurityActivityQuery,
     response: SecurityActivityPage,
+  }),
+  /** Added in 0.8.0. A signed-in desktop publishes where phones can reach its Host. Caller device must be `:id`. */
+  putConnectInfo: route({
+    method: "PUT",
+    path: "/v1/devices/:id/connect",
+    auth: "user",
+    body: ConnectInfoUpdate,
+    response: null,
+  }),
+  /** Added in 0.8.0. Stops advertising this desktop to the account's phones. */
+  deleteConnectInfo: route({
+    method: "DELETE",
+    path: "/v1/devices/:id/connect",
+    auth: "user",
+    response: null,
+  }),
+  /** Added in 0.8.0. The account's desktops that advertise connect info (mobile caller). */
+  listComputers: route({
+    method: "GET",
+    path: "/v1/computers",
+    auth: "user",
+    response: ComputerList,
+  }),
+  /** Added in 0.8.0. A phone asks the desktop `:deviceId` to approve a connection. */
+  createPairRequest: route({
+    method: "POST",
+    path: "/v1/computers/:deviceId/pair-requests",
+    auth: "user",
+    body: PairRequestCreate,
+    response: PairRequestCreated,
+  }),
+  /** Added in 0.8.0. Pending requests addressed to the calling desktop. */
+  listPairRequests: route({
+    method: "GET",
+    path: "/v1/pair-requests",
+    auth: "user",
+    response: PendingPairRequestList,
+  }),
+  /** Added in 0.8.0. The desktop answers with the pairing code sealed to the phone key. */
+  putPairTicket: route({
+    method: "PUT",
+    path: "/v1/pair-requests/:id/ticket",
+    auth: "user",
+    body: PairTicket,
+    response: null,
+  }),
+  /** Added in 0.8.0. The desktop refuses the request. */
+  denyPairRequest: route({
+    method: "PUT",
+    path: "/v1/pair-requests/:id/deny",
+    auth: "user",
+    response: null,
+  }),
+  /** Added in 0.8.0. The phone polls its own request; the sealed ticket is deleted after first read. */
+  getPairRequest: route({
+    method: "GET",
+    path: "/v1/pair-requests/:id",
+    auth: "user",
+    response: PairRequestStatus,
   }),
   /** Opt-in, default off, no account. */
   anonymousPing: route({

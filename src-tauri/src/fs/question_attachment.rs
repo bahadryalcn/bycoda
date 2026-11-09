@@ -468,7 +468,7 @@ pub async fn list_question_attachment_drafts(
                     Ok(Some(record)) => result.push(record),
                     Ok(None) => {}
                     Err(reason) => {
-                        eprintln!("Question attachment operation skipped during listing: {reason}")
+                        log::warn!("Question attachment operation skipped during listing: {reason}")
                     }
                 }
             }

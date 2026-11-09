@@ -72,6 +72,16 @@ export function autoAddRetryDelayMs(failures: number): number {
 }
 
 const retries = new Map<string, { failures: number; nextAt: number }>();
+/** Projects whose machine answered that the folder is gone; asked again only after a restart. */
+const missing = new Set<string>();
+
+/** The host refused the open because the folder does not exist there (the machine itself
+ * answered); the wording is the host's `PROJECT_FOLDER_MISSING` refusal, which the native
+ * layer forwards as text. */
+export function folderMissingOnHost(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return /project folder not found/i.test(message);
+}
 
 const addedListeners = new Set<() => void>();
 
@@ -117,6 +127,7 @@ async function addRemotely(
   if (projectIdForPath(remote.key) !== projectId) dismissProjectIds([projectId]);
   markAutoAdded(projectId, remote.key);
   retries.delete(projectId);
+  missing.delete(projectId);
   return remote.key;
 }
 
@@ -145,7 +156,7 @@ export async function autoAddRemoteProjects(
   for (const project of remoteOnlyProjects()) {
     requireCurrent(current);
     const match = remoteOpenMatch(project);
-    if (!match) continue;
+    if (!match || missing.has(project.projectId)) continue;
     const retry = retries.get(project.projectId);
     if (retry && now < retry.nextAt) continue;
     const fail = () => {
@@ -160,8 +171,14 @@ export async function autoAddRemoteProjects(
     }
     try {
       added.push(await addRemotely(project.projectId, match, false, current));
-    } catch {
+    } catch (error) {
       requireCurrent(current);
+      // A reachable machine without the folder: retrying cannot help, and the
+      // machine's other projects are unaffected.
+      if (folderMissingOnHost(error)) {
+        missing.add(project.projectId);
+        continue;
+      }
       fail();
       failedTargets.add(match.target.environmentId);
     }

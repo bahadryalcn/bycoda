@@ -24,6 +24,38 @@ function setup(overrides: Partial<VoiceWorkspaceActionsDeps> = {}) {
 const args = { sessionId: "first", projectPath: "/project", requestId: "request-1" };
 
 describe("voice workspace owner actions", () => {
+  it("creates a new project once per request and reports it as completed when listed", async () => {
+    const listed = [{ path: "/project" }];
+    const onCreateProject = vi.fn(async () => {
+      listed.push({ path: "/work/snake-game" });
+      return "/work/snake-game";
+    });
+    const { execute } = setup({ getProjects: () => listed, onCreateProject });
+    const request = { name: "Snake Game", requestId: "create-1" };
+    expect(await execute("workspace.projects.create", request, "room-1")).toMatchObject({
+      status: "completed",
+      projectPath: "/work/snake-game",
+    });
+    expect(onCreateProject).toHaveBeenCalledWith({
+      name: "Snake Game",
+      workspaceRequestId: "room-1",
+    });
+    // A repeated request returns the original receipt instead of creating a second folder.
+    await execute("workspace.projects.create", request, "room-1");
+    expect(onCreateProject).toHaveBeenCalledTimes(1);
+    expect(await execute("workspace.projects.create", { ...request, name: "Other" })).toMatchObject(
+      { status: "rejected" },
+    );
+    expect(
+      await execute("workspace.projects.create", { name: "x", requestId: "create-2" }),
+    ).toMatchObject({ status: "completed" });
+  });
+  it("reports project creation as unavailable without a window owner", async () => {
+    const { execute } = setup();
+    expect(
+      await execute("workspace.projects.create", { name: "snake", requestId: "r" }),
+    ).toMatchObject({ status: "rejected" });
+  });
   it("passes the native pending owner identity through session open", async () => {
     const onOpen = vi.fn(async () => {});
     const { execute } = setup({ onOpen });

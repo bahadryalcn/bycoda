@@ -4,6 +4,7 @@ import { Storage } from "happy-dom";
 import {
   DECORATIVE_MOTION_CHANGE_EVENT,
   DECORATIVE_MOTION_KEY,
+  applyThemeDecorativeMotion,
   decorativeMotionEnabled,
   loadDecorativeMotionEnabled,
   noteDisplayRefreshRate,
@@ -222,6 +223,19 @@ describe("high refresh displays", () => {
     saveDecorativeMotionEnabled(true);
     expect(loadDecorativeMotionEnabled()).toBe(true);
     expect(document.documentElement.dataset.decorativeMotion).toBe("on");
+  });
+
+  it("lets a theme turn motion off anywhere but on only where the display default allows", () => {
+    noteDisplayRefreshRate(239.9);
+    applyThemeDecorativeMotion(true);
+    expect(loadDecorativeMotionEnabled()).toBe(false);
+    expect(localStorage.getItem(DECORATIVE_MOTION_KEY)).toBeNull();
+    saveDecorativeMotionEnabled(true);
+    applyThemeDecorativeMotion(false);
+    expect(loadDecorativeMotionEnabled()).toBe(false);
+    noteDisplayRefreshRate(60);
+    applyThemeDecorativeMotion(true);
+    expect(loadDecorativeMotionEnabled()).toBe(true);
   });
 
   it("keeps the product default on ordinary displays", () => {

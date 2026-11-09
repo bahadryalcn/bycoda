@@ -3,6 +3,7 @@ import type { DesktopLiveHandlers } from "../../../features/connections/model/de
 import { isRemoteProjectPath, sameProjectPath } from "../../../features/projects/model/recents";
 import { getSession } from "../../../features/sessions/data/sessionStore";
 import { sessionsRef } from "../../../features/sessions/model/sessionsStore";
+import { noteRemoteActivity } from "../../../features/sessions/model/remoteActivityNotice";
 import {
   approvalRequestDispatchStarted,
   captureApprovalRequest,
@@ -29,15 +30,21 @@ export function useDesktopLiveHandlers({
   onQuestionReply,
 }: DesktopLiveHandlersDeps): void {
   desktopLiveHandlers.current = {
-    delete: async (sessionId, cwd) => {
+    delete: async (sessionId, cwd, requestedBy) => {
       const stored = await getSession(sessionId);
       const open = sessionsRef.current.find((session) => session.id === sessionId);
       if (!stored || isRemoteProjectPath(stored.cwd) || !sameProjectPath(stored.cwd, cwd))
         throw new Error("Session does not belong to this local project");
       if (stored.busy || open?.busy || orchestrator.forSession(sessionId)?.status === "active")
         throw new Error("Stop this session before deleting it");
-      if (!(await onDeleteHistorySessionNow(sessionId, true)))
-        throw new Error("The conversation could not be deleted");
+      let deleted = false;
+      try {
+        deleted = await onDeleteHistorySessionNow(sessionId, true);
+      } finally {
+        // Another device asked for this: say so here too, not only on that device.
+        noteRemoteActivity({ scope: { cwd }, kind: "deleted", device: requestedBy, ok: deleted });
+      }
+      if (!deleted) throw new Error("The conversation could not be deleted");
     },
     stop: (sessionId, current) => onStop(sessionId, false, current),
     captureApproval: captureApprovalRequest,

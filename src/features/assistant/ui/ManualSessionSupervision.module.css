@@ -1,12 +1,3 @@
-.header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
-  min-inline-size: 0;
-}
-
 /* Settings-row look for enrolled and candidate conversations: title and caption left, actions right, hairline between rows. */
 .row {
   display: flex;
@@ -34,4 +25,39 @@
   margin: 0;
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
+}
+
+/* Settings page: status and error lines sit between rows with row padding, and collapse while empty. */
+.notices {
+  display: grid;
+  gap: 4px;
+  padding: 8px 16px;
+  min-inline-size: 0;
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+.notices:not(:has(:not(:empty))) {
+  padding-block: 0;
+  border-block-start: 0;
+}
+.footerAction {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 10px 16px;
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+.footerAction > p {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+
+/* The project picker fills its stacked row instead of shrinking to its value. */
+.picker {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+.picker > * {
+  inline-size: 100%;
 }

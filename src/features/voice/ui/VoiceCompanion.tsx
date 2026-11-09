@@ -20,14 +20,14 @@ import { sessionsRef as liveSessions, useSession } from "../../sessions/model/se
 import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { useOverlay } from "../../../shared/ui/overlay";
-import { AppWindow, GripVertical } from "../../../shared/ui/icons";
+import { GripVertical } from "../../../shared/ui/icons";
 import { t, useLocale } from "../../../shared/i18n";
 import { errorText } from "../../../shared/lib/errors";
 import { invalidateFeatureHosts } from "../../connections/model/hostFeatureClient";
 import { useVoiceSessionProgress } from "../model/voiceSessionProgress";
 import { VoiceToolActivity, type VoiceToolActivityEntry } from "../model/voiceToolActivity";
 import { VoiceCompanionView } from "./companion/VoiceCompanionView";
-import { VoiceLauncher } from "./companion/VoiceLauncher";
+import { VoiceLauncher, VoiceReturnButton } from "./companion/VoiceLauncher";
 import { useVoiceChatTurns } from "./companion/useVoiceChatTurns";
 import { voiceJobsNeedReview } from "./companion/voiceJobAutoStart";
 import { useVoicePushToTalk } from "./useVoicePushToTalk";
@@ -3025,27 +3025,15 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       ? "Move voice window. Drag outside the app to float it. Use arrow keys to reposition."
       : "Move voice window. Use arrow keys to reposition.",
   );
-  if (open && detached)
-    return (
-      <div className={styles.launcher}>
-        <Button
-          ref={launcher}
-          iconOnly
-          selected
-          label={t("Return voice companion to this window")}
-          tooltip={t("Return voice companion to this window")}
-          onClick={dock}
-        >
-          <AppWindow className="icon-md" />
-        </Button>
-      </div>
-    );
+  if (open && detached) return <VoiceReturnButton ref={launcher} onReturn={dock} />;
   if (!open)
     return (
       <VoiceLauncher
         ref={launcher}
         visual={settings.visual}
         name={identity.name}
+        avatar={assistantSnapshot?.profile.avatar}
+        state={visualState}
         onOpen={() => {
           try {
             const saved = JSON.parse(localStorage.getItem("bycoda:voice-position") ?? "null") as {

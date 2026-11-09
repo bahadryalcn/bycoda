@@ -1,6 +1,7 @@
 import type { Duplex } from "node:stream";
 import { RPC_ERROR_CODES } from "../../../src/shared/model/host-contracts";
 import type { HostDispatchError } from "../dispatch";
+import type { HostWsPrincipal } from "./server";
 
 const DISPATCH_ERROR_CODES: Record<HostDispatchError["code"], number> = {
   unauthorized: RPC_ERROR_CODES.unauthorized,
@@ -45,4 +46,18 @@ export function waitFor<T>(action: Promise<T>, signal: AbortSignal): Promise<T> 
     signal.addEventListener("abort", aborted, { once: true });
     void action.then(resolve, reject).finally(() => signal.removeEventListener("abort", aborted));
   });
+}
+
+/** The request capabilities a device principal grants, copied onto each dispatch. */
+export function principalCapabilities(principal: HostWsPrincipal) {
+  return {
+    exposeQueueAttachments: principal.exposeQueueAttachments,
+    retargetTask: principal.retargetTask,
+    devServerAccess: principal.devServerAccess,
+    requesterName: principal.requesterName,
+    workspaceOwner: principal.workspaceOwner,
+    nativeServices: principal.nativeServices,
+    nativeDevices: principal.nativeDevices,
+    nativeDelivery: principal.nativeDelivery,
+  };
 }

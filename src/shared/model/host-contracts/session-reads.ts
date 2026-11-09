@@ -158,6 +158,16 @@ export const SessionSummarySchema = z.strictObject({
   repo: z.string().optional(),
   draft: z.boolean().optional(),
   origin: z.literal("desktop").optional(),
+  /** Set on sessions the assistant started or supervises (`AssistantSessionManagement`). */
+  managedBy: z
+    .strictObject({
+      assistant: z.literal(true),
+      managedAt: SafeCounterSchema,
+      detachedAt: SafeCounterSchema.optional(),
+      jobId: IdentifierSchema.optional(),
+      supervisionId: IdentifierSchema.optional(),
+    })
+    .optional(),
 });
 export const SessionsListResultSchema = z.union([
   z.array(SessionSummarySchema),

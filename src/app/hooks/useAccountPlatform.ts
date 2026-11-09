@@ -1,15 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   accountApi,
+  accountDeviceInfo,
+  accountIdentity,
   accountNotificationsPort,
   reportAccountFailure,
   startAccount,
   useAnonymousStats,
 } from "../../features/account";
+import { useDiagnostics } from "../../features/diagnostics";
 import { useActivitySync, useActivityTracker } from "../../features/activity";
 import { useRemoteMachines } from "../../features/connections/public/connections";
 import { bindNotificationsServer, useServerNotifications } from "../../features/notifications";
 import { useDailySummary } from "../../features/notifications/hooks/useDailySummary";
+import {
+  appDiagnosticsFacts,
+  readLocalHostPerformance,
+  remoteHostLogSource,
+} from "../model/diagnosticsFacts";
 import { isLocalSyncMachine } from "../../features/connections/public/localSync";
 
 /**
@@ -24,6 +32,17 @@ export function useAccountPlatform(): void {
     void startAccount().catch(() => undefined);
   }, []);
   useAnonymousStats();
+  const machinesRef = useRef(machines);
+  machinesRef.current = machines;
+  useDiagnostics({
+    api: accountApi,
+    deviceInfo: accountDeviceInfo,
+    identity: accountIdentity,
+    onFailure: reportAccountFailure,
+    environment: () => appDiagnosticsFacts(machinesRef.current),
+    readPerformance: readLocalHostPerformance,
+    remoteHosts: remoteHostLogSource(() => machinesRef.current),
+  });
   useActivityTracker(hostId);
   useActivitySync(hostId, accountApi, reportAccountFailure);
   useServerNotifications();

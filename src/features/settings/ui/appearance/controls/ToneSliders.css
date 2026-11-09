@@ -1,0 +1,37 @@
+/* Surfaces: four side-by-side chips with a border that stays visible on the dark canvas. */
+.tone-ramp {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  inline-size: 100%;
+  max-inline-size: 22rem;
+}
+.tone-step {
+  display: grid;
+  gap: 0.25rem;
+  min-inline-size: 0;
+}
+.tone-step > small {
+  overflow: hidden;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tone-swatch {
+  block-size: 2rem;
+  border-radius: var(--ui-control-radius);
+  border: 1px solid color-mix(in srgb, var(--ui-text-secondary) 55%, transparent);
+}
+.tone-step[data-step="base"] > .tone-swatch {
+  background: var(--color-background-base);
+}
+.tone-step[data-step="surface"] > .tone-swatch {
+  background: var(--ui-surface);
+}
+.tone-step[data-step="line"] > .tone-swatch {
+  background: var(--ui-pane-border);
+}
+.tone-step[data-step="selected"] > .tone-swatch {
+  background: var(--ui-surface-selected);
+}

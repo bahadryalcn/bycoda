@@ -202,6 +202,23 @@ local use. An SSH connection alone is not an address that another Host can store
 and contact as its authority. The setup checks both peer addresses before issuing
 an enrollment token.
 
+## Activity from other devices
+
+When another device (a remote PC or phone) changes conversations on this computer
+through its Host, the project's sidebar shows a notice that names the device, for
+example "Work laptop deleted 3 conversations." Notices for the same kind of action
+add up on one line until you dismiss it. They cover deleting, archiving, stopping,
+approval and question answers, worktree changes, project workspace settings, and
+conversations that another computer took over and stopped here. Inbox changes made
+through this computer's GitHub or Jira accounts by another device appear at the top
+of the Inbox.
+
+The reverse also applies: when you view a project on another computer, the sidebar
+says "<machine> deleted N conversations." or "<machine> archived N conversations."
+when that machine changes them. Your own actions do not produce a notice on your
+own screen. Deleting many conversations from a remote PC sends the deletions
+together, and both sides report the result.
+
 ## Connect through SSH
 
 ### Servers catalog and terminal tabs

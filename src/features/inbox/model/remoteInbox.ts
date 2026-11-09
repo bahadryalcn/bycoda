@@ -122,7 +122,13 @@ export type RemoteInboxOperation =
       prAction: RemoteInboxPrAction;
       expectedHeadOid?: string;
     };
-export type DesktopInboxJob = { id: string; operation: RemoteInboxOperation; deadline?: number };
+export type DesktopInboxJob = {
+  id: string;
+  operation: RemoteInboxOperation;
+  deadline?: number;
+  /** Name of the device that asked, when the Host knows it. */
+  requestedBy?: string;
+};
 export type DesktopInboxReply = { id: string; result?: unknown; error?: string };
 export type DesktopInboxPayload = { version: number; replies?: DesktopInboxReply[] };
 export type RemoteInboxJobState = "queued" | "running" | "completed" | "failed" | "uncertain";

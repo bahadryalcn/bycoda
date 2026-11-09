@@ -4,6 +4,7 @@ import { t, useLocale } from "../../../../../shared/i18n";
 import { useColorScheme } from "../../../../../shared/hooks/useColorScheme";
 import { ColorPickerPopover } from "../../../../../shared/ui/ColorPickerPopover";
 import { Button } from "../../../../../shared/ui/Button";
+import { Chatting, Folder, MessageSquare, Terminal } from "../../../../../shared/ui/icons";
 import { Popover } from "../../../../../shared/ui/Popover";
 import {
   INTERACTION_TINT_DEFAULT,
@@ -15,6 +16,7 @@ import {
 } from "../../../model/interactionTint";
 import { Group, Row, Segmented, Slider } from "../../settingsControls";
 import "./ThemeControls.css";
+import "./StateLadder.css";
 
 const snapshot = () => JSON.stringify(loadInteractionTint());
 const STRENGTH_MIN = 50;
@@ -22,7 +24,7 @@ const STRENGTH_MAX = 200;
 
 /**
  * The "Interaction states" topic: which color hover, selected and pressed mix in, how strongly,
- * and a live ladder plus a list to try the result on. One reset restores the whole record.
+ * and one live list with a row pinned to each state, which also responds to the pointer. One reset restores the whole record.
  */
 export function StateLadder() {
   useLocale();
@@ -30,22 +32,34 @@ export function StateLadder() {
     useSyncExternalStore(subscribeInteractionTint, snapshot, snapshot),
   ) as ReturnType<typeof loadInteractionTint>;
   const light = useColorScheme() === "light";
-  const tryItems = [t("Sessions"), t("Chat"), t("Workspace"), t("Terminal")];
   const steps = interactionStepPercent(light, value.strength);
   const [open, setOpen] = useState(false);
-  const [tried, setTried] = useState(1);
   const anchor = useRef<HTMLDivElement>(null);
   const update = (change: Partial<typeof value>) => saveInteractionTint({ ...value, ...change });
-  const ladder: {
-    state: "rest" | "hover" | "selected" | "pressed";
-    label: string;
-    mix: string;
-  }[] = [
-    { state: "rest", label: t("Rest"), mix: "—" },
-    { state: "hover", label: t("Hover"), mix: `+${steps.hover}%` },
-    { state: "selected", label: t("Selected"), mix: `+${steps.selected}%` },
-    { state: "pressed", label: t("Pressed"), mix: `+${steps.pressed}%` },
-  ];
+  const rows = [
+    { state: "rest", Icon: Chatting, item: t("Sessions"), label: t("Rest"), mix: "" },
+    {
+      state: "hover",
+      Icon: MessageSquare,
+      item: t("Chat"),
+      label: t("Hover"),
+      mix: `+${steps.hover}%`,
+    },
+    {
+      state: "selected",
+      Icon: Folder,
+      item: t("Workspace"),
+      label: t("Selected"),
+      mix: `+${steps.selected}%`,
+    },
+    {
+      state: "pressed",
+      Icon: Terminal,
+      item: t("Terminal"),
+      label: t("Pressed"),
+      mix: `+${steps.pressed}%`,
+    },
+  ] as const;
   return (
     <Group
       title={t("Interaction states")}
@@ -121,33 +135,21 @@ export function StateLadder() {
       </Row>
       <Row
         stacked
-        label={t("Try it")}
-        description={t(
-          "The ladder shows each state's mix; the list responds to pointer and keyboard.",
-        )}
+        label={t("Preview")}
+        description={t("Each row is pinned to one state. Hover or press any row to feel it.")}
       >
-        <div className="theme-states">
-          <div className="theme-state-list" aria-label={t("Interaction states")}>
-            {ladder.map((row) => (
-              <div key={row.state} className="theme-state-row" data-state={row.state}>
-                <span>{row.label}</span>
-                <small>{row.mix}</small>
-              </div>
-            ))}
-          </div>
-          <div className="theme-try-list" role="group" aria-label={t("Try it")}>
-            {tryItems.map((item, index) => (
-              <Button
-                key={index}
-                variant="item"
-                selected={tried === index}
-                onClick={() => setTried(index)}
-              >
-                {item}
-              </Button>
-            ))}
-          </div>
-        </div>
+        <ul className="state-preview" aria-label={t("Interaction states")}>
+          {rows.map((row) => (
+            <li key={row.state} className="state-preview-row" data-state={row.state}>
+              <row.Icon size={14} aria-hidden="true" />
+              <span className="state-preview-name">{row.item}</span>
+              <small className="state-preview-badge">
+                {row.label}
+                {row.mix ? ` ${row.mix}` : ""}
+              </small>
+            </li>
+          ))}
+        </ul>
       </Row>
     </Group>
   );

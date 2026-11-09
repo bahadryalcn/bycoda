@@ -17,6 +17,7 @@ import {
 import { discoverAntigravityModels } from "../../src/integrations/harness/providers/antigravity/antigravityCatalog";
 import { discoverClaudeModels } from "../../src/integrations/harness/providers/claude/claudeCatalog";
 import { discoverCodexModels } from "../../src/integrations/harness/providers/codex/codexCatalog";
+import { createLogger } from "../diagnostics/logger";
 import { discoverCursorModels } from "../../src/integrations/harness/providers/cursor/cursorCatalog";
 import { discoverFxModels } from "../../src/integrations/harness/providers/fx/fxCatalog";
 import { discoverGrokModels } from "../../src/integrations/harness/providers/grok/grokCatalog";
@@ -128,6 +129,9 @@ export function logUnhandledRejection(reason: unknown) {
     reason instanceof Error && /^[A-Za-z][A-Za-z0-9]{0,63}$/.test(reason.name)
       ? reason.name
       : "UnknownError";
+  // Full stack goes to the structured log only; the console line below stays frame-only.
+  if (reason instanceof Error)
+    createLogger("host.crash").error(`unhandled rejection: ${reason.stack ?? reason.message}`);
   console.warn(
     `Host state may be degraded after unhandled rejection #${unhandledRejectionCount} (${name}).${frames.length ? ` Frames: ${frames.join(", ")}` : ""}`,
   );

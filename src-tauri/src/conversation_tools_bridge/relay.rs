@@ -144,7 +144,7 @@ pub(crate) fn start_desktop_relay(app: AppHandle) {
                             issuer.project("conversation.desktop.finish", reply, |_| Ok(()))
                         });
                         if let Err(error) = finished {
-                            eprintln!(
+                            log::warn!(
                                 "[desktop relay] {} result was not delivered: {error}",
                                 request["action"].as_str().unwrap_or("request")
                             );

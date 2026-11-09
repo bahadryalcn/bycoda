@@ -9,16 +9,18 @@
   gap: var(--settings-group-gap, 28px);
   min-inline-size: 0;
 }
-/* Theme generation edits every topic, so it stays in view above the tabs while they switch and
-   scroll. It adds no box of its own: it uses the page background (opaque, so scrolling content never
+/* The tab list and the theme generation toolbar form one header that stays in view while the
+   tab panels scroll (generation edits every topic). It adds no box of its own: it uses the page background (opaque, so scrolling content never
    shows through) and the page content edges, and shows a hairline only while stuck. The tab panels
    form their own stacking context so a slider thumb or preview can never paint over it. */
 .appearance-generator {
   position: sticky;
   inset-block-start: calc(var(--ui-control-height-compact) + 20px);
   z-index: 1;
-  padding-block: 4px 8px;
-  /* Pulls the tabs up over the grid gap, leaving one even space below the divider. */
+  display: grid;
+  gap: 8px;
+  padding-block: 0 8px;
+  /* Pulls the panels up over the grid gap, leaving one even space below the divider. */
   margin-block-end: calc(-1 * var(--settings-group-gap, 28px) + 8px);
   border-block-end: 1px solid transparent;
   background: var(--color-background-base);

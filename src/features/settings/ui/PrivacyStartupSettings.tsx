@@ -7,6 +7,7 @@ import {
   setAnonymousStatsEnabled,
   subscribeAnonymousStats,
 } from "../../account";
+import { DiagnosticsSharingSetting } from "../../diagnostics";
 import { useGroupLock } from "../../group-lock/hooks/useGroupLock";
 import { setStartInPrivacyMode } from "../../group-lock/model/groupLock";
 import { Group, Row, Toggle, SettingsFeedback } from "./settingsControls";
@@ -82,6 +83,13 @@ export function PrivacyStartupSettings() {
             on={statsOn}
             onChange={setAnonymousStatsEnabled}
           />
+        </Row>
+        <Row
+          label={t("Share diagnostic logs")}
+          description={t("Help us fix crashes by sending redacted app logs.")}
+          stacked
+        >
+          <DiagnosticsSharingSetting />
         </Row>
       </Group>
       <FileAccessSettings />

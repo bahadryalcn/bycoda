@@ -108,8 +108,8 @@ pub(crate) fn clear_stale_cli_ingress(conn: &Connection, started_at: i64) {
         [started_at],
     ) {
         Ok(0) => {}
-        Ok(count) => eprintln!("Removed {count} stale legacy-provider-cli-mutation ingress records older than native startup {started_at}"),
-        Err(error) => eprintln!("Could not clean stale provider CLI ingress: {error}"),
+        Ok(count) => log::info!("Removed {count} stale legacy-provider-cli-mutation ingress records older than native startup {started_at}"),
+        Err(error) => log::warn!("Could not clean stale provider CLI ingress: {error}"),
     }
 }
 
@@ -629,7 +629,7 @@ impl ExecutionGate {
         lease.begin_external()?;
         let result = write();
         if let Err(error) = lease.finish() {
-            eprintln!("[authority] completed operation lease cleanup failed: {error}");
+            log::warn!("completed operation lease cleanup failed: {error}");
         }
         result
     }

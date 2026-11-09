@@ -2,10 +2,11 @@ import { randomUUID } from "node:crypto";
 import type { WorkspaceRpcRequest } from "../workspaces/workspace-rpc-contracts";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
+import { recordRemoteActivity } from "./remote-activity-record";
 export async function handleProjectsRpc(
   dependencies: Pick<
     ServerBindings,
-    "engine" | "workspacePolicy" | "projectsService" | "scopedDesktopCall"
+    "engine" | "workspacePolicy" | "projectsService" | "scopedDesktopCall" | "remoteActivity"
   >,
   request: OwnerRpcRequest,
 ): Promise<void> {
@@ -27,6 +28,10 @@ export async function handleProjectsRpc(
                 authorizationId: randomUUID(),
               },
             );
+      if (request.input.method === "projects.workspacePolicy.update")
+        await recordRemoteActivity(dependencies, request, "settingsChanged", {
+          projectId: request.params.projectId,
+        });
       break;
     }
     case "projects.list":
@@ -76,6 +81,9 @@ export async function handleProjectsRpc(
             ? ["operationId"]
             : [],
       );
+      // The organization change carries no project; the desktop refreshes its whole sidebar.
+      if (mode === "patch")
+        await recordRemoteActivity(dependencies, request, "settingsChanged", {});
       break;
     }
     case "preferences.desktop.read":

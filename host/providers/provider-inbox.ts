@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { requestedByName } from "../desktop/desktopCommand";
 import type { StoreDatabase } from "../store-db";
 import {
   inboxOperationWrites,
@@ -28,7 +29,10 @@ type JobRow = {
   error: string | null;
   deadline: number;
   expires: number;
+  requested_by: string | null;
 };
+/** A job as delivered to the desktop; `requestedBy` is the remote device's name. */
+type DeliveredInboxJob = DesktopInboxJob & { requestedBy?: string };
 /** Durable receipts with short dispatch leases. Credentials never enter this table.
  * A dispatched write is never replayed, even across a host/desktop restart. */
 export class ProviderInboxBridge {
@@ -58,6 +62,11 @@ export class ProviderInboxBridge {
       .run(
         "The host restarted before the desktop reported the result. Refresh the provider before retrying.",
       );
+    const columns = (await db.prepare("PRAGMA table_info(remote_inbox_jobs)").all()) as {
+      name: string;
+    }[];
+    if (!columns.some((column) => column.name === "requested_by"))
+      await db.exec("ALTER TABLE remote_inbox_jobs ADD COLUMN requested_by TEXT");
     await this.prune();
   }
   async availability(): Promise<RemoteInboxAvailability> {
@@ -77,6 +86,7 @@ export class ProviderInboxBridge {
     ownerHash: string,
     requestId: unknown,
     operation: RemoteInboxOperation,
+    requestedBy?: string,
   ): Promise<RemoteInboxReceipt> {
     return this.db.scope(async () => {
       await this.ready;
@@ -111,7 +121,7 @@ export class ProviderInboxBridge {
       const writes = inboxOperationWrites(operation);
       await this.db
         .prepare(
-          "INSERT INTO remote_inbox_jobs (id,owner_hash,request_id,signature,operation_json,writes,state,deadline,expires) VALUES (?,?,?,?,?,?,'queued',?,?)",
+          "INSERT INTO remote_inbox_jobs (id,owner_hash,request_id,signature,operation_json,writes,state,deadline,expires,requested_by) VALUES (?,?,?,?,?,?,'queued',?,?,?)",
         )
         .run(
           id,
@@ -122,6 +132,7 @@ export class ProviderInboxBridge {
           writes ? 1 : 0,
           this.now() + START_DEADLINE_MS,
           this.now() + (writes ? 24 * 60 * 60000 : 15 * 60000),
+          requestedByName(requestedBy) ?? null,
         );
       return { id, state: "queued" };
     });
@@ -214,7 +225,7 @@ export class ProviderInboxBridge {
     clientId: unknown,
     payload: unknown,
   ): Promise<{
-    jobs: DesktopInboxJob[];
+    jobs: DeliveredInboxJob[];
     acked: string[];
   }> {
     return this.db.scope(async () => {
@@ -278,7 +289,7 @@ export class ProviderInboxBridge {
       const pending = (await this.db
         .prepare("SELECT * FROM remote_inbox_jobs WHERE state='queued' ORDER BY rowid LIMIT ?")
         .all(Math.max(0, 2 - executing.total))) as JobRow[];
-      const jobs: DesktopInboxJob[] = [];
+      const jobs: DeliveredInboxJob[] = [];
       for (const row of pending) {
         const deadline = this.now() + RUN_DEADLINE_MS;
         await this.db
@@ -290,6 +301,7 @@ export class ProviderInboxBridge {
           id: row.id,
           operation: JSON.parse(row.operation_json) as RemoteInboxOperation,
           deadline,
+          ...(row.requested_by ? { requestedBy: row.requested_by } : {}),
         });
       }
       return { jobs, acked };

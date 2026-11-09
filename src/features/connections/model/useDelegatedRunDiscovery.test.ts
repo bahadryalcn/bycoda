@@ -2,13 +2,19 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vitest";
-import { delegatedDiscoveryFailure, useDelegatedRunDiscovery } from "./useDelegatedRunDiscovery";
+import {
+  delegatedDiscoveryFailure,
+  listDelegatedRunSummaries,
+  useDelegatedRunDiscovery,
+} from "./useDelegatedRunDiscovery";
+import { remoteRequest } from "./connections";
 import { resetSessionsStore } from "../../sessions/model/sessionsStore";
 import type { Session } from "../../sessions/model/session";
 
 const discover = vi.hoisted(() => vi.fn(async (_parent: { id: string }) => []));
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => true }));
 vi.mock("./delegatedRunDiscovery", () => ({ discoverDelegatedRuns: discover }));
+vi.mock("./connections", () => ({ remoteRequest: vi.fn(), loadRemoteSession: vi.fn() }));
 function Probe({ id }: { id: string }) {
   useDelegatedRunDiscovery(id, true);
   return null;
@@ -54,4 +60,25 @@ it("reports a failure of the check itself without the Host prefix", () => {
   expect(delegatedDiscoveryFailure("Host rejected request: Project is not registered")).toBe(
     "Project is not registered",
   );
+});
+
+it("lists delegated runs with the last etag so an unchanged project costs the Host no scan", async () => {
+  const summary = { id: "child", title: "Child" } as never;
+  vi.mocked(remoteRequest)
+    .mockResolvedValueOnce({ etag: "e1", sessions: [summary] } as never)
+    .mockResolvedValueOnce({ unchanged: true, etag: "e1" } as never)
+    .mockResolvedValueOnce({ etag: "e2", sessions: [] } as never);
+  expect(await listDelegatedRunSummaries("m", "p", "parent")).toEqual([summary]);
+  expect(remoteRequest).toHaveBeenLastCalledWith("m", "sessions.list", {
+    projectId: "p",
+    parentSessionId: "parent",
+    known: "",
+  });
+  expect(await listDelegatedRunSummaries("m", "p", "parent")).toEqual([summary]);
+  expect(remoteRequest).toHaveBeenLastCalledWith("m", "sessions.list", {
+    projectId: "p",
+    parentSessionId: "parent",
+    known: "e1",
+  });
+  expect(await listDelegatedRunSummaries("m", "p", "parent")).toEqual([]);
 });

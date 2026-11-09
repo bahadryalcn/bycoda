@@ -4953,7 +4953,12 @@ html[data-performance-no-blur] .modal-backdrop {
 html:is([data-decorative-motion="off"], [data-window-focus="off"]) .working-dot {
   animation-play-state: paused !important;
 }
-html[data-decorative-motion="off"]
+/* Decorative pulses step instead of easing: one compositor frame per step, not per vsync. */
+.working-dot {
+  animation-timing-function: steps(6, jump-none);
+}
+/* The other decorative loops stop their clock on the same conditions. */
+html:is([data-decorative-motion="off"], [data-window-focus="off"])
   :is(
     .activity-dock-waiting,
     .zen-thinking-pulse,

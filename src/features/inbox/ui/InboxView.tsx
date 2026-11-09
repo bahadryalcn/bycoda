@@ -1,5 +1,6 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { InboxLoadError } from "./InboxLoadError";
+import { RemoteActivityNotices } from "../../sessions/public/RemoteActivityNotices";
 import { githubRepositoryOptions } from "../model/inboxRepositoryFilters";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { ActionHost } from "../../../shared/ui/ActionHost";
@@ -988,7 +989,7 @@ export function InboxView({
       >
         {toolNavigation ? <ToolNavigation /> : null}
       </PaneHeader>
-
+      <RemoteActivityNotices inbox />
       {pullRequestsOnly && projects.length === 0 && onOpenProject ? (
         <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-(--ui-tone-neutral-border) px-3 py-2">
           {pullRequestsOnly && projects.length === 0 && onOpenProject ? (
@@ -998,7 +999,6 @@ export function InboxView({
           ) : null}
         </header>
       ) : null}
-
       {messagesOpen ? (
         <MessagesPanel accounts={messaging.accounts} sourceRow={sourceRow} />
       ) : source === "jira" && jiraView === "board" ? (

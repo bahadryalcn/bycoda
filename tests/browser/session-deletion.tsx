@@ -4,6 +4,7 @@ import {
   setSessionDeletionStatus,
   type SessionDeletionStage,
 } from "../../src/features/sessions/model/sessionDeletionStatus";
+import { noteRemoteActivity } from "../../src/features/sessions/model/remoteActivityNotice";
 import { applyThemePreference } from "../../src/features/settings/model/appearance";
 import { Button } from "../../src/shared/ui/Button";
 import "./w7-shell.css";
@@ -49,6 +50,29 @@ createRoot(document.getElementById("root")!).render(
           }
         >
           Fail
+        </Button>
+        <Button
+          onClick={() =>
+            noteRemoteActivity({
+              scope: { cwd: "/fixture" },
+              kind: "deleted",
+              device: "Work laptop",
+            })
+          }
+        >
+          Remote delete
+        </Button>
+        <Button
+          onClick={() =>
+            noteRemoteActivity({
+              scope: { cwd: "/fixture" },
+              kind: "deleted",
+              device: "Work laptop",
+              ok: false,
+            })
+          }
+        >
+          Remote failure
         </Button>
       </div>
     </div>

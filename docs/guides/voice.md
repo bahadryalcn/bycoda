@@ -14,9 +14,11 @@ enable the companion or its tools.
 Disabling it unmounts the companion, cancels pending speech and side replies,
 and releases the microphone and local engines without stopping coding work.
 
-Use the microphone button at the bottom right to set up voice. After setup,
-the speech bubble in the same position opens the companion. These controls float
-over the workspace without adding a header row. Before the first conversation,
+Use the assistant button at the bottom of the sidebar, beside Settings, to set up
+voice and later open the companion. After setup it shows the assistant's avatar
+and name (the narrow rail shows the avatar alone); the dot on the avatar is grey
+while voice is off and pulses green while the assistant listens or speaks. When
+no sidebar is visible the button floats at the bottom right of the window. Before the first conversation,
 complete the assistant setup: choose its name, spoken language, provider and
 voice, verify playback and a microphone sentence, and review the autonomy budget.
 Existing device settings prefill setup; the assistant has no default name.
@@ -228,7 +230,7 @@ window and release it there. The companion continues as a small always-on-top
 window that you can drag anywhere on any screen, so you can keep talking and
 control voice while bycoda is in the background, minimized or hidden. While it
 floats, the app shows a **Return voice companion to this window** button in the
-companion's usual corner.
+same place.
 
 The floating window offers the same visual, session title, latest line,
 **Start voice**, **Pause mic**/**Resume**, speaker mute, **Silence**, **Disconnect voice** and
@@ -581,6 +583,15 @@ prepare social content. Availability depends on the selected Host, connected
 accounts, permissions and existing operation support. A newer Host with
 `voice.tools.v1` is required. The assistant explains unavailable capabilities;
 it does not claim an unconnected service is ready.
+
+In Global mode the assistant can reach every project tool: it names the project
+explicitly, so you do not need to switch to Project mode first. Ask it to create
+a new project ("create a snake game") and it makes a new folder, adds it to the
+project rail and shows it; it never reuses an existing folder. The folder goes in
+**Settings → General → Folder for new projects**. When that is not set, it uses
+the folder most of your projects already share, otherwise `Projects` in your home
+folder. Creating the folder outside an approved location asks for file access
+first. The assistant can then start a session, task or crew for the new project.
 
 Supported project tools use the verified assistant thread without creating a coding
 session. Working-copy operations still require an actual selected session.

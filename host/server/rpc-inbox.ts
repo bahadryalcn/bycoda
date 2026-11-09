@@ -39,6 +39,7 @@ export async function handleInboxRpc(
         request.tokenHash,
         request.params.requestId,
         operation,
+        await request.domainContext.requesterName?.(),
       );
       break;
     }

@@ -389,10 +389,13 @@ pub(super) fn prepare(app: &AppHandle, parent: &WebviewWindow) -> tauri::Result<
     }
     let creation = crate::native_window_lifecycle::admit_window(app, QUICK_COMPOSER_GIT_LABEL)
         .map_err(std::io::Error::other)?;
-    let popup = WebviewWindowBuilder::new(
+    let popup = crate::webview_args::inherit_main_browser_args(
         app,
-        QUICK_COMPOSER_GIT_LABEL,
-        WebviewUrl::App("quick-composer.html?popup=git".into()),
+        WebviewWindowBuilder::new(
+            app,
+            QUICK_COMPOSER_GIT_LABEL,
+            WebviewUrl::App("quick-composer.html?popup=git".into()),
+        ),
     )
     .title("Choose workspace")
     .inner_size(WIDTH, 1.0)

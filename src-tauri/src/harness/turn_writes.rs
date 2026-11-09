@@ -259,7 +259,7 @@ fn bind_original(
             let result = old.writes.drain();
             let result = if old.writes.settled() {
                 if let Err(error) = &result {
-                    eprintln!("[harness] predecessor write failed: {error}");
+                    log::warn!("predecessor write failed: {error}");
                 }
                 Ok(())
             } else {

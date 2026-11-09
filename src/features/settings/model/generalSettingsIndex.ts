@@ -29,4 +29,13 @@ export const GENERAL_SETTINGS_INDEX: SettingsEntry[] = [
     keywords:
       "no project projectless default folder path directory location chat sessions projesiz klasör varsayılan konum",
   },
+  {
+    id: "new-project-folder",
+    section: "general",
+    get label() {
+      return t("Folder for new projects");
+    },
+    keywords:
+      "new project create folder default location voice assistant yeni proje oluştur klasör varsayılan konum",
+  },
 ];

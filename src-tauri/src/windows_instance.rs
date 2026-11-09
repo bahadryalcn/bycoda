@@ -187,7 +187,7 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                         unsafe { DisconnectNamedPipe(raw) };
                         continue;
                     }
-                    eprintln!(
+                    log::warn!(
                         "Could not receive bycoda relaunch: {}",
                         io::Error::last_os_error()
                     );
@@ -224,10 +224,10 @@ pub fn init() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     let target = app.clone();
                     if let Err(error) = app.run_on_main_thread(move || {
                         if let Err(error) = crate::window::show_existing_or_open_new(&target) {
-                            eprintln!("Could not show existing bycoda window: {error}");
+                            log::warn!("Could not show existing bycoda window: {error}");
                         }
                     }) {
-                        eprintln!("Could not dispatch bycoda relaunch: {error}");
+                        log::warn!("Could not dispatch bycoda relaunch: {error}");
                     }
                 }
             });

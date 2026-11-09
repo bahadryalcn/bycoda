@@ -5,6 +5,7 @@ import { type NativeServiceMethod } from "../../src/shared/model/host-contracts/
 import { type NativeWorkspaceMethod } from "../../src/shared/model/host-contracts/native-workspaces";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
+import { recordRemoteActivity } from "./remote-activity-record";
 export async function handleNativeRpc(
   dependencies: Pick<
     ServerBindings,
@@ -13,6 +14,9 @@ export async function handleNativeRpc(
     | "nativeBufferUploads"
     | "nativeServiceUploads"
     | "nativeServicesService"
+    | "engine"
+    | "workspaceForOwnerRpc"
+    | "remoteActivity"
   >,
   request: OwnerRpcRequest,
 ): Promise<void> {
@@ -58,6 +62,12 @@ export async function handleNativeRpc(
     case "workspaces.cleanup.apply":
 
     case "workspaces.cleanup.status": {
+      const workspace =
+        request.input.method === "workspaces.cleanup.apply"
+          ? await dependencies
+              .workspaceForOwnerRpc(request.params.workspaceId)
+              .catch(() => undefined)
+          : undefined;
       request.result = await dependencies.nativeWorkspacesService.call(
         request.input.method as NativeWorkspaceMethod,
         request.params,
@@ -66,6 +76,10 @@ export async function handleNativeRpc(
           legacy: !request.input.method.startsWith("native.buffers.recovery."),
         },
       );
+      if (request.input.method === "workspaces.cleanup.apply")
+        await recordRemoteActivity(dependencies, request, "worktreeChanged", {
+          projectId: workspace?.projectId,
+        });
       break;
     }
 

@@ -19,7 +19,7 @@ import { DesktopHelperRequestSchema, DesktopHelperResponseSchema } from "./deskt
 import { hostRpcWireMethod } from "./aliases";
 import { QUEUE_COMMAND_ADMISSION_TIMEOUT_MS } from "./method-timeouts";
 import { ModelsListParamsSchema, ModelsListResultSchema } from "./models";
-import { appearanceMethods } from "./appearance-methods";
+import { generatorMethods } from "./generator-methods";
 import {
   NATIVE_SERVICES_RPC_SCHEMAS,
   nativeServiceReadOnly,
@@ -523,7 +523,7 @@ export const HOST_RPC_METHODS = Object.freeze({
   ),
   ...socialNativeMethods(nativeServiceOperation),
   "native.services.workspace.format": nativeServiceOperation("native.services.workspace.format"),
-  ...appearanceMethods(control),
+  ...generatorMethods(control),
   "models.list": {
     ...read(ModelsListParamsSchema, ModelsListResultSchema),
     requiredCapability: "transport.ws.models.v1",

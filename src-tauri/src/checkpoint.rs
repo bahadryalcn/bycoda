@@ -166,9 +166,7 @@ impl CheckpointStore {
                 });
                 if let Some(value) = completed {
                     if let Err(error) = guarded {
-                        eprintln!(
-                            "[checkpoint] operation succeeded; lease cleanup failed: {error}"
-                        );
+                        log::warn!("operation succeeded; lease cleanup failed: {error}");
                     }
                     Ok(value)
                 } else {
@@ -881,7 +879,7 @@ fn spawn_recovery(recovery: turn::RecoveryPlan) {
         .name("checkpoint-recover".into())
         .spawn(move || recovery.run());
     if let Err(error) = spawned {
-        eprintln!("checkpoint recovery thread: {error}");
+        log::warn!("checkpoint recovery thread: {error}");
     }
 }
 
@@ -902,24 +900,24 @@ fn start_orphan_pruning(app: &AppHandle, store: CheckpointStore) {
                     let removed =
                         store.prune_orphans(&known, std::time::Duration::from_secs(48 * 60 * 60));
                     if removed > 0 {
-                        eprintln!("Removed {removed} checkpoint folders of deleted sessions");
+                        log::info!("Removed {removed} checkpoint folders of deleted sessions");
                     }
                 }
                 Ok(_) => {}
-                Err(error) => eprintln!("Checkpoint pruning skipped: {error}"),
+                Err(error) => log::warn!("Checkpoint pruning skipped: {error}"),
             }
             // Budget across sessions (each session is capped on its own), re-checked
             // periodically because the store only ever grows between launches.
             loop {
                 let freed = store.enforce_budget(STORE_BUDGET_BYTES, STORE_MAX_IDLE);
                 if freed > 0 {
-                    eprintln!("Checkpoint budget freed {} MiB", freed >> 20);
+                    log::info!("Checkpoint budget freed {} MiB", freed >> 20);
                 }
                 std::thread::sleep(Duration::from_secs(6 * 60 * 60));
             }
         });
     if let Err(error) = spawned {
-        eprintln!("checkpoint prune thread: {error}");
+        log::warn!("checkpoint prune thread: {error}");
     }
 }
 

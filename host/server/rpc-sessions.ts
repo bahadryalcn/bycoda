@@ -18,6 +18,8 @@ import { readSessionUsage } from "../usage/usage-report";
 import type { WorkspaceRpcRequest } from "../workspaces/workspace-rpc-contracts";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
+import { requestingDeviceName } from "../desktop/remoteActivity";
+import { recordRemoteActivity } from "./remote-activity-record";
 export async function handleSessionsRpc(
   dependencies: Pick<
     ServerBindings,
@@ -33,6 +35,7 @@ export async function handleSessionsRpc(
     | "desktop"
     | "pushNotifications"
     | "desktopDelete"
+    | "remoteActivity"
     | "invalidateSessionCopies"
     | "sessionQueues"
     | "handoffHistory"
@@ -297,6 +300,10 @@ export async function handleSessionsRpc(
         patch,
         authorityGeneration,
       );
+      if (patch.archived === true)
+        await recordRemoteActivity(dependencies, request, "archived", {
+          projectId: current.projectId,
+        });
       break;
     }
     case "sessions.delete": {
@@ -415,6 +422,7 @@ export async function handleSessionsRpc(
                 sessionId,
                 cwd,
                 async () => await dependencies.engine.store.authenticated(request.token),
+                await requestingDeviceName(dependencies.engine.store, request.token),
               );
               if (await dependencies.desktop.projectCwdAsync(sessionId))
                 throw new Error(
@@ -581,6 +589,8 @@ export async function handleSessionsRpc(
         queueLeases,
         // And its run leases: `null` is a conversation it must stop writing to.
         runLeases: renewedRunLeases,
+        // Changes another device made that the desktop shows a notice for.
+        activity: dependencies.remoteActivity.since(request.params.activitySeq),
       };
       break;
     }

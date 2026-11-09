@@ -914,7 +914,7 @@ fn index_in_background_owned(store: &SessionStore) -> Result<(), String> {
         .lock()
         .unwrap_or_else(|error| error.into_inner());
     if let Err(error) = &result {
-        eprintln!("session search index: {error}");
+        log::warn!("session search index: {error}");
         *failure = Some(IndexFailure {
             version,
             query,

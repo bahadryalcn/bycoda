@@ -4,11 +4,12 @@ import { t, useLocale } from "../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Button } from "../../../shared/ui/Button";
 import { Checkbox } from "../../../shared/ui/Checkbox";
-import { InlineError } from "../../../shared/ui/InlineError";
 import { Modal, ModalActions } from "../../../shared/ui/Modal";
 import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { AiIdea, CircleAlert, Lock, MoreHorizontal, Star } from "../../../shared/ui/icons";
 import { TextareaField } from "../../../shared/ui/TextareaField";
+import { diagnosticResultText, getDiagnosticsMode, sendDiagnosticLogs } from "../../diagnostics";
+import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { useAccountState } from "../hooks/useAccount";
 import { accountApi, reportAccountFailure } from "../model/accountApi";
 import { accountDeviceInfo } from "../model/accountService";
@@ -77,7 +78,10 @@ function Brand({ title, text, centered }: { title: string; text: string; centere
 }
 
 function FeedbackForm({ signedIn }: { signedIn: boolean }) {
-  const [draft, setDraft] = useState<FeedbackDraft>(EMPTY_FEEDBACK_DRAFT);
+  const [draft, setDraft] = useState<FeedbackDraft>(() => ({
+    ...EMPTY_FEEDBACK_DRAFT,
+    attachLogs: getDiagnosticsMode() === "auto",
+  }));
   const [result, setResult] = useState<FeedbackSubmitResult | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -103,6 +107,13 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
             p0: result.reference,
           })}
         />
+        {result.logs && result.logs !== "sent" ? (
+          <InlineMessage tone="warning">
+            {t("Your feedback was sent, but the logs were not. {p0}", {
+              p0: diagnosticResultText(result.logs),
+            })}
+          </InlineMessage>
+        ) : null}
       </Modal>
     );
   }
@@ -115,6 +126,8 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
         await submitFeedback(accountApi(), draft, signedIn, {
           deviceInfo: accountDeviceInfo,
           onFailure: reportAccountFailure,
+          sendLogs: ({ feedbackId, note }) =>
+            sendDiagnosticLogs({ trigger: "feedback", feedbackId, note }),
         }),
       );
     } catch {
@@ -231,6 +244,15 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
           description={t("App version, platform, OS version and release channel.")}
           checked={draft.includeContext}
           onChange={(event) => setDraft({ ...draft, includeContext: event.target.checked })}
+        />
+        <Checkbox
+          className="text-ui-secondary"
+          label={t("Attach diagnostic logs")}
+          description={t(
+            "Redacted app and Host logs help us find the cause. They never include your conversations.",
+          )}
+          checked={draft.attachLogs}
+          onChange={(event) => setDraft({ ...draft, attachLogs: event.target.checked })}
         />
         <p className={styles.privacy}>
           <Lock className="icon-xs" />

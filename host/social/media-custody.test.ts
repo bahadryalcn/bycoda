@@ -41,6 +41,33 @@ async function fixture(pause?: () => Promise<void>) {
   return { directory, store, custody };
 }
 
+it("finishes the reference rebuild started from a store scope that has since closed", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "social-custody-"));
+  const store = new HostStore(join(directory, "host.db"));
+  await store.ready;
+  await store.db
+    .exec(`CREATE TABLE social_records(kind TEXT,id TEXT,value TEXT,PRIMARY KEY(kind,id));
+    CREATE TABLE social_jobs(id TEXT PRIMARY KEY,value TEXT);
+    CREATE TABLE social_jobs_cold(id TEXT PRIMARY KEY,value TEXT);
+    CREATE TABLE social_programs(id TEXT PRIMARY KEY,value TEXT);
+    CREATE TABLE social_occurrences(id TEXT PRIMARY KEY,value TEXT);
+    INSERT INTO social_jobs VALUES ('job', '{"mediaIds":["m1"]}');`);
+  const gate = createGate();
+  const custody = new SocialMediaCustody(store, directory, gate.pause);
+  cleanup.push(async () => {
+    await custody.reconciled().catch(() => undefined);
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  });
+  // The Social service initializes custody inside its own store scope, which closes
+  // when initialization returns while the rebuild is still paused.
+  await store.db.storeScope(async () => {
+    await custody.initialize();
+  });
+  gate.release();
+  await expect(custody.reconciled()).resolves.toBeUndefined();
+});
+
 it("registers owned bytes and retains upload claim before disclosure", async () => {
   const f = await fixture(),
     id = randomUUID(),

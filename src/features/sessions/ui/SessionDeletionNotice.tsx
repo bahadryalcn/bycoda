@@ -9,12 +9,20 @@ import {
   subscribeSessionDeletionStatus,
   type SessionDeletionStatus,
 } from "../model/sessionDeletionStatus";
+import { RemoteActivityNotices } from "./RemoteActivityNotices";
 
 export function SessionDeletionNotice({ cwd }: { cwd: string }) {
   const statuses = useSyncExternalStore(subscribeSessionDeletionStatus, getSessionDeletionStatus);
-  return statuses
-    .filter((status) => sameProjectPath(status.cwd, cwd))
-    .map((status) => <DeletionNotice key={status.sessionId} status={status} />);
+  return (
+    <>
+      {statuses
+        .filter((status) => sameProjectPath(status.cwd, cwd))
+        .map((status) => (
+          <DeletionNotice key={status.sessionId} status={status} />
+        ))}
+      <RemoteActivityNotices cwd={cwd} />
+    </>
+  );
 }
 
 function DeletionNotice({ status }: { status: SessionDeletionStatus }) {

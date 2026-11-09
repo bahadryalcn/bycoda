@@ -4037,14 +4037,14 @@ it.each([undefined, "host" as const])(
 );
 
 it.each([undefined, "desktop" as const])(
-  "explains that a desktop-owned turn queues remote follow-ups (owner=%s)",
+  "queues remote follow-ups behind a desktop-owned turn without a notice row (owner=%s)",
   async (executionOwner) => {
     steerSupported = true;
     openRunningChat();
     host = { ...host!, desktop: { updatedAt: 1 }, runId: "desktop", executionOwner };
     await renderRemoteProbe();
     expect(remoteOverrides.remoteFeatures.steer).toBe(false);
-    expect(container.textContent).toContain("New messages are queued until it finishes");
+    expect(container.textContent).not.toContain("running in the desktop app");
     await act(async () => {
       expect(remoteOverrides.onSubmit!("shell", "After the desktop turn", [])).toBe(true);
     });

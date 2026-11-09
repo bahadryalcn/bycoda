@@ -56,6 +56,8 @@ const pathRecord = (path: string, hostEnvironmentId?: string, archived = false) 
 function target(environmentId: string, name = "Windows PC") {
   const calls: { cwd: string; userInitiated: boolean }[] = [];
   let online = true;
+  /** Folders the machine's host refuses as gone (its `PROJECT_FOLDER_MISSING` refusal). */
+  const missing = new Set<string>();
   const value: RemoteOpenTarget = {
     environmentId,
     name,
@@ -64,10 +66,12 @@ function target(environmentId: string, name = "Windows PC") {
       calls.push({ cwd, userInitiated });
       if (!online) throw new Error("offline");
       expect(method).toBe("projects.open");
+      if (missing.has(cwd))
+        throw new Error(`Host rejected request: Project folder not found on this machine: ${cwd}`);
       return { id: `id-${cwd}`, cwd, name: "x" };
     },
   };
-  return { value, calls, setOnline: (next: boolean) => void (online = next) };
+  return { value, calls, missing, setOnline: (next: boolean) => void (online = next) };
 }
 
 /** The module keeps its targets and retry state in memory, so each test gets its own copy. */
@@ -233,6 +237,33 @@ describe("autoAddRemoteProjects", () => {
       "remote://env-a/code/site",
     ]);
     expect(remoteOnlyProjects()).toEqual([]);
+  });
+
+  it("stops asking for a folder its machine reports missing, without backing the machine off", async () => {
+    const sync = await load();
+    const pc = target("env-a");
+    pc.missing.add("/code/gone");
+    sync.setRemoteOpenTargets([pc.value]);
+    applyRemoteProjectRecords(PEER, [
+      pathRecord("/code/gone", "env-a"),
+      pathRecord("/code/site", "env-a"),
+    ]);
+
+    // The reachable machine still adds its other folder on the same pass.
+    expect(await sync.autoAddRemoteProjects(0)).toEqual(["remote://env-a/code/site"]);
+    expect(pc.calls.map((call) => call.cwd).sort()).toEqual(["/code/gone", "/code/site"]);
+    // Neither the next pass nor one past every backoff asks for the gone folder again.
+    expect(await sync.autoAddRemoteProjects(60_000)).toEqual([]);
+    expect(await sync.autoAddRemoteProjects(31 * 60_000)).toEqual([]);
+    expect(pc.calls).toHaveLength(2);
+    expect(remoteOnlyProjects().map((project) => project.path)).toEqual(["/code/gone"]);
+
+    // The user may still ask; a folder that came back is added and forgotten as missing.
+    pc.missing.delete("/code/gone");
+    expect(await sync.openSyncedProjectRemotely(idOf("/code/gone", "env-a"))).toEqual({
+      status: "opened",
+      key: "remote://env-a/code/gone",
+    });
   });
 
   it("does not offer the announced folder again when the host reports it under another path", async () => {

@@ -53,6 +53,20 @@ describe("voice tool discovery", () => {
     });
   });
 
+  it("drops spoken filler words only when the whole phrase matches nothing", () => {
+    const catalog = [tool("crews.start"), tool("crews.list"), tool("notes.list")];
+    // "yönetimi" (management) appears in no tool metadata; "ekip" is the Crews feature.
+    const relaxed = selectVoiceTools(catalog, { query: "ekip yönetimi" });
+    expect(relaxed.tools.map((entry) => entry.action)).toEqual(["crews.start", "crews.list"]);
+    expect(relaxed.ignoredTerms).toEqual(["yonetimi"]);
+    // A full match keeps the strict result and reports nothing ignored.
+    const strict = selectVoiceTools(catalog, { query: "crews start" });
+    expect(strict.tools.map((entry) => entry.action)).toEqual(["crews.start"]);
+    expect(strict.ignoredTerms).toBeUndefined();
+    // Unrecognized words alone never widen into an unrelated catalog.
+    expect(selectVoiceTools(catalog, { query: "missing words" }).total).toBe(0);
+  });
+
   it("does not disguise incomplete or malformed catalogs as an empty available set", () => {
     expect(() => readVoiceToolCatalog({ unavailable: true })).toThrow("catalog is invalid");
     expect(() => readVoiceToolCatalog({ tools: [tool("notes.list"), tool("notes.list")] })).toThrow(

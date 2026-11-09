@@ -10,10 +10,11 @@ import { ACCOUNT_API, type RouteDefinition, type RouteName } from "../api.ts";
 import type { ErrorCode } from "../errors.ts";
 import { DELETION_GRACE_DAYS, type AccountStatus, type Device } from "../models.ts";
 import { CONTRACT_HEADER, CONTRACT_VERSION } from "../version.ts";
-import { createMockState, type MockSeed, type MockState } from "./state.ts";
+import { createMockState, type MockPairRequest, type MockSeed, type MockState } from "./state.ts";
 
 const ORIGIN = "https://mock.bycoda.invalid";
 const DAY_MS = 86_400_000;
+const PAIR_REQUEST_TTL_MS = 120_000;
 
 class MockHttpError extends Error {
   constructor(
@@ -49,6 +50,22 @@ function findDevice(state: MockState, id: string | undefined): Device {
   const device = id ? state.devices.get(id) : undefined;
   if (!device || device.revokedAt) throw new MockHttpError(404, "not_found", "Device not found");
   return device;
+}
+
+function livePair(request: MockPairRequest, now: Date): MockPairRequest["state"] {
+  if (request.state === "pending" && Date.parse(request.expiresAt) <= now.getTime()) {
+    request.state = "expired";
+  }
+  return request.state;
+}
+
+function targetPairRequest(state: MockState, id: string | undefined, now: Date): MockPairRequest {
+  const request = state.pairRequests.get(id ?? "");
+  if (!request || request.computerDeviceId !== state.currentDeviceId)
+    throw new MockHttpError(404, "not_found", "Pair request not found");
+  if (livePair(request, now) !== "pending")
+    throw new MockHttpError(409, "conflict", "Pair request is no longer pending");
+  return request;
 }
 
 function allDays(state: MockState): ActivityDay[] {
@@ -176,6 +193,16 @@ const handlers: Record<RouteName, Handler> = {
     state.feedback.push({ ...item, signedIn: false });
     return item;
   },
+  sendDiagnosticReport: ({ state, now, body }) => {
+    const item = { id: `dgr_mock_${state.nextId++}`, createdAt: now.toISOString() };
+    state.diagnostics.push({ ...item, signedIn: true, trigger: body.trigger });
+    return item;
+  },
+  sendAnonymousDiagnosticReport: ({ state, now, body }) => {
+    const item = { id: `dgr_mock_${state.nextId++}`, createdAt: now.toISOString() };
+    state.diagnostics.push({ ...item, signedIn: false, trigger: body.trigger });
+    return item;
+  },
   requestExport: ({ state, now }) => {
     const created = {
       id: `exp_mock_${state.nextId++}`,
@@ -294,6 +321,86 @@ const handlers: Record<RouteName, Handler> = {
       .filter((item) => now.getTime() - Date.parse(item.at) <= 90 * DAY_MS)
       .sort((a, b) => b.at.localeCompare(a.at));
     return { items, nextCursor: null };
+  },
+  putConnectInfo: ({ state, params, body, now }) => {
+    const device = findDevice(state, params.id);
+    if (device.kind !== "desktop" || device.id !== state.currentDeviceId)
+      throw new MockHttpError(403, "forbidden", "Only the desktop itself can publish connect info");
+    state.connectInfo.set(device.id, { ...body, updatedAt: now.toISOString() });
+  },
+  deleteConnectInfo: ({ state, params }) => {
+    state.connectInfo.delete(findDevice(state, params.id).id);
+  },
+  listComputers: ({ state }) => ({
+    items: [...state.connectInfo]
+      .map(([id, info]) => ({ device: state.devices.get(id), info }))
+      .filter(({ device }) => device && !device.revokedAt && device.kind === "desktop")
+      .map(({ device, info }) => ({
+        deviceId: device!.id,
+        name: info.hostName ?? device!.name,
+        platform: device!.platform,
+        environmentId: info.environmentId,
+        routes: info.routes,
+        lastSeenAt: device!.lastSeenAt,
+        updatedAt: info.updatedAt,
+      })),
+  }),
+  createPairRequest: ({ state, params, body, now }) => {
+    const computer = findDevice(state, params.deviceId);
+    const phone = findDevice(state, state.currentDeviceId ?? undefined);
+    if (
+      phone.kind !== "mobile" ||
+      computer.kind !== "desktop" ||
+      !state.connectInfo.has(computer.id)
+    )
+      throw new MockHttpError(403, "forbidden", "Not a phone or not a connectable computer");
+    const request: MockPairRequest = {
+      id: `pr_mock_${state.nextId++}`,
+      computerDeviceId: computer.id,
+      phoneDeviceId: phone.id,
+      phonePublicKey: body.phonePublicKey,
+      state: "pending",
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + PAIR_REQUEST_TTL_MS).toISOString(),
+    };
+    state.pairRequests.set(request.id, request);
+    return { id: request.id, expiresAt: request.expiresAt };
+  },
+  listPairRequests: ({ state, now }) => ({
+    items: [...state.pairRequests.values()]
+      .filter((r) => r.computerDeviceId === state.currentDeviceId && livePair(r, now) === "pending")
+      .map((r) => {
+        const phone = state.devices.get(r.phoneDeviceId);
+        return {
+          id: r.id,
+          phoneDeviceId: r.phoneDeviceId,
+          phoneName: phone?.name ?? "Phone",
+          phonePlatform: phone?.platform ?? "android",
+          phonePublicKey: r.phonePublicKey,
+          createdAt: r.createdAt,
+          expiresAt: r.expiresAt,
+        };
+      }),
+  }),
+  putPairTicket: ({ state, params, body, now }) => {
+    const request = targetPairRequest(state, params.id, now);
+    request.state = "sealed";
+    request.desktopPublicKey = body.desktopPublicKey;
+    request.sealed = body.sealed;
+  },
+  denyPairRequest: ({ state, params, now }) => {
+    targetPairRequest(state, params.id, now).state = "denied";
+  },
+  getPairRequest: ({ state, params, now }) => {
+    const request = state.pairRequests.get(params.id ?? "");
+    if (!request || request.phoneDeviceId !== state.currentDeviceId)
+      throw new MockHttpError(404, "not_found", "Pair request not found");
+    const current = livePair(request, now);
+    if (current !== "sealed") return { state: current === "delivered" ? "delivered" : current };
+    const { desktopPublicKey, sealed } = request;
+    request.state = "delivered";
+    delete request.sealed;
+    return { state: "sealed", desktopPublicKey, sealed };
   },
   anonymousPing: ({ state, body }) => {
     state.pings.push(body);

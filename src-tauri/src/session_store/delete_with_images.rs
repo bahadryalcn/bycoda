@@ -53,7 +53,7 @@ pub(super) fn run_with_mode(
             });
         if let Err(error) = cleaned {
             observation = Err(());
-            eprintln!("Generated image cleanup will need a retry: {error}");
+            log::warn!("Generated image cleanup will need a retry: {error}");
         }
         Ok(())
     })();

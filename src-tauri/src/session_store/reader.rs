@@ -50,7 +50,7 @@ pub(super) fn run<T>(
     if conn.is_busy() {
         let occurrence = BUSY_READS.fetch_add(1, Ordering::Relaxed) + 1;
         if occurrence.is_power_of_two() {
-            eprintln!("session reader left a busy statement (occurrence {occurrence}); wal_watchdog recovers stuck readers");
+            log::warn!("session reader left a busy statement (occurrence {occurrence}); wal_watchdog recovers stuck readers");
         }
     }
     if !conn.is_autocommit() {

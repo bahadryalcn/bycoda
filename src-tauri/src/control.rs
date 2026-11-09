@@ -349,7 +349,7 @@ impl Inner {
         self.check_turn(label, issuer, &receipt)?;
         let active = self.active.get_mut(&receipt.session_id).unwrap();
         if active.cwd != cwd {
-            eprintln!("[control] process cwd differs; using authorized turn cwd");
+            log::info!("process cwd differs; using authorized turn cwd");
         }
         if active.processes.len() >= 512 {
             return Err("NATIVE_CONTROL_SOURCE_CAPACITY".into());
@@ -372,7 +372,7 @@ impl Inner {
     ) -> Result<T, String> {
         self.check_turn(&turn.window, &turn.issuer, &turn.receipt)?;
         if self.active[&turn.receipt.session_id].cwd != turn.cwd {
-            eprintln!("[control] process cwd differs; using authorized turn cwd");
+            log::info!("process cwd differs; using authorized turn cwd");
         }
         spawn()
     }
@@ -412,7 +412,7 @@ impl Inner {
             .find(receipt)
             .ok_or("NATIVE_CONTROL_TURN_SOURCE_MISSING")?;
         if work.cwd != cwd {
-            eprintln!("[control] process cwd differs; using authorized turn cwd");
+            log::info!("process cwd differs; using authorized turn cwd");
         }
         if !work.matches(window, issuer, receipt) {
             return Err("NATIVE_CONTROL_TURN_SOURCE_CHANGED".into());
@@ -2136,7 +2136,7 @@ pub(crate) fn finish_original_turn(
     // No issuer/ControlHost/registry lock is held over actual writer closure.
     // This waits byte IO and its admitted callback tail, never kills a warm P.
     if let Err(error) = work.writes.drain() {
-        eprintln!("[control] turn settlement: {error}");
+        log::warn!("turn settlement: {error}");
     }
     work.complete()
 }

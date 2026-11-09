@@ -34,6 +34,15 @@ afterEach(async () => {
   for (const db of databases.splice(0)) await db.close();
 });
 describe("desktop provider inbox job bridge", () => {
+  it("delivers the requesting device name with a job and omits it when unknown", async () => {
+    const { bridge } = setup();
+    await bridge.beat("native", "desktop", { version: 1 });
+    await bridge.request("client", "named", write, `  ${"d".repeat(200)}  `);
+    await bridge.request("client", "unnamed", read);
+    const { jobs } = await bridge.beat("native", "desktop", { version: 1 });
+    expect(jobs[0]).toMatchObject({ operation: write, requestedBy: "d".repeat(160) });
+    expect("requestedBy" in jobs[1]).toBe(false);
+  });
   it.each([21000, 121000])(
     "stores same-client late success after %i ms before acknowledging",
     async (elapsed) => {

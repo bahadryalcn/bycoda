@@ -52,6 +52,7 @@ describe("route table", () => {
     const open = Object.values(ACCOUNT_API).filter((route) => route.auth === "none");
     expect(open.map((route) => route.path)).toEqual([
       "/v1/feedback/anonymous",
+      "/v1/diagnostics/reports/anonymous",
       "/v1/anonymous/ping",
     ]);
   });
@@ -458,5 +459,88 @@ describe("feedback (0.7.0)", () => {
     const { ACCOUNT_API } = await import("./api.ts");
     expect(ACCOUNT_API.sendFeedback.auth).toBe("user");
     expect(ACCOUNT_API.sendAnonymousFeedback.auth).toBe("none");
+  });
+});
+
+describe("account connect (0.8.0)", () => {
+  const key = "A".repeat(43);
+  it("validates routes", async () => {
+    const { ConnectInfoUpdate } = await import("./models.ts");
+    const ok = (routes: unknown[]) =>
+      ConnectInfoUpdate.safeParse({ environmentId: "env", routes }).success;
+    expect(ok([{ endpoint: "https://pc.tailnet.ts.net" }])).toBe(true);
+    expect(ok([{ endpoint: "http://192.168.1.5:3773", lanKey: "a".repeat(64) }])).toBe(true);
+    expect(ok([{ endpoint: "http://192.168.1.5:3773" }])).toBe(false);
+    expect(ok([{ endpoint: "http://8.8.8.8:3773", lanKey: "a".repeat(64) }])).toBe(false);
+    expect(ok([{ endpoint: "https://u:p@pc.example" }])).toBe(false);
+    expect(ok([{ endpoint: "https://pc.example/path?x=1" }])).toBe(false);
+    expect(ok(Array.from({ length: 5 }, () => ({ endpoint: "https://pc.example" })))).toBe(false);
+  });
+  it("runs the pair request flow on the mock", async () => {
+    const { createMockAccountServer } = await import("./mock/index.ts");
+    const server = createMockAccountServer();
+    const call = async (method: string, path: string, body?: unknown) =>
+      server.fetch(`https://mock.bycoda.invalid${path}`, {
+        method,
+        headers: {
+          Authorization: "Bearer mock-t",
+          [CONTRACT_HEADER]: CONTRACT_VERSION,
+          "Content-Type": "application/json",
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    const device = (name: string, kind: string, platform: string) =>
+      call("POST", "/v1/devices", {
+        name,
+        platform,
+        osVersion: "1",
+        appVersion: "1",
+        channel: "stable",
+        kind,
+      }).then((r) => r.json() as Promise<{ id: string }>);
+    const desktop = await device("Desk", "desktop", "windows");
+    expect(
+      (
+        await call("PUT", `/v1/devices/${desktop.id}/connect`, {
+          environmentId: "env",
+          routes: [{ endpoint: "https://pc.example" }],
+        })
+      ).status,
+    ).toBe(204);
+    const phone = await device("Pixel", "mobile", "android");
+    const computers = (await (await call("GET", "/v1/computers")).json()) as {
+      items: { deviceId: string }[];
+    };
+    expect(computers.items.map((c) => c.deviceId)).toEqual([desktop.id]);
+    const created = (await (
+      await call("POST", `/v1/computers/${desktop.id}/pair-requests`, {
+        phonePublicKey: key,
+      })
+    ).json()) as { id: string };
+    server.state.currentDeviceId = desktop.id;
+    const pending = (await (await call("GET", "/v1/pair-requests")).json()) as {
+      items: { id: string }[];
+    };
+    expect(pending.items.map((r) => r.id)).toEqual([created.id]);
+    expect(
+      (
+        await call("PUT", `/v1/pair-requests/${created.id}/ticket`, {
+          desktopPublicKey: key,
+          sealed: "abc",
+        })
+      ).status,
+    ).toBe(204);
+    server.state.currentDeviceId = phone.id;
+    const first = (await (await call("GET", `/v1/pair-requests/${created.id}`)).json()) as {
+      state: string;
+      sealed?: string;
+    };
+    expect(first).toMatchObject({ state: "sealed", sealed: "abc" });
+    expect(
+      (await (await call("GET", `/v1/pair-requests/${created.id}`)).json()) as {
+        state: string;
+        sealed?: string;
+      },
+    ).toEqual({ state: "delivered" });
   });
 });

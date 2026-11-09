@@ -9,6 +9,7 @@ export const NOTIFICATION_EVENT_KEYS = [
   "summary.daily",
   "announcement.published",
   "account.deletion_scheduled",
+  "account.phone_connect_approved",
 ] as const;
 export const NotificationEventKey = z.enum(NOTIFICATION_EVENT_KEYS);
 export type NotificationEventKey = z.infer<typeof NotificationEventKey>;
@@ -48,6 +49,13 @@ export const NOTIFICATION_EVENTS: readonly NotificationEventDefinition[] = [
     audience: "user",
     mandatory: false,
     defaultChannels: ["in_app", "email"],
+  },
+  /** Added in 0.8.0. A desktop approved a phone connect request from this account. */
+  {
+    key: "account.phone_connect_approved",
+    audience: "user",
+    mandatory: true,
+    defaultChannels: ["in_app"],
   },
 ];
 

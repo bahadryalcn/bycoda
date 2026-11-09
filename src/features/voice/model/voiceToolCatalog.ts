@@ -31,6 +31,8 @@ export type VoiceToolPage = {
   nextOffset: number | null;
   /** Full catalog category names; an empty search must not hide other available domains. */
   categories: string[];
+  /** Unrecognized query words dropped after the full query matched nothing. */
+  ignoredTerms?: string[];
 };
 
 /** Host action ids: dot or underscore separated words; words may contain hyphens
@@ -85,14 +87,14 @@ export function selectVoiceTools(
   const terms = voiceSearchClauses((selection.query ?? "").replace(/['’](?=\p{L})/gu, ""));
   const offset = boundedInteger(selection.offset, 0, 0, catalog.length);
   const limit = boundedInteger(selection.limit, 12, 1, 40);
-  const filtered = catalog.filter((tool) => {
+  const matches = (tool: VoiceToolDescriptor, clauses: typeof terms) => {
     if (selection.family && selection.family !== tool.family) return false;
     if (selection.category && selection.category !== voiceToolCategory(tool)) return false;
     const searchable = normalizeVoiceSearch(
       `${tool.family} ${tool.action} ${tool.name} ${tool.description}`,
     );
     const parts = tool.action.toLowerCase().split(/[._-]/);
-    return terms.every(
+    return clauses.every(
       (term) =>
         (term.feature !== undefined &&
           (parts.includes(term.feature) ||
@@ -103,13 +105,25 @@ export function selectVoiceTools(
           (parts.includes(term.action) || (term.action === "list" && parts.includes("open")))) ||
         searchable.includes(term.text),
     );
-  });
+  };
+  let filtered = catalog.filter((tool) => matches(tool, terms));
+  // Spoken queries carry filler words ("ekip yönetimi", "manage my crew"). When the full
+  // phrase matches nothing, keep only the recognized feature/action words and say so.
+  const recognized = terms.filter(
+    (term) => term.feature !== undefined || term.action !== undefined,
+  );
+  const ignoredTerms =
+    !filtered.length && recognized.length && recognized.length < terms.length
+      ? terms.filter((term) => !recognized.includes(term)).map((term) => term.text)
+      : undefined;
+  if (ignoredTerms) filtered = catalog.filter((tool) => matches(tool, recognized));
   const end = offset + limit;
   return {
     tools: filtered.slice(offset, end),
     total: filtered.length,
     nextOffset: end < filtered.length ? end : null,
     categories: [...new Set(catalog.map(voiceToolCategory))].sort(),
+    ...(ignoredTerms && filtered.length ? { ignoredTerms } : {}),
   };
 }
 

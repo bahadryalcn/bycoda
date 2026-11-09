@@ -28,6 +28,7 @@ mod desktop_control_page;
 mod desktop_control_window;
 mod desktop_inbox_review;
 mod desktop_shortcut;
+mod diagnostics;
 mod external_editor;
 mod file_access;
 mod fs;
@@ -147,6 +148,7 @@ mod tray;
 mod turn_probe;
 mod turn_steps;
 mod voice_overlay;
+mod webview_args;
 mod window;
 mod window_fullscreen;
 mod window_glass_state;
@@ -419,7 +421,9 @@ fn webview_debug_context(mut context: tauri::Context<tauri::Wry>) -> tauri::Cont
     if cfg!(windows) {
         let port = std::env::var("BYCODA_WEBVIEW_DEBUG_PORT").ok();
         if let Some(args) = webview_debug_args(port.as_deref()) {
-            eprintln!("WebView DevTools protocol enabled on 127.0.0.1 (BYCODA_WEBVIEW_DEBUG_PORT)");
+            log::info!(
+                "WebView DevTools protocol enabled on 127.0.0.1 (BYCODA_WEBVIEW_DEBUG_PORT)"
+            );
             for window in &mut context.config_mut().app.windows {
                 window.additional_browser_args = Some(args.clone());
             }
@@ -479,6 +483,12 @@ pub fn run() {
             package_smoke::on_page_load(webview, payload);
         })
         .setup(|app| {
+            if let Ok(directory) = app.path().app_data_dir() {
+                diagnostics::install_panic_hook(&directory);
+            }
+            if let Ok(directory) = app.path().app_log_dir() {
+                diagnostics::install_file_logger(&directory);
+            }
             native_window_lifecycle::observe_existing(app.handle());
             for window in window::workspace_windows(app.handle()) {
                 ssh_window_lifecycle::register(window.label())?;
@@ -1004,6 +1014,9 @@ pub fn run() {
             account::commands::account_access_token,
             account::commands::account_sign_out,
             account::commands::account_device_info,
+            diagnostics::diagnostics_collect_logs,
+            diagnostics::diagnostics_clear_crash,
+            diagnostics::diagnostics_gzip_base64,
             provider_terminal_profiles::provider_terminal_profiles,
             provider_terminal_profiles::provider_terminal_profile_connect,
             pi_usage::fetch_pi_usage,
@@ -1337,6 +1350,8 @@ pub fn run() {
             window::request_quit(handle);
         }
         tauri::RunEvent::Exit => {
+            diagnostics::clear_recovered_on_exit();
+            diagnostics::flush_logs();
             assistant_presence::shutdown(handle);
             conversation_tools_bridge::shutdown_ssh_executions();
             if handle

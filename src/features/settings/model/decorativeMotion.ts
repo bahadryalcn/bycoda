@@ -53,6 +53,13 @@ export function defaultDecorativeMotion(): boolean {
     ? false
     : DECORATIVE_MOTION_DEFAULT;
 }
+/** A theme or saved look may switch decorative motion off anywhere, but switches it on
+ * only where the display default already allows it: a high refresh display keeps the
+ * cheaper default until the user chooses motion in Appearance. */
+export function applyThemeDecorativeMotion(enabled: boolean): void {
+  if (enabled && !defaultDecorativeMotion()) return;
+  saveDecorativeMotionEnabled(enabled);
+}
 /** Records the display refresh rate (frames per second); drives the default above. */
 export function noteDisplayRefreshRate(hz: number | null): void {
   if (hz !== null && (!Number.isFinite(hz) || hz <= 0)) return;
@@ -134,8 +141,9 @@ export function decorativeMotionEnabled(): boolean {
  * elsewhere the page's own focus, because on Windows the native window reports
  * itself unfocused as soon as its WebView2 child takes keyboard focus (tao tracks
  * WM_KILLFOCUS on the top-level window), which is almost always.
- * Decorative CSS motion does not stop on blur; per-frame canvas loops and the
- * `data-window-focus` rules for status dots do.
+ * The motion setting itself does not change on blur: canvas loops and the
+ * `data-window-focus` CSS rules hold decorative motion on its last frame while
+ * the window is behind another application.
  */
 export function windowHasFocus(): boolean {
   return IS_MAC ? (getWindowState()?.focused ?? domFocused) : domFocused;
@@ -284,6 +292,11 @@ export function usePrefersReducedMotion(): boolean {
 /** Use for decorative effects only; game availability is a separate setting. */
 export function useDecorativeMotionEnabled(): boolean {
   return useSyncExternalStore(subscribeDecorativeMotion, decorativeMotionEnabled, () => false);
+}
+
+/** Whether the window is in front; decorative canvas loops hold their frame while it is not. */
+export function useWindowHasFocus(): boolean {
+  return useSyncExternalStore(subscribeDecorativeMotion, windowHasFocus, () => true);
 }
 
 // Bootstrap CSS consumers before React subscribes; the shared listener keeps it current.

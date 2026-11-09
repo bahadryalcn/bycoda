@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { invokeHostRequest } from "./tracedInvoke";
 import {
   assertDesktopControlReceipts,
   requiresDesktopControlReceipts,
@@ -40,11 +41,12 @@ import {
   withRemoteAttachmentPreviews,
 } from "./remoteAttachmentPreviews";
 import { RemoteSessionLists } from "./remoteSessionLists";
+import { applyProjectChange, noteOwnSessionRequest } from "./remoteListActivity";
 import { remoteBackoffDelay } from "./remotePollingPolicy";
 import { startRailPoller } from "./remoteRailPoller";
 import { startPerformanceSpan } from "../../../shared/lib/performanceTrace";
 import { queueRemoteSummaryCache } from "./remoteSummaryCache";
-import { deleteRemotePageCache } from "./remotePageCache";
+import { forgetDeletedRemotePage } from "./remotePageCache";
 import { isLocalSyncMachine } from "./localSync";
 import { sessionExecutionClient } from "./sessionExecutionClient";
 import type { SessionExecutionClient } from "../../../shared/model/host-contracts/session-execution";
@@ -373,7 +375,7 @@ export function remoteRequest<T>(
         )
       : new Error(SUPERSEDED_CONNECTION);
   const send = () =>
-    invoke<T>("remote_request", {
+    invokeHostRequest<T>(method, {
       machineId,
       method,
       params,
@@ -477,6 +479,7 @@ export function sessionAccessForMachine(
       if (!owner || owner.id !== machineId)
         throw new Error("The owning Host route is no longer available.");
     }
+    noteOwnSessionRequest(machineId, method, params);
     const result = await remoteRequest<T>(
       machineId,
       method,
@@ -485,18 +488,7 @@ export function sessionAccessForMachine(
       userInitiated,
       expectedEnvironmentId,
     );
-    if (
-      method === "sessions.delete" &&
-      machine?.environmentId &&
-      params &&
-      typeof params === "object" &&
-      "sessionId" in params &&
-      typeof params.sessionId === "string"
-    )
-      void deleteRemotePageCache({
-        environmentId: machine.environmentId,
-        sessionId: params.sessionId,
-      });
+    forgetDeletedRemotePage(machine?.environmentId, method, params);
     return result;
   };
   return kind === "local" ? localHostSessionAccess(request) : remoteHostSessionAccess(request);
@@ -1300,7 +1292,7 @@ export function useRemoteProjectSessions(project: string, enabled = true): Remot
           const changed = changes.projects.find((entry) => entry.projectId === remote.projectId);
           const next =
             changed &&
-            sharedSessionLists.applyChange(machine.id, remote.projectId, changed, changes.reset);
+            applyProjectChange(sharedSessionLists, machine, remote, changed, changes.reset);
           if (next) saveList(next);
           else if (changed || changes.reset) {
             sharedSessionLists.invalidateProject(machine.id, remote.projectId);
@@ -1476,7 +1468,7 @@ export function useRemoteRailSessions(projects: readonly string[]): RemoteRailSe
             const changed = changes.projects.find((entry) => entry.projectId === remote.projectId);
             const next =
               changed &&
-              sharedSessionLists.applyChange(machine.id, remote.projectId, changed, changes.reset);
+              applyProjectChange(sharedSessionLists, machine, remote, changed, changes.reset);
             if (next) save(project, next);
             else if (changed || changes.reset) {
               sharedSessionLists.invalidateProject(machine.id, remote.projectId);

@@ -30,6 +30,10 @@ export type SessionBulkDeleteOptions = {
 
 type DeleteProgress = { cwd: string; completed: number; total: number };
 
+/** A machine's desktop takes queued deletions on its next heartbeat; sending
+ * several at once lets one heartbeat carry them instead of one per conversation. */
+const REMOTE_DELETE_CONCURRENCY = 8;
+
 /**
  * Bulk session deletion: the confirmation, per-session progress and the result
  * notice. The running set is read when a delete reaches each session, so a
@@ -116,6 +120,7 @@ export function useSessionBulkDelete({
         isRunning: (id) => runningRef.current.has(id),
         deleteOne,
         onProgress: (completed, total) => setDeleteProgress({ cwd, completed, total }),
+        concurrency: remoteProject ? REMOTE_DELETE_CONCURRENCY : 1,
       });
       setDeleteNoticeError(result.failed.length > 0);
       setBulkNotice(

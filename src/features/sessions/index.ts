@@ -57,6 +57,8 @@ export type * as dataPersistenceDrainApi from "./public/persistenceDrain";
 export type * as dataSessionStoreApi from "./public/sessionStore";
 export type * as hooksUseTranscriptSelectionApi from "./public/useTranscriptSelection";
 export type * as importImportModelApi from "./public/importModel";
+export type * as modelRemoteActivityNoticeApi from "./public/remoteActivityNotice";
+export type * as uiRemoteActivityNoticesApi from "./public/RemoteActivityNotices";
 export type * as modelApprovalIntentsApi from "./public/approvalIntents";
 export type * as modelAttachmentsApi from "./public/attachments";
 export type * as modelAutoContinueApi from "./public/autoContinue";

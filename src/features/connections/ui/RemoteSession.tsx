@@ -1,6 +1,5 @@
 import { Alert } from "../../../shared/ui/Alert";
 import { Button } from "../../../shared/ui/Button";
-import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import {
   MissingRemoteMachine,
@@ -4046,12 +4045,6 @@ function ConnectedRemoteSession({
                 : "Preparing the message and attachments…",
             )}
           </LoadingText>
-        ) : desktopRun && !compactPresentation ? (
-          <InlineMessage tone="info" className="shrink-0 px-4 py-2">
-            {t(
-              "This turn is running in the desktop app. New messages are queued until it finishes.",
-            )}
-          </InlineMessage>
         ) : null}
         {uploadProgress ? (
           <LoadingText delay={false} className="shrink-0 px-4 py-2">

@@ -12,6 +12,7 @@ import {
 import { Row, Slider } from "../../settingsControls";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
 import "./ThemeControls.css";
+import "./ToneSliders.css";
 
 /** The hue slider's rainbow: seven stops at one lightness, built from the wheel itself. */
 const HUE_TRACK = `linear-gradient(to right, ${[0, 60, 120, 180, 240, 300, 360]
@@ -70,7 +71,7 @@ export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) 
         label={t("Surfaces")}
         description={t("The four steps the tint produces, from the canvas up to a selected row.")}
       >
-        <div className="theme-tone-ramp" aria-hidden="true">
+        <div className="tone-ramp" aria-hidden="true">
           {(
             [
               ["base", t("Base")],
@@ -79,8 +80,8 @@ export function ToneSliders({ appearance }: { appearance: AppearanceSettings }) 
               ["selected", t("Selected")],
             ] as const
           ).map(([step, label]) => (
-            <span key={step} className="theme-tone-step" data-step={step}>
-              <span className="theme-tone-swatch" />
+            <span key={step} className="tone-step" data-step={step}>
+              <span className="tone-swatch" />
               <small>{label}</small>
             </span>
           ))}

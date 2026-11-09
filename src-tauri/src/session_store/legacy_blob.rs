@@ -185,7 +185,7 @@ pub(super) fn compact(store: &SessionStore, pause: Duration) -> (usize, usize) {
         {
             Ok(batch) => batch,
             Err(error) => {
-                eprintln!("legacy transcript compaction: {error}");
+                log::warn!("legacy transcript compaction: {error}");
                 break;
             }
         };
@@ -201,7 +201,7 @@ pub(super) fn compact(store: &SessionStore, pause: Duration) -> (usize, usize) {
                 // Incomplete or different normalized copy: keep the blob.
                 Ok(None) => continue,
                 Err(error) => {
-                    eprintln!("legacy transcript compaction: {id}: {error}");
+                    log::warn!("legacy transcript compaction: {id}: {error}");
                     errors += 1;
                     if errors >= MAX_ERRORS {
                         break 'batches;
@@ -221,7 +221,7 @@ pub(super) fn compact(store: &SessionStore, pause: Duration) -> (usize, usize) {
                 Ok(true) => retired += 1,
                 Ok(false) => {}
                 Err(error) => {
-                    eprintln!("legacy transcript compaction: {error}");
+                    log::warn!("legacy transcript compaction: {error}");
                     errors += 1;
                     if errors >= MAX_ERRORS {
                         break 'batches;
@@ -244,11 +244,11 @@ pub(super) fn start(app: &AppHandle) {
             if let Some(store) = app.try_state::<SessionStore>() {
                 let (retired, errors) = compact(&store, PAUSE);
                 if retired > 0 || errors > 0 {
-                    eprintln!("legacy transcript compaction: {retired} retired, {errors} errors");
+                    log::warn!("legacy transcript compaction: {retired} retired, {errors} errors");
                 }
             }
         });
     if let Err(error) = spawned {
-        eprintln!("legacy transcript compaction thread: {error}");
+        log::warn!("legacy transcript compaction thread: {error}");
     }
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { useConfirm } from "../../../../../shared/ui/ConfirmDialog";
@@ -8,6 +8,7 @@ import { libraryImageSrc, useBackgroundLibrary } from "../../../model/background
 import { useSavedThemes, type SavedTheme } from "../../../model/savedThemes";
 import { SettingsFeedback } from "../../settingsControls";
 import type { AppearanceSettings } from "../../useAppearanceSettings";
+import { SaveLookButton } from "./SaveLookButton";
 import { paletteSwatches } from "./PaletteCards";
 import {
   applySavedTheme,
@@ -19,7 +20,8 @@ import { ThemeNameDialog } from "./ThemeNameDialog";
 import "./ThemeControls.css";
 
 /**
- * Saved looks as cards: click applies the whole look including its background image. Each card can
+ * Saved looks as a wrapping grid of compact cards (two rows, then a toggle), ending in a dashed
+ * save card: click applies the whole look including its background image. Each card can
  * be renamed, overwritten with the current look, or deleted (after a confirmation).
  */
 export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) {
@@ -31,7 +33,29 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  if (themes.length === 0) return <p className="theme-saved-empty">{t("No saved themes yet.")}</p>;
+  // Collapsed, the grid shows two rows (the add card takes the last slot); the column count is
+  // whatever the responsive grid currently lays out.
+  const grid = useRef<HTMLUListElement>(null);
+  const [columns, setColumns] = useState(3);
+  const [expanded, setExpanded] = useState(false);
+  useLayoutEffect(() => {
+    const element = grid.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const measure = () =>
+      setColumns(
+        Math.max(
+          1,
+          getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean).length,
+        ),
+      );
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const limit = columns * 2 - 1;
+  const collapsible = themes.length > limit;
+  const visible = collapsible && !expanded ? themes.slice(0, limit) : themes;
 
   const apply = async (theme: SavedTheme) => {
     setBusy(true);
@@ -72,8 +96,8 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
 
   return (
     <>
-      <ul className="theme-saved" aria-label={t("Saved themes")}>
-        {themes.map((theme) => {
+      <ul ref={grid} className="theme-saved" aria-label={t("Saved themes")}>
+        {visible.map((theme) => {
           const look = theme.look;
           const image = images.find((entry) => entry.id === theme.imageId);
           const swatches = paletteSwatches(
@@ -133,7 +157,15 @@ export function SavedThemes({ appearance }: { appearance: AppearanceSettings }) 
             </li>
           );
         })}
+        <li className="theme-saved-card" data-add>
+          <SaveLookButton appearance={appearance} card />
+        </li>
       </ul>
+      {collapsible ? (
+        <Button size="sm" variant="ghost" onClick={() => setExpanded((value) => !value)}>
+          {expanded ? t("Show less") : t("Show all ({p0})", { p0: themes.length })}
+        </Button>
+      ) : null}
       {notice ? (
         <SettingsFeedback state="warning" onDismiss={() => setNotice(null)}>
           {notice}

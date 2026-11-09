@@ -411,7 +411,7 @@ fn report_buffers(
         if !path.is_absolute() || buffer.path.contains('\0') {
             // Untitled or relative tabs have no file on disk to protect; one of them
             // must not reject the report for every other buffer.
-            eprintln!(
+            log::warn!(
                 "Skipping non-absolute buffer path in native buffer report: {:?}",
                 buffer.path
             );
@@ -523,7 +523,7 @@ fn report_buffers(
                 // fence but must not leave this report unconfirmed and its
                 // journal entry active forever (that wedged the queue at capacity).
                 Err(error) if !committing.get() => {
-                    eprintln!("Native buffer predecessor reconcile was not completed: {error}");
+                    log::warn!("Native buffer predecessor reconcile was not completed: {error}");
                     commit(&[update])
                 }
                 other => other,

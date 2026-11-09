@@ -402,7 +402,7 @@ pub async fn session_apply_delta(
                     written.ack.revision,
                 )
                 .unwrap_or_else(|error| {
-                    eprintln!("session summary after delta: {error}");
+                    log::warn!("session summary after delta: {error}");
                     None
                 });
             }

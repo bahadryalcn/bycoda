@@ -1,7 +1,7 @@
 import { updateSessionListDisplay } from "../../../../sessions/public/sessionListDisplay";
 import { backgroundGradientChange } from "../../../model/backgroundGradient";
 import type { AppearancePreferences } from "../../../model/appearancePreferences";
-import { saveDecorativeMotionEnabled } from "../../../model/decorativeMotion";
+import { applyThemeDecorativeMotion } from "../../../model/decorativeMotion";
 import { loadInteractionTint, saveInteractionTint } from "../../../model/interactionTint";
 import { saveLiveBackground, saveLiveBackgroundIntensity } from "../../../model/liveBackground";
 import { loadScrollbarStyle, saveScrollbarStyle } from "../../../model/scrollbarStyle";
@@ -29,7 +29,6 @@ function preferenceChanges(suggestion: ThemeSuggestion): Partial<AppearancePrefe
     ...(suggestion.codeFont ? { codeFont: suggestion.codeFont } : {}),
     ...(suggestion.codeTheme ? { codeTheme: suggestion.codeTheme } : {}),
     ...(suggestion.density ? { controlDensity: suggestion.density } : {}),
-    ...(suggestion.chatWidth ? { chatWidth: suggestion.chatWidth } : {}),
   };
   if (type?.codeSize !== undefined) changes.codeSize = type.codeSize;
   if (type?.ligatures !== undefined) changes.codeLigatures = type.ligatures;
@@ -137,6 +136,6 @@ export function applyThemeSuggestion(appearance: AppearanceSettings, suggestion:
   if (motion?.crewTheme) saveCrewTheme(motion.crewTheme);
   if (motion?.showCrew !== undefined) saveCrewSceneEnabled(motion.showCrew);
   if (motion?.crewGrowth !== undefined) saveCrewGrowthEnabled(motion.crewGrowth);
-  if (motion?.decorative !== undefined) saveDecorativeMotionEnabled(motion.decorative);
+  if (motion?.decorative !== undefined) applyThemeDecorativeMotion(motion.decorative);
   if (motion?.tabAnimations !== undefined) saveTabAnimationsEnabled(motion.tabAnimations);
 }

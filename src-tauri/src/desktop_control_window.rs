@@ -206,42 +206,29 @@ fn edge_position(x: i32, y: i32, width: u32, height: u32, scale: f64) -> (f64, f
         y + (8.0 * scale).round() as i32,
     )
 }
-fn configured_main_browser_args(windows: &[tauri::utils::config::WindowConfig]) -> Option<&str> {
-    windows
-        .iter()
-        .find(|window| window.label == "main")
-        .and_then(|window| window.additional_browser_args.as_deref())
-}
 fn create(app: &AppHandle) -> Result<WebviewWindow, String> {
     if let Some(window) = app.get_webview_window(LABEL) {
         return Ok(window);
     }
-    let builder =
-        WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("desktop-control.html".into()));
-    // This dynamic window shares the main WebView2 data directory. Its exact
-    // environment options must match, including an explicitly configured CDP
-    // switch. Builder::new does not inherit the configured main window's args.
-    let builder = if let Some(args) = configured_main_browser_args(&app.config().app.windows) {
-        builder.additional_browser_args(args)
-    } else {
-        builder
-    };
-    let window = builder
-        .title(&app.package_info().name)
-        .inner_size(640.0, 64.0)
-        .resizable(false)
-        .maximizable(false)
-        .minimizable(false)
-        .decorations(false)
-        .transparent(true)
-        .shadow(false)
-        .always_on_top(true)
-        .visible_on_all_workspaces(true)
-        .skip_taskbar(true)
-        .visible(false)
-        .focused(false)
-        .build()
-        .map_err(|error| error.to_string())?;
+    let window = crate::webview_args::inherit_main_browser_args(
+        app,
+        WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("desktop-control.html".into())),
+    )
+    .title(&app.package_info().name)
+    .inner_size(640.0, 64.0)
+    .resizable(false)
+    .maximizable(false)
+    .minimizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .always_on_top(true)
+    .visible_on_all_workspaces(true)
+    .skip_taskbar(true)
+    .visible(false)
+    .focused(false)
+    .build()
+    .map_err(|error| error.to_string())?;
     // Closing a safety indicator cannot hide an active or uncertain operation.
     let owner = app.clone();
     window.on_window_event(move |event| {
@@ -579,26 +566,6 @@ pub fn desktop_control_indicator_fit(window: WebviewWindow, height: f64) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn dynamic_indicator_inherits_only_the_actual_main_windows_browser_args() {
-        let main_args = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required --remote-debugging-port=19771";
-        let auxiliary = tauri::utils::config::WindowConfig {
-            label: "other-window".into(),
-            additional_browser_args: Some("--another-window-option".into()),
-            ..Default::default()
-        };
-        let main = tauri::utils::config::WindowConfig {
-            label: "main".into(),
-            additional_browser_args: Some(main_args.into()),
-            ..Default::default()
-        };
-        let windows = [auxiliary, main];
-        assert_eq!(configured_main_browser_args(&windows), Some(main_args));
-        assert_eq!(configured_main_browser_args(&windows[..1]), None);
-        let mut release = windows[1].clone();
-        release.additional_browser_args = None;
-        assert_eq!(configured_main_browser_args(&[release]), None);
-    }
     fn active() -> Status {
         Status {
             enabled: true,

@@ -316,3 +316,107 @@ export const SecurityActivityPage = z.object({
   nextCursor: z.string().nullable(),
 });
 export type SecurityActivityPage = z.infer<typeof SecurityActivityPage>;
+
+/**
+ * Added in 0.8.0. Account-based phone connect: the cloud keeps a small route directory and a
+ * sealed one-shot mailbox. It never sees a session, a credential or a usable pairing ticket.
+ */
+const LAN_KEY = z.string().regex(/^[0-9a-f]{64}$/);
+/** X25519 public key, 32 bytes as unpadded base64url. */
+const X25519_PUBLIC_KEY = z.string().regex(/^[A-Za-z0-9_-]{43}$/);
+
+function isPrivateIpv4(host: string): boolean {
+  const parts = host.split(".");
+  if (parts.length !== 4 || parts.some((p) => !/^(0|[1-9]\d{0,2})$/.test(p) || Number(p) > 255))
+    return false;
+  const [a, b] = parts.map(Number) as [number, number];
+  return a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+/** `https` origin, or `http` RFC1918 origin that carries a `lanKey`. No credentials, path or query. */
+export const ConnectRoute = z
+  .strictObject({
+    endpoint: z.string().max(256),
+    lanKey: LAN_KEY.optional(),
+  })
+  .refine(({ endpoint, lanKey }) => {
+    let url: URL;
+    try {
+      url = new URL(endpoint);
+    } catch {
+      return false;
+    }
+    if (url.username || url.password || url.search || url.hash || url.pathname !== "/")
+      return false;
+    if (url.protocol === "https:") return true;
+    return url.protocol === "http:" && lanKey !== undefined && isPrivateIpv4(url.hostname);
+  }, "endpoint must be an https origin, or an http private-network origin with lanKey");
+export type ConnectRoute = z.infer<typeof ConnectRoute>;
+
+/** `PUT /v1/devices/:id/connect` */
+export const ConnectInfoUpdate = z.strictObject({
+  environmentId: EntityId,
+  hostName: z.string().trim().min(1).max(80).optional(),
+  routes: z.array(ConnectRoute).max(4),
+});
+export type ConnectInfoUpdate = z.infer<typeof ConnectInfoUpdate>;
+
+/** A signed-in desktop that published connect info. */
+export const Computer = z.object({
+  deviceId: EntityId,
+  name: z.string(),
+  platform: DevicePlatform,
+  environmentId: EntityId,
+  routes: z.array(ConnectRoute).max(4),
+  lastSeenAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+export type Computer = z.infer<typeof Computer>;
+export const ComputerList = z.object({ items: z.array(Computer) });
+export type ComputerList = z.infer<typeof ComputerList>;
+
+export const PairRequestCreate = z.strictObject({
+  phonePublicKey: X25519_PUBLIC_KEY,
+});
+export type PairRequestCreate = z.infer<typeof PairRequestCreate>;
+export const PairRequestCreated = z.object({
+  id: EntityId,
+  expiresAt: IsoDateTime,
+});
+export type PairRequestCreated = z.infer<typeof PairRequestCreated>;
+
+/** What the target desktop sees; `phonePublicKey` lets it compute the same verification code. */
+export const PendingPairRequest = z.object({
+  id: EntityId,
+  phoneDeviceId: EntityId,
+  phoneName: z.string(),
+  phonePlatform: DevicePlatform,
+  phonePublicKey: X25519_PUBLIC_KEY,
+  createdAt: IsoDateTime,
+  expiresAt: IsoDateTime,
+});
+export type PendingPairRequest = z.infer<typeof PendingPairRequest>;
+export const PendingPairRequestList = z.object({
+  items: z.array(PendingPairRequest),
+});
+export type PendingPairRequestList = z.infer<typeof PendingPairRequestList>;
+
+/** `PUT /v1/pair-requests/:id/ticket`: the pairing code sealed to the phone key (end to end). */
+export const PairTicket = z.strictObject({
+  desktopPublicKey: X25519_PUBLIC_KEY,
+  sealed: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .max(2048),
+});
+export type PairTicket = z.infer<typeof PairTicket>;
+
+export const PairRequestState = z.enum(["pending", "sealed", "delivered", "denied", "expired"]);
+export type PairRequestState = z.infer<typeof PairRequestState>;
+/** `GET /v1/pair-requests/:id` (phone). `sealed` is cleared after the first successful read. */
+export const PairRequestStatus = z.object({
+  state: PairRequestState,
+  desktopPublicKey: X25519_PUBLIC_KEY.optional(),
+  sealed: z.string().max(2048).optional(),
+});
+export type PairRequestStatus = z.infer<typeof PairRequestStatus>;

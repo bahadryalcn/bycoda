@@ -4,6 +4,7 @@ import {
   type AccountClient,
   type FeedbackContext,
 } from "@bycoda/account-contracts";
+import type { DiagnosticSendStatus } from "../../diagnostics";
 import type { NativeDeviceInfo } from "./accountNative";
 
 export const FEEDBACK_KINDS = ["idea", "problem", "praise", "other"] as const;
@@ -19,12 +20,15 @@ export type FeedbackDraft = {
   rating: number | null;
   /** The "Include app version and system" tick; off by default. */
   includeContext: boolean;
+  /** The "Attach diagnostic logs" tick; the dialog starts it ticked only in automatic mode. */
+  attachLogs: boolean;
 };
 export const EMPTY_FEEDBACK_DRAFT: FeedbackDraft = {
   kind: "idea",
   message: "",
   rating: null,
   includeContext: false,
+  attachLogs: false,
 };
 
 export type FeedbackDraftIssue = "message-missing" | "message-long";
@@ -38,7 +42,12 @@ export function validateFeedbackDraft(draft: FeedbackDraft): FeedbackDraftIssue[
 }
 
 export type FeedbackSubmitResult =
-  | { status: "sent"; reference: string }
+  | {
+      status: "sent";
+      reference: string;
+      /** The linked log upload, when the box was ticked; it never changes `sent`. */
+      logs?: DiagnosticSendStatus;
+    }
   | { status: "invalid"; issues: FeedbackDraftIssue[] }
   | { status: "rate-limited" }
   | { status: "failed" };
@@ -47,6 +56,8 @@ export type FeedbackDeps = {
   /** Version, platform, OS and channel; only asked for when the user ticked the box. */
   deviceInfo: () => Promise<NativeDeviceInfo>;
   onFailure?: (error: unknown) => unknown;
+  /** Uploads diagnostic logs linked to the feedback; only called after the feedback was received. */
+  sendLogs?: (link: { feedbackId: string; note: string }) => Promise<DiagnosticSendStatus>;
 };
 
 /**
@@ -83,7 +94,14 @@ export async function submitFeedback(
     const receipt = signedIn
       ? await api.sendFeedback({ body: body.data })
       : await api.sendAnonymousFeedback({ body: body.data });
-    return { status: "sent", reference: receipt.id };
+    if (!draft.attachLogs || !deps.sendLogs) return { status: "sent", reference: receipt.id };
+    let logs: DiagnosticSendStatus;
+    try {
+      logs = await deps.sendLogs({ feedbackId: receipt.id, note: draft.message.trim() });
+    } catch {
+      logs = "failed"; // -- the feedback itself arrived.
+    }
+    return { status: "sent", reference: receipt.id, logs };
   } catch (error) {
     if (error instanceof AccountApiError && error.code === "rate_limited") {
       return { status: "rate-limited" };

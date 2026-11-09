@@ -19,6 +19,19 @@ describe("desktop deletion delivery", () => {
     await expect(deleted).rejects.toThrow("busy");
   });
 
+  it("tells the desktop which device asked for the deletion", async () => {
+    const bridge = new DesktopDelete();
+    await bridge.beat("owner", { version: 1 });
+    void bridge.request("s", "/project", () => true, "Work laptop").catch(() => {});
+    const [job] = (await bridge.beat("owner", { version: 1 })).jobs;
+    expect(job).toMatchObject({
+      sessionId: "s",
+      cwd: "/project",
+      requestedBy: "Work laptop",
+    });
+    bridge.close();
+  });
+
   it("does not dispatch after device authorization is revoked", async () => {
     const bridge = new DesktopDelete();
     await bridge.beat("owner", { version: 1 });

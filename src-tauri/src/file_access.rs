@@ -213,7 +213,7 @@ fn read_recoverable<T>(
                             .map_err(|error| {
                                 format!("{description} quarantine sync failed: {error}")
                             })?;
-                        eprintln!(
+                        log::warn!(
                             "{description} was corrupt ({reason}); recovery copy: {}",
                             quarantine.display()
                         );
@@ -409,7 +409,7 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
             tauri::scope::fs::Event::PathForbidden(path) => revoke_native(&handle, path),
         };
         if let Err(error) = result {
-            eprintln!("Native file permission update failed: {error}");
+            log::warn!("Native file permission update failed: {error}");
         }
     });
     Ok(())

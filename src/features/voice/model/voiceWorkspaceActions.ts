@@ -42,6 +42,13 @@ export type VoiceSessionCreate = {
   workspaceRequestId?: string;
 };
 
+export type VoiceProjectCreate = {
+  name: string;
+  /** Absolute parent folder; omitted uses the New projects folder setting or a derived one. */
+  parentPath?: string;
+  workspaceRequestId?: string;
+};
+
 export type VoiceWorkspaceActionsDeps = {
   /** Supply only projects currently visible and unlocked for this owner/window. */
   getProjects: () => readonly VoiceWorkspaceProject[];
@@ -51,6 +58,8 @@ export type VoiceWorkspaceActionsDeps = {
   resolveSession?: (id: string) => Promise<VoiceWorkspaceSession | null>;
   listSessions?: (projectPath: string) => Promise<readonly VoiceWorkspaceSession[]>;
   onSelectProject?: (path: string, workspaceRequestId?: string) => void | Promise<void>;
+  /** Creates a new folder (native file access consent applies) and adds it to the rail. */
+  onCreateProject?: (request: VoiceProjectCreate) => Promise<string>;
   onCreate?: (request: VoiceSessionCreate) => Promise<string>;
   onOpen?: (sessionId: string, workspaceRequestId?: string) => void | Promise<void>;
   /** Must delegate the existing close action, including dirty-file/terminal prompts. */
@@ -80,6 +89,16 @@ export const voiceWorkspaceTools = [
     "Find visible project candidates by display name, folder alias or canonical path. Normalized exact matches take priority. Partial or multiple matches require clarification before choosing a path; never choose the first. Names confer no authority.",
     { query: text },
     ["query"],
+  ],
+  [
+    "workspace.projects.create",
+    'Create a brand-new project when the owner asks to start or create one (for example "create a snake game"). Makes a new folder named after the project, adds it to the bycoda project list and shows it. Omit parentPath to use the owner\'s New projects folder setting or the folder their projects already share. Returns the new projectPath; pass it as projectPath to sessions, tasks, goals and crews for the new project. An existing folder is never reused.',
+    {
+      name: { type: "string", minLength: 1, maxLength: 120 },
+      parentPath: text,
+      requestId: text,
+    },
+    ["name", "requestId"],
   ],
   [
     "workspace.projects.select",

@@ -249,10 +249,13 @@ html [data-session-streaming="true"] [data-message-queue-card] {
   color: var(--ui-text-disabled);
 }
 
+/* Stepped so the compositor swaps a frame per step, not per vsync (index.css
+   pauses it with the other decorative loops while motion is off or the window
+   is behind another application). */
 @media (prefers-reduced-motion: no-preference) {
   .context-signal-frame[data-working="true"] .context-speed-bolt {
-    animation: context-speed-charge calc(var(--motion-feedback-duration) * 12)
-      var(--motion-ease-out) infinite;
+    animation: context-speed-charge calc(var(--motion-feedback-duration) * 12) steps(6, jump-none)
+      infinite;
   }
 }
 

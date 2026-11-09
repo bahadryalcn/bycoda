@@ -5,6 +5,8 @@ export {
   listSessionsByProject,
   loadStoredQueue,
   loadWorkspaceSnapshot,
+  setSessionArchived,
+  setSessionPinned,
   setSessionQueue,
   storedSessionUpdatedAt,
   upsertSession,

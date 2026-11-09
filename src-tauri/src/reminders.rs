@@ -527,7 +527,7 @@ pub(crate) fn init(app: &AppHandle) {
             },
         );
         if let Err(error) = result {
-            eprintln!("Could not check reminders: {error}");
+            log::warn!("Could not check reminders: {error}");
         }
     });
 }

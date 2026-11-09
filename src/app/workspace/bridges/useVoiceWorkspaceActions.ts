@@ -76,6 +76,29 @@ export function createVoiceWorkspaceActions(read: () => VoiceWorkspaceActionsDep
         status: "completed",
         ...resolveVoiceProjects(read().getProjects(), clean(args.query, "query")),
       };
+    if (action === "workspace.projects.create") {
+      const fn = read().onCreateProject ?? unsupported;
+      const parentPath =
+        args.parentPath === undefined ? undefined : clean(args.parentPath, "parentPath");
+      const created = clean(
+        await fn({
+          name: clean(args.name, "name", 120),
+          ...(parentPath ? { parentPath } : {}),
+          ...(workspaceRequestId ? { workspaceRequestId } : {}),
+        }),
+        "created project path",
+      );
+      return {
+        action,
+        status: read()
+          .getProjects()
+          .some((entry) => sameProjectPath(entry.path, created))
+          ? "completed"
+          : "accepted",
+        projectPath: created,
+        verification: "The project appears in workspace.projects.list once the rail updates.",
+      };
+    }
     const path = project(clean(args.projectPath, "projectPath"));
     if (action === "workspace.sessions.list") {
       const rawLimit = args.limit ?? 50;

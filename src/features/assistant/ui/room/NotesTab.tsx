@@ -4,6 +4,9 @@ import type {
   AssistantSnapshot,
 } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t } from "../../../../shared/i18n";
+import { Button } from "../../../../shared/ui/Button";
+import { Checkbox } from "../../../../shared/ui/Checkbox";
+import { deleteNotesInOrder } from "./noteBulkDelete";
 import { matches } from "./assistantRoomHelpers";
 import { sortNotesForDisplay } from "./assistantNoteDisplay";
 import { useAssistantRoom } from "./assistantRoomContext";
@@ -25,6 +28,7 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
     setUndo,
     setDeletedNoteWithoutReceipt,
     setNoteEdit,
+    pending,
     errorFor,
     empty,
   } = room;
@@ -35,6 +39,48 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
   );
   // The selection follows search and deletion: a missing id falls back to the first visible note.
   const selected = visible.find((note) => note.id === selectedId) ?? visible[0];
+  // Checked notes are those still visible; search or deletion silently drops the rest.
+  const [checkedIds, setCheckedIds] = useState<ReadonlySet<string>>(new Set());
+  const checkedNotes = visible.filter((note) => checkedIds.has(note.id));
+  const checked = new Set(checkedNotes.map((note) => note.id));
+  const allChecked = checkedNotes.length > 0 && checkedNotes.length === visible.length;
+  const setChecked = (id: string, value: boolean) => {
+    const next = new Set(checked);
+    if (value) next.add(id);
+    else next.delete(id);
+    setCheckedIds(next);
+  };
+  const confirmBulkDelete = (notes: AssistantNote[]) =>
+    setConfirm({
+      title: t("Delete {p0} notes?", { p0: notes.length }),
+      message: t("You can restore these notes from Recently deleted for seven days."),
+      confirmLabel: t("Delete"),
+      onConfirm: async () => {
+        const outcome = await deleteNotesInOrder(notes, (note) =>
+          assistantRequest({ op: "notes.delete", id: note.id, expectedUpdatedAt: note.updatedAt }),
+        );
+        // On a failure the remaining notes stay checked; deleted ones drop out on their own.
+        if (!outcome.error) setCheckedIds(new Set());
+        if (outcome.trashIds.length) {
+          setUndo({
+            id: outcome.trashIds[0]!,
+            ids: outcome.trashIds,
+            label: t("{p0} notes", { p0: outcome.trashIds.length }),
+            environmentId,
+          });
+        } else if (outcome.deleted) setUndo(null);
+        setDeletedNoteWithoutReceipt(
+          outcome.withoutReceipt.length ? outcome.withoutReceipt.join(", ") : null,
+        );
+        if (outcome.error)
+          throw new Error(
+            t("{p0} of {p1} notes were deleted. Review the Room before retrying.", {
+              p0: outcome.deleted,
+              p1: notes.length,
+            }),
+          );
+      },
+    });
   const confirmDelete = (note: AssistantNote) =>
     setConfirm({
       title: t("Delete note?"),
@@ -93,7 +139,46 @@ export function NotesTab({ snapshot }: { snapshot: AssistantSnapshot }) {
           )}
           {visible.length > 0 && (
             <div className={styles.layout}>
-              <NotesList notes={visible} selectedId={selected?.id} onSelect={setSelectedId} />
+              <div className={styles.listPane}>
+                <div className={styles.listHead}>
+                  <Checkbox
+                    label={
+                      checkedNotes.length
+                        ? t("{p0} selected", { p0: checkedNotes.length })
+                        : t("Select all")
+                    }
+                    checked={allChecked}
+                    indeterminate={checkedNotes.length > 0 && !allChecked}
+                    onChange={(event) =>
+                      setCheckedIds(
+                        new Set(event.currentTarget.checked ? visible.map((note) => note.id) : []),
+                      )
+                    }
+                  />
+                  {checkedNotes.length > 0 && (
+                    <>
+                      <Button size="sm" variant="ghost" onClick={() => setCheckedIds(new Set())}>
+                        {t("Clear selection")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        tone="danger"
+                        disabled={Boolean(pending)}
+                        onClick={() => confirmBulkDelete(checkedNotes)}
+                      >
+                        {t("Delete")}
+                      </Button>
+                    </>
+                  )}
+                </div>
+                <NotesList
+                  notes={visible}
+                  selectedId={selected?.id}
+                  onSelect={setSelectedId}
+                  checked={checked}
+                  onCheck={setChecked}
+                />
+              </div>
               {selected && (
                 <NotesReader
                   key={selected.id}

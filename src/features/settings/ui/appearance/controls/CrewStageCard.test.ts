@@ -9,6 +9,8 @@ import { CrewStageCard } from "./CrewStageCard";
 vi.mock("../../../../sessions/ui/crewCodeArt", () => ({
   CODE_WIDTH: 1040,
   CODE_HEIGHT: 300,
+  SIGN_TOP: 14,
+  SIGN_HEIGHT: 58,
   CREW_TOP: 0,
   loadCrewSignLogo: () => Promise.resolve(),
   createCodeArtPainter: () => Object.assign(vi.fn(), { dispose: vi.fn() }),

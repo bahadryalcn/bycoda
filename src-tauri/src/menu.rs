@@ -138,7 +138,7 @@ pub fn dispatch(app: &AppHandle, id: &str) {
             let app = app.clone();
             tauri::async_runtime::spawn_blocking(move || {
                 if let Err(error) = crate::window::open_new_window(&app) {
-                    eprintln!("Could not open workspace window: {error}");
+                    log::warn!("Could not open workspace window: {error}");
                 }
             });
         }

@@ -3,18 +3,27 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { CrewScene, crewActionAt } from "./CrewScene";
+import { CrewScene, crewActionAt, labelLift } from "./CrewScene";
+import { CODE_HEIGHT, SIGN_HEIGHT, SIGN_TOP } from "./crewCodeArt";
 import { EmptySession } from "./EmptySession";
 import { saveCrewGrowthEnabled, saveCrewSceneEnabled } from "../../settings/model/settings";
 import type { Session } from "../model/session";
 
-const state = vi.hoisted(() => ({ enabled: true, paint: vi.fn(), dispose: vi.fn() }));
+const state = vi.hoisted(() => ({
+  enabled: true,
+  focused: true,
+  paint: vi.fn(),
+  dispose: vi.fn(),
+}));
 vi.mock("../../settings/model/decorativeMotion", () => ({
   useDecorativeMotionEnabled: () => state.enabled,
+  useWindowHasFocus: () => state.focused,
 }));
 vi.mock("./crewCodeArt", () => ({
   CODE_WIDTH: 1040,
   CODE_HEIGHT: 300,
+  SIGN_TOP: 14,
+  SIGN_HEIGHT: 58,
   CREW_TOP: 0,
   loadCrewSignLogo: () => Promise.resolve(),
   createCodeArtPainter: () => Object.assign(state.paint, { dispose: state.dispose }),
@@ -28,6 +37,7 @@ beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
   state.enabled = true;
+  state.focused = true;
   localStorage.clear();
   vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(900);
   vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
@@ -162,6 +172,22 @@ it("cancels animation callbacks when hidden and restarts only when visible", () 
   );
   expect(vi.getTimerCount()).toBe(0);
 });
+it("holds the scene while the window is behind another application", () => {
+  render();
+  enter();
+  expect(vi.getTimerCount()).toBe(1);
+  state.focused = false;
+  render();
+  expect(vi.getTimerCount()).toBe(0);
+  const count = state.paint.mock.calls.length;
+  act(() => vi.advanceTimersByTime(30000));
+  expect(state.paint).toHaveBeenCalledTimes(count);
+  state.focused = true;
+  render();
+  // The re-armed observers report the viewport again before the loop resumes.
+  enter();
+  expect(vi.getTimerCount()).toBe(1);
+});
 it("visibly starts a tea sip soon after entering the viewport and continues after visibility changes", () => {
   render();
   enter();
@@ -287,4 +313,13 @@ it("switches off artwork without removing the task draft", async () => {
   expect(container.querySelector("canvas")).toBeNull();
   expect(container.querySelector("textarea")).toBe(draft);
   expect(draft?.value).toBe("my draft");
+});
+
+it("keeps classic crew labels below the hanging sign at every scene size", () => {
+  const signBottom = SIGN_TOP + SIGN_HEIGHT;
+  // A label anchored just under the sign may rise only to the sign's lower edge (plus the gap).
+  const lift = labelLift(signBottom + 10, true);
+  expect(lift).toBe(`max(-100%, ${(((-10 + 4) / CODE_HEIGHT) * 100).toFixed(3)}cqh)`);
+  // Rigged themes draw no sign, so their labels keep their natural lift.
+  expect(labelLift(signBottom + 10, false)).toBe("-100%");
 });

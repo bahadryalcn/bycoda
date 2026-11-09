@@ -19,6 +19,19 @@ import {
 import { Group, Row, Segmented, Slider } from "../../settingsControls";
 import "./ThemeControls.css";
 
+const PREVIEW_ROWS = [
+  'import { useState } from "react";',
+  "",
+  "export function Counter() {",
+  "  const [count, setCount] = useState(0);",
+  "  const increment = () => setCount(count + 1);",
+  "  const label = `Clicked ${count} times`;",
+  "  return { count, increment, label };",
+  "}",
+  "",
+  'export const LABEL = "Scrollbar preview";',
+];
+
 const snapshot = () => JSON.stringify(loadScrollbarStyle());
 
 /**
@@ -137,13 +150,12 @@ export function ScrollbarGroup() {
         />
       </Row>
       <Row stacked label={t("Preview")}>
-        <div
-          data-scrollbar-preview
-          aria-hidden="true"
-          className="h-20 w-56 max-w-full overflow-y-scroll rounded-md border border-stroke px-2 py-1 text-ui-caption text-(--ui-text-secondary)"
-        >
-          {Array.from({ length: 12 }, (_, index) => (
-            <div key={index}>{t("Line {p1}", { p1: formatNumber(index + 1) })}</div>
+        <div data-scrollbar-preview aria-hidden="true" className="scrollbar-preview">
+          {PREVIEW_ROWS.map((row, index) => (
+            <div key={row} className="scrollbar-preview-row">
+              <span className="scrollbar-preview-gutter">{formatNumber(index + 1)}</span>
+              <span>{row}</span>
+            </div>
           ))}
         </div>
       </Row>

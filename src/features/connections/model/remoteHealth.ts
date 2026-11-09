@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { recordHostConnection } from "../../diagnostics";
 import {
   classifyRemoteError,
   isConnectionFailure,
@@ -46,6 +47,7 @@ export function applyRemoteConnection(environmentId: string, event: RemoteConnec
   const next = reduceConnection(previous, event);
   if (next === previous) return;
   connections.set(environmentId, next);
+  if (next.status !== previous.status) recordHostConnection(next.status, previous.status);
   if (next.status !== previous.status && next.status !== "connected")
     markRemoteFeaturesStale(environmentId);
   if (next.status !== previous.status || next.error !== previous.error) emit();

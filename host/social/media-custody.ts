@@ -67,7 +67,9 @@ export class SocialMediaCustody {
         await this.installTriggers();
       });
     // Not awaited: startup continues. Every destructive media step awaits `reconciled()`.
-    this.reconciliation = this.reconcileReferences();
+    // Started outside the caller's store scope: initialization runs inside a scope that
+    // closes when it returns, and the rebuild keeps reading after that.
+    this.reconciliation = this.store.db.outsideScope(() => this.reconcileReferences());
     this.reconciliation.catch((error) =>
       console.error("Social media reference reconciliation failed:", sanitizeSocialError(error)),
     );

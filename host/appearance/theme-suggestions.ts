@@ -51,7 +51,6 @@ export function themeSuggestionPrompt(request: string): string {
     `"interfaceFont": one of ${fonts(INTERFACE_FONT_CATALOG)};`,
     `"codeFont": one of ${fonts(CODE_FONT_CATALOG)};`,
     '"codeTheme": "github" | "dracula"; "density": "compact" | "comfortable" | "touch";',
-    '"chatWidth": "comfortable" | "wide" | "full";',
     "Grouped objects, each holding only the keys it needs (percent values are plain integers):",
     ...describeThemeFieldGroups().map((line) => `${line};`),
     "What the values mean:",

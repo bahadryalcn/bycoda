@@ -1,4 +1,6 @@
 import { AnnouncementNotices, FeedbackDialog, StatsConsentNotice } from "../../../features/account";
+import { CrashReportNotice } from "../../../features/diagnostics";
+import { PhoneAccountConnect } from "../../../features/connections/ui/PhoneAccountConnect";
 import { ContributePrompt } from "../../../features/projects/ui/ContributePrompt";
 import { HarnessUpdateNotice } from "../../../features/providers/ui/HarnessUpdateNotice";
 import { ReminderNotices } from "../../../features/sessions/ui/ReminderNotices";
@@ -28,8 +30,10 @@ export function WorkspaceNotices({ sessionReminders, openSettings }: WorkspaceNo
         onOpenSettings={() => openSettings("notifications", "notifications")}
       />
       <StatsConsentNotice />
+      <CrashReportNotice />
       <AnnouncementNotices />
       <FeedbackDialog />
+      <PhoneAccountConnect />
       <ContributePrompt />
       <SyncMergedNotice />
       <WindowTransferNotice />

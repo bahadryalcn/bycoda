@@ -49,14 +49,14 @@ messaging browser sign-in. Host and mobile have no part in this feature.
 - A rejected refresh token ends the session and is forgotten; an unreachable service keeps it.
 - Signing out forgets tokens and the cached account view only. Sessions, projects, drafts
   and settings are never touched; the per-account device id survives sign-out.
-- The account cache is non-secret, validated on read and trusted for seven days offline.
-- Organizations are an extension point: `organizations` is always empty and the UI renders
-  nothing for an empty list. No team features.
-- Feedback carries only the typed message, kind, rating and, if ticked, version/OS context.
-- Support tickets carry only what the user typed (subject, category, message); a failed or
-  rate-limited send keeps the draft. Announcements are fetched only while signed in, never while
-  offline, and a dismissal is remembered per id on this computer.
-- No request carries session content, prompts, code, paths or project names.
+- The account cache is non-secret, validated on read, trusted seven days offline.
+- `organizations` is always empty and the UI renders nothing for it. No team features.
+- Feedback carries only the typed message, kind, rating and, if ticked, version/OS context. A ticked
+  "Attach diagnostic logs" adds a linked report after the receipt (feature-diagnostics).
+- Support tickets carry only what the user typed; a failed send keeps the draft. Announcements
+  are fetched only while signed in; a dismissal is remembered per id on this computer.
+- No request carries session content, prompts, code, paths or project names. Exception: the consented
+  diagnostic report (feature-diagnostics).
 - Anonymous statistics are off until the user says yes. The choice is `{ choice: on | off | null, decidedAt }`
   (`null` = never asked; the old boolean key migrates: true is yes, false is not asked). Every user
   is asked once: first-run onboarding step, or `StatsConsentNotice` (non-blocking, at most three
@@ -69,16 +69,17 @@ messaging browser sign-in. Host and mobile have no part in this feature.
   selector, frontend `VITE_BYCODA_ACCOUNT_PORTAL_URL`); a missing value for the selected
   environment is `not_configured` and the app runs as a guest. Release builds ignore runtime
   endpoint overrides. Portal links come from `model/accountPortal.ts` and hide when unset.
-  The variable list lives in the account guide and `.env.example`.
+  Variables: account guide and `.env.example`.
 
 ## Focused checks
 
 - `cargo test --lib -- account:: oauth_loopback messaging::oauth` in `src-tauri/`.
 - `pnpm exec vitest run src/features/account`, `pnpm exec tsc-rs --noEmit --fast`.
-- Development without a backend: `VITE_BYCODA_ACCOUNT_MOCK=1`.
+- No backend: `VITE_BYCODA_ACCOUNT_MOCK=1`.
 
 ## References
 
 - User behavior: [account guide](../../../docs/guides/account.md).
+- Owner decisions: [decisions](references/decisions.md).
 - Shared sign-in primitives and the messaging flow: [feature-messaging](../feature-messaging/SKILL.md).
 - Structure rules: [code structure](../../../docs/reference/code-structure.md).

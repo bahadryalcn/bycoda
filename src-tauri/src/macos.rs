@@ -537,7 +537,7 @@ pub(crate) fn install_dock_menu(app: &AppHandle) {
 #[cfg(debug_assertions)]
 pub(crate) fn ensure_dev_bundle() {
     if let Err(err) = relaunch_from_dev_bundle() {
-        eprintln!("bycoda: macos dev bundle: {err}");
+        log::warn!("macos dev bundle: {err}");
     }
 }
 
@@ -625,7 +625,7 @@ fn relaunch_from_dev_bundle() -> Result<(), String> {
         .map(|status| status.success())
         .unwrap_or(false);
     if !signed {
-        eprintln!("bycoda: macos dev bundle: codesign failed; notifications stay off");
+        log::warn!("macos dev bundle: codesign failed; notifications stay off");
     }
 
     let err = Command::new(&bundled)

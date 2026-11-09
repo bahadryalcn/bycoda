@@ -1,0 +1,141 @@
+/* The "Create with AI" dialog: model choice, interview and preview. */
+.stage {
+  display: grid;
+  gap: 14px;
+  min-inline-size: 0;
+  line-height: 1.5;
+}
+.muted {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+}
+.note {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.4;
+  text-align: start;
+}
+
+/* Interview */
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.bubble {
+  max-inline-size: min(86%, 520px);
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-card);
+  font-size: var(--ui-font-body);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.bubble[data-role="assistant"] {
+  align-self: flex-start;
+  background: var(--ui-surface-muted);
+}
+.bubble[data-role="owner"] {
+  align-self: flex-end;
+  background: var(--ui-surface-selected);
+}
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.answer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.answer > :first-child {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* Preview */
+.summary {
+  margin: 0;
+  font-size: var(--ui-font-body);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.sectionTitle {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-weight: 500;
+}
+.fields {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--ui-pane-border);
+  border-radius: var(--ui-radius-card);
+}
+.field {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px;
+  min-inline-size: 0;
+}
+.field + .field {
+  border-block-start: 1px solid var(--ui-settings-hairline);
+}
+.change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  color: var(--ui-text-secondary);
+  overflow-wrap: anywhere;
+}
+.change strong {
+  color: inherit;
+  font-weight: 500;
+}
+.avatarSection {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.avatarResult {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-inline-size: 0;
+}
+.avatarPreview {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  inline-size: 56px;
+  block-size: 56px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--ui-surface-muted);
+}
+
+/* Shared by the picker in Settings and the preview. */
+.generator {
+  display: grid;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.generatorRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}

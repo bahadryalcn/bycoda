@@ -61,3 +61,8 @@
   font-size: var(--ui-font-secondary);
   line-height: 1.5;
 }
+
+/* "Set up with AI" sits above the manual fields, not stretched across the step. */
+.aiStart {
+  justify-self: start;
+}

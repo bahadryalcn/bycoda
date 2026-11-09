@@ -105,6 +105,17 @@ the day; quiet hours hold notifications. The model's effort can be changed direc
 without selecting the same model again. Additional explanations are available from
 the information controls beside each group.
 
+**Set up with AI** on the first setup step, and **Create with AI** in Room
+**Settings** → Personal, let a text model you choose interview you about how the
+assistant should look, sound and behave. Answer its questions, pick a quick answer
+or press **Finish and show preview** at any time. The preview lists every proposed
+setting next to its current value; untick what you do not want, edit the persona,
+and optionally draw an avatar with Codex or Gemini. **Apply to settings** only fills
+the form; nothing changes until you save. Jobs and autonomy, execution access,
+project supervision and computer use are never proposed and stay manual. The
+avatar picker also has **Generate with AI** for a portrait from your own
+description; generated avatars are stored on the Host.
+
 When you enable job execution without a chosen worker, the available default
 model becomes the worker selection. If no model is available, choose one before
 enabling job execution. Opening setup alone does not save a worker or start work.
@@ -276,6 +287,10 @@ requires confirmation; **Undo** restores the deleted entry.
 **Notes** shows searchable cards with a title, update time and content excerpt.
 Open a title to read or edit the complete note. **New note** keeps an unfinished
 draft when closed; deleting a card requires confirmation and retains recovery.
+Hover a note to show its checkbox, or use **Select all** above the list, then
+**Delete** removes every checked note after one confirmation. Each note keeps its
+own recovery copy, and one **Undo** restores them all. If a note changed or fails
+to delete, deletion stops there and later notes are kept.
 
 **Summarize today** in Notes shows the retained daily briefing and its generation
 time. It returns that day's saved artifact even if a later return briefing became

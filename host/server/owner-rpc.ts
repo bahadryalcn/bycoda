@@ -2,6 +2,7 @@ import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 import { handleAppearanceRpc } from "./rpc-appearance";
 import { handleAssistantRpc } from "./rpc-assistant";
+import { handleAssistantBuilderRpc } from "./rpc-assistant-builder";
 import { handleBrowserRpc } from "./rpc-browser";
 import { handleConversationRpc } from "./rpc-conversation";
 import { handleCrewsRpc } from "./rpc-crews";
@@ -27,6 +28,11 @@ import { handleSecretsOwnerRpc } from "./rpc-secrets";
 import { handleVoiceRpc } from "./rpc-voice";
 import { handlePushRpc } from "./rpc-push";
 import { handleWorkspacesRpc } from "./rpc-workspaces";
+import { handleDiagnosticsLogsRpc } from "./rpc-diagnostics";
+import { createLogger } from "../diagnostics/logger";
+
+const rpcLog = createLogger("host.rpc");
+const SLOW_RPC_MS = 2_000;
 import { handleWorktreesRpc } from "./rpc-worktrees";
 type Dependencies = Pick<
   ServerBindings,
@@ -49,6 +55,7 @@ type Dependencies = Pick<
   | "startWorkspaceActivity"
   | "desktop"
   | "desktopDelete"
+  | "remoteActivity"
   | "invalidateSessionCopies"
   | "sessionQueues"
   | "commandService"
@@ -337,6 +344,7 @@ const handlers: Record<
   "devServers.bridgeWrite": handleDevelopmentRpc,
   "devServers.bridgeClose": handleDevelopmentRpc,
   "resources.read": handleResourcesRpc,
+  "diagnostics.logs.read": handleDiagnosticsLogsRpc,
   "browser.setup": handleBrowserRpc,
   "browser.status": handleBrowserRpc,
   "browser.claim": handleBrowserRpc,
@@ -420,6 +428,9 @@ const handlers: Record<
   "appearance.themeSuggestions": handleAppearanceRpc,
   "appearance.backgroundSuggestions": handleAppearanceRpc,
   "appearance.backgroundImage": handleAppearanceRpc,
+  "assistant.builder.interview": handleAssistantBuilderRpc,
+  "assistant.builder.avatarGenerate": handleAssistantBuilderRpc,
+  "assistant.builder.avatarRead": handleAssistantBuilderRpc,
   "providers.desktop.read": handleProvidersRpc,
   "providers.desktop.patch": handleProvidersRpc,
   "providers.desktop.status": handleProvidersRpc,
@@ -586,5 +597,20 @@ export async function dispatchOwnerRpc(
   const handler =
     typeof method === "string" && Object.hasOwn(handlers, method) ? handlers[method] : undefined;
   if (!handler) throw new Error("Unsupported host method");
-  await handler(dependencies, request);
+  const startedAt = performance.now();
+  try {
+    await handler(dependencies, request);
+  } catch (error) {
+    // Method and error identity only; params and results can hold prompts or credentials.
+    const code = (error as { code?: unknown } | null)?.code;
+    rpcLog.warn("handler failed", {
+      method: String(method),
+      error: error instanceof Error ? error.name : "UnknownError",
+      code: typeof code === "string" || typeof code === "number" ? code : undefined,
+      ms: Math.round(performance.now() - startedAt),
+    });
+    throw error;
+  }
+  const ms = Math.round(performance.now() - startedAt);
+  if (ms >= SLOW_RPC_MS) rpcLog.warn("slow call", { method: String(method), ms });
 }

@@ -358,7 +358,7 @@ impl RecoveryBarrier {
         let mut pending = self.lock();
         while blocks(&pending, session, cwds) {
             let Some(remaining) = deadline.checked_duration_since(std::time::Instant::now()) else {
-                eprintln!(
+                log::warn!(
                     "Checkpoint recovery for session {session} is still pending after {timeout:?}; continuing"
                 );
                 return;
@@ -413,9 +413,9 @@ impl RecoveryPlan {
             }));
             match outcome {
                 Ok(Ok(())) => {}
-                Ok(Err(error)) => eprintln!("Interrupted checkpoint could not settle: {error}"),
+                Ok(Err(error)) => log::error!("Interrupted checkpoint could not settle: {error}"),
                 Err(_) => {
-                    eprintln!("Interrupted checkpoint recovery panicked for session {session}")
+                    log::error!("Interrupted checkpoint recovery panicked for session {session}")
                 }
             }
             // Released only after settlement, so a waiter never sees "still recording".
@@ -962,7 +962,7 @@ impl CheckpointStore {
                 .filter_map(|p| match String::from_utf8(p.to_vec()) {
                     Ok(path) => Some(path),
                     Err(_) => {
-                        eprintln!(
+                        log::warn!(
                             "Checkpoint skipped a changed path that is not valid UTF-8 for session {session_id}"
                         );
                         None
@@ -1128,7 +1128,7 @@ impl CheckpointStore {
                 }
                 Ok(Some(turn)) => plan.settled.push((session, turn)),
                 Ok(None) => {}
-                Err(error) => eprintln!(
+                Err(error) => log::warn!(
                     "Checkpoint record for session {session} is unreadable and was not recovered: {error}"
                 ),
             }
@@ -1255,10 +1255,7 @@ impl CheckpointStore {
                 }
                 Ok(false) => false,
                 Err(error) => {
-                    eprintln!(
-                        "[checkpoint] budget eviction of {} failed: {error}",
-                        entry.session
-                    );
+                    log::warn!("budget eviction of {} failed: {error}", entry.session);
                     false
                 }
             }
@@ -1296,8 +1293,8 @@ impl CheckpointStore {
             }
         }
         if total > max_bytes {
-            eprintln!(
-                "[checkpoint] store is {} MiB, over its {} MiB budget; recent or active sessions are kept",
+            log::warn!(
+                "store is {} MiB, over its {} MiB budget; recent or active sessions are kept",
                 total >> 20,
                 max_bytes >> 20
             );
@@ -1452,8 +1449,8 @@ pub async fn session_checkpoint_begin_turn(
         );
         match result {
             Err(error) if error.contains(CHECKPOINT_BUSY) => {
-                eprintln!(
-                    "[checkpoint] begin skipped for turn {turn_id}: checkpoint busy for over {}s; file history is unavailable for this message",
+                log::warn!(
+                    "begin skipped for turn {turn_id}: checkpoint busy for over {}s; file history is unavailable for this message",
                     BEGIN_GATE_WAIT.as_secs()
                 );
                 Ok(())

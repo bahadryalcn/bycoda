@@ -4,6 +4,7 @@ import { skillInvocationTokens } from "../../src/features/skills/model/skillToke
 import { LeaseHeldError } from "../../src/features/sync/model/runLease";
 import { AttachmentOwnership } from "../attachments/attachment-ownership";
 import { DesktopDelete } from "../desktop/desktopDelete";
+import { RemoteActivityFeed } from "../desktop/remoteActivity";
 import { type DesktopSessionMeta } from "../desktop/desktopSessions";
 import { SessionQueues } from "../sessions/session-queue";
 import { AdoptedChanges } from "../workspaces/adoptedChanges";
@@ -27,6 +28,9 @@ export async function createSessionsRuntime(
     },
     get desktopDelete() {
       return desktopDelete;
+    },
+    get remoteActivity() {
+      return remoteActivity;
     },
     get sessionQueues() {
       return sessionQueues;
@@ -89,6 +93,7 @@ export async function createSessionsRuntime(
         }
       : await dependencies.desktop.localSessionReferenceAsync(id);
   const desktopDelete = new DesktopDelete();
+  const remoteActivity = new RemoteActivityFeed();
   const sessionQueues = new SessionQueues(dependencies.engine.store.db);
   const writerTransfers = new Set<string>();
   const withRetiredDesktopWriters = async <T>(id: string, run: () => Promise<T>): Promise<T> => {
@@ -221,6 +226,7 @@ export async function createSessionsRuntime(
     inHost,
     localSessionReference,
     desktopDelete,
+    remoteActivity,
     sessionQueues,
     writerTransfers,
     withRetiredDesktopWriters,

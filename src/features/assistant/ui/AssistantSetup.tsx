@@ -8,6 +8,7 @@ import { InlineError } from "../../../shared/ui/InlineError";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { TextareaField } from "../../../shared/ui/TextareaField";
 import { Progress } from "../../../shared/ui/Progress";
+import { Sparkles } from "../../../shared/ui/icons";
 import { loadVoicePersona } from "../../voice/model/voicePersona";
 import { VoiceSetupSteps } from "../../voice/ui/VoiceSetupSteps";
 import { assistantRequest, useAssistantSnapshot } from "../model/assistantClient";
@@ -25,6 +26,7 @@ import {
 } from "../../../integrations/harness/core/availability";
 import { AssistantKeepAwakeStatus } from "./AssistantKeepAwakeStatus";
 import { AssistantProfileFields } from "./AssistantProfileFields";
+import { AssistantBuilderDialog } from "./builder/AssistantBuilderDialog";
 import { RUNTIME_MODE_LABEL } from "../../sessions/public/session";
 import styles from "./AssistantSetup.module.css";
 
@@ -112,6 +114,7 @@ export function AssistantSetup({
     liveEnvironment = useRef(environmentId);
   liveEnvironment.current = environmentId;
   const [error, setError] = useState("");
+  const [builderOpen, setBuilderOpen] = useState(false);
   const [verified, setVerified] = useState<Record<string, boolean>>({});
   const steps = voice ? [0, 1, 2, 3, 4, 5, 6, 7, 8, 9] : [0, 6, 8, 9];
   useEffect(() => {
@@ -377,6 +380,16 @@ export function AssistantSetup({
             <div className={styles.content}>
               <p className={styles.intro}>{t(intros[step])}</p>
               {step === 0 && (
+                <Button
+                  type="button"
+                  className={styles.aiStart}
+                  startIcon={<Sparkles className="icon-sm" />}
+                  onClick={() => setBuilderOpen(true)}
+                >
+                  {t("Set up with AI")}
+                </Button>
+              )}
+              {step === 0 && (
                 <div className={styles.grid}>
                   <AssistantProfileFields section="identity" value={patch} onChange={update} />
                 </div>
@@ -496,6 +509,13 @@ export function AssistantSetup({
           </>
         )}
       </div>
+      {builderOpen && (
+        <AssistantBuilderDialog
+          current={patch}
+          onClose={() => setBuilderOpen(false)}
+          onApply={update}
+        />
+      )}
     </Modal>
   );
 }

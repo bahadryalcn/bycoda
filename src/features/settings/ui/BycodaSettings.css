@@ -434,6 +434,14 @@
   align-items: stretch;
   gap: 8px;
 }
+/* In a column the 100% basis would mean the row's height and squeeze the feedback below its
+   content (the crew preview then overlapped the label and picker); size it by content instead. */
+.settings-row[data-stacked] > .settings-row-feedback {
+  flex-basis: auto;
+  /* A definite width: flex sizes the height before stretching, and width-contained content
+     (scenes, cards) would otherwise be measured at its narrow intrinsic width. */
+  inline-size: 100%;
+}
 .settings-row[data-stacked] > .settings-row-control {
   min-inline-size: 0;
   max-inline-size: 100%;
@@ -494,6 +502,12 @@
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
+  }
+  /* Column rows only: a lone switch keeps its row, where 100% still wraps feedback below. */
+  .settings-row:not(:has(> .settings-row-control > [role="switch"]:only-child))
+    > .settings-row-feedback {
+    flex-basis: auto;
+    inline-size: 100%;
   }
   .settings-row-control {
     min-inline-size: 0;

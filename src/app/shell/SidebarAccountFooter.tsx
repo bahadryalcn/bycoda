@@ -2,14 +2,15 @@ import { AccountMenu, useAccount } from "../../features/account";
 import { useAssistantPresence } from "../../features/assistant/hooks/useAssistantPresence";
 import { AssistantPresenceIndicator } from "../../features/assistant/ui/AssistantPresenceIndicator";
 import { useKeybindingShortcut } from "../../features/settings/model/useKeybindingShortcut";
+import { VoiceLauncherSlot } from "../../features/voice/ui/companion/voiceLauncherSlot";
 import { useT } from "../../shared/i18n";
 import { Button } from "../../shared/ui/Button";
 import { Settings } from "../../shared/ui/icons";
 import { SidebarUpdateFooter } from "./SidebarUpdate";
 
 /**
- * Bottom of the sidebar: account (avatar with availability dot) and Settings on the left, the
- * update icon (only while an update waits) on the right. Feedback and the GitHub project links live
+ * Bottom of the sidebar: account (avatar with availability dot), Settings and the docked voice
+ * companion on the left, the update icon (only while an update waits) on the right. Feedback and the GitHub project links live
  * in the account menu and Settings. `compact` stacks account, Settings and the update icon for the
  * narrow rail.
  */
@@ -65,6 +66,7 @@ export function SidebarAccountFooter({
       >
         {account}
         {settings}
+        <VoiceLauncherSlot compact />
         <SidebarUpdateFooter icon />
       </div>
     );
@@ -76,6 +78,7 @@ export function SidebarAccountFooter({
       <div className="flex min-w-0 items-center gap-1">
         {account}
         {settings}
+        <VoiceLauncherSlot />
       </div>
       <div className="flex min-w-0 items-center gap-1">
         <SidebarUpdateFooter icon />

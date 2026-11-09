@@ -3,21 +3,21 @@ import { isApprovalOccurrenceId } from "../../../shared/model/approvalOccurrence
 import type { DesktopProjectDirectory } from "./protocol";
 import type { NativeControlTurnReceipt } from "../../../integrations/harness/core/controlTurn";
 import {
-  isRemoteJiraOperation,
-  type RemoteJiraOperation,
-} from "../../inbox/model/jiraBoardProtocol";
-import {
   REMOTE_INBOX_VERSION,
-  REMOTE_INBOX_PROVIDERS,
-  nativeInboxCommand,
   safeInboxError,
   type DesktopInboxJob,
   type DesktopInboxPayload,
-  type DesktopInboxReply,
-  type RemoteInboxOperation,
-  type RemoteInboxList,
-  type RemoteInboxQuery,
-} from "../../inbox/model/remoteInbox";
+} from "../../inbox/public/remoteInbox";
+import { executeDesktopInboxOperation, type DesktopInboxRunner } from "./desktopInboxOperation";
+import {
+  noteCommandActivity,
+  noteInboxJobActivity,
+  noteTakenOver,
+  applyActivityFeed,
+  type DesktopActivityFeed,
+} from "./desktopLiveActivity";
+
+export { executeDesktopInboxOperation, type DesktopInboxRunner };
 
 export const DESKTOP_LIVE_CAPABILITY = "sessions.desktopLive";
 export const DESKTOP_LIVE_MS = 1_500;
@@ -54,6 +54,8 @@ export type DesktopLivePayload = {
   queueSeq?: number;
   /** The last adopted-session change cursor this desktop saw (`adopted.seq`). */
   adoptedSeq?: number;
+  /** The last remote-activity cursor this desktop saw (`activity.seq`). */
+  activitySeq?: number;
   /** The shared queues this desktop holds the drain lease of; the beat keeps them alive. `blocked`: it cannot send them now (a sync conflict). */
   queueLeases?: { sessionId: string; epoch: number; blocked?: boolean }[];
   /** The conversations this window runs a turn of under a run lease; the beat keeps them alive. */
@@ -65,7 +67,7 @@ export type DesktopLivePayload = {
 export type DesktopLiveResult = {
   projectDirectoryRevision?: string;
   deletions?: {
-    jobs: { id: string; sessionId: string; cwd: string }[];
+    jobs: { id: string; sessionId: string; cwd: string; requestedBy?: string }[];
     acked: string[];
   };
   commands?: DesktopLiveCommand[];
@@ -75,81 +77,13 @@ export type DesktopLiveResult = {
   queues?: { seq: number; ids: string[]; reset?: boolean };
   /** Adopted sessions whose host copy moved since `adoptedSeq`; `reset` when that cannot be told. */
   adopted?: { seq: number; ids: string[]; reset?: boolean };
+  /** What other devices did through the Host since `activitySeq`; untrusted. */
+  activity?: DesktopActivityFeed;
   /** Per queue in `queueLeases`: the extended lease, or `null` when it was lost. */
   queueLeases?: Record<string, { holder: string; epoch: number; expiresAt: number } | null>;
   /** Per conversation in `runLeases`: the lease kept, or `null` when another side runs it now. */
   runLeases?: Record<string, { holder: string; epoch: number; expiresAt: number } | null>;
 };
-export type DesktopInboxRunner = {
-  invoke: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
-  list: (projects: { path: string }[], query: RemoteInboxQuery) => Promise<RemoteInboxList>;
-  results: Map<string, DesktopInboxReply>;
-  running: Set<string>;
-  onNotesChanged?: () => void | Promise<void>;
-  jira?: (operation: RemoteJiraOperation, deadline?: number) => Promise<unknown>;
-};
-
-/** Executes only existing inbox contracts; auth/config/shell commands are absent. */
-export async function executeDesktopInboxOperation(
-  operation: RemoteInboxOperation,
-  runner: Pick<DesktopInboxRunner, "invoke" | "list" | "jira">,
-  deadline?: number,
-): Promise<unknown> {
-  if (isRemoteJiraOperation(operation)) {
-    if (!runner.jira) throw new Error("Update the desktop for scoped Jira board access");
-    return runner.jira(operation, deadline);
-  }
-  if (operation.action === "review") {
-    if (
-      !Number.isSafeInteger(deadline) ||
-      Number(deadline) <= Date.now() ||
-      Number(deadline) > Date.now() + 120_000
-    )
-      throw new Error(
-        "The desktop review approval deadline is missing or expired. Update the host and review again.",
-      );
-    return runner.invoke("desktop_inbox_review", { operation, deadline });
-  }
-  if (operation.action === "providers") {
-    const commands = {
-      github: "git_github_status",
-      gitlab: "gitlab_status",
-      azuredevops: "azure_devops_status",
-      linear: "linear_status",
-      jira: "jira_status",
-    };
-    return Promise.all(
-      REMOTE_INBOX_PROVIDERS.map(async (provider) => {
-        try {
-          const status = (await runner.invoke(commands[provider])) as {
-            connected?: boolean;
-          };
-          return { provider, connected: status?.connected === true };
-        } catch (error) {
-          return { provider, connected: false, error: safeInboxError(error) };
-        }
-      }),
-    );
-  }
-  if (operation.action === "list") {
-    const value = await runner.list(operation.projects, operation.query);
-    return {
-      ...value,
-      errors: Object.fromEntries(
-        Object.entries(value.errors).map(([provider, error]) => [provider, safeInboxError(error)]),
-      ),
-    };
-  }
-  if (
-    !["details", "thread", "comment", "pr-action", "review-context", "review"].includes(
-      operation.action,
-    )
-  )
-    throw new Error("Unsupported desktop inbox operation.");
-  const { command, args } = nativeInboxCommand(operation);
-  return runner.invoke(command, args);
-}
-
 export type DesktopLiveCommand = {
   id: string;
   sessionId: string;
@@ -160,12 +94,15 @@ export type DesktopLiveCommand = {
   reply?: UserQuestionReply;
   pageToken?: string;
   turnReceipt?: NativeControlTurnReceipt;
+  /** Name of the device that asked, when the Host knows it. */
+  requestedBy?: string;
 };
 export type DesktopControlGuard = (() => boolean) & { stopOrchestration?: () => Promise<void> };
 
 export type DesktopLiveHandlers = {
   retireWriter?: (sessionId: string) => Promise<void>;
-  delete?: (sessionId: string, cwd: string) => Promise<void>;
+  /** `requestedBy`: the name of the device that asked, when the Host knows it. */
+  delete?: (sessionId: string, cwd: string, requestedBy?: string) => Promise<void>;
   stop: (sessionId: string, current?: DesktopControlGuard) => void;
   captureApproval?: (
     session: Session,
@@ -334,6 +271,7 @@ function dispatchDesktopLiveCommand(
     if (!session.busy) return "stale";
     if (current) handlers.stop(session.id, current);
     else handlers.stop(session.id);
+    noteCommandActivity(command, session.cwd);
     return "applied";
   }
   if (id === undefined || id === null || !Number.isFinite(Number(id))) return "stale";
@@ -372,16 +310,20 @@ function dispatchDesktopLiveCommand(
     try {
       handlers.approve(session.id, requestId, command.decision, source.token);
     } catch (error) {
-      if (handlers.approvalDispatchStarted(source.token)) return "applied";
-      throw error;
+      if (!handlers.approvalDispatchStarted(source.token)) throw error;
+      noteCommandActivity(command, session.cwd);
+      return "applied";
     }
-    return handlers.approvalDispatchStarted(source.token) ? "applied" : "held";
+    if (!handlers.approvalDispatchStarted(source.token)) return "held";
+    noteCommandActivity(command, session.cwd);
+    return "applied";
   }
   if (command.type === "answer") {
     if (!command.reply) return "stale";
     if (String(session.pendingQuestion?.requestId) !== String(requestId)) return "stale";
     if (current) handlers.answer(session.id, requestId, command.reply, current);
     else handlers.answer(session.id, requestId, command.reply);
+    noteCommandActivity(command, session.cwd);
     return "applied";
   }
   return "stale";
@@ -393,6 +335,7 @@ export type DesktopLiveBeat = {
   notesRevision?: number;
   queueSeq?: number;
   adoptedSeq?: number;
+  activitySeq?: number;
   directoryFingerprint?: string;
   directorySequence?: number;
   directoryAck?: string;
@@ -545,6 +488,7 @@ export async function runDesktopLiveTick(deps: {
     ...(acked.length > 0 ? { acked } : {}),
     ...(deps.beat?.queueSeq !== undefined ? { queueSeq: deps.beat.queueSeq } : {}),
     ...(deps.beat?.adoptedSeq !== undefined ? { adoptedSeq: deps.beat.adoptedSeq } : {}),
+    ...(deps.beat?.activitySeq !== undefined ? { activitySeq: deps.beat.activitySeq } : {}),
     ...(heldLeases.length ? { queueLeases: heldLeases } : {}),
     ...(heldRuns.length ? { runLeases: heldRuns } : {}),
     ...(deps.inbox
@@ -576,8 +520,11 @@ export async function runDesktopLiveTick(deps: {
   // A run lease the host took back: another computer runs this conversation now,
   // so this window stops its turn instead of writing next to it.
   if (result?.runLeases && deps.runLeases)
-    for (const sessionId of deps.runLeases.answered(result.runLeases))
+    for (const sessionId of deps.runLeases.answered(result.runLeases)) {
+      const running = deps.sessions().find((session) => session.id === sessionId);
       deps.handlers.stop(sessionId);
+      if (running?.busy) noteTakenOver(running.cwd);
+    }
   if (deps.deletions && deps.handlers.delete) {
     const runner = deps.deletions;
     for (const id of result?.deletions?.acked ?? []) runner.results.delete(id);
@@ -592,7 +539,13 @@ export async function runDesktopLiveTick(deps: {
       if (runner.running.has(job.id) || runner.results.has(job.id)) continue;
       runner.running.add(job.id);
       void Promise.resolve()
-        .then(() => deps.handlers.delete!(job.sessionId, job.cwd))
+        .then(() =>
+          deps.handlers.delete!(
+            job.sessionId,
+            job.cwd,
+            typeof job.requestedBy === "string" ? job.requestedBy : undefined,
+          ),
+        )
         .then(() => runner.results.set(job.id, { id: job.id }))
         .catch((error) =>
           runner.results.set(job.id, {
@@ -619,18 +572,14 @@ export async function runDesktopLiveTick(deps: {
       // while native inbox work runs; never repeat a claimed send.
       void Promise.resolve()
         .then(() => executeDesktopInboxOperation(job.operation, runner, job.deadline))
-        .then((value) =>
-          runner.results.set(job.id, {
-            id: job.id,
-            result: jsonSafe(value ?? null),
-          }),
-        )
-        .catch((error) =>
-          runner.results.set(job.id, {
-            id: job.id,
-            error: safeInboxError(error),
-          }),
-        )
+        .then((value) => {
+          runner.results.set(job.id, { id: job.id, result: jsonSafe(value ?? null) });
+          noteInboxJobActivity(job, true);
+        })
+        .catch((error) => {
+          runner.results.set(job.id, { id: job.id, error: safeInboxError(error) });
+          noteInboxJobActivity(job, false);
+        })
         .finally(() => {
           runner.running.delete(job.id);
           while (runner.results.size > 64)
@@ -667,6 +616,7 @@ export async function runDesktopLiveTick(deps: {
     });
     if (deps.beat) deps.beat.adoptedSeq = adopted.seq;
   }
+  if (deps.beat) applyActivityFeed(result?.activity, deps.beat);
   for (const id of acked) deps.unacked.delete(id);
   const commands = Array.isArray(result?.commands) ? result.commands : [];
   for (const command of commands) {

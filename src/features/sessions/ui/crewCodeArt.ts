@@ -5,6 +5,9 @@ export const CODE_WIDTH = 760;
 /** The crew's floor frame is 320 units tall; the bycoda sign hangs in the CREW_TOP units above it. */
 export const CREW_TOP = 70;
 export const CODE_HEIGHT = 320 + CREW_TOP;
+/** The hanging bycoda sign (classic crew), in scene units from the top of the canvas. */
+export const SIGN_TOP = 14;
+export const SIGN_HEIGHT = 58;
 const SAMPLE_SCALE = 3;
 export type TeaPose = "idle" | "sip-low" | "sip-lift" | "sip-high" | "sip";
 /** Standing lifts the figure this many units; a stomp adds at most STAND_JUMP. Seats 2 and 3 (y=275) keep a few units spare. */
@@ -2277,8 +2280,8 @@ export function loadCrewSignLogo(): Promise<void> {
 function drawSign(c: CanvasRenderingContext2D, time: number) {
   const cx = CODE_WIDTH / 2,
     w = 236,
-    h = 58,
-    top = 14,
+    h = SIGN_HEIGHT,
+    top = SIGN_TOP,
     x0 = cx - w / 2;
   c.save();
   c.translate(cx, 0);

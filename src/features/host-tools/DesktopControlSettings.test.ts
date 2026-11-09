@@ -126,6 +126,16 @@ it("reports unsaved options and pending saves to its parent", async () => {
   expect(report).toHaveBeenLastCalledWith({ dirty: false, pending: false });
   expect(container.textContent).toContain("Computer controls saved.");
 });
+it("does not hold the settings dialog open while the helper prepares on the Host", async () => {
+  mock.helper.mockResolvedValue({ phase: "preparing", stage: "building" });
+  const report = vi.fn();
+  await act(async () =>
+    root.render(createElement(DesktopControlSettings, { onDraftStateChange: report })),
+  );
+  await act(async () => container.querySelector<HTMLButtonElement>('[role="switch"]')!.click());
+  expect(container.textContent).toContain("Preparing helper…");
+  expect(report).toHaveBeenLastCalledWith({ dirty: true, pending: false });
+});
 it("keeps emergency Stop available while a settings save is pending", async () => {
   mock.request.mockResolvedValueOnce({
     ...state,

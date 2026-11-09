@@ -61,6 +61,7 @@ export type HostDispatchContext = {
   exposeQueueAttachments?: HostDomainContext["exposeQueueAttachments"];
   retargetTask?: HostDomainContext["retargetTask"];
   devServerAccess?: HostDomainContext["devServerAccess"];
+  requesterName?: HostDomainContext["requesterName"];
   workspaceOwner?: HostDomainContext["workspaceOwner"];
   nativeServices?: HostDomainContext["nativeServices"];
   nativeDevices?: HostDomainContext["nativeDevices"];
@@ -203,6 +204,7 @@ export function createHostDispatcher(services: HostServices) {
         exposeQueueAttachments: context.exposeQueueAttachments,
         retargetTask: context.retargetTask,
         devServerAccess: context.devServerAccess,
+        requesterName: context.requesterName,
         workspaceOwner: context.workspaceOwner,
         nativeServices: context.nativeServices,
         nativeDevices: context.nativeDevices,

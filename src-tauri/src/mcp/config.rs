@@ -77,7 +77,7 @@ pub(super) fn publish_new_config(
 ) -> std::io::Result<()> {
     std::fs::hard_link(temp, target)?;
     if let Err(error) = cleanup(temp) {
-        eprintln!(
+        log::warn!(
             "MCP config saved; temporary cleanup failed at {}: {error}",
             temp.display()
         );
@@ -128,7 +128,7 @@ pub(super) fn publish_config(temp: &Path, target: &Path, existed: bool) -> std::
             )));
         }
         if let Err(error) = std::fs::remove_file(&backup_path) {
-            eprintln!(
+            log::warn!(
                 "MCP config saved; backup cleanup failed at {}: {error}",
                 backup_path.display()
             );

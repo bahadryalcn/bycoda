@@ -701,3 +701,22 @@ export async function deleteRemotePageCache(key: RemotePageCacheKey): Promise<vo
     /* best-effort cleanup */
   }
 }
+
+/** Drops the cached pages of a conversation a `sessions.delete` request removed. */
+export function forgetDeletedRemotePage(
+  environmentId: string | undefined,
+  method: string,
+  params: unknown,
+): void {
+  if (
+    method === "sessions.delete" &&
+    environmentId &&
+    params &&
+    typeof params === "object" &&
+    "sessionId" in params &&
+    typeof params.sessionId === "string"
+  )
+    void deleteRemotePageCache({ environmentId, sessionId: params.sessionId }).catch((error) =>
+      console.warn("Deleted conversation page cache retained:", error),
+    );
+}

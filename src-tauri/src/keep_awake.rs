@@ -556,7 +556,7 @@ mod platform {
                 }
             };
             if let Err(error) = result {
-                eprintln!("keep-awake window cleanup: {error}");
+                log::warn!("keep-awake window cleanup: {error}");
             }
         }
 
@@ -566,7 +566,7 @@ mod platform {
                 Err(poisoned) => poisoned.into_inner().release_all(),
             };
             if let Err(error) = result {
-                eprintln!("keep-awake shutdown cleanup: {error}");
+                log::warn!("keep-awake shutdown cleanup: {error}");
             }
         }
     }

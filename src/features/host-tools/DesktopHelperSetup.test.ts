@@ -4,7 +4,7 @@ import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const mock = vi.hoisted(() => ({ request: vi.fn() }));
 vi.mock("./desktopControlClient", () => ({ desktopHelperRequest: mock.request }));
-import { DesktopHelperSetup } from "./DesktopHelperSetup";
+import { DesktopHelperSetup, isEarlierBundledHelper } from "./DesktopHelperSetup";
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>, container: HTMLDivElement;
 const helper = {
@@ -69,6 +69,20 @@ it("does not prepare again when the helper is already prepared and applies it on
   const use = await render({ autoPrepare: true });
   expect(prepares()).toBe(0);
   expect(use).toHaveBeenCalledExactlyOnceWith(helper);
+});
+it("replaces a bundled helper path left behind by an earlier runtime version", async () => {
+  const bundled = {
+    ...helper,
+    binaryPath: String.raw`C:\Users\o\.bycoda-host\runtime\0.7.7-win32-x64-b\agent-desktop\agent-desktop.exe`,
+  };
+  const stale = bundled.binaryPath.replace("0.7.7-win32-x64-b", "0.7.2-win32-x64-package-a");
+  mock.request.mockResolvedValue({ phase: "ready", helper: bundled });
+  const use = await render({ autoPrepare: true, selectedPath: stale });
+  expect(use).toHaveBeenCalledExactlyOnceWith(bundled);
+  expect(isEarlierBundledHelper(bundled.binaryPath, bundled.binaryPath)).toBe(false);
+  expect(isEarlierBundledHelper(String.raw`C:\custom\agent-desktop.exe`, bundled.binaryPath)).toBe(
+    false,
+  );
 });
 it("leaves a custom helper selection alone during automatic preparation", async () => {
   mock.request.mockResolvedValue({ phase: "ready", helper });

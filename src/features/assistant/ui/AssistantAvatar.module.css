@@ -34,3 +34,13 @@
   border-radius: var(--radius-pill);
   object-fit: cover;
 }
+.generate {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.generateTitle {
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}

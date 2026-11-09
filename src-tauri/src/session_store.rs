@@ -345,7 +345,7 @@ fn queue_search_indexing(app: &AppHandle, delay: std::time::Duration) {
                 .search_background_queued
                 .store(false, Ordering::Release);
         }
-        eprintln!("session search index thread: {error}");
+        log::warn!("session search index thread: {error}");
     }
 }
 

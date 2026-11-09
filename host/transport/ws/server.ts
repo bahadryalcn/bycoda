@@ -35,7 +35,7 @@ import { effectFailureDelivery } from "./effect-failure-delivery";
 import { HostReadWorkBudget } from "../read-budget";
 import { HostBulkError, hostBulkDependencies, type HostBulkTransfers } from "../http/bulk";
 import { HostStreamError, type HostSubscriptionHub } from "./subscriptions";
-import { dispatchErrorCode, rejectUpgrade, waitFor } from "./server-helpers";
+import { dispatchErrorCode, principalCapabilities, rejectUpgrade, waitFor } from "./server-helpers";
 
 export const HOST_WS_READ_CAPABILITY = "transport.ws.read.v2";
 const READ_METHODS = ["environment.describe", "projects.list"] as const;
@@ -47,6 +47,7 @@ export type HostWsPrincipal = {
   exposeQueueAttachments?: HostDispatchContext["exposeQueueAttachments"];
   retargetTask?: HostDispatchContext["retargetTask"];
   devServerAccess?: HostDispatchContext["devServerAccess"];
+  requesterName?: HostDispatchContext["requesterName"];
   workspaceOwner?: HostDispatchContext["workspaceOwner"];
   nativeServices?: HostDispatchContext["nativeServices"];
   nativeDevices?: HostDispatchContext["nativeDevices"];
@@ -427,13 +428,7 @@ export function attachHostWebSocketTransport(options: HostWebSocketOptions) {
               controller.signal.aborted
                 ? Promise.reject(new HostDispatchError("cancelled", "Host work admission closed."))
                 : track(work),
-            exposeQueueAttachments: peer.principal.exposeQueueAttachments,
-            retargetTask: peer.principal.retargetTask,
-            devServerAccess: peer.principal.devServerAccess,
-            workspaceOwner: peer.principal.workspaceOwner,
-            nativeServices: peer.principal.nativeServices,
-            nativeDevices: peer.principal.nativeDevices,
-            nativeDelivery: peer.principal.nativeDelivery,
+            ...principalCapabilities(peer.principal),
             retainResultAuthority: (check) => {
               resultAuthorities.push(check);
               if (lease) options.bulk!.retainAuthority(lease, check);

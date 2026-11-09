@@ -20,6 +20,9 @@ features own their mutations, retained data, drafts and uncertain outcomes.
 - `src/features/connections/model/remoteHealth.ts`, `remoteReconnect.ts` and
   `remoteConnection.ts`: actual health and recovery; display grace grants no
   execution authority.
+- `src/features/sessions/model/remoteActivityNotice.ts` and
+  `host/desktop/remoteActivity.ts`: remote activity notices and the Host
+  feed carried on the desktop heartbeat as `activity`.
 - `src/app/App.tsx`, `src/app/shell/Sidebar.tsx`,
   `src/features/crews/ui/CrewSessions.tsx`: common owner and direct consumers.
 
@@ -48,6 +51,11 @@ features own their mutations, retained data, drafts and uncertain outcomes.
 - A Host capacity refusal is a not-sent `RPC_WS_OVERLOAD`, classified
   `temporary`. Reads retry it quietly through `model/useQuietRetry.ts` and report
   it only after the last retry; it never resends a write.
+- Every remote-device action that changes what another machine's screen shows
+  records a remote activity notice. The Host resolves the requesting device
+  name from the paired-device list; a device's own actions never notify itself.
+- Remote activity notices are informational: they never gate sends, replay
+  mutations or stand in for connection recovery.
 - Retain loaded content and drafts. Never-loaded content is waiting/unknown,
   not verified empty. Missing log/build evidence is unknown, not healthy.
 - Use existing Alert, Button and LoadingText controls and semantic theme roles.

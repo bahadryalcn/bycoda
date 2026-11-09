@@ -344,8 +344,8 @@ export function commandSucceeds(
   });
 }
 
-/** 45 s at the 200 ms poll below. */
-const START_WAIT_ATTEMPTS = 225;
+/** 180 s at the 200 ms poll below. */
+const START_WAIT_ATTEMPTS = 900;
 
 export async function installService(
   options: ServiceOptions,
@@ -435,8 +435,9 @@ export async function installService(
   } else {
     throw new Error("bycoda Host supports Windows, Linux and macOS");
   }
-  // A large Host database and the native buffer git store make a cold start take 15 s or
-  // more; giving up earlier made the installer roll back a host that was about to listen.
+  // A large Host database and the native buffer git store make a cold start slow: the
+  // owner's host took about 90 s to listen (2026-11-09), and a 45 s wait made the local
+  // installer roll back a host that was about to listen, leaving its launcher half switched.
   for (let attempt = 0; attempt < START_WAIT_ATTEMPTS; attempt++) {
     try {
       return await connectionInfo(options.directory);

@@ -198,7 +198,8 @@ combined list does not make unrelated repositories share Git operations. The tim
 filter can narrow this window to Today; Clear restores Last 7 days. Remote rows
 come from available history and show a coverage note rather than claiming a full
 remote archive. Local pinning remains available; project-scoped archive/delete
-operations stay in the project view.
+operations stay in the project view. Deleting several remote conversations at once
+sends them together; the result appears on both computers.
 
 The sessions filter menu can show only conversations managed by your named
 assistant. It uses the Host's management record and combines with provider,

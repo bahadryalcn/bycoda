@@ -1,4 +1,13 @@
+import { useSyncExternalStore } from "react";
 import { Button } from "../../../shared/ui/Button";
+import { Switch } from "../../../shared/ui/Switch";
+import {
+  isPhoneConnectEnabled,
+  isSignedIn,
+  setPhoneConnectEnabled,
+  subscribePhoneConnect,
+  useAccountState,
+} from "../../account";
 import { t, useLocale } from "../../../shared/i18n";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Surface } from "../../../shared/ui/Surface";
@@ -16,6 +25,8 @@ export function PhoneConnectionPanel({
 }: PhoneConnectionPanelProps) {
   useLocale();
   const { state, coordinator } = usePhonePairing();
+  const signedIn = isSignedIn(useAccountState());
+  const accountConnect = useSyncExternalStore(subscribePhoneConnect, isPhoneConnectEnabled);
   const ordered = [...machines].sort(
     (a, b) => Number(isLocalSyncMachine(b)) - Number(isLocalSyncMachine(a)),
   );
@@ -48,6 +59,15 @@ export function PhoneConnectionPanel({
           {t("Connect your phone")}
         </Button>
       </div>
+      <Switch
+        checked={accountConnect && signedIn}
+        disabled={!signedIn}
+        onCheckedChange={setPhoneConnectEnabled}
+        label={t("Let my signed-in phones find this computer")}
+        description={t(
+          "Phones signed in to your account can ask to connect, and you approve each one here. Needs bycoda open and your account signed in; route addresses are stored in your account.",
+        )}
+      />
       {loaded && !loading && !machine ? (
         <InlineMessage
           tone="neutral"

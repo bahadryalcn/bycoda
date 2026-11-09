@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { hostBulkDependencies } from "../transport/http/bulk";
 import { attachHostWebSocketTransport } from "../transport/ws/server";
+import { requestingDeviceName } from "../desktop/remoteActivity";
+import { memoized } from "../desktop/requester-name";
 import type { ServerBindings } from "./bindings";
 export function createWebsocketRuntime(
   dependencies: Pick<
@@ -78,6 +80,7 @@ export function createWebsocketRuntime(
           id: createHash("sha256").update(token).digest("hex"),
           devServerAccess: (method, params, authorize) =>
             dependencies.devServerAccess.handle(method, params, token, authorize),
+          requesterName: memoized(() => requestingDeviceName(dependencies.engine.store, token)),
           nativeDevices: dependencies.nativeDevicesOwner(token),
           nativeDelivery: dependencies.nativeDeliveryOwner(token),
           nativeServices: dependencies.nativeServicesOwner(token),

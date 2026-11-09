@@ -353,7 +353,7 @@ impl ProcessOwner {
                     let retirement = Ok(());
                     #[cfg(windows)]
                     if let Some(error) = &signal_error {
-                        eprintln!("[harness] ignored process signal error: {}", error.message);
+                        log::warn!("ignored process signal error: {}", error.message);
                     }
                     #[cfg(not(windows))]
                     let result = result

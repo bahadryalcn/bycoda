@@ -1236,7 +1236,7 @@ describe("desktop deletion jobs", () => {
           finish = resolve;
         }),
     );
-    const job = { id: "delete-1", sessionId: "history", cwd: "/project" };
+    const job = { id: "delete-1", sessionId: "history", cwd: "/project", requestedBy: "Laptop" };
     const request = vi.fn().mockResolvedValue({ deletions: { jobs: [job], acked: [] } });
     const deletions = {
       results: new Map<string, { id: string; error?: string }>(),
@@ -1256,7 +1256,7 @@ describe("desktop deletion jobs", () => {
       handled: new Set<string>(),
     };
     await runDesktopLiveTick(deps);
-    expect(remove).toHaveBeenCalledWith("history", "/project");
+    expect(remove).toHaveBeenCalledWith("history", "/project", "Laptop");
     expect(deletions.results.size).toBe(0);
     await runDesktopLiveTick(deps);
     expect(remove).toHaveBeenCalledTimes(1);

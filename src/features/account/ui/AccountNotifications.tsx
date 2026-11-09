@@ -54,6 +54,8 @@ function eventLabel(event: NotificationEventKey): string {
       return t("Announcements");
     case "account.deletion_scheduled":
       return t("Account deletion scheduled");
+    case "account.phone_connect_approved":
+      return t("Phone connected to a computer");
   }
 }
 

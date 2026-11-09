@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { requestedByName, type DesktopCommand } from "./desktopCommand";
 import type { PreparedDesktop } from "../domains/commands/service";
 export type { PreparedDesktop } from "../domains/commands/service";
 import { isApprovalOccurrenceId } from "../../src/shared/model/approvalOccurrence";
@@ -35,19 +36,7 @@ export const DESKTOP_WRITER_STALE_MS = 60_000;
  */
 export const DESKTOP_STORED_RUNNING_MS = 75_000;
 
-export type DesktopCommand = {
-  id: string;
-  sessionId: string;
-  type: "cancel" | "approve" | "answer" | "retire-writer";
-  requestId?: number;
-  approvalOccurrenceId?: string;
-  runId?: string;
-  authorityGeneration?: number;
-  decision?: "allow" | "deny";
-  reply?: unknown;
-  pageToken?: string;
-  turnReceipt?: { version: 1; sessionId: string; turnId: string };
-};
+export type { DesktopCommand };
 
 type LiveSession = {
   clientId: string;
@@ -608,6 +597,7 @@ export class DesktopLive {
   /** Leaves a watcher's stop, approval or answer for the desktop to run. */
   async prepareDesktop(
     command: Extract<HostCommand, { type: "cancel" | "approve" | "answer" }>,
+    requester?: string,
   ): Promise<PreparedDesktop> {
     command = JSON.parse(JSON.stringify(command)) as typeof command;
     if (!WIRE_IDENTIFIER_PATTERN.test(command.commandId)) throw new Error("Invalid command ID");
@@ -673,6 +663,7 @@ export class DesktopLive {
       ...(command.type === "answer" ? { requestId: command.requestId, reply: command.reply } : {}),
       pageToken,
       turnReceipt: turn,
+      requestedBy: requestedByName(requester),
     };
     return Object.freeze({
       commandId: command.commandId,

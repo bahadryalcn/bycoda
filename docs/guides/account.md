@@ -41,6 +41,16 @@ Every computer and phone signed in to your account. This computer is marked. Ren
 by clicking its name. **Sign out** next to a device removes it from your account; it is signed
 out the next time it connects. Signing out this computer from here also signs it out locally.
 
+### Let phones find this computer
+
+In Settings → Connections → Connect your phone, **Let my signed-in phones find this computer**
+(off by default) stores this computer's name, its Host environment id and its phone route
+addresses (a private local-network address with its public key, and a Tailscale address) in
+your account so your signed-in phones can ask to connect. These are new stored data: route
+hints only, never sessions, prompts, code or credentials. The entry is removed when you turn the
+switch off or remove the device, and every connection still needs your approval on the computer
+([details](mobile-connections.md)).
+
 ## Activity on this computer
 
 Sessions, agent run time, active time and cost for today or this week on this computer, with
@@ -84,7 +94,9 @@ message of up to 2000 characters and optionally rate bycoda from 1 to 5. It work
 or install id). Tick **Include app version and system** to add the app version, platform,
 OS version and release channel; it is off by default and nothing else is ever attached. If
 sending fails or you hit the rate limit, your text stays in the form; after sending you see a
-reference number. In builds without the account platform the dialog offers **Open an issue
+reference number. **Attach diagnostic logs** (ticked by default only when you chose automatic
+sharing, see Diagnostic logs below) uploads redacted logs linked to the feedback after it was
+received; if only the logs fail, the thank-you screen says so. In builds without the account platform the dialog offers **Open an issue
 on GitHub** and the e-mail link instead.
 
 ## Security
@@ -95,7 +107,7 @@ security page of the account portal.
 
 ## Privacy and data
 
-Shows what bycoda stores about your account (devices, active-time days, notification items,
+Shows what bycoda stores about your account (devices, phone route hints if you turned on phone connect, active-time days, notification items,
 support requests, ready exports) and never your sessions, prompts, code or file names.
 **Export your data** opens your account page in the browser.
 
@@ -105,6 +117,23 @@ blocks your work (if you ignore it, it comes back on the next launch, three time
 and statistics stay off). When on, bycoda sends at most once a day a random install id, the
 app version, operating system, release channel and date, and nothing else. Without an account
 the same switch is in Settings → Privacy. Turning it off stops sending immediately.
+
+### Diagnostic logs
+
+**Share diagnostic logs** (Account → Privacy and data, and Settings → Privacy) has three
+choices: **Off**, **Ask me** (also what you get until you choose) and **Send automatically**.
+Logs are the app, Host and interface logs of this computer. They are redacted here before
+they leave it (secrets, tokens, e-mail addresses and your user name are removed) and again on
+the server, never include your conversations, prompts or code, and are kept 90 days.
+
+- After bycoda closed unexpectedly, **Ask me** shows a notice with **Send**, **Always send**
+  (switches to automatic) and **Don't send**. **Send automatically** uploads the crash report
+  silently and **Off** discards it.
+- In automatic mode bycoda also sends a report at most once every seven days.
+- Logs of connected remote computers (their bycoda Host) are included, redacted the same way.
+- **Send logs now** uploads a report once, with an optional note, whatever the choice is.
+- Signed in, reports are linked to your account; as a guest they carry no user, device or
+  install id. Without the account platform nothing can be sent.
 
 ## Account status
 

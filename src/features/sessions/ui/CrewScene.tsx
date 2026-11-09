@@ -3,13 +3,18 @@ import { valueHash } from "../../../shared/lib/valueHash";
 import { t, useT } from "../../../shared/i18n";
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { shouldRunLoop } from "../../../shared/lib/animationGate";
-import { useDecorativeMotionEnabled } from "../../settings/public/decorativeMotion";
+import {
+  useDecorativeMotionEnabled,
+  useWindowHasFocus,
+} from "../../settings/public/decorativeMotion";
 import {
   createCodeArtPainter,
   loadCrewSignLogo,
   CODE_WIDTH,
   CODE_HEIGHT,
   CREW_TOP,
+  SIGN_HEIGHT,
+  SIGN_TOP,
   type TeaPose,
 } from "./crewCodeArt";
 import {
@@ -81,6 +86,20 @@ type SeatLabel = {
 function labelHeight(stage: number, working: boolean, id: number): number {
   const seated = stage === 3 ? [196, 204, 214, 202, 202, 204][id % 6] : [90, 145, 200][stage];
   return seated + (working ? [20, 36, 48, 54][stage] : 0) + 8;
+}
+
+/** Gap kept between the classic sign's lower edge and any label, in scene units. */
+const SIGN_LABEL_GAP = 4;
+
+/**
+ * How far a label may rise above its anchor: its own height (-100%), but never past the sign.
+ * Labels are sized in CSS pixels while the scene scales, so the limit is expressed in `cqh` of
+ * the label layer (a size container covering the whole scene) and holds at every width.
+ */
+export function labelLift(anchorY: number, withSign: boolean): string {
+  if (!withSign) return "-100%";
+  const room = ((SIGN_TOP + SIGN_HEIGHT + SIGN_LABEL_GAP - anchorY) / CODE_HEIGHT) * 100;
+  return `max(-100%, ${room.toFixed(3)}cqh)`;
 }
 
 function roleText(role: CrewRole): string {
@@ -165,6 +184,7 @@ function CrewStage({
   const canvas = useRef<HTMLCanvasElement>(null);
   const startedAt = useRef<number | null>(null);
   const enabled = useDecorativeMotionEnabled();
+  const focused = useWindowHasFocus();
   const [running, setRunning] = useState(false);
   const frame = rigged
     ? variant === "background"
@@ -189,6 +209,7 @@ function CrewStage({
       setRunning(
         shouldRunLoop({
           enabled,
+          focused,
           documentHidden: document.hidden,
           visible: intersects,
           sized: element.clientWidth > 0 && element.clientHeight > 0,
@@ -214,7 +235,7 @@ function CrewStage({
       document.removeEventListener("visibilitychange", update);
       window.removeEventListener("resize", update);
     };
-  }, [enabled]);
+  }, [enabled, focused]);
   useEffect(() => {
     const surface = canvas.current;
     if (!surface) return;
@@ -460,6 +481,8 @@ function CrewStage({
                 style={{
                   insetInlineStart: `${(label.x / CODE_WIDTH) * 100}%`,
                   insetBlockStart: `${((label.y + CREW_TOP) / CODE_HEIGHT) * 100}%`,
+                  // Only the classic crew hangs the bycoda sign above the labels.
+                  transform: `translate(-50%, ${labelLift(label.y + CREW_TOP, !character)})`,
                   inlineSize: `${(label.width / CODE_WIDTH) * 100}%`,
                 }}
               >

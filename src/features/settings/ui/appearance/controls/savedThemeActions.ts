@@ -2,7 +2,7 @@ import { updateSessionListDisplay } from "../../../../sessions/public/sessionLis
 import type { AppearanceSnapshot } from "../../../model/appearanceSnapshot";
 import { captureAppearanceSnapshot } from "../../../model/appearanceSnapshot";
 import { ensureCurrentLibraryImage, listBackgroundLibrary } from "../../../model/backgroundLibrary";
-import { saveDecorativeMotionEnabled } from "../../../model/decorativeMotion";
+import { applyThemeDecorativeMotion } from "../../../model/decorativeMotion";
 import { saveInteractionTint } from "../../../model/interactionTint";
 import { saveLiveBackground, saveLiveBackgroundIntensity } from "../../../model/liveBackground";
 import {
@@ -39,9 +39,11 @@ export function applyAppearanceSnapshot(appearance: AppearanceSettings, look: Ap
   if (look.darkLightness !== undefined) appearance.onDarkLightness(look.darkLightness);
   if (look.accent !== undefined) appearance.onAccentColor(look.accent);
   if (look.preferences)
+    // Word wrap and chat width are Chat settings the owner keeps; a look never moves them.
     appearance.onPreferences({
       ...look.preferences,
       wordWrap: appearance.preferences.wordWrap,
+      chatWidth: appearance.preferences.chatWidth,
     });
   if (look.gradient) saveWorkspaceBackground(look.gradient, { replace: true });
   if (look.uiScale !== undefined) appearance.onUiScale(percent(look.uiScale));
@@ -75,7 +77,7 @@ export function applyAppearanceSnapshot(appearance: AppearanceSettings, look: Ap
     saveCrewTheme(motion.crewTheme);
     saveCrewSceneEnabled(motion.showCrew);
     saveCrewGrowthEnabled(motion.crewGrowth);
-    saveDecorativeMotionEnabled(motion.decorative);
+    applyThemeDecorativeMotion(motion.decorative);
     saveTabAnimationsEnabled(motion.tabAnimations);
   }
 }
