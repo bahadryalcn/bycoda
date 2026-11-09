@@ -1,5 +1,5 @@
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
-import { useId, useState, type MouseEventHandler } from "react";
+import { useId, useState } from "react";
 import { projectName } from "../../../shared/lib/paths";
 import { t } from "../../../shared/i18n";
 import { formatRelativeTime } from "../../../shared/i18n/format";
@@ -8,7 +8,7 @@ import { Button } from "../../../shared/ui/Button";
 import { InlineError } from "../../../shared/ui/InlineError";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { ChevronDown, ChevronUp, MoreHorizontal } from "../../../shared/ui/icons";
+import { ChevronDown, ChevronUp, FolderOpen, Pin, Trash2 } from "../../../shared/ui/icons";
 import type { ManagedWorkspace } from "../model/contracts";
 import { lifecycleLabel } from "../model/workspacePresentation";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
@@ -22,9 +22,11 @@ export function WorkspaceManagedRow({
   reviewDisabled,
   pinning,
   pinError,
-  menuOpen,
+  removing = false,
   onReview,
-  onMenu,
+  onReveal,
+  pin,
+  remove,
 }: {
   workspace: ManagedWorkspace;
   title: string;
@@ -35,9 +37,14 @@ export function WorkspaceManagedRow({
   reviewDisabled: boolean;
   pinning: boolean;
   pinError?: string;
-  menuOpen: boolean;
+  /** Removal of this workspace runs in the background. */
+  removing?: boolean;
   onReview: () => void;
-  onMenu: MouseEventHandler<HTMLButtonElement>;
+  onReveal: () => void;
+  /** Omit `disabledReason` when the toggle is available. */
+  pin: { disabledReason?: string; onToggle: () => void };
+  /** Delete the directory, review a blocked cleanup or retire the record of a missing folder. */
+  remove: { label: string; disabledReason?: string; onRemove: () => void };
 }) {
   const [open, setOpen] = useState(false);
   const detailsId = useId();
@@ -80,7 +87,8 @@ export function WorkspaceManagedRow({
           {workspace.directoryState === "removed" && (
             <Badge size="sm">{t("Directory removed")}</Badge>
           )}
-          {(workspace.directoryState === "pendingRemoval" ||
+          {(removing ||
+            workspace.directoryState === "pendingRemoval" ||
             workspace.directoryState === "removing") && (
             <Badge size="sm">{t("Removing directory…")}</Badge>
           )}
@@ -92,8 +100,47 @@ export function WorkspaceManagedRow({
         {pinError && <InlineError className="break-words">{pinError}</InlineError>}
       </div>
       <div className={`settings-collection-actions ${styles.actions}`}>
-        <Button size="sm" disabled={reviewDisabled} onClick={onReview}>
+        <Button size="sm" disabled={reviewDisabled || removing} onClick={onReview}>
           {t("Review changes")}
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          iconOnly
+          label={t("Reveal folder")}
+          disabled={missing || workspace.directoryState === "removed"}
+          disabledReason={t("This folder is not on disk.")}
+          onClick={onReveal}
+        >
+          <FolderOpen className="icon-sm" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          iconOnly
+          label={workspace.pinned ? t("Unpin workspace") : t("Pin workspace")}
+          tooltipDetails={[t("Pinned workspaces are never cleaned up automatically.")]}
+          pressed={workspace.pinned}
+          loading={pinning}
+          disabled={!!pin.disabledReason || removing}
+          disabledReason={pin.disabledReason}
+          onClick={pin.onToggle}
+        >
+          <Pin className="icon-sm" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          tone="danger"
+          iconOnly
+          label={remove.label}
+          disabled={!!remove.disabledReason || removing}
+          disabledReason={
+            removing ? t("Deletion is running in the background.") : remove.disabledReason
+          }
+          onClick={remove.onRemove}
+        >
+          <Trash2 className="icon-sm" />
         </Button>
         <Button
           size="sm"
@@ -105,18 +152,6 @@ export function WorkspaceManagedRow({
           onClick={() => setOpen((value) => !value)}
         >
           {open ? <ChevronUp className="icon-sm" /> : <ChevronDown className="icon-sm" />}
-        </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          iconOnly
-          label={t("More actions")}
-          loading={pinning}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          onClick={onMenu}
-        >
-          <MoreHorizontal className="icon-sm" />
         </Button>
       </div>
       {open && (

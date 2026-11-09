@@ -183,7 +183,9 @@ it("shows missing dependencies and locked credentials and never renders secret d
   expect(container.textContent).toContain("secure credential store is unavailable");
   expect(container.querySelector('input[type="password"]')).not.toBeNull();
   vi.mocked(remoteRequest).mockRejectedValueOnce(new Error("private-token-in-cli-error"));
-  await act(async () => button("Check again").click());
+  await act(async () =>
+    container.querySelector<HTMLButtonElement>('button[aria-label="Check again"]')!.click(),
+  );
   expect(container.textContent).not.toContain("private-token");
   expect(container.textContent).not.toContain("Copy URL");
   expect(container.textContent).toContain("selected computer could not be reached");
@@ -193,10 +195,7 @@ it("uses the existing owner-issued pairing ticket with the host tunnel endpoint"
   current.tunnels[0] = { ...info, target: "host", localUrl: "http://127.0.0.1:3776" };
   await render();
   await act(async () => button("Connect your phone").click());
-  const create = [...container.querySelectorAll('[role="dialog"] button')].find(
-    (entry) => entry.textContent === "Connect your phone",
-  ) as HTMLButtonElement;
-  await act(async () => create.click());
+  // The tunnel row already asked to connect a phone, so the dialog goes straight to the QR.
   expect(remoteRequest).toHaveBeenCalledWith("local", "mobile.pairing.create", {}, false, true);
   expect(container.querySelector('[role="dialog"]')?.textContent).not.toContain("Local network");
   expect(container.querySelector('[role="dialog"] svg title')?.textContent).toBe(
@@ -236,4 +235,17 @@ it("shows a dismissible notice after the Host repaired damaged tunnel state", as
 it("does not show the repair notice when the Host reports no repair", async () => {
   await render();
   expect(container.textContent).not.toContain("could not be recovered");
+});
+
+it("lists no empty-state line and one setup popover in the Sharing form", async () => {
+  current = { ...overview(), tunnels: [] };
+  await render();
+  expect(container.textContent).not.toContain("No tunnels on this computer.");
+  expect(container.querySelector('[aria-label="Tunnel status"]')).toBeNull();
+  expect(container.querySelector('[aria-label="Tunnel setup"]')).not.toBeNull();
+  expect(container.querySelector('[aria-label="Cloudflare"]')).toBeNull();
+  expect(
+    container.querySelectorAll("button[aria-label$=' setup'], button[aria-label='Tunnel setup']"),
+  ).toHaveLength(1);
+  expect(container.querySelector('button[aria-label="Check again"]')).not.toBeNull();
 });

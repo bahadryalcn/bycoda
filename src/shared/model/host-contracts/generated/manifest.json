@@ -967,6 +967,11 @@
               {
                 "additionalProperties": false,
                 "properties": {
+                  "features": {
+                    "items": { "enum": ["jobHolds", "jobStalled"], "type": "string" },
+                    "maxItems": 8,
+                    "type": "array"
+                  },
                   "limit": { "maximum": 100, "minimum": 1, "type": "integer" },
                   "op": { "const": "snapshot", "type": "string" }
                 },
@@ -977,6 +982,85 @@
                 "additionalProperties": false,
                 "properties": { "op": { "const": "profile.get", "type": "string" } },
                 "required": ["op"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": { "op": { "const": "models.pool.get", "type": "string" } },
+                "required": ["op"],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "expectedVersion": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "op": { "const": "models.pool.set", "type": "string" },
+                  "rows": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "harness": {
+                          "enum": [
+                            "codex",
+                            "claude",
+                            "cursor",
+                            "grok",
+                            "opencode",
+                            "pi",
+                            "omp",
+                            "fx",
+                            "hermes",
+                            "antigravity",
+                            "acp"
+                          ],
+                          "type": "string"
+                        },
+                        "id": { "type": "string" },
+                        "maxRunMinutes": { "maximum": 10080, "minimum": 1, "type": "integer" },
+                        "minRemainingPercent": { "maximum": 100, "minimum": 0, "type": "integer" },
+                        "model": { "type": "string" },
+                        "modelSettings": {
+                          "additionalProperties": { "type": "string" },
+                          "propertyNames": { "type": "string" },
+                          "type": "object"
+                        },
+                        "providerAccountId": { "type": "string" },
+                        "roles": {
+                          "items": {
+                            "enum": ["worker", "planning", "chief", "reply"],
+                            "type": "string"
+                          },
+                          "maxItems": 4,
+                          "minItems": 1,
+                          "type": "array"
+                        },
+                        "runtimeMode": {
+                          "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+                          "type": "string"
+                        },
+                        "unknownLimit": { "enum": ["use", "skip"], "type": "string" }
+                      },
+                      "required": [
+                        "id",
+                        "harness",
+                        "model",
+                        "modelSettings",
+                        "runtimeMode",
+                        "maxRunMinutes",
+                        "roles",
+                        "unknownLimit"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 20,
+                    "type": "array"
+                  }
+                },
+                "required": ["op", "expectedVersion", "rows"],
                 "type": "object"
               },
               {
@@ -2670,6 +2754,76 @@
             "maxItems": 100,
             "type": "array"
           },
+          "modelPool": {
+            "additionalProperties": false,
+            "properties": {
+              "derived": { "type": "boolean" },
+              "rows": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "harness": {
+                      "enum": [
+                        "codex",
+                        "claude",
+                        "cursor",
+                        "grok",
+                        "opencode",
+                        "pi",
+                        "omp",
+                        "fx",
+                        "hermes",
+                        "antigravity",
+                        "acp"
+                      ],
+                      "type": "string"
+                    },
+                    "id": { "type": "string" },
+                    "maxRunMinutes": { "maximum": 10080, "minimum": 1, "type": "integer" },
+                    "minRemainingPercent": { "maximum": 100, "minimum": 0, "type": "integer" },
+                    "model": { "type": "string" },
+                    "modelSettings": {
+                      "additionalProperties": { "type": "string" },
+                      "propertyNames": { "type": "string" },
+                      "type": "object"
+                    },
+                    "providerAccountId": { "type": "string" },
+                    "roles": {
+                      "items": {
+                        "enum": ["worker", "planning", "chief", "reply"],
+                        "type": "string"
+                      },
+                      "maxItems": 4,
+                      "minItems": 1,
+                      "type": "array"
+                    },
+                    "runtimeMode": {
+                      "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+                      "type": "string"
+                    },
+                    "unknownLimit": { "enum": ["use", "skip"], "type": "string" }
+                  },
+                  "required": [
+                    "id",
+                    "harness",
+                    "model",
+                    "modelSettings",
+                    "runtimeMode",
+                    "maxRunMinutes",
+                    "roles",
+                    "unknownLimit"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 20,
+                "type": "array"
+              },
+              "updatedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "version": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" }
+            },
+            "required": ["rows", "version", "updatedAt", "derived"],
+            "type": "object"
+          },
           "narrationClaimed": { "type": "boolean" },
           "narrationEvents": {
             "items": {
@@ -3427,6 +3581,14 @@
                 "enum": ["present", "idle", "away", "dnd", "unknown"],
                 "type": "string"
               },
+              "jobHolds": {
+                "additionalProperties": {
+                  "enum": ["report", "hours", "budget", "paused", "noExecution", "disabled"],
+                  "type": "string"
+                },
+                "propertyNames": { "type": "string" },
+                "type": "object"
+              },
               "jobs": {
                 "items": {
                   "anyOf": [
@@ -3987,6 +4149,7 @@
                         "job.done",
                         "job.waiting",
                         "job.failed",
+                        "job.stalled",
                         "budget.exhausted",
                         "owner.question",
                         "task.done",
@@ -50467,6 +50630,11 @@
                     {
                       "additionalProperties": false,
                       "properties": {
+                        "features": {
+                          "items": { "enum": ["jobHolds", "jobStalled"], "type": "string" },
+                          "maxItems": 8,
+                          "type": "array"
+                        },
                         "limit": { "maximum": 100, "minimum": 1, "type": "integer" },
                         "op": { "const": "snapshot", "type": "string" }
                       },
@@ -50477,6 +50645,93 @@
                       "additionalProperties": false,
                       "properties": { "op": { "const": "profile.get", "type": "string" } },
                       "required": ["op"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": { "op": { "const": "models.pool.get", "type": "string" } },
+                      "required": ["op"],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "expectedVersion": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "op": { "const": "models.pool.set", "type": "string" },
+                        "rows": {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "harness": {
+                                "enum": [
+                                  "codex",
+                                  "claude",
+                                  "cursor",
+                                  "grok",
+                                  "opencode",
+                                  "pi",
+                                  "omp",
+                                  "fx",
+                                  "hermes",
+                                  "antigravity",
+                                  "acp"
+                                ],
+                                "type": "string"
+                              },
+                              "id": { "type": "string" },
+                              "maxRunMinutes": {
+                                "maximum": 10080,
+                                "minimum": 1,
+                                "type": "integer"
+                              },
+                              "minRemainingPercent": {
+                                "maximum": 100,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "model": { "type": "string" },
+                              "modelSettings": {
+                                "additionalProperties": { "type": "string" },
+                                "propertyNames": { "type": "string" },
+                                "type": "object"
+                              },
+                              "providerAccountId": { "type": "string" },
+                              "roles": {
+                                "items": {
+                                  "enum": ["worker", "planning", "chief", "reply"],
+                                  "type": "string"
+                                },
+                                "maxItems": 4,
+                                "minItems": 1,
+                                "type": "array"
+                              },
+                              "runtimeMode": {
+                                "enum": ["supervised", "auto-accept-edits", "auto", "full-access"],
+                                "type": "string"
+                              },
+                              "unknownLimit": { "enum": ["use", "skip"], "type": "string" }
+                            },
+                            "required": [
+                              "id",
+                              "harness",
+                              "model",
+                              "modelSettings",
+                              "runtimeMode",
+                              "maxRunMinutes",
+                              "roles",
+                              "unknownLimit"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 20,
+                          "type": "array"
+                        }
+                      },
+                      "required": ["op", "expectedVersion", "rows"],
                       "type": "object"
                     },
                     {
@@ -67004,5 +67259,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "00e3fdbff552069d356bf979a5feea56a4261542b965ce4890475b288ea2d412"
+  "schemaHash": "d681c5731dc2c423367255a5d09f11f6e77139261f71ff6e872695347965e8a1"
 }

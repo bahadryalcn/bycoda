@@ -85,7 +85,8 @@ import {
   assistantActiveHours,
   validAssistantPolicy,
 } from "../../src/shared/model/assistantPolicy";
-import { assistantProfileDefaults } from "./profile-defaults";
+import { readAssistantProfile } from "./profile-defaults";
+import { assistantModelPoolOp } from "./models/assistant-model-pool";
 import type { HostAssistantJobDeletion } from "./work/assistant-job-deletion";
 import type { AsyncHostNotes } from "../host-notes-async";
 import {
@@ -97,6 +98,8 @@ import { parseChiefReadRequests, type ChiefReadRequest } from "./chief/assistant
 import { assertAssistantGoalProjects } from "./work/assistant-job-scope";
 import { appendAssistantDailyNote } from "./work/assistant-daily-note";
 import * as jobLog from "./work/assistant-job-activity";
+import { readAssistantTrash } from "./work/assistant-trash";
+import { applySnapshotFeatures, assistantJobNotificationBody } from "./work/assistant-job-holds";
 import { GOAL_RESENT, hasErrorCode, resubmitGoal } from "./work/assistant-goal-recovery";
 import type { HostGoal } from "../../src/features/tasks/model/hostGoals";
 import type { HostTask } from "../../src/features/tasks/model/hostTasks";
@@ -145,6 +148,7 @@ export type AssistantGoalStatus = {
   usageTurns?: AssistantUsageTurn[];
   usageIncomplete?: boolean;
   lastActivityAt?: number;
+  waitingReason?: "error" | "planApproval" | "owner";
   runningChildren?: boolean;
   sessionQuestions?: AssistantQuestionStatus[];
 };
@@ -1139,6 +1143,7 @@ export class HostAssistant {
         let urgent =
           value.kind === "budget.exhausted" ||
           value.kind === "job.failed" ||
+          value.kind === "job.stalled" ||
           value.kind === "task.needsInput";
         if (value.kind === "job.waiting" && value.jobId) {
           let pending = approvals.get(value.jobId);
@@ -2719,16 +2724,8 @@ export class HostAssistant {
     if (principal !== "owner")
       throw new Error("This action requires the owner's direct authority.");
   }
-  private async profile(): Promise<AssistantProfile> {
-    const row = await this.repository.get<AssistantProfile>("profile", "profile");
-    if (!row) return { ...assistantProfileDefaults };
-    return Object.fromEntries(
-      Object.keys(assistantProfileDefaults).map((key) => [
-        key,
-        row[key as keyof AssistantProfile] ??
-          assistantProfileDefaults[key as keyof AssistantProfile],
-      ]),
-    ) as AssistantProfile;
+  private profile(): Promise<AssistantProfile> {
+    return readAssistantProfile(this.repository);
   }
   private async runtime<T>(id: string, fallback: T): Promise<T> {
     return ((await this.repository.get<Runtime>("runtime", id))?.value as T) ?? fallback;
@@ -3441,7 +3438,19 @@ export class HostAssistant {
       case "projects.list":
         return { projects: ((await this.ports.listProjects?.()) ?? []).slice(0, 1000) };
       case "snapshot":
-        return { snapshot: await this.snapshot(input.limit ?? 50) };
+        return {
+          snapshot: applySnapshotFeatures(await this.snapshot(input.limit ?? 50), input.features, {
+            emergencyStop: this.emergencyStop,
+            canCreateGoal: !!this.ports.createGoal,
+          }),
+        };
+      case "models.pool.get":
+      case "models.pool.set":
+        return assistantModelPoolOp(input, principal, {
+          repository: this.repository,
+          profile: () => this.profile(),
+          now: () => this.now(),
+        });
       case "profile.get":
         // Carries no project data, so no Room disclosure capture runs for it.
         return { profile: await this.profile() };
@@ -6712,12 +6721,20 @@ export class HostAssistant {
               { jobId: job.id },
             );
             if (stateChanged) events.push(event);
-            if (nextStatus !== job.status && ["done", "waiting", "failed"].includes(nextStatus))
+            if (
+              nextStatus !== job.status &&
+              ["done", "waiting", "failed", "stalled"].includes(nextStatus)
+            )
               await this.queueNotification({
                 id: event.id,
                 kind: `job.${nextStatus}` as PendingNotification["kind"],
                 title: job.title,
-                body: summary || `Job is ${nextStatus}.`,
+                body: assistantJobNotificationBody(
+                  nextStatus,
+                  summary,
+                  status.waitingReason,
+                  profile.stallMinutes,
+                ),
                 createdAt: this.now(),
                 jobId: job.id,
                 projectId: job.projectId,
@@ -6792,60 +6809,16 @@ export class HostAssistant {
   }
   private async snapshot(limit: number): Promise<AssistantSnapshot> {
     const profile = await this.profile();
-    const trash: AssistantSnapshot["trash"] = [];
-    for (const kind of ["jobs", "memory", "activity", "messages", "notetrash"] as const) {
-      const rows = await this.store.db
-        .prepare(
-          `SELECT id,value,deleted_at FROM assistant_${kind} WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC LIMIT ?`,
-        )
-        .all(limit);
-      for (const row of rows) {
-        const value = JSON.parse(row.value);
-        let projectId: string | null | undefined, projectIds: string[] | undefined;
-        if (kind === "memory" || kind === "notetrash") {
-          projectId = null;
-          projectIds = [];
-        } else if (
-          kind === "jobs" &&
-          (typeof value.projectId === "string" ||
-            (value.kind === "quick" && value.projectId === null))
-        ) {
-          projectId = value.projectId;
-          projectIds = assistantJobProjectIds(value);
-        } else if (kind === "messages" && typeof value.threadId === "string") {
-          projectIds = (await this.messageProjectScope(value as AssistantMessage)).projectIds;
-          if (projectIds?.length === 0) projectId = null;
-          else if (projectIds?.length === 1) projectId = projectIds[0];
-        } else if (kind === "activity") {
-          if (typeof value.jobId === "string") {
-            const job = await this.repository.get<AssistantJob>("jobs", value.jobId, true);
-            if (job) {
-              projectId = job.projectId;
-              projectIds = assistantJobProjectIds(job);
-            }
-          } else if (typeof value.supervisionId === "string") {
-            projectId = (await this.ports.manual?.listAllForUsage())?.find(
-              (grant) => grant.id === value.supervisionId,
-            )?.source.projectId;
-            if (projectId) projectIds = [projectId];
-          }
-        }
-        const deletedTaskCount =
-          kind === "jobs"
-            ? await this.ports.jobDeletion?.deletedTaskCount(String(row.id))
-            : undefined;
-        trash.push({
-          id: `${kind}:${row.id}`,
-          kind,
-          ...(projectId === undefined ? {} : { projectId }),
-          ...(projectIds === undefined ? {} : { projectIds }),
-          ...(deletedTaskCount === undefined ? {} : { deletedTaskCount }),
-          title: String(value.title ?? value.text ?? value.summary ?? "").slice(0, 300),
-          deletedAt: row.deleted_at,
-          expiresAt: row.deleted_at + 7 * DAY,
-        });
-      }
-    }
+    const trash = await readAssistantTrash(
+      {
+        db: this.store.db,
+        repository: this.repository,
+        manual: this.ports.manual,
+        jobDeletion: this.ports.jobDeletion,
+        messageProjectScope: (message) => this.messageProjectScope(message),
+      },
+      limit,
+    );
     let notes: AssistantNote[] = [];
     let notesError: string | undefined;
     try {
@@ -6888,7 +6861,7 @@ export class HostAssistant {
       activity: await this.repository.list("activity", limit),
       notes,
       ...(notesError ? { notesError } : {}),
-      trash: trash.sort((a, b) => b.deletedAt - a.deletedAt).slice(0, limit),
+      trash,
       presence: await this.runtime("presence", {
         state: "present",
         since: this.now(),

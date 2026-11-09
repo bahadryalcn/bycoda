@@ -765,3 +765,29 @@ it("holds a durable creation reservation when the storage guard pauses materiali
     revision: 1,
   });
 }, 60_000);
+
+it("retires a creation blocked before Git ran and keeps one that created its branch", async () => {
+  const f = await fixture();
+  const paused = createManagedWorkspaceRegistry(f.store, f.policy, {
+    beforeMaterialize: async () => {
+      throw new Error("Workspace storage admission is paused or unknown");
+    },
+  });
+  await expect(paused.prepare(f.request)).rejects.toThrow("storage admission");
+  const [workspace] = await f.store.managedWorkspaces();
+  expect(await f.registry.abandonUnmaterializedCreate(workspace.id, false)).toMatchObject({
+    id: workspace.id,
+  });
+  f.git("branch", workspace.branchRef.replace("refs/heads/", ""), "main");
+  expect(await f.registry.abandonUnmaterializedCreate(workspace.id, true)).toBeNull();
+  f.git("branch", "-D", workspace.branchRef.replace("refs/heads/", ""));
+  const retired = await f.registry.abandonUnmaterializedCreate(workspace.id, true);
+  expect(retired).toMatchObject({
+    state: "abandoned",
+    directoryState: "removed",
+    revision: workspace.revision + 1,
+  });
+  expect(await f.store.workspaceHasPendingOperations(workspace.id)).toBe(false);
+  expect(existsSync(workspace.path)).toBe(false);
+  expect(await f.registry.abandonUnmaterializedCreate(workspace.id, false)).toBeNull();
+});

@@ -1,2 +1,5 @@
+# Keep the working tree LF so format checks do not depend on core.autocrlf.
+* text=auto eol=lf
+
 # Shell scripts are also embedded in the desktop app and sent to Unix hosts.
 *.sh text eol=lf

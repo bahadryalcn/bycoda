@@ -121,7 +121,7 @@ async function pickOption(trigger: HTMLButtonElement, label: string) {
   await act(async () => option.click());
 }
 
-async function render() {
+async function render(props: { active?: boolean } = {}) {
   await act(async () =>
     root.render(
       createElement(PhoneConnectionPanel, {
@@ -129,41 +129,56 @@ async function render() {
         loaded: true,
         loading: false,
         onRefresh: vi.fn(),
+        ...props,
       }),
     ),
   );
 }
 
-it("opens on the local computer without enabling networking and supports the saved SSH target", async () => {
+it("checks access on the local computer when shown, never enabling networking, and supports the saved SSH target", async () => {
   await render();
-  expect(api.access).not.toHaveBeenCalled();
-  expect(api.enable).not.toHaveBeenCalled();
-  await click("Connect your phone");
+  expect(api.access).toHaveBeenCalledTimes(1);
   expect(api.access).toHaveBeenCalledWith(local, "lan");
   expect(api.enable).not.toHaveBeenCalled();
+  expect(api.create).not.toHaveBeenCalled();
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
   const trigger = container.querySelector<HTMLButtonElement>('[aria-label^="Computer:"]')!;
   expect(trigger.textContent).toContain("This computer");
   await pickOption(trigger, remote.name);
   expect(api.access).toHaveBeenLastCalledWith(remote, "lan");
-  await click("Connect your phone", container.querySelector('[role="dialog"]')!);
+  await click("Show QR code");
+  expect(api.create).toHaveBeenCalledTimes(1);
   expect(api.create).toHaveBeenCalledWith(remote);
+  expect(container.querySelector('[role="dialog"]')).toBeNull();
   expect(container.querySelector("svg title")?.textContent).toBe(
     "Scan this code in bycoda on your phone",
   );
   expect(container.textContent).not.toContain("a".repeat(43));
   expect(container.textContent).not.toContain("127.0.0.1");
-  await act(async () =>
-    container.querySelector<HTMLButtonElement>('[aria-label="Close"]')!.click(),
-  );
-  expect(api.cancel).toHaveBeenCalledWith(remote, "pair-remote");
-  expect(container.querySelector('[role="dialog"]')).toBeNull();
+});
+
+it("releases a live code when the tab is left and opens again when it returns", async () => {
+  await render();
+  await click("Show QR code");
+  expect(api.create).toHaveBeenCalledWith(local);
+  await render({ active: false });
+  expect(api.cancel).toHaveBeenCalledWith(local, "pair-local");
+  expect(container.querySelector("svg title")).toBeNull();
+  expect(api.access).toHaveBeenCalledTimes(1);
+  await render({ active: true });
+  expect(api.access).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("Show QR code");
+});
+
+it("does not check access while the tab is inactive", async () => {
+  await render({ active: false });
+  expect(api.access).not.toHaveBeenCalled();
 });
 
 it("requires the explicit secure connection button before creating the QR", async () => {
   api.access.mockResolvedValue({ state: "setup-required" });
   await render();
-  await click("Connect your phone");
-  await click("Tailscale");
+  await click("Anywhere (Tailscale)");
   expect(api.enable).not.toHaveBeenCalled();
   expect(api.create).not.toHaveBeenCalled();
   await click("Enable secure connection");
@@ -185,9 +200,8 @@ it("enables LAN without Tailscale, selects an interface and closes the QR when d
     lanKey: "ab".repeat(32),
   });
   await render();
-  await click("Connect your phone");
   expect(container.textContent).not.toContain("Install Tailscale");
-  expect(container.textContent).toContain("Tailscale is not required");
+  expect(container.textContent).toContain("same Wi-Fi or local network");
   await pickOption(
     container.querySelector<HTMLButtonElement>('[aria-label^="Local network address:"]')!,
     "10.0.0.5",
@@ -204,4 +218,15 @@ it("enables LAN without Tailscale, selects an interface and closes the QR when d
   expect(api.disable).toHaveBeenCalledWith(local);
   expect(api.cancel).toHaveBeenCalledWith(local, "pair-local");
   expect(container.querySelector("svg title")).toBeNull();
+});
+
+it("offers to pair another phone inline once a phone is connected", async () => {
+  api.status.mockResolvedValue({ state: "paired" });
+  await render();
+  await click("Show QR code");
+  expect(container.textContent).toContain("Your phone is connected");
+  expect(container.textContent).not.toContain("Done");
+  await click("Pair another phone");
+  expect(api.access).toHaveBeenCalledTimes(2);
+  expect(container.textContent).toContain("Show QR code");
 });

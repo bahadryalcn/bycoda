@@ -341,6 +341,10 @@ export function createHostDispatcher(services: HostServices) {
             },
           );
         }
+        // Clients see the generic read failure; keep the cause diagnosable in the Host log.
+        hostWarnDeduped(
+          `Host read ${method} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+        );
         throw new HostDispatchError("service-unavailable", "Host read could not be completed.", {
           cause,
         });

@@ -47,7 +47,7 @@ export interface WorkspaceFooterProps {
   // Approval toasts
   pendingNotifications: ApprovalProps["notices"];
   hiddenApprovalToasts: ApprovalProps["popupNotices"];
-  onOpenApprovalSession: ApprovalProps["onFocusSession"];
+  onOpenApprovalSession: (sessionId: string) => void | Promise<boolean>;
   onApproval: ApprovalProps["onApproval"];
 }
 
@@ -145,7 +145,7 @@ function WorkspaceFooterComponent({
           notices={pendingNotifications}
           popupNotices={hiddenApprovalToasts}
           onFocusSession={onOpenApprovalSession}
-          onOpenHistorySession={(sessionId) => onOpenApprovalSession(sessionId)}
+          onOpenHistorySession={onOpenApprovalSession}
           onOpenSettings={() => openSettings("notifications", "notifications")}
           onApproval={onApproval}
         />

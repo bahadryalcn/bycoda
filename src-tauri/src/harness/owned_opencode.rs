@@ -613,7 +613,6 @@ fn start_service(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub(crate) async fn owned_opencode_catalog_acquire(
     window: tauri::Window,
     command: String,
@@ -820,7 +819,6 @@ pub(crate) async fn owned_opencode_utility_acquire(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub(crate) async fn owned_opencode_acquire(
     app: tauri::AppHandle,
     window: tauri::Window,

@@ -463,7 +463,6 @@ fn prepare_inputs(semantic_key: &str, route: &str, method: &str, raw: &str) -> R
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)] // Crate-private transaction helper; each route input is a separate identity check.
 fn prepare_tx(
     conn: &Connection,
     store: &SessionStore,

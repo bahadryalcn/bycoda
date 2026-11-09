@@ -244,6 +244,28 @@ it("uses actual current-run output for job stalls and treats missing activity as
   record.runActivity = { runId: "current", lastActivityAt: now + 60000 };
   expect((await ports.goalStatus!(goal.id)).lastActivityAt).toBeUndefined();
 });
+it("explains why a goal is waiting: error, plan approval or owner input", async () => {
+  const f = fixture(),
+    ports = assistantExecutionPorts(f.store, f.goals, f.tasks);
+  Object.assign(f.tasks, {
+    list: vi.fn(async () => []),
+    hasRunningGoalWork: vi.fn(async () => false),
+  });
+  const status = async (goal: Record<string, unknown>) => {
+    f.list.mockResolvedValue([{ id: "g", taskIds: [], projectIds: ["p1"], ...goal }] as never);
+    return ports.goalStatus!("g");
+  };
+  expect(await status({ status: "blocked", error: "boom" })).toMatchObject({
+    status: "waiting",
+    waitingReason: "error",
+    summary: "boom",
+  });
+  expect(await status({ status: "awaiting-approval" })).toMatchObject({
+    status: "waiting",
+    waitingReason: "planApproval",
+  });
+  expect(await status({ status: "running" })).not.toHaveProperty("waitingReason");
+});
 it("keeps mid-turn question answers/steers on the original usage key without prematurely settling or double charging", async () => {
   const f = fixture(),
     goal = { id: "assistant-j1", status: "running", taskIds: ["task"], projectIds: ["p1"] };

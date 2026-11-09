@@ -54,7 +54,12 @@ function request(id = 71) {
   ];
   return value;
 }
-async function mount(value: Session) {
+async function mount(
+  value: Session,
+  open: Partial<
+    Pick<Parameters<typeof useApprovalActions>[0], "focusOpenSession" | "onSelectHistorySession">
+  > = {},
+) {
   const sessionsRef = { current: [value] };
   const element = document.createElement("div");
   document.body.append(element);
@@ -66,6 +71,7 @@ async function mount(value: Session) {
       setInspectedWorkerId: vi.fn(),
       focusOpenSession: () => true,
       onSelectHistorySession: async () => {},
+      ...open,
     });
     const current = sessionsRef.current[0];
     const intent = useApprovalIntent(current, current.blocks[0]?.approval?.requestId ?? -1);
@@ -89,6 +95,25 @@ async function mount(value: Session) {
     rerender: () => act(async () => root.render(createElement(Fixture))),
   };
 }
+
+it("reports whether a request's conversation opened instead of assuming it did", async () => {
+  const select = vi.fn(async (): Promise<unknown> => false);
+  const fixture = await mount(request(), {
+    focusOpenSession: () => false,
+    onSelectHistorySession: select,
+  });
+  // A deleted conversation: nothing to focus and the history open found nothing.
+  expect(await fixture.actions.onOpenApprovalSession("deleted")).toBe(false);
+  expect(select).toHaveBeenCalledWith("deleted");
+  select.mockResolvedValueOnce(true);
+  expect(await fixture.actions.onOpenApprovalSession("closed")).toBe(true);
+  select.mockRejectedValueOnce(new Error("window focus is unavailable"));
+  const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+  expect(await fixture.actions.onOpenApprovalSession("closed")).toBe(false);
+  logged.mockRestore();
+  const open = await mount(request());
+  expect(await open.actions.onOpenApprovalSession("already-open")).toBe(true);
+});
 
 it("does not answer a question after the original turn guard changes", async () => {
   const value = request();

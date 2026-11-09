@@ -76,7 +76,6 @@ export function DesktopHelperSetup({
         reading = false;
       }
     };
-    // ast-grep-ignore: ts-void-promise-without-catch -- read() reports its own failures
     void read();
     const timer = setInterval(() => void read(), 2000);
     return () => {

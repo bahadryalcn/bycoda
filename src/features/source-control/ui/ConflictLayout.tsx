@@ -627,7 +627,7 @@ class SourceChoiceWidget extends WidgetType {
   ) {
     super();
   }
-  eq(other: SourceChoiceWidget) {
+  override eq(other: SourceChoiceWidget) {
     return other.id === this.id && other.side === this.side;
   }
   toDOM() {
@@ -658,7 +658,7 @@ class SourceChoiceWidget extends WidgetType {
     root.append(button);
     return root;
   }
-  ignoreEvent() {
+  override ignoreEvent() {
     return true;
   }
 }

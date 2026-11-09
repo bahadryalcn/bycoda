@@ -35,3 +35,11 @@ Date: 2026-11-09
 Owner: "we can't tell whether it saved ... Apply defaults to should be on a save bar that appears after a change, where I pick X, even a group or a workspace" (translated)
 
 Providers splits into Providers, Defaults, Models and Decision models tabs. Defaults edits are a pending change set; nothing is written until Save, and the save bar names the target (Global, a project, a group or a workspace) and reports saved or not saved. A group or workspace target copies the changed fields into each member project, including projects of nested workspaces; projects added later follow Global. Account overrides stay machine-wide. Provider list switches, model switches, CLI and account actions still save at once.
+
+## New models need no app release
+
+Date: 2026-11-10
+
+Owner: "we should support every model that comes after this too; we can't cut a release for that, I think our structure has a problem" (translated)
+
+The live CLI catalog is the source of truth for what a picker offers, and catalog probes run under the provider account new sessions use (a signed-out ambient profile lists only generic aliases). A version-gated fallback list is provisional: it never counts as a live catalog and never replaces one. Model-specific behaviour must generalize past its table: the Claude advisor table holds anchors only, and a release newer than every anchor of its family ranks just above that family's newest older anchor. Hand-maintained model tables are limited to legacy quirks and offline fallbacks.

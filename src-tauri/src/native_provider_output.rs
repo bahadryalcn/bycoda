@@ -1172,7 +1172,6 @@ impl NativeProviderOutputRegistry {
             None,
         )
     }
-    #[allow(clippy::too_many_arguments)] // Private actual construction plus bounded test-only adapter.
     fn begin_inner(
         &self,
         mut source: OutputSource,

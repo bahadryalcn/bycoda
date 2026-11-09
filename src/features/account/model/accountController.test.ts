@@ -201,6 +201,28 @@ describe("account controller", () => {
     expect(second.controller.getState()).toMatchObject({ phase: "signed-in", stale: false });
   });
 
+  it("revalidates a stale view on its own, at most once a minute", async () => {
+    const first = setup();
+    await first.controller.start();
+    first.setSignedIn(true);
+    await first.controller.signIn();
+
+    const second = setup({ signedIn: true, storage: Object.fromEntries(first.storage.data) });
+    second.goOffline();
+    await second.controller.start();
+    await second.controller.revalidate();
+    expect(second.controller.getState()).toMatchObject({ stale: true });
+    second.goOnline();
+    await second.controller.revalidate();
+    expect(second.controller.getState()).toMatchObject({ stale: true });
+    second.advance(60_000);
+    await second.controller.revalidate();
+    expect(second.controller.getState()).toMatchObject({ phase: "signed-in", stale: false });
+    const calls = second.requests.length;
+    await second.controller.revalidate();
+    expect(second.requests.length).toBe(calls);
+  });
+
   it("ignores a cache older than seven days", async () => {
     const stale = {
       [CACHE_KEY]: JSON.stringify({

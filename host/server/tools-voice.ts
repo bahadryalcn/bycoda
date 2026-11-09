@@ -5,15 +5,14 @@ import { isAssistantObservationAction } from "../assistant/observations/assistan
 import { isRoomNotebookAction } from "../assistant/room/assistant-room-notebook";
 import { isGlobalRuntimeRead } from "../conversation/conversation-management-runtime";
 import { isManagementAction } from "../conversation/conversation-management-tools";
-import { isRoomOnlyConversationAction } from "../conversation/conversation-tools";
 import { managedDiscoveryResult, managedMcpCatalog } from "../mcp/mcp-http";
 import { serializedResponse } from "../sync/sync-transfer";
 import { HostVoiceToolDisclosure } from "../voice/voice-tool-disclosure";
+import { voiceToolsForScope } from "../voice/voice-tool-scope";
 import {
   parseVoiceToolCall,
   prepareVoiceToolDispatch,
   validateVoiceToolList,
-  voiceToolCatalog,
 } from "../voice/voice-tools";
 import type { ServerBindings } from "./bindings";
 import type { HttpToolRequest } from "./http-tool-context";
@@ -83,12 +82,15 @@ export async function handleVoiceTools(
     }
     if (!(await dependencies.engine.store.authenticated(ownerToken)))
       throw new Error("Native owner authority revoked.");
-    const tools = voiceToolCatalog().filter(
-      (tool) =>
-        request.params.sessionId === undefined ||
-        tool.family !== "conversation" ||
-        !isRoomOnlyConversationAction(tool.action),
-    );
+    const tools = voiceToolsForScope({
+      ...(project ? { projectId: project.id } : {}),
+      ...(request.params.threadId === undefined
+        ? {}
+        : { threadId: String(request.params.threadId) }),
+      ...(request.params.sessionId === undefined
+        ? {}
+        : { sessionId: String(request.params.sessionId) }),
+    });
     request.response.end(JSON.stringify({ result: { tools } }));
     return true;
   }
@@ -422,7 +424,7 @@ export async function handleVoiceTools(
     else if (call.action === "tools.list")
       request.result = {
         environmentId: dependencies.engine.store.environmentId,
-        tools: voiceToolCatalog(),
+        tools: voiceToolsForScope({}),
       };
     else if (["tools.search", "tools.describe", "tools.status"].includes(call.action))
       request.result = managedDiscoveryResult(call.action, call.input, managedMcpCatalog());

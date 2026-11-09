@@ -184,7 +184,6 @@ export function DesktopControlSettings({
   );
   useEffect(() => {
     if (!refreshRef) return;
-    // ast-grep-ignore: ts-void-promise-without-catch -- perform() reports its own failures
     refreshRef.current = () => void perform("status");
   });
   useEffect(

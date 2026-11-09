@@ -122,12 +122,12 @@ Run `pnpm run format` to format supported source, configuration, and documentati
 files with Oxfmt, including the host. Use `pnpm run format:check`
 to check formatting without writing files, and `pnpm run lint` to run Oxlint.
 `pnpm run lint:fix` applies safe lint fixes. These commands respect Git ignore rules
-and exclude vendored code. Rust formatting uses `cargo fmt --all`.
+and exclude vendored code. Rust formatting uses `cargo fmt --all`. The repository
+is LF-only (`.gitattributes`); `docs/reference/ui-components.md` is generated and
+excluded from Oxfmt, so regenerate it with `pnpm check:ui-catalog --write`.
 
 Use Oxlint and Oxfmt for repository linting and formatting; do not add other
 linters or formatters as fallback development tools.
-
-The broader validation commands are:
 
 For daily iteration, `pnpm check:plan` previews affected CI gates and bounded
 adjacent checks; `pnpm check:changed` runs those local checks with explicit
@@ -137,7 +137,10 @@ main pushes exercise every required platform. See the
 [testing guide](docs/reference/testing.md) and [CI policy](.github/CI.md) for the
 single command/scope/evidence inventory.
 
+The broader validation commands are:
+
 ```sh
+pnpm run check:preflight
 pnpm run check:web
 pnpm run check:rust
 pnpm run test:host

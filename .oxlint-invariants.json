@@ -169,6 +169,9 @@
         "host/tasks/task-budgets.ts",
         "host/social/social-schedule.ts",
         "host/social/social-program-schedule.ts",
+        "host/**/*schedul*.ts",
+        "host/**/*budget*.ts",
+        "host/**/*watchdog*.ts",
         "src/features/automations/model/**",
         "src/app/workspace/bridges/useAutomationLaunch.ts"
       ],

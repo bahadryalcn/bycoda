@@ -1,5 +1,16 @@
 /** Audited boundaries, not permission grants or claims of installed acceptance. */
-export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remaining: string }> = {
+export const VOICE_CAPABILITY_COVERAGE: Record<
+  string,
+  {
+    /** Tool ids a voice scope (global or project thread) may call. */
+    tools: string[];
+    /** Catalog family of the ids; defaults to "conversation". */
+    family?: "runtime-logs";
+    /** Tool ids that exist but no voice scope allows; kept for the audit trail only. */
+    sessionOnly?: string[];
+    remaining: string;
+  }
+> = {
   appearance: {
     tools: [],
     remaining:
@@ -11,11 +22,22 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
       "Voice assistant controls use the dedicated assistant protocol and existing native approvals.",
   },
   attachments: {
-    tools: ["attachments.list", "attachments.read", "sessions.draft"],
+    tools: ["sessions.draft"],
+    sessionOnly: ["attachments.list", "attachments.read"],
     remaining: "Only accepted same-session attachments; no arbitrary upload grants.",
   },
   automations: {
-    tools: ["automations.list", "automations.create", "automations.runNow"],
+    tools: [
+      "automations.list",
+      "automations.create",
+      "automations.update",
+      "automations.pause",
+      "automations.resume",
+      "automations.delete",
+      "automations.runs",
+      "automations.runNow",
+      "automations.stopRun",
+    ],
     remaining: "Global creation requires explicit reviewed execution settings.",
   },
   browser: {
@@ -46,7 +68,8 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
     remaining: "Exact native approval and owner control allowlist retained.",
   },
   devices: {
-    tools: ["devices.list", "devices.preview"],
+    tools: [],
+    sessionOnly: ["devices.list", "devices.preview"],
     remaining: "Explicit machine/device and device control gates retained.",
   },
   devServers: {
@@ -75,7 +98,8 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
     remaining: "Native plan approval remains separate from creation.",
   },
   history: {
-    tools: ["history.import.status"],
+    tools: [],
+    sessionOnly: ["history.import.status"],
     remaining:
       "Import commit/cancel remain native owner-only; status requires focused desktop session.",
   },
@@ -84,11 +108,21 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
     remaining: "Paired device/credential administration remains native owner-only.",
   },
   inbox: {
-    tools: ["inbox.list", "inbox.review"],
+    tools: [
+      "inbox.list",
+      "inbox.details",
+      "inbox.thread",
+      "inbox.comment",
+      "inbox.prAction",
+      "inbox.review",
+      "inbox.reviewContext",
+      "inbox.result",
+    ],
     remaining: "External writes retain native review and durable operation receipts.",
   },
   machine: {
-    tools: ["machines.list"],
+    tools: [],
+    sessionOnly: ["machines.list"],
     remaining: "Machine pairing/credentials remain native owner-only.",
   },
   mobile: {
@@ -96,11 +130,13 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
     remaining: "Pairing/access enable/disable secrets remain owner-device scoped.",
   },
   models: {
-    tools: ["models.list"],
+    tools: [],
+    sessionOnly: ["models.list"],
     remaining: "Catalog availability is not provider entitlement.",
   },
   native: {
-    tools: ["ui.tools.open", "ui.workspace.open"],
+    tools: [],
+    sessionOnly: ["ui.tools.open", "ui.workspace.open"],
     remaining:
       "Native upload/rewind/window lifecycle APIs are privileged internal protocols, not generic voice RPCs.",
   },
@@ -108,6 +144,9 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
     tools: [
       "notes.list",
       "notes.create",
+      "notes.read",
+      "notes.update",
+      "notes.delete",
       "notebook.list",
       "notebook.get",
       "notebook.create",
@@ -151,11 +190,13 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
       "Phone push registration and delivery are device-bound owner settings, not voice actions.",
   },
   resources: {
-    tools: ["resources.read"],
+    tools: [],
+    sessionOnly: ["resources.read"],
     remaining: "Observed runtime resources, not billed provider usage.",
   },
   runtimeLogs: {
-    tools: ["logs.sources", "logs.read"],
+    family: "runtime-logs",
+    tools: ["read", "sources"],
     remaining: "Separate runtime-logs family also retains scoped bounded reads.",
   },
   sessions: {
@@ -196,7 +237,8 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
       "Saved server identity, exact native confirmation and status recovery retained; Room inventory changes require current inventory revision.",
   },
   stewards: {
-    tools: ["stewards.list", "stewards.runNow"],
+    tools: [],
+    sessionOnly: ["stewards.list", "stewards.runNow"],
     remaining: "Session-scoped scheduler authority retained.",
   },
   sync: {
@@ -217,7 +259,8 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
     remaining: "Exposure/start/stop and credentials remain native owner-only.",
   },
   usage: {
-    tools: ["usage.sessions.read"],
+    tools: [],
+    sessionOnly: ["usage.sessions.read"],
     remaining: "Host-observed coverage, not provider billing.",
   },
   voice: {
@@ -248,7 +291,8 @@ export const VOICE_CAPABILITY_COVERAGE: Record<string, { tools: string[]; remain
     remaining: "Cleanup apply, merge, publish and owner-retarget remain native workflows.",
   },
   worktrees: {
-    tools: ["git.worktrees", "workspaces.prepare"],
+    tools: ["workspaces.prepare"],
+    sessionOnly: ["git.worktrees"],
     remaining: "Legacy removal and branch publication retain owner workflow.",
   },
 };

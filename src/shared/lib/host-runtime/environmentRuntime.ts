@@ -78,7 +78,7 @@ export class HostCommandUncertainError extends Error {
   readonly unsupported = false;
   constructor(
     readonly commandId: string,
-    readonly cause: unknown,
+    override readonly cause: unknown,
   ) {
     super(
       cause instanceof Error
@@ -116,7 +116,7 @@ export class HostRpcUncertainError extends Error {
   constructor(
     readonly method: string,
     readonly requestId: string,
-    readonly cause: unknown,
+    override readonly cause: unknown,
   ) {
     super("The Host operation may have completed. Refresh its state before retrying.");
     this.name = "HostRpcUncertainError";

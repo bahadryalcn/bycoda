@@ -15,6 +15,35 @@ export type VoiceOwnerRule = {
 };
 const captured = new WeakSet<object>();
 const KEY = "bycoda.voice.owner-rule-pending.v1";
+const QUESTION_START =
+  /^(?:neden|niye|niçin|nasıl|ne zaman|ne|kim|hangi|kaç|why|how|what|when|who|which|where|does|did|is|are|was|were|can|could|would|will|should|do(?!\s+not))\s/iu;
+const QUESTION_PARTICLE = /(?:^|\s)m[ıiuü](?:s[ıiuü]n(?:[ıiuü]z)?|y[ıiuü]m|y[ıiuü]z)?(?=[\s,]|$)/iu;
+const DESCRIPTIVE_TR = /[ıiuü]yor|[ıiuü]yorsun|[ıiuü]yoruz/iu;
+// Verbs a speaker directs at the assistant itself. "always run the tests" is work, not a rule.
+const CONDUCT_EN =
+  "answer|reply|respond|speak|talk|say|call|address|use|write|ask|confirm|tell|mention|be|explain|summari[sz]e|greet|swear|curse|translate|wait|apologi[sz]e";
+const CONDUCT_TR = "ver|konuş|söyle|yaz|kullan|sor|açıkla|özetle|anlat|bekle|hatırla|et|hitap et";
+const RULE_FRAMES = new RegExp(
+  [
+    String.raw`^(?:please\s+)?(?:always|never)\s+(?:${CONDUCT_EN})\b`,
+    String.raw`^(?:please\s+)?(?:don['’]?t|do not)\s+ever\b`,
+    String.raw`\b(?:from now on|don't do that again|do not do that again|remember (?:this|that) (?:rule|instruction))\b`,
+    String.raw`^(?:(?:bana|lütfen|sakın)\s+)*asla\s+.*(?:ma|me|mayın|meyin)(?:\s+lütfen)?$`,
+    String.raw`^(?:lütfen\s+)?her zaman\s+.*\s(?:${CONDUCT_TR})(?:\s+lütfen)?$`,
+    String.raw`^bundan sonra\b(?!\s+(?:ne|neden|niye|nasıl|kim|hangi|kaç)\b)`,
+    String.raw`\bkural olarak\b`,
+    String.raw`\bbir daha\b.*(?:ma|me|mayın|meyin)(?:\s+lütfen)?$`,
+  ].join("|"),
+  "iu",
+);
+/** A rule needs an explicit frame aimed at the assistant; uncertain speech goes to the model. */
+function isRuleSegment(segment: string): boolean {
+  const text = segment.toLowerCase().normalize("NFC").trim().replace(/\s+/g, " ");
+  if (!text || QUESTION_START.test(text) || QUESTION_PARTICLE.test(text)) return false;
+  if (DESCRIPTIVE_TR.test(text)) return false;
+  if (dontInterrupt.test(text)) return true;
+  return text.split(",").some((part) => RULE_FRAMES.test(part.trim()) || RULE_FRAMES.test(text));
+}
 const dontInterrupt = /(?:don['’]?t|do not|never) interrupt(?: me)?|sözümü kesme|lafımı kesme/iu;
 /** Called only with an accepted current microphone transcript, never model/tool text. */
 export function captureVoiceOwnerRule(utterance: string): VoiceOwnerRule | undefined {
@@ -26,12 +55,8 @@ export function captureVoiceOwnerRule(utterance: string): VoiceOwnerRule | undef
     )
   )
     return;
-  const manual = dontInterrupt.test(utterance);
-  const lasting =
-    /\b(?:from now on|always|never|don't do that again|do not do that again|remember (?:this|that) (?:rule|instruction))\b|bundan sonra|bir daha|bunu kural olarak|şunu kural olarak|her zaman|asla/iu.test(
-      utterance,
-    );
-  if (!manual && !lasting) return;
+  const lasting = utterance.split(/[.!;…]+/u).some(isRuleSegment);
+  if (!lasting) return;
   // Requests combining a persistent correction with unrelated work stay with the normal
   // conversation path; a generated paraphrase cannot become an explicit owner rule.
   if (
@@ -58,7 +83,8 @@ export function captureVoiceOwnerRule(utterance: string): VoiceOwnerRule | undef
     text: utterance.trim(),
     quote: utterance,
     forbiddenTerms: Object.freeze(forbidden),
-    manualTurnEnd: manual,
+    // Not being interrupted never switches the session to manual turn end.
+    manualTurnEnd: false,
   });
   captured.add(intent);
   return intent;
@@ -196,14 +222,13 @@ export class VoiceOwnerRuleWrites {
         if (!matches(memory))
           throw new Error("The rule save could not be verified. Review Memory and retry.");
         // Behavioral settings change only after an authoritative acknowledgement/readback.
-        if (intent.manualTurnEnd && loadVoiceMemory().enabled) {
+        // "Don't interrupt me" waits longer for the end of a turn; it never switches to manual turns.
+        if (dontInterrupt.test(intent.text) && loadVoiceMemory().enabled) {
           const settings = loadVoiceSettings();
           saveVoiceSettings({
             ...settings,
-            ...((settings.manualTurnEndRevision ?? 0) === value.manualRevision
-              ? { manualTurnEnd: true }
-              : {}),
             holdAnnouncements: true,
+            turnEndSilence: Math.max(settings.turnEndSilence ?? 0, 2),
           });
         }
         this.pending.shift();

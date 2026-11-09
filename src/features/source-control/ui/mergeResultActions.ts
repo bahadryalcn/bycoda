@@ -54,7 +54,7 @@ class RegionActions extends WidgetType {
   ) {
     super();
   }
-  eq(other: RegionActions) {
+  override eq(other: RegionActions) {
     return (
       other.region.id === this.region.id &&
       other.region.choice === this.region.choice &&
@@ -97,7 +97,7 @@ class RegionActions extends WidgetType {
     root.append(button("reset", "Reset", "Restore the unresolved text"));
     return root;
   }
-  ignoreEvent() {
+  override ignoreEvent() {
     return true;
   }
 }

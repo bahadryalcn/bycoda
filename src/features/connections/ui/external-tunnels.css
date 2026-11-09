@@ -69,3 +69,8 @@
   justify-self: start;
   max-inline-size: 100%;
 }
+
+/* In the wide settings page the form stays one compact column. */
+.external-tunnels-panel > * {
+  max-inline-size: 40rem;
+}

@@ -3,7 +3,7 @@ import type { JsonRpcWriterView } from "../turnWriter";
 export class CodexArchivedThreadError extends Error {
   constructor(
     readonly threadId: string,
-    readonly cause: unknown,
+    override readonly cause: unknown,
   ) {
     super(
       `Codex session ${threadId} is archived: ${cause instanceof Error ? cause.message : String(cause)}`,

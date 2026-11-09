@@ -16,14 +16,16 @@ export function accountInitial(user: AccountAvatarUser): string {
 /**
  * Decorative account picture: the photo, else the initial on the accent circle, else a neutral
  * guest glyph. The enclosing control carries the accessible name; `badge` is a status mark
- * (the sidebar passes the assistant presence dot).
+ * (the sidebar passes the assistant presence dot). `size="lg"` is the account page header.
  */
 export function AccountAvatar({
   user,
   badge,
+  size = "sm",
 }: {
   user: AccountAvatarUser | null;
   badge?: ReactNode;
+  size?: "sm" | "lg";
 }) {
   const [broken, setBroken] = useState<string | null>(null);
   const initial = user ? accountInitial(user) : "";
@@ -32,6 +34,7 @@ export function AccountAvatar({
     <span
       className={styles.root}
       data-signed-in={Boolean(user)}
+      data-size={size}
       data-account-avatar
       aria-hidden="true"
     >

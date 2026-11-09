@@ -179,7 +179,6 @@ pub async fn session_pin_receipt(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn session_pin_apply(
     app: tauri::AppHandle,
     window: tauri::Window,

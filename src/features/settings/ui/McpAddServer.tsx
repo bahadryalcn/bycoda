@@ -213,7 +213,7 @@ export function AddServerModal({
             "Paste one entry from an mcpServers block, or a single server object with a name above.",
           )}
         </p>
-        <AdvancedSettings title={t("Advanced: configuration requirements")}>
+        <AdvancedSettings title={t("Advanced: configuration requirements")} defaultOpen>
           <Row
             label={t("Before adding a server")}
             description={t(

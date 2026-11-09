@@ -1,12 +1,13 @@
 import {
   type ActivitySummary,
+  type DataExport,
   type DataSummary,
   type Device,
   type NotificationSettings,
   type ProfileUpdate,
   type User,
 } from "@bycoda/account-contracts";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { localDateFor } from "@bycoda/account-contracts";
 import { dateTimeFormat } from "../../../shared/lib/intl";
 import { accountController } from "../model/accountService";
@@ -125,4 +126,94 @@ export function useDataSummary() {
     enabled: userId !== null,
     queryFn: () => guarded(() => accountController().api().getDataSummary()),
   });
+}
+
+/** The user's own sign-ins and account events of the last 90 days, newest first, paged. */
+export function useSecurityActivity() {
+  const { userId } = useAccountScope();
+  return useInfiniteQuery({
+    queryKey: ["account", userId, "security-activity"],
+    enabled: userId !== null,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam }) =>
+      guarded(() =>
+        accountController()
+          .api()
+          .getSecurityActivity({ query: pageParam ? { cursor: pageParam } : {} }),
+      ),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+  });
+}
+
+/** Saves a finished export through the webview's download, named after its date. */
+async function saveExport(item: DataExport): Promise<void> {
+  const blob = await guarded(() => accountController().api().downloadExport(item.id));
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `bycoda-account-${(item.readyAt ?? item.requestedAt).slice(0, 10)}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * The data export of this session: request, follow until ready, save. The id lives in the query
+ * cache only. // shortcut: a reload forgets a pending export, the server keeps it; add a
+ * "list exports" route when users ask for older ones.
+ */
+export function useDataExport() {
+  const { userId } = useAccountScope();
+  const queryClient = useQueryClient();
+  const key = ["account", userId, "export"] as const;
+  const current = useQuery<DataExport | null>({
+    queryKey: key,
+    // Only written by the request and the follow-up below; never fetched on its own.
+    queryFn: () => queryClient.getQueryData<DataExport | null>(key) ?? null,
+    staleTime: Infinity,
+    initialData: null,
+  });
+  const id = current.data?.id ?? null;
+  const follow = useQuery({
+    queryKey: [...key, id],
+    enabled: id !== null && current.data?.status === "pending",
+    refetchInterval: 3000,
+    queryFn: async () => {
+      const next = await guarded(() =>
+        accountController()
+          .api()
+          .getExport({ params: { id: id! } }),
+      );
+      queryClient.setQueryData(key, next);
+      return next;
+    },
+  });
+  const request = useMutation({
+    mutationFn: () =>
+      guarded(() =>
+        accountController()
+          .api()
+          .requestExport({ body: { format: "json" } }),
+      ),
+    onSuccess: (next) => queryClient.setQueryData(key, next),
+  });
+  const save = useMutation({ mutationFn: saveExport });
+  return { current: current.data, follow, request, save };
+}
+
+/** Schedules or cancels the deletion of the account; the account view refreshes afterwards. */
+export function useDeletion() {
+  const schedule = useMutation({
+    mutationFn: (reason?: string) =>
+      guarded(() =>
+        accountController()
+          .api()
+          .requestDeletion({ body: reason ? { reason } : {} }),
+      ),
+    onSuccess: () => accountController().refresh(),
+  });
+  const cancel = useMutation({
+    mutationFn: () => guarded(() => accountController().api().cancelDeletion()),
+    onSuccess: () => accountController().refresh(),
+  });
+  return { schedule, cancel };
 }

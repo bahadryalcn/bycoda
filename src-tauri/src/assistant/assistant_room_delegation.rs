@@ -79,7 +79,6 @@ fn check_source(
     }
     Ok(())
 }
-#[allow(clippy::too_many_arguments)] // Private delegation helper; each source binding stays an explicit check input.
 fn protected_request(
     app: &AppHandle,
     window: &WebviewWindow,
@@ -113,7 +112,6 @@ fn protected_request(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn room_delegation_issue(
     app: AppHandle,
     window: WebviewWindow,

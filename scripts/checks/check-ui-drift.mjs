@@ -63,6 +63,8 @@ export const rules = {
     "Loader/Loader2/LoaderCircle icon used as a spinner (use Spinner from src/shared/ui)",
   "font-weight":
     "font-semibold/font-bold or CSS font-weight above 500 (the type scale uses 400 and 500 only)",
+  "theme-palette-literal":
+    "themePalette.hex…/rgb…/hsl…/oklch… literal in feature or app code (use a semantic token: a --color-*/--ui-* CSS role or a semantic themePalette role)",
   "arbitrary-spacing":
     "arbitrary spacing value (p-/m-/gap-/inset-/top-…[Npx]); use the spacing scale or --space-* tokens",
   "inline-style-layout":
@@ -305,7 +307,12 @@ function jsxTags(text) {
   return tags;
 }
 
-const paddingUtility = /(?<![\w-])(?:[\w\-[\]&@*=]+:)*(?:p|px|py|pt|pb|ps|pe)-(?:\d|\[)/;
+// Variant prefixes may carry `/` (named containers/groups: @max-[950px]/main-row:) and `(` `)`
+// (arbitrary values: has-(--x):); a narrower charset lets those classes escape every Tailwind rule.
+const variantChars = String.raw`[\w\-\[\]&@*=/().,%]`;
+const paddingUtility = new RegExp(
+  String.raw`(?<![\w-])(?:${variantChars}+:)*(?:p|px|py|pt|pb|ps|pe)-(?:\d|\[)`,
+);
 
 /** The className attribute value text (string or braced expression) of an opening tag. */
 function classNameText(span) {
@@ -400,7 +407,7 @@ const isDefined = (name, definitions) =>
 
 /* ---------- scanning ---------- */
 
-const variant = String.raw`(?<![\w\-\[(:/])((?:[\w\-\[\]&@*=]+:)*)`;
+const variant = String.raw`(?<![\w\-\[(:/])((?:${variantChars}+:)*)`;
 const end = String.raw`(?![\w.\-])`;
 const tw = (body, flags = "g") => new RegExp(variant + body, flags);
 
@@ -418,7 +425,8 @@ const twRules = [
       String.raw`(?:bg|text|border(?:-[trblxyse])?|divide|ring|outline|fill|stroke|from|via|to)-(?:background-base|stroke|content)\/(?:\d+|\[[^\]\s]+\]|\([^)\s]+\))`,
     ),
   ],
-  ["hover-bg", /(?<![\w\-:])[\w\-[\]&@*=:]*hover:bg-[\w\-[(]/g],
+  ["hover-bg", new RegExp(String.raw`(?<![\w\-:])(?:${variantChars}+:)*hover:bg-[\w\-[(]`, "g")],
+  ["theme-palette-literal", /(?<![\w$])themePalette\.(?:hex|rgb|hsl|oklch)[0-9A-Za-z]/g],
   ["font-weight", tw(String.raw`font-(?:semibold|bold|extrabold|black)` + end)],
   [
     "arbitrary-spacing",
@@ -504,7 +512,10 @@ export function scanFile(file, text, definitions) {
           /var\(\s*--color-(?:accent|danger|warning|success)(?![\w-])/g,
         ))
           add("color-base-hue", valueOffset + match.index);
-        if (property === "font-weight" && /\b(?:[6-9]\d\d|bold|bolder)\b/.test(value))
+        if (
+          property === "font-weight" &&
+          /\b(?:[6-9]\d\d|5(?:0[1-9]|[1-9]\d)|bold|bolder)\b/.test(value)
+        )
           add("font-weight", valueOffset);
         if (property === "outline" && /^\s*none\b/.test(value))
           add("focus-outline-removed", valueOffset);

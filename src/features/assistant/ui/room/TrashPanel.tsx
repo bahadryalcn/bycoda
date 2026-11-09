@@ -87,7 +87,6 @@ export function TrashPanel({
                   size="sm"
                   loading={pending === entry.id}
                   disabled={Boolean(pending)}
-                  // ast-grep-ignore: ts-void-promise-without-catch -- restore() reports its own failures in state
                   onClick={() => void restore(entry.id)}
                 >
                   {t("Restore")}

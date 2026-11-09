@@ -2,9 +2,87 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  max-width: 44rem;
+  max-width: 60rem;
   margin: 0 auto;
   padding: var(--space-4);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.identityCard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--ui-settings-group-border);
+  border-radius: var(--ui-radius-card);
+}
+
+.name {
+  overflow: hidden;
+  color: var(--ui-tone-neutral-fg);
+  font-size: var(--ui-font-title);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-block-start: var(--space-1);
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+}
+
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.screen[data-wide] .layout {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-6);
+}
+
+.nav {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.screen[data-wide] .nav {
+  position: sticky;
+  inset-block-start: 0;
+  overflow: visible;
+}
+
+.screen:not([data-wide]) .nav [role="tablist"] {
+  inline-size: max-content;
+  min-inline-size: 100%;
+}
+
+.screen:not([data-wide]) .nav [role="tab"] {
+  flex: none;
+}
+
+.screen[data-wide] .nav [role="tab"] {
+  justify-content: flex-start;
+  inline-size: 100%;
+}
+
+.panel {
+  min-width: 0;
 }
 
 .section {
@@ -25,33 +103,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-}
-
-.profile {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
-}
-
-.avatar {
-  flex: none;
-  display: grid;
-  place-items: center;
-  inline-size: 3rem;
-  block-size: 3rem;
-  border-radius: 50%;
-  overflow: hidden;
-  background: var(--ui-fill-subtle);
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-body);
-  font-weight: 500;
-}
-
-.avatar img {
-  inline-size: 100%;
-  block-size: 100%;
-  object-fit: cover;
 }
 
 .identity {
@@ -153,20 +204,6 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-}
-
-.tabScroll {
-  overflow-x: auto;
-}
-
-/* Keep full labels: the strip scrolls instead of truncating tabs at narrow widths. */
-.tabScroll [role="tablist"] {
-  inline-size: max-content;
-  min-inline-size: 100%;
-}
-
-.tabScroll [role="tab"] {
-  flex: none;
 }
 
 .benefits {

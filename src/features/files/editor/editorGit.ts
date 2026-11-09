@@ -60,11 +60,11 @@ class GitMarker extends GutterMarker {
     super();
   }
 
-  eq(other: GitMarker) {
+  override eq(other: GitMarker) {
     return this.kind === other.kind && this.glyph === other.glyph;
   }
 
-  toDOM() {
+  override toDOM() {
     const el = document.createElement("div");
     el.className = `cm-gitMarker ${this.kind}`;
     el.textContent = this.glyph;
@@ -141,7 +141,7 @@ class DeletedLineWidget extends WidgetType {
     super();
   }
 
-  eq(other: DeletedLineWidget) {
+  override eq(other: DeletedLineWidget) {
     return this.pos === other.pos && this.oldLine === other.oldLine && this.text === other.text;
   }
 
@@ -154,11 +154,11 @@ class DeletedLineWidget extends WidgetType {
     return line;
   }
 
-  get estimatedHeight() {
+  override get estimatedHeight() {
     return LINE_HEIGHT;
   }
 
-  ignoreEvent() {
+  override ignoreEvent() {
     return true;
   }
 }

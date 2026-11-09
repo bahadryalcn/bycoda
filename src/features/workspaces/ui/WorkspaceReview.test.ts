@@ -17,10 +17,11 @@ vi.mock("../../../shared/ui/Modal", () => ({
     createElement("div", { role: "dialog", "aria-label": title }, children, footer),
   ModalActions: ({ children }: { children: ReactNode }) => createElement("div", null, children),
 }));
-vi.mock("../../../shared/i18n", () => ({
-  useT: () => (text: string, params?: Record<string, string>) =>
-    text.replace(/\{(\w+)\}/g, (_, key: string) => params?.[key] ?? key),
-}));
+vi.mock("../../../shared/i18n", () => {
+  const t = (text: string, params?: Record<string, string>) =>
+    text.replace(/\{(\w+)\}/g, (_, key: string) => params?.[key] ?? key);
+  return { t, useT: () => t };
+});
 const workspace: ManagedWorkspace = {
   id: "owned",
   repositoryId: "repo",
@@ -136,25 +137,60 @@ it("blocks overlapping target paths and expired approval plans", async () => {
   ).toBe(false);
 });
 
-it("holds uncertain directory removal until authoritative status is checked", async () => {
-  const cleanup = {
-    token: "cleanup-plan",
-    expiresAt: Date.now() + 60000,
-    workspaceId: "owned",
-    expectedRevision: 7,
-    path: workspace.path,
-    branchRef: workspace.branchRef,
-    head: plan.sourceHead,
-    statusFingerprint: "clean",
-    dirty: false,
-    preservationRequired: false,
-    blockers: [],
-    links: [],
-  };
+const cleanupPlan = (blockers: string[] = []) => ({
+  token: "cleanup-plan",
+  expiresAt: Date.now() + 60000,
+  workspaceId: "owned",
+  expectedRevision: 7,
+  path: workspace.path,
+  branchRef: workspace.branchRef,
+  head: plan.sourceHead,
+  statusFingerprint: "clean",
+  dirty: false,
+  preservationRequired: false,
+  blockers,
+  links: [],
+});
+
+it("closes on confirmation and settles an uncertain background removal from Host status", async () => {
   vi.mocked(workspaceRequest).mockImplementation(async (method) => {
     if (method === "workspaces.get") return workspace as never;
-    if (method === "workspaces.cleanup.plan") return cleanup as never;
+    if (method === "workspaces.cleanup.plan") return cleanupPlan() as never;
     if (method === "workspaces.cleanup.apply") throw new Error("Lost connection");
+    if (method === "workspaces.cleanup.status")
+      return { workspace: { ...workspace, directoryState: "removed" }, operations: [] } as never;
+    throw new Error(method);
+  });
+  const close = vi.fn();
+  const change = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(WorkspaceDirectoryRemoval, {
+        workspace,
+        context: { cwd: "/repo" },
+        onClose: close,
+        onWorkspaceChange: change,
+      }),
+    ),
+  );
+  await act(async () => button("Delete directory").click());
+  expect(close).toHaveBeenCalledOnce();
+  expect(change).toHaveBeenLastCalledWith({ ...workspace, directoryState: "removed" });
+  expect(
+    vi
+      .mocked(workspaceRequest)
+      .mock.calls.filter(([method]) => method === "workspaces.cleanup.apply"),
+  ).toHaveLength(1);
+});
+
+it("closes a stale active record before retiring its missing folder", async () => {
+  const calls: string[] = [];
+  vi.mocked(workspaceRequest).mockImplementation(async (method) => {
+    calls.push(method);
+    if (method === "workspaces.get") return workspace as never;
+    if (method === "workspaces.close") return { ...workspace, state: "abandoned" } as never;
+    if (method === "workspaces.cleanup.plan") return cleanupPlan() as never;
+    if (method === "workspaces.cleanup.apply") return {} as never;
     if (method === "workspaces.cleanup.status")
       return { workspace: { ...workspace, directoryState: "removed" }, operations: [] } as never;
     throw new Error(method);
@@ -165,20 +201,48 @@ it("holds uncertain directory removal until authoritative status is checked", as
       createElement(WorkspaceDirectoryRemoval, {
         workspace,
         context: { cwd: "/repo" },
+        closeFirst: true,
+        missing: true,
         onClose: close,
       }),
     ),
   );
-  await act(async () => button("Delete directory").click());
-  expect(container.textContent).toContain("Lost connection");
-  expect(button("Delete directory")).toBeUndefined();
-  await act(async () => button("Check removal status").click());
+  // Nothing is previewed or closed until the owner confirms.
+  expect(calls).toEqual([]);
+  await act(async () => button("Remove record").click());
+  expect(calls).toEqual([
+    "workspaces.get",
+    "workspaces.close",
+    "workspaces.cleanup.plan",
+    "workspaces.cleanup.apply",
+    "workspaces.cleanup.status",
+  ]);
   expect(close).toHaveBeenCalledOnce();
-  expect(
-    vi
-      .mocked(workspaceRequest)
-      .mock.calls.filter(([method]) => method === "workspaces.cleanup.apply"),
-  ).toHaveLength(1);
+});
+
+it("keeps the dialog open with the Host's reasons when closing still leaves a blocker", async () => {
+  vi.mocked(workspaceRequest).mockImplementation(async (method) => {
+    if (method === "workspaces.get") return workspace as never;
+    if (method === "workspaces.close") return { ...workspace, state: "abandoned" } as never;
+    if (method === "workspaces.cleanup.plan")
+      return cleanupPlan(["Workspace is still in use."]) as never;
+    throw new Error(method);
+  });
+  const close = vi.fn();
+  await act(async () =>
+    root.render(
+      createElement(WorkspaceDirectoryRemoval, {
+        workspace,
+        context: { cwd: "/repo" },
+        closeFirst: true,
+        missing: true,
+        onClose: close,
+      }),
+    ),
+  );
+  await act(async () => button("Remove record").click());
+  expect(close).not.toHaveBeenCalled();
+  expect(container.textContent).toContain("Workspace is still in use.");
 });
 
 it("keeps the PR draft and reconciles an uncertain publication with the original operation after reopening", async () => {

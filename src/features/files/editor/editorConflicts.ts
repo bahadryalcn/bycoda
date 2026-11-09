@@ -58,7 +58,7 @@ class ConflictActionsWidget extends WidgetType {
     super();
   }
 
-  eq(other: ConflictActionsWidget) {
+  override eq(other: ConflictActionsWidget) {
     return (
       other.from === this.from &&
       other.oursLabel === this.oursLabel &&
@@ -93,7 +93,7 @@ class ConflictActionsWidget extends WidgetType {
     return bar;
   }
 
-  ignoreEvent() {
+  override ignoreEvent() {
     return true;
   }
 }

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { MobileAccessStatus } from "../../../integrations/mobile-access";
 import type { MobileAccessMode } from "../../../integrations/mobile-lan";
 import type {
@@ -71,6 +72,8 @@ export type PhoneConnectionPanelProps = {
   loaded: boolean;
   loading: boolean;
   onRefresh: () => void | Promise<void>;
+  /** Whether the Phone tab is showing. The panel only holds a pairing code while it is. Default true. */
+  active?: boolean;
 };
 
 export type PhonePairingDialogProps = {
@@ -86,6 +89,12 @@ export type PhonePairingDialogProps = {
   onDisable?: () => void;
   onCreate: () => void;
   onRegenerate: () => void;
+};
+
+export type PhonePairingFlowProps = PhonePairingDialogProps & {
+  variant: "inline" | "dialog";
+  /** Extra option rows, listed under the divider in the inline variant. */
+  children?: ReactNode;
 };
 
 export type PhonePairingLinkProps = {

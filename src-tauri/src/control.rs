@@ -1070,7 +1070,6 @@ pub fn control_assistant_source(
 }
 
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub fn control_assistant_source_v2(
     app: AppHandle,
     window: WebviewWindow,
@@ -1132,7 +1131,6 @@ pub fn control_assistant_source_v2(
 }
 
 /// Read-only Room dispatch. Its exact Host request and Room window stay pinned.
-#[allow(clippy::too_many_arguments)] // The pinned Host request and Room window are passed as explicit fields so each stays visible at the call site.
 pub(crate) fn assistant_ui_request_pinned(
     app: &AppHandle,
     thread: &str,
@@ -1357,7 +1355,6 @@ pub(crate) fn assistant_ui_request_pinned(
 
 /// Retain the exact native owner until its UI operation settles. The worker
 /// cannot emit the request until Host has durably accepted its signed receipt.
-#[allow(clippy::too_many_arguments)] // The native owner tuple is passed as explicit fields so each stays visible at the call site.
 pub(crate) fn start_workspace_owner(
     app: &AppHandle,
     thread: &str,
@@ -1587,7 +1584,6 @@ fn privacy_scope_pinned(
 }
 
 /// Host-granted UI/project reads retain the actual issuer; no general operator access.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn conversation_ui_request_pinned(
     app: &AppHandle,
     session: &str,
@@ -1611,7 +1607,6 @@ pub(crate) fn conversation_ui_request_pinned(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn conversation_ui_request_device_pinned(
     app: &AppHandle,
     session: &str,
@@ -1636,7 +1631,6 @@ pub(crate) fn conversation_ui_request_device_pinned(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn conversation_ui_request_inner(
     app: &AppHandle,
     session: &str,

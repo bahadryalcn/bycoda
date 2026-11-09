@@ -272,3 +272,40 @@ test("ui-drift-ignore on the line above suppresses only the named rule and needs
   ].join("\n");
   assert.ok(rulesOf(file, otherRule).includes("raw-native-control"));
 });
+
+test("variant prefixes with a named container or arbitrary value no longer hide Tailwind drift", () => {
+  const classes = [
+    "@max-[950px]/main-row:z-30",
+    "group-has-(--x):text-xs",
+    "@container/main:hover:bg-red-500",
+    "has-[>svg]:p-[13px]",
+    "supports-[display:grid]:font-bold",
+  ];
+  for (const name of classes) {
+    const found = rulesOf("src/features/demo/V.tsx", `const a = <div className="${name}" />;`);
+    assert.ok(found.length > 0, `${name} should be flagged`);
+  }
+  assert.deepEqual(
+    rulesOf("src/features/demo/V.tsx", '<div className="@max-[950px]/main-row:flex" />'),
+    [],
+  );
+});
+
+test("CSS font weights above 500 are flagged, including 501 to 599", () => {
+  for (const weight of ["501", "550", "599", "600", "700", "bold"])
+    assert.deepEqual(rulesOf("src/features/demo/w.css", `.x { font-weight: ${weight}; }`), [
+      "font-weight",
+    ]);
+  for (const weight of ["400", "500", "normal"])
+    assert.deepEqual(rulesOf("src/features/demo/w.css", `.x { font-weight: ${weight}; }`), []);
+});
+
+test("themePalette literals are flagged in feature and app code only", () => {
+  const code = "const c = themePalette.hexf59e0b + themePalette.oklch12 + themePalette.danger;";
+  assert.deepEqual(rulesOf("src/features/demo/P.tsx", code), [
+    "theme-palette-literal",
+    "theme-palette-literal",
+  ]);
+  assert.deepEqual(rulesOf("src/shared/theme/P.tsx", code), []);
+  assert.deepEqual(rulesOf("src/features/demo/P.tsx", "const c = themePalette.dangerDark;"), []);
+});

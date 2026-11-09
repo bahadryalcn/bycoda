@@ -176,7 +176,7 @@ it("ignores slow earlier opens and navigation superseded by a project change", a
       : Promise.resolve(sessions[1]),
   );
   act(() => root.render(createElement(Harness)));
-  let pending!: Promise<void>;
+  let pending!: Promise<unknown>;
   act(() => {
     pending = actions.onPreviewHistorySession(sessions[0].id);
   });
@@ -262,11 +262,29 @@ it("keeps a preview when its workspace gains an editor", async () => {
 
 it("does not create a local pane when another window owns the requested session", async () => {
   vi.mocked(reserveSessionWindow).mockResolvedValueOnce(null);
+  let opened: boolean | undefined;
   await act(async () => {
-    await actions.onSelectHistorySession(sessions[0].id);
+    opened = await actions.onSelectHistorySession(sessions[0].id);
   });
   expect(deps.tabsRef.current).toHaveLength(0);
   expect(deps.replaceBlankPaneWithSession).not.toHaveBeenCalled();
+  // The owning window was focused, so the conversation did open.
+  expect(opened).toBe(true);
+});
+
+it("reports whether a history conversation opened", async () => {
+  let missing: boolean | undefined;
+  let opened: boolean | undefined;
+  let focused: boolean | undefined;
+  await act(async () => {
+    missing = await actions.onSelectHistorySession("deleted-session");
+    opened = await actions.onSelectHistorySession(sessions[0].id);
+    focused = await actions.onSelectHistorySession(sessions[0].id);
+  });
+  expect(missing).toBe(false);
+  expect(opened).toBe(true);
+  expect(focused).toBe(true);
+  expect(deps.tabsRef.current).toHaveLength(1);
 });
 
 it("releases an in-flight reservation when navigation becomes stale", async () => {

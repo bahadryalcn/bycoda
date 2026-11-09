@@ -204,6 +204,16 @@ export function countFindings(
   return { counts, details };
 }
 
+/** A baselined file at most this far over its limit may still grow by `growthTolerance` lines. */
+export const nearBudgetRatio = 1.25;
+export const growthTolerance = 10;
+
+/** Extra lines a baselined `file-lines` bucket may grow: only for files close to their budget. */
+export function lineGrowthAllowance(file, baselined) {
+  const budget = lineBudgets.find((candidate) => candidate.test(file));
+  return budget && baselined <= budget.limit * nearBudgetRatio ? growthTolerance : 0;
+}
+
 export function compare(counts, baseline, files) {
   const increases = [];
   const scope = files ? new Set(files) : null;
@@ -211,7 +221,9 @@ export function compare(counts, baseline, files) {
     if (scope && !scope.has(file)) continue;
     for (const [rule, count] of Object.entries(rules)) {
       const allowed = baseline[file]?.[rule] ?? 0;
-      if (count > allowed) increases.push({ file, rule, count, allowed });
+      const tolerance =
+        rule === "file-lines" && allowed > 0 ? lineGrowthAllowance(file, allowed) : 0;
+      if (count > allowed + tolerance) increases.push({ file, rule, count, allowed, tolerance });
     }
   }
   return increases;
@@ -315,13 +327,16 @@ export function main(argv = process.argv.slice(2)) {
   for (const increase of increases) {
     const detail =
       details.find((f) => f.file === increase.file && f.rule === increase.rule)?.detail ?? "";
+    const allowance = increase.tolerance
+      ? ` (baseline ${increase.allowed} + ${increase.tolerance} tolerated)`
+      : "";
     console.error(
-      `${increase.file}: ${increase.rule} ${increase.count} > ${increase.allowed} ${detail}`,
+      `${increase.file}: ${increase.rule} ${increase.count} > ${increase.allowed + increase.tolerance}${allowance} ${detail}`,
     );
   }
   if (increases.length) {
     console.error(
-      "\nSplit the file into its owning feature/module folder or import through the layer's public entry (docs/reference/code-structure.md). Only an owner-approved exception may be accepted with --update-baseline.",
+      `\nA baselined over-budget file may not grow, except a file within ${nearBudgetRatio}x of its limit, which may grow by up to ${growthTolerance} lines over its baseline. Split the file into its owning feature/module folder or import through the layer's public entry (docs/reference/code-structure.md). Only an owner-approved exception may be accepted with --update-baseline.`,
     );
   }
   console.log(

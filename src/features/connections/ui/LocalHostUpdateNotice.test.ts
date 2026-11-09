@@ -54,10 +54,35 @@ it("explains a deferred host update with both versions and the reason", async ()
     installed: "0.5.53",
   };
   const text = (await render()).textContent ?? "";
-  expect(text).toContain("will update soon");
+  expect(text).toContain("A host update is waiting.");
   expect(text).toContain("0.5.53");
   expect(text).toContain("0.5.54");
   expect(text).toContain("running sessions finish");
+});
+
+const BUSY = "Could not check whether the host is busy.";
+
+it("renders nothing for equal versions once the serving host is verified", async () => {
+  status.value = { state: "deferred", message: BUSY, bundled: "0.7.7", installed: "0.7.7" };
+  status.machines = [{ id: "local", localHost: true }];
+  status.descriptor = { capabilities: ["workspaces.managed.v1", "workspaces.policy.v1"] };
+  expect((await render()).textContent).toBe("");
+});
+
+it("says the host could not be verified for equal versions without a local machine", async () => {
+  status.value = { state: "deferred", message: BUSY, bundled: "0.7.7", installed: "0.7.7" };
+  const text = (await render()).textContent ?? "";
+  expect(text).toContain("could not be verified");
+  expect(text).toContain("It continues when the host can be restarted safely.");
+  expect(text).not.toContain("will update soon");
+});
+
+it("reports a failed update", async () => {
+  status.value = { state: "failed", message: "Disk full", bundled: "2", installed: "1" };
+  const text = (await render()).textContent ?? "";
+  expect(text).toContain("could not be updated");
+  expect(text).toContain("Disk full");
+  expect(text).toContain("1");
 });
 
 it("stays silent when the host is current or was just updated", async () => {

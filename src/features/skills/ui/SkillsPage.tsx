@@ -730,7 +730,6 @@ export function SkillsPage({ cwd, header }: { cwd: string; header?: ReactNode })
           disabled: transferring !== null || deleting !== null || saving,
           onCopy: (target) => {
             setActionsMenu(null);
-            // ast-grep-ignore: ts-void-promise-without-catch -- onTransfer() reports its own failures
             void onTransfer(skill, machine, target);
           },
         }}

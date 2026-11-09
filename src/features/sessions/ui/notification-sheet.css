@@ -18,7 +18,7 @@
 .notification-sheet-items {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 /* Pending and History rows share one flat anatomy inside the sheet: title,
    short content, secondary source/time. Floating popups keep their own card
@@ -73,8 +73,7 @@
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
 }
-.notification-request-meta .notification-project,
-.notification-history-meta .notification-project {
+.notification-request-meta .notification-project {
   /* A readable minimum: the row wraps before the source name collapses. */
   flex: 1 1 7rem;
 }
@@ -93,9 +92,17 @@
   inset-block-start: 4px;
   inset-inline-end: 4px;
 }
-.notification-history-note {
-  margin: 0;
+.notification-history-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px 8px;
   padding: 4px 12px 8px;
+}
+.notification-history-note {
+  flex: 1 1 14rem;
+  margin: 0;
   color: var(--ui-text-secondary);
   font-size: var(--ui-font-caption);
   line-height: 1.5;
@@ -111,40 +118,72 @@
   min-inline-size: 0;
 }
 .notification-history-item {
-  padding: 8px 12px;
   border-radius: var(--ui-radius-card);
 }
+/* A row that cannot open its conversation keeps the body's box without its action. */
+.notification-history-static {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px 4px;
+}
+.notification-history-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-inline-size: 0;
+}
 .notification-history-title {
+  flex: 1;
+  min-inline-size: 0;
+  overflow: clip;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 500;
+}
+.notification-history-time {
+  flex: none;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  font-variant-numeric: tabular-nums;
+}
+.notification-history-preview,
+.notification-history-label {
   overflow-wrap: anywhere;
+  color: var(--ui-text-secondary);
+  font-size: var(--ui-font-caption);
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 .notification-history-preview {
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   overflow: clip;
-  overflow-wrap: anywhere;
-  margin-block-start: 4px;
-  color: var(--ui-text-secondary);
-  font-size: var(--ui-font-caption);
-  white-space: pre-wrap;
 }
+/* One line: the source name gives way first, state and actions never wrap under it. */
 .notification-history-meta {
-  margin-block-start: 4px;
+  flex-wrap: nowrap;
+  padding: 0 12px 8px;
 }
-.notification-history-meta time {
-  font-variant-numeric: tabular-nums;
+.notification-history-meta .notification-project {
+  flex: 1 1 0;
 }
-.notification-history-details[open] .notification-history-preview {
-  display: none;
+.notification-history-meta > :not(.notification-project) {
+  flex: none;
 }
-.notification-history-label,
+.notification-history-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+}
 .notification-history-path {
-  margin-block-start: 8px;
+  margin: 0;
+  padding: 0 12px 8px;
   overflow-wrap: anywhere;
-  white-space: pre-wrap;
   font-size: var(--ui-font-caption);
-  line-height: 1.6;
+  line-height: 1.5;
   color: var(--ui-text-secondary);
 }
 .notification-options {

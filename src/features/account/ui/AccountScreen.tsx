@@ -1,14 +1,26 @@
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { Divider } from "../../../shared/ui/Divider";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { LoadingText } from "../../../shared/ui/LoadingText";
 import { TabList, TabPanel, Tabs } from "../../../shared/ui/Tabs";
+import {
+  CircleAlert,
+  CircleHelp,
+  Clock,
+  Lock,
+  MessageSquare,
+  MonitorSmartphone,
+  Shield,
+  UserRound,
+} from "../../../shared/ui/icons";
 import { TodayView } from "../../today";
 import { useAccount } from "../hooks/useAccount";
+import { accountController } from "../model/accountService";
 import { AccountActivity } from "./AccountActivity";
 import { AccountData } from "./AccountData";
 import { AccountDevices } from "./AccountDevices";
+import { AccountHeader } from "./AccountHeader";
 import { AccountNews } from "./AccountNews";
 import { AccountNotifications } from "./AccountNotifications";
 import { AccountPrivacy } from "./AccountPrivacy";
@@ -32,28 +44,56 @@ export type AccountTabId =
 /** Tabs a deactivated account can still use; the rest of the account API answers `account_deactivated`. */
 const DEACTIVATED_TABS: readonly AccountTabId[] = ["profile", "privacy", "status"];
 
-function tabItems(): { value: AccountTabId; label: string }[] {
+/** Below this width the tab menu moves from the side to a scrolling strip above the content. */
+const SIDE_NAV_MIN = 640;
+
+function tabItems(): { value: AccountTabId; label: string; icon: ReactNode }[] {
+  const icon = (Icon: typeof UserRound) => <Icon className="icon-sm" aria-hidden />;
   return [
-    { value: "profile", label: t("Profile") },
-    { value: "security", label: t("Security") },
-    { value: "devices", label: t("Devices") },
-    { value: "activity", label: t("Active time") },
-    { value: "notifications", label: t("Notifications") },
-    { value: "privacy", label: t("Privacy & data") },
-    { value: "support", label: t("Support") },
-    { value: "status", label: t("Account status") },
+    { value: "profile", label: t("Profile"), icon: icon(UserRound) },
+    { value: "security", label: t("Security"), icon: icon(Shield) },
+    { value: "devices", label: t("Devices"), icon: icon(MonitorSmartphone) },
+    { value: "activity", label: t("Active time"), icon: icon(Clock) },
+    { value: "notifications", label: t("Notifications"), icon: icon(MessageSquare) },
+    { value: "privacy", label: t("Privacy & data"), icon: icon(Lock) },
+    { value: "support", label: t("Support"), icon: icon(CircleHelp) },
+    { value: "status", label: t("Account status"), icon: icon(CircleAlert) },
   ];
 }
 
+/** True while the element is at least `min` pixels wide; true without ResizeObserver. */
+function useWide(min: number, mountKey: string) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [wide, setWide] = useState(true);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setWide(entry.contentRect.width >= min);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [min, mountKey]);
+  return { ref, wide };
+}
+
 /**
- * The account center. Signed in it has one tab per area (profile, security on the web, devices,
- * active time, notifications, privacy and data, support, account status). Signed out it is a single
- * sign-in panel; the rest of the app never depends on it.
+ * The account center. Signed in it shows who is signed in above a side menu with one tab per area
+ * (profile, security, devices, active time, notifications, privacy and data, support, account
+ * status). Signed out it is a single sign-in panel; the rest of the app never depends on it.
  */
 export function AccountScreen() {
   useLocale();
   const { state, signIn, cancelSignIn, signOut, deactivate, reactivate } = useAccount();
   const [tab, setTab] = useState<AccountTabId>("profile");
+  const { ref, wide } = useWide(SIDE_NAV_MIN, state.phase);
+  const stale = state.phase === "signed-in" && state.stale;
+  useEffect(() => {
+    if (stale)
+      accountController()
+        .revalidate()
+        .catch(() => undefined); // -- failures are classified inside; the notice stays.
+  }, [stale]);
 
   if (state.phase === "starting") {
     return (
@@ -94,53 +134,73 @@ export function AccountScreen() {
   const items = tabItems().filter((item) => !deactivated || DEACTIVATED_TABS.includes(item.value));
   const active = items.some((item) => item.value === tab) ? tab : items[0]!.value;
   return (
-    <div className={styles.screen}>
+    <div ref={ref} className={styles.screen} data-wide={wide || undefined}>
+      <AccountHeader
+        context={state.context}
+        stale={state.stale}
+        verifiedAt={state.verifiedAt}
+        onSignOut={signOut}
+      />
       {deactivated ? (
         <InlineMessage tone="warning">
           {t("Your account is deactivated. Reactivate it under Account status to use it again.")}
         </InlineMessage>
       ) : null}
-      <Tabs value={active} onValueChange={setTab} id="account-center">
-        <div className={styles.tabScroll}>
-          <TabList label={t("Account")} items={items} />
+      <Tabs
+        value={active}
+        onValueChange={setTab}
+        id="account-center"
+        orientation={wide ? "vertical" : "horizontal"}
+      >
+        <div className={styles.layout}>
+          <nav className={styles.nav}>
+            <TabList label={t("Account")} items={items} />
+          </nav>
+          <div className={styles.panel}>
+            <TabPanel value="profile">
+              <div className={styles.tabs}>
+                <AccountProfile user={user} entitlements={state.context.entitlements} />
+              </div>
+            </TabPanel>
+            <TabPanel value="security">
+              <div className={styles.tabs}>
+                <AccountSecurity user={user} onShowDevices={() => setTab("devices")} />
+              </div>
+            </TabPanel>
+            <TabPanel value="devices">
+              <div className={styles.tabs}>
+                <AccountDevices currentDeviceId={state.deviceId} onSignOutThisDevice={signOut} />
+              </div>
+            </TabPanel>
+            <TabPanel value="activity">
+              <div className={styles.tabs}>
+                <TodayView />
+                <Divider />
+                <AccountActivity />
+              </div>
+            </TabPanel>
+            <TabPanel value="notifications">
+              <div className={styles.tabs}>
+                <AccountNotifications />
+                <Divider />
+                <AccountNews />
+              </div>
+            </TabPanel>
+            <TabPanel value="privacy">
+              <div className={styles.tabs}>
+                <AccountData />
+              </div>
+            </TabPanel>
+            <TabPanel value="support" keepMounted>
+              <AccountSupport />
+            </TabPanel>
+            <TabPanel value="status" keepMounted>
+              <div className={styles.tabs}>
+                <AccountStatus user={user} onDeactivate={deactivate} onReactivate={reactivate} />
+              </div>
+            </TabPanel>
+          </div>
         </div>
-        <TabPanel value="profile">
-          <AccountProfile
-            user={user}
-            stale={state.stale}
-            verifiedAt={state.verifiedAt}
-            onSignOut={signOut}
-          />
-        </TabPanel>
-        <TabPanel value="security">
-          <AccountSecurity email={user.email} />
-        </TabPanel>
-        <TabPanel value="devices">
-          <AccountDevices currentDeviceId={state.deviceId} onSignOutThisDevice={signOut} />
-        </TabPanel>
-        <TabPanel value="activity">
-          <div className={styles.tabs}>
-            <TodayView />
-            <Divider />
-            <AccountActivity />
-          </div>
-        </TabPanel>
-        <TabPanel value="notifications">
-          <div className={styles.tabs}>
-            <AccountNotifications />
-            <Divider />
-            <AccountNews />
-          </div>
-        </TabPanel>
-        <TabPanel value="privacy">
-          <AccountData />
-        </TabPanel>
-        <TabPanel value="support" keepMounted>
-          <AccountSupport />
-        </TabPanel>
-        <TabPanel value="status" keepMounted>
-          <AccountStatus user={user} onDeactivate={deactivate} onReactivate={reactivate} />
-        </TabPanel>
       </Tabs>
     </div>
   );

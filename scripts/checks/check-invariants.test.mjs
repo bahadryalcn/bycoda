@@ -56,8 +56,6 @@ const tsFixture = [
   'import { listen } from "@tauri-apps/api/event";',
   "const iso = new Date(value).toISOString();",
   'const label = title.slice(0, 40) + "…";',
-  "void tasks.tick();",
-  "void tasks.tick().catch(() => {});",
   'const env = { LC_ALL: "C" };',
   'const when = stamp.toLocaleDateString("en");',
   'const text = t("Saved") + "!";',
@@ -147,6 +145,11 @@ test("the rule set flags each defect class once and names its rule", (t) => {
   const root = fixtureRoot(t);
   write(root, "src/features/demo/sample.ts", tsFixture);
   write(root, "src-tauri/src/sample.rs", rustFixture);
+  write(
+    root,
+    "host/demo/sample.ts",
+    ["void tasks.tick();", "void tasks.tick().catch(() => {});", ""].join("\n"),
+  );
   const findings = scanAll(root);
   const rules = findings.map((finding) => finding.rule).sort();
   assert.deepEqual(rules, [
@@ -177,16 +180,16 @@ test("shared helpers and tests are exempt, and only counts above the baseline fa
     "export const iso = new Date(v).toISOString();\n",
   );
   write(root, "src/features/demo/sample.test.ts", tsFixture);
-  write(root, "src/features/demo/sample.ts", "void tasks.tick();\n");
+  write(root, "host/demo/sample.ts", "void tasks.tick();\n");
   assert.deepEqual(
     scanAll(root).map((finding) => [finding.file, finding.rule]),
-    [["src/features/demo/sample.ts", "ts-void-promise-without-catch"]],
+    [["host/demo/sample.ts", "ts-void-promise-without-catch"]],
   );
-  writeBaseline(root, { "src/features/demo/sample.ts": { "ts-void-promise-without-catch": 1 } });
+  writeBaseline(root, { "host/demo/sample.ts": { "ts-void-promise-without-catch": 1 } });
   assert.ok(existsSync(join(root, baselineFile)));
   assert.equal(checkInvariants({ root }).success, true);
-  write(root, "src/features/demo/sample.ts", "void tasks.tick();\nvoid other.run();\n");
-  const result = checkInvariants({ root, files: ["src/features/demo/sample.ts"] });
+  write(root, "host/demo/sample.ts", "void tasks.tick();\nvoid other.run();\n");
+  const result = checkInvariants({ root, files: ["host/demo/sample.ts"] });
   assert.equal(result.success, false);
   assert.deepEqual(
     result.regressions.map(({ rule, baseline, count }) => [rule, baseline, count]),
@@ -194,7 +197,7 @@ test("shared helpers and tests are exempt, and only counts above the baseline fa
   );
   assert.match(formatRegressions(result.regressions), /other\.run\(\)/);
   assert.match(formatRegressions(result.regressions), /ast-grep-ignore/);
-  write(root, "src/features/demo/sample.ts", "void tasks.tick().catch(() => {});\n");
+  write(root, "host/demo/sample.ts", "void tasks.tick().catch(() => {});\n");
   assert.equal(checkInvariants({ root }).improvements.length, 1);
 });
 
@@ -229,4 +232,86 @@ test("privacy writer violations fail the invariant pipeline even with an empty b
   const result = checkInvariants({ root });
   assert.equal(result.success, false);
   assert.ok(result.regressions.some((item) => item.rule === "privacy-writer-outside-fence"));
+});
+
+const scanRule = (root, rule) => scanAll(root).filter((finding) => finding.rule === rule);
+
+test("K-ASYNC applies to the Host and packages, and a finally alone does not handle a rejection", (t) => {
+  const root = fixtureRoot(t);
+  write(root, "host/demo/rejected.ts", "void p.finally(g);\nvoid p.then(a).finally(g);\n");
+  write(
+    root,
+    "host/demo/accepted.ts",
+    [
+      "void p.catch(f).finally(g);",
+      "void p.finally(g).catch(f);",
+      "void p.then(a, b);",
+      "void p.then(a, b).finally(g);",
+    ].join("\n"),
+  );
+  write(root, "packages/demo/src/rejected.ts", "void p.finally(g);\n");
+  // The renderer only logs an unhandled rejection, so the rule does not reach it.
+  write(root, "src/features/demo/renderer.ts", "void p.finally(g);\nvoid tasks.tick();\n");
+  assert.deepEqual(
+    scanRule(root, "ts-void-promise-without-catch").map(({ file, line }) => [file, line]),
+    [
+      ["host/demo/rejected.ts", 1],
+      ["host/demo/rejected.ts", 2],
+      ["packages/demo/src/rejected.ts", 1],
+    ],
+  );
+});
+
+test("K-SUPPRESS requires a reason in the same comment and ignores prose", (t) => {
+  const root = fixtureRoot(t);
+  write(
+    root,
+    "src/features/demo/rejected.ts",
+    [
+      "// eslint-disable-next-line react-hooks/exhaustive-deps",
+      "// oxlint-disable-next-line no-console",
+      "// ast-grep-ignore: ts-i18n-concat",
+      "// @ts-expect-error",
+      "// @ts-ignore",
+      "/* eslint-disable no-console */",
+      "const x = 1; // eslint-disable-line no-console",
+    ].join("\n"),
+  );
+  write(
+    root,
+    "host/demo/accepted.ts",
+    [
+      "// oxlint-disable-next-line no-console -- startup banner",
+      "// ast-grep-ignore: ts-i18n-concat -- label is not user text",
+      "// @ts-expect-error -- upstream typing gap",
+      "/* eslint-disable no-console -- generated file */",
+      "// Prefer a typed guard over an eslint-disable comment.",
+      "// see @ts-ignore in the migration notes",
+      'const text = "eslint-disable";',
+    ].join("\n"),
+  );
+  write(root, "src/features/demo/rejected.test.ts", "// @ts-ignore\n");
+  assert.deepEqual(
+    scanRule(root, "ts-suppression-without-reason").map(({ file, line }) => [file, line]),
+    [1, 2, 3, 4, 5, 6, 7].map((line) => ["src/features/demo/rejected.ts", line]),
+  );
+});
+
+test("K-CLOCK covers Host scheduler, budget and watchdog modules by name", (t) => {
+  const root = fixtureRoot(t);
+  const source = "const started = Date.now();\n";
+  for (const file of [
+    "host/demo/job-scheduler.ts",
+    "host/demo/run-budget.ts",
+    "host/demo/turn-watchdog.ts",
+  ]) {
+    write(root, file, source);
+  }
+  write(root, "host/demo/plain.ts", source);
+  assert.deepEqual(
+    scanRule(root, "oxlint/no-restricted-properties")
+      .map(({ file }) => file)
+      .sort(),
+    ["host/demo/job-scheduler.ts", "host/demo/run-budget.ts", "host/demo/turn-watchdog.ts"],
+  );
 });

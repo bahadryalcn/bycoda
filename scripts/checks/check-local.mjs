@@ -96,7 +96,11 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
   );
   const code = files.filter((file) => /\.[cm]?[jt]sx?$/.test(file));
   batched("Changed-file formatting", (batch) => tool("oxfmt", ["--check", ...batch]), supported);
-  batched("Changed-file lint", (batch) => tool("oxlint", [...batch]), code);
+  batched(
+    "Changed-file lint ratchet",
+    (batch) => [path.join(root, "scripts/checks/check-lint-baseline.mjs"), "--files", ...batch],
+    code,
+  );
   const ui = files.filter((file) => scopeOf(file));
   batched(
     "Changed-file UI drift ratchet",
@@ -123,12 +127,6 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
     (batch) => [path.join(root, "scripts/checks/check-code-structure.mjs"), "--files", ...batch],
     invariants,
   );
-  const hooks = code.filter((file) => file.startsWith("src/"));
-  batched(
-    "Changed React hook contracts",
-    (batch) => tool("oxlint", ["--config", ".oxlint-hooks.json", ...batch]),
-    hooks,
-  );
   // CI's preflight runs `cargo fmt --all --check`; it takes about a second, so run
   // the same whole-workspace check whenever any Rust source changed.
   if (files.some((file) => file.endsWith(".rs")))
@@ -139,6 +137,14 @@ export function localPlan({ decision, root = repositoryRoot, limit = 12, scripts
     });
   // The evaluation harness imports application modules, so application type changes
   // can break `pnpm eval:check` in the CI scripts job without touching evals/.
+  // Test files are outside the product tsconfigs; the CI web job ratchets their types
+  // (about 8 seconds for the whole repository, so it takes no file list).
+  if (files.some((file) => /^(?:src|host)\/.*\.tsx?$/.test(file)))
+    steps.push(
+      node("Test file types ratchet (CI web)", [
+        path.join(root, "scripts/checks/check-test-types.mjs"),
+      ]),
+    );
   if (files.some((file) => /^(?:evals|src|host|packages)\/.*\.[cm]?tsx?$/.test(file)))
     steps.push(
       node(

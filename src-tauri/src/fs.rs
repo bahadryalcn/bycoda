@@ -4430,7 +4430,6 @@ fn git_github_work_items_for(
     git_github_work_items_for_token(root, repo, kind, assigned_to_me, state, search, limit, None)
 }
 
-#[allow(clippy::too_many_arguments)] // GitHub query fields map one-to-one onto the work-item filter; a struct would only rename them.
 pub(crate) fn git_github_work_items_for_token(
     root: &Path,
     repo: &str,

@@ -7,6 +7,7 @@ export const ASSISTANT_QUEUE_FREE_READS: ReadonlySet<string> = new Set([
   "projects.list",
   "snapshot",
   "profile.get",
+  "models.pool.get",
   "memory.search",
   "threads.messages",
 ]);

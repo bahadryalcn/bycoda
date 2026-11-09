@@ -131,7 +131,6 @@ impl RunPersistence for SqlPersistence {
         Ok(crate::ssh_runbooks::test_read_run(&connection, id)?.filter(|run| run.owner == owner))
     }
 }
-#[allow(clippy::too_many_arguments)]
 fn start(
     engine: &Arc<SshExecutions>,
     reviews: &SshExecutionReviews,

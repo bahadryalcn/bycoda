@@ -52,7 +52,7 @@ it("captures an explicit owner correction verbatim and applies manual timing onl
   expect(f.writer.hasPending).toBe(true);
   const restored = new VoiceOwnerRuleWrites(f.request);
   f.loseAck(false);
-  expect(await restored.retry()).toMatchObject({ saved: true, manualTurnEnd: true });
+  expect(await restored.retry()).toMatchObject({ saved: true, manualTurnEnd: false });
   expect(f.request.mock.calls.filter(([value]) => value.op === "memory.save")).toHaveLength(1);
   expect(f.entries[0]).toMatchObject({
     kind: "rule",
@@ -61,7 +61,44 @@ it("captures an explicit owner correction verbatim and applies manual timing onl
     quote,
     scope: "all",
   });
-  expect(loadVoiceSettings()).toMatchObject({ manualTurnEnd: true, holdAnnouncements: true });
+  expect(loadVoiceSettings().manualTurnEnd).toBeUndefined();
+  expect(loadVoiceSettings().holdAnnouncements).toBe(true);
+});
+it("never turns not-being-interrupted into manual turn end", () => {
+  for (const text of ["Don't interrupt me.", "Sözümü kesme", "Lafımı kesme lütfen"]) {
+    const rule = captureVoiceOwnerRule(text);
+    expect(rule, text).toBeDefined();
+    expect(rule!.manualTurnEnd, text).toBe(false);
+  }
+});
+it("saves only explicit rules directed at the assistant", () => {
+  for (const text of [
+    "From now on answer in Turkish",
+    "Bundan sonra kısa cevap ver",
+    "Her zaman Türkçe cevap ver",
+    "Asla küfür etme",
+    "Always answer in Turkish",
+    "Never say sorry",
+    "Don't ever call me sir",
+    "Bunu bir daha yapma",
+    "Bunu kural olarak kaydet",
+    "Remember this rule: be brief",
+  ])
+    expect(captureVoiceOwnerRule(text), text).toBeDefined();
+  for (const text of [
+    "Bu test her zaman kırılıyor",
+    "Bu hata asla düzelmiyor",
+    "It always breaks on Windows",
+    "This never works",
+    "Always run the tests first",
+    "Neden her zaman geç kalıyor",
+    "Why does it always fail",
+    "Bu her zaman böyle mi",
+    "Bundan sonra ne yapacağız",
+    "Bir daha deneyelim",
+    "Her zaman yaptığım gibi",
+  ])
+    expect(captureVoiceOwnerRule(text), text).toBeUndefined();
 });
 it("rejects forged rule objects, quoted worker content, questions and mixed work requests", async () => {
   const f = fixture();

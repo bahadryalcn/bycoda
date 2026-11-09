@@ -138,3 +138,18 @@ it("records the provider so a stored title can drop its prefix", async () => {
   } as never);
   expect(stored.harness).toBe("codex");
 });
+
+it("removes one occurrence, keeps a reused request ID and refuses an unreadable store", async () => {
+  const { removeNotificationHistoryEntry } = await import("./notificationHistory");
+  const older = { ...entry, occurredAt: 1000 };
+  const reused = { ...entry, occurredAt: 2000 };
+  const other = { ...entry, key: "other:question:1", occurredAt: 1500 };
+  writeNotificationHistory([reused, other, older]);
+  expect(removeNotificationHistoryEntry(older)).toEqual([reused, other]);
+  expect(readNotificationHistory()).toEqual([reused, other]);
+  // Already gone: the stored list is returned unchanged.
+  expect(removeNotificationHistoryEntry(older)).toEqual([reused, other]);
+  localStorage.setItem(NOTIFICATION_HISTORY_KEY, "bad json");
+  expect(removeNotificationHistoryEntry(reused)).toBeNull();
+  expect(localStorage.getItem(NOTIFICATION_HISTORY_KEY)).toBe("bad json");
+});

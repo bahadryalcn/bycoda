@@ -27,13 +27,18 @@ says you are signed in, return to bycoda. Sign-in finishes within five minutes; 
 ## The account center
 
 The account entry sits at the bottom of the Settings list: your avatar and name, or **Sign in**
-when you use bycoda as a guest. Signed in, the Account page has tabs: **Profile**, **Security**,
-**Devices**, **Active time**, **Notifications**, **Privacy & data**, **Support** and **Account status**.
+when you use bycoda as a guest. Signed in, the Account page shows your picture, name, e-mail, plan
+and membership date with **Sign out** at the top, and a side menu (a strip above the content in a
+narrow window) with **Profile**, **Security**, **Devices**, **Active time**, **Notifications**,
+**Privacy & data**, **Support** and **Account status**. Details saved earlier refresh on their own
+when the window gets focus or the network returns.
 Signed out it is one sign-in panel plus a **Contact by e-mail** link; a guest stays fully local.
 
 ## Profile
 
-Your name, avatar and email. Click your display name to change it.
+Your display name (click it to change it), e-mail, plan and membership date, and the time zone
+the account uses for daily summaries and active-time days. When it differs from this computer,
+**Use …** switches it to this computer's zone.
 
 ## My devices
 
@@ -43,7 +48,7 @@ out the next time it connects. Signing out this computer from here also signs it
 
 ### Let phones find this computer
 
-In Settings → Connections → Connect your phone, **Let my signed-in phones find this computer**
+In Settings → Connections → Phone, **Let my signed-in phones find this computer**
 (off by default) stores this computer's name, its Host environment id and its phone route
 addresses (a private local-network address with its public key, and a Tailscale address) in
 your account so your signed-in phones can ask to connect. These are new stored data: route
@@ -101,15 +106,21 @@ on GitHub** and the e-mail link instead.
 
 ## Security
 
-Your e-mail address, connected accounts, two-step verification and signed-in sessions are
-managed on your account page in the browser. **Manage security on the web** opens the
-security page of the account portal.
+- **Sign-in**: your e-mail and the methods you sign in with (Google, GitHub, Apple, Facebook or
+  an e-mail code). Password and two-step verification belong to the sign-in provider; when the
+  build has an account portal, **Open account page** opens them in the browser.
+- **Sessions**: how many devices are signed in, **Review devices**, and **Sign out others**,
+  which keeps this computer signed in.
+- **Recent activity**: sign-ins, new and signed-out devices, deactivation, export and deletion
+  requests of the last 90 days, with device, app and country. IP addresses are never kept.
 
 ## Privacy and data
 
-Shows what bycoda stores about your account (devices, phone route hints if you turned on phone connect, active-time days, notification items,
-support requests, ready exports) and never your sessions, prompts, code or file names.
-**Export your data** opens your account page in the browser.
+Shows, one row per category, what bycoda stores about your account (profile, devices, phone
+route hints if you turned on phone connect, active-time days, notification items, support
+requests) and how long it is kept, and never your sessions, prompts, code or file names.
+**Request export** prepares a JSON copy of your account in the background; when it is ready,
+**Save file** downloads it. Statistics and diagnostic logs below are choices of this computer.
 
 **Share anonymous usage statistics** is off by default and needs no account. bycoda asks
 once: in the first-run setup, or for existing installations in a small notice that never
@@ -141,8 +152,9 @@ the server, never include your conversations, prompts or code, and are kept 90 d
   notifications. You can add an optional reason. A deactivated account shows only Profile,
   Privacy & data and Account status; **Reactivate account** restores it and this computer
   registers again.
-- **Delete account** opens your account page in the browser. Deletion starts a 14-day grace
-  period in which you can undo it; after that your account data is removed.
+- **Delete account…** asks for confirmation and schedules the deletion with a 14-day grace
+  period. Until then the page shows the date and **Keep my account** undoes it; afterwards your
+  account data is removed. Sessions, projects and files on your computers are never touched.
 
 bycoda never sends session content, prompts, code, file paths or project names to the
 account service.

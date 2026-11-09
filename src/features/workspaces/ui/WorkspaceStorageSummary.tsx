@@ -132,7 +132,7 @@ export function WorkspaceStorageSummary({
         {missing > 0 && (
           <SettingsFeedback state="warning">
             {t(
-              "Missing worktree folders: {p0}. They count as 0 bytes; delete their records from the row menu.",
+              "Missing worktree folders: {p0}. They count as 0 bytes; remove their records with each row's Remove record action.",
               { p0: missing },
             )}
           </SettingsFeedback>

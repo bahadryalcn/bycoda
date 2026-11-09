@@ -7,28 +7,36 @@ import { remoteRequest } from "../model/connections";
 import { localHostCompatibility } from "../model/buildCompatibility";
 import type { HostDescriptor, RemoteMachine } from "../model/protocol";
 import { useBundledHostStatus } from "../model/bundledHostStatus";
+import { localHostNotice, type LocalHostCompatibility } from "../model/localHostNotice";
 
-/** Explains a host update the app could not apply yet; silent when current. */
+/** Explains a host update the app could not apply yet; silent when the host is verified current. */
 export function LocalHostUpdateNotice() {
   useLocale();
   const status = useBundledHostStatus();
-  const [mismatch, setMismatch] = useState<"identity" | "capabilities" | null>(null);
+  const [compatibility, setCompatibility] = useState<LocalHostCompatibility>("pending");
   useEffect(() => {
     let cancelled = false;
     const loadCompatibility = async () => {
       try {
         const machines = await invoke<RemoteMachine[]>("remote_machines");
         const machine = machines.find((entry) => entry.localHost);
-        if (!machine) return;
+        if (!machine) {
+          if (!cancelled) setCompatibility("unavailable");
+          return;
+        }
         const descriptor = await remoteRequest<HostDescriptor>(
           machine.id,
           "environment.describe",
           {},
           true,
         );
-        if (!cancelled) setMismatch(localHostCompatibility(buildIdentity, descriptor));
+        const next = localHostCompatibility(buildIdentity, descriptor) ?? "ok";
+        if (!cancelled) setCompatibility(next);
       } catch {
-        /* An unavailable descriptor is not evidence of a mismatch. */
+        // An unavailable descriptor is not evidence of a mismatch, and one failed
+        // refresh does not undo what an earlier answer already established.
+        if (!cancelled)
+          setCompatibility((current) => (current === "pending" ? "unavailable" : current));
       }
     };
     void loadCompatibility();
@@ -39,32 +47,12 @@ export function LocalHostUpdateNotice() {
       window.removeEventListener("focus", onFocus);
     };
   }, [status?.installed, status?.bundled]);
-  const pendingUpdate = status?.state === "deferred" || status?.state === "failed";
-  if (!pendingUpdate && !mismatch) return null;
-  const versions =
-    status?.installed && status.bundled
-      ? t("This computer's host is {p0}; this app includes {p1}.", {
-          p0: status.installed,
-          p1: status.bundled,
-        })
-      : null;
+  const notice = localHostNotice(status, compatibility);
+  if (!notice) return null;
   return (
-    <Alert tone="warning">
-      <span className="font-medium text-content">
-        {pendingUpdate
-          ? status?.state === "failed"
-            ? t("The host on this computer could not be updated.")
-            : t("The host on this computer will update soon.")
-          : t("The app and this computer's Host need to be updated together.")}
-      </span>{" "}
-      {versions} {status?.message ? t(status.message) : null}{" "}
-      {mismatch === "identity"
-        ? t("The serving Host source differs from the Host bundled with this app.")
-        : mismatch === "capabilities"
-          ? t(
-              "The serving Host does not support managed workspace creation and policy. Update the Host before starting work.",
-            )
-          : null}
+    <Alert tone={notice.tone}>
+      <span className="font-medium text-content">{t(notice.title)}</span>{" "}
+      {notice.details.map((line) => t(line.text, line.params)).join(" ")}
     </Alert>
   );
 }

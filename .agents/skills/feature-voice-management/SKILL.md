@@ -38,7 +38,7 @@ Source paths below are repository-relative.
   accepted-run ownership after voice closes. Desktop sync provenance alone is
   not a desktop execution lease; never substitute another owner on uncertainty.
 - Global discovery and application metadata use a real Room thread without a
-  project. Global discovery also lists project tools (Room marks them
+  project. Global discovery also lists project tools (Room and voice mark them
   `requiresProject`); calling one still needs an explicit visible target.
   `workspace.projects.create` makes a new folder through native file access and
   adds it to the rail; it never reuses an existing folder.

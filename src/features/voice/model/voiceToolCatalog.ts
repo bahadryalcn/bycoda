@@ -79,6 +79,36 @@ export function voiceToolCategory(tool: VoiceToolDescriptor): string {
   return `${tool.family}:${tool.action.split(".")[0]}`;
 }
 
+/** Largest page `selectVoiceTools` returns; the realtime tool schema should not advertise more. */
+export const VOICE_TOOL_MAX_LIMIT = 40;
+
+/** Lower is better: exact action > action word/prefix > family/category > description only. */
+function rankVoiceTool(tool: VoiceToolDescriptor, clauses: ReturnType<typeof voiceSearchClauses>) {
+  const action = tool.action.toLowerCase();
+  const parts = action.split(/[._-]/);
+  if (clauses.length && clauses.map((term) => term.text).join(" ") === parts.join(" ")) return -1;
+  let score = 0;
+  for (const term of clauses) {
+    if (action === term.text) score += 0;
+    else if (
+      (term.action !== undefined && parts.includes(term.action)) ||
+      parts.includes(term.text) ||
+      action.startsWith(term.text) ||
+      parts.some((part) => part.startsWith(term.text))
+    )
+      score += 1;
+    else if (
+      tool.family === term.feature ||
+      tool.family === term.text ||
+      (term.feature !== undefined && parts[0] === term.feature) ||
+      parts[0] === term.text
+    )
+      score += 2;
+    else score += 3;
+  }
+  return score;
+}
+
 /** Search uses trusted metadata, never log, document or transcript instructions. */
 export function selectVoiceTools(
   catalog: readonly VoiceToolDescriptor[],
@@ -86,7 +116,7 @@ export function selectVoiceTools(
 ): VoiceToolPage {
   const terms = voiceSearchClauses((selection.query ?? "").replace(/['’](?=\p{L})/gu, ""));
   const offset = boundedInteger(selection.offset, 0, 0, catalog.length);
-  const limit = boundedInteger(selection.limit, 12, 1, 40);
+  const limit = boundedInteger(selection.limit, 12, 1, VOICE_TOOL_MAX_LIMIT);
   const matches = (tool: VoiceToolDescriptor, clauses: typeof terms) => {
     if (selection.family && selection.family !== tool.family) return false;
     if (selection.category && selection.category !== voiceToolCategory(tool)) return false;
@@ -117,6 +147,12 @@ export function selectVoiceTools(
       ? terms.filter((term) => !recognized.includes(term)).map((term) => term.text)
       : undefined;
   if (ignoredTerms) filtered = catalog.filter((tool) => matches(tool, recognized));
+  const rankClauses = ignoredTerms ? recognized : terms;
+  if (rankClauses.length)
+    filtered = filtered
+      .map((tool, index) => ({ tool, index, score: rankVoiceTool(tool, rankClauses) }))
+      .sort((a, b) => a.score - b.score || a.index - b.index)
+      .map((entry) => entry.tool);
   const end = offset + limit;
   return {
     tools: filtered.slice(offset, end),

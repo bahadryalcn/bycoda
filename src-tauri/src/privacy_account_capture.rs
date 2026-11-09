@@ -16,7 +16,6 @@ fn field<'a>(value: &'a Value, name: &str, max: usize) -> Result<&'a str, String
         .filter(|s| !s.is_empty() && s.len() <= max && !s.contains('\0'))
         .ok_or_else(|| format!("Invalid Room account proof {name}"))
 }
-#[allow(clippy::too_many_arguments)]
 fn operation(
     environment: &str,
     thread: &str,

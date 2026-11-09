@@ -27,11 +27,8 @@ for (const theme of ["dark", "light"]) {
       const locked = list
         .getByRole("listitem")
         .filter({ hasText: "Unlock this worktree in Git first" });
-      // Deletion lives in the row action menu; a locked worktree offers it disabled.
-      await locked.getByRole("button", { name: /^Actions for / }).click();
-      await expect(page.getByRole("menuitem", { name: /^Delete / })).toBeDisabled();
-      await page.keyboard.press("Escape");
-      await expect(page.getByRole("menu")).toHaveCount(0);
+      // Deletion is an inline row action; a locked worktree offers it disabled with a reason.
+      await expect(locked.getByRole("button", { name: /^Delete / })).toBeDisabled();
       const details = surface.locator('[data-setting-id="worktree-location"]');
       // The location sits in the page header: always visible, never behind a disclosure.
       await expect(details).toBeVisible();
@@ -162,9 +159,8 @@ for (const theme of ["light", "dark"]) {
       await surface
         .getByRole("listitem")
         .filter({ hasText: "Cleanup blocked" })
-        .getByRole("button", { name: "More actions", exact: true })
+        .getByRole("button", { name: "Review blocked cleanup", exact: true })
         .click();
-      await page.getByRole("menuitem", { name: "Review blocked cleanup", exact: true }).click();
       const dialog = page.getByRole("dialog", {
         name: "Delete worktree directory",
         exact: true,
@@ -273,6 +269,47 @@ test("older Host explains update; failed policy save keeps the draft", async ({ 
   await expect(surface.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 });
 
+for (const theme of ["light", "dark"])
+  for (const width of [1280, 800])
+    test(`a missing active folder retires its record in the background: ${theme} ${width}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.emulateMedia({ reducedMotion: "reduce" });
+      await page.goto(`/tests/browser/worktrees.html?populated&missingActive&theme=${theme}`);
+      const list = page.getByRole("list", { name: "Worktrees", exact: true });
+      const row = list.getByRole("listitem").filter({ hasText: "wt-populated-1-deep-folder-end" });
+      await expect(row.getByText("Missing folder", { exact: true })).toBeVisible();
+      await expect(row.getByRole("button", { name: "More actions" })).toHaveCount(0);
+      for (const name of ["Review changes", "Reveal folder", "Pin workspace", "Remove record"])
+        await expect(row.getByRole("button", { name, exact: true })).toBeVisible();
+      await expect(row.getByRole("button", { name: "Reveal folder", exact: true })).toBeDisabled();
+      mkdirSync(removalDirectory, { recursive: true });
+      await page.screenshot({ path: `${removalDirectory}/rows-${theme}-${width}.png` });
+      await row.getByRole("button", { name: "Remove record", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Remove workspace record", exact: true });
+      await expect(dialog).toContainText("still marked active");
+      await page.screenshot({ path: `${removalDirectory}/dialog-${theme}-${width}.png` });
+      await dialog.getByRole("button", { name: "Remove record", exact: true }).click();
+      await expect(dialog).not.toBeVisible();
+      await expect(row.getByText("Directory removed", { exact: true })).toBeVisible();
+      await expect(
+        page.getByText("Deleted wt-populated-1-deep-folder-end", { exact: true }),
+      ).toBeVisible();
+      await page.screenshot({ path: `${removalDirectory}/done-${theme}-${width}.png` });
+      const methods = await page.evaluate(() =>
+        (window as unknown as { workspaceFixtureCalls: { method: string }[] }).workspaceFixtureCalls
+          .map((call) => call.method)
+          .filter((method) => method.startsWith("workspaces.close") || method.includes("cleanup")),
+      );
+      expect(methods.slice(-4)).toEqual([
+        "workspaces.close",
+        "workspaces.cleanup.plan",
+        "workspaces.cleanup.apply",
+        "workspaces.cleanup.status",
+      ]);
+    });
+
 test("cleanup blockers prevent owner removal and preserve unsaved policy", async ({ page }) => {
   await page.goto("/tests/browser/worktrees.html?managed&hardBlock&theme=light");
   const surface = page.getByTestId("workspace-policy-settings");
@@ -280,9 +317,8 @@ test("cleanup blockers prevent owner removal and preserve unsaved policy", async
   await surface
     .getByRole("listitem")
     .filter({ hasText: "Cleanup blocked" })
-    .getByRole("button", { name: "More actions", exact: true })
+    .getByRole("button", { name: "Review blocked cleanup", exact: true })
     .click();
-  await page.getByRole("menuitem", { name: "Review blocked cleanup", exact: true }).click();
   const dialog = page.getByRole("dialog", {
     name: "Delete worktree directory",
     exact: true,
@@ -307,16 +343,9 @@ test("individual pinning persists and older pinning capability is explicit", asy
   await page.goto("/tests/browser/worktrees.html?managed&theme=light");
   const list = page.getByRole("list", { name: "Worktrees", exact: true });
   const workspace = list.getByRole("listitem").filter({ hasText: "bycoda/s/settings-draft" });
-  const actions = workspace.getByRole("button", {
-    name: "More actions",
-    exact: true,
-  });
-  await actions.click();
-  await page.getByRole("menuitem", { name: "Unpin workspace", exact: true }).click();
+  await workspace.getByRole("button", { name: "Unpin workspace", exact: true }).click();
   await expect(workspace.getByText("Pinned", { exact: true })).toHaveCount(0);
-  await actions.click();
-  await expect(page.getByRole("menuitem", { name: "Pin workspace", exact: true })).toBeVisible();
-  await page.keyboard.press("Escape");
+  await expect(workspace.getByRole("button", { name: "Pin workspace", exact: true })).toBeVisible();
   expect(
     await page.evaluate(
       () =>
@@ -340,13 +369,13 @@ test("individual pinning persists and older pinning capability is explicit", asy
       exact: true,
     }),
   ).toBeVisible();
-  await page
-    .getByRole("list", { name: "Worktrees", exact: true })
-    .getByRole("listitem")
-    .filter({ hasText: "bycoda/s/settings-draft" })
-    .getByRole("button", { name: "More actions", exact: true })
-    .click();
-  await expect(page.getByRole("menuitem", { name: "Unpin workspace", exact: true })).toBeDisabled();
+  await expect(
+    page
+      .getByRole("list", { name: "Worktrees", exact: true })
+      .getByRole("listitem")
+      .filter({ hasText: "bycoda/s/settings-draft" })
+      .getByRole("button", { name: "Unpin workspace", exact: true }),
+  ).toBeDisabled();
 });
 
 for (const theme of ["light", "dark"])
@@ -396,6 +425,7 @@ for (const theme of ["light", "dark"])
   }
 
 const l3Directory = "temp/verification/2026-11-06-worktrees";
+const removalDirectory = "temp/verification/worktree-removal";
 
 for (const theme of ["light", "dark"])
   for (const width of [1280, 800]) {
@@ -524,24 +554,25 @@ for (const theme of ["light", "dark"])
       // Keyboard reaches the row actions of the worktree collection, past the managed rows.
       await treeSearch.focus();
       let reached = "";
-      for (let step = 0; step < 60 && !reached.startsWith("Reveal"); step += 1) {
+      // Managed rows use "Reveal folder"; unmanaged rows name their branch.
+      for (let step = 0; step < 80 && !/^Reveal (?!folder$)/.test(reached); step += 1) {
         await page.keyboard.press("Tab");
         reached = await page.evaluate(
           () => document.activeElement?.getAttribute("aria-label") ?? "",
         );
       }
       expect(reached).toMatch(/^Reveal /);
-      // Each unmanaged row has a Details toggle (collapsed) between Reveal and its actions.
+      // Each unmanaged row offers Delete inline, then its collapsed Details toggle last.
+      await page.keyboard.press("Tab");
+      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toMatch(
+        /^Delete /,
+      );
       await page.keyboard.press("Tab");
       expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toBe(
         "Details",
       );
       expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-expanded"))).toBe(
         "false",
-      );
-      await page.keyboard.press("Tab");
-      expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label"))).toMatch(
-        /^Actions for /,
       );
 
       // Nothing overflows horizontally.
@@ -592,18 +623,12 @@ test("populated source control for a remote project keeps restrictions visible",
     exact: true,
   });
   await expect(remoteTrees.getByRole("listitem").first()).toBeVisible();
-  // Deletion sits in each unmanaged row's action menu; every one must offer it disabled.
-  const remoteActions = remoteTrees.getByRole("button", {
-    name: /^Actions for /,
-  });
-  const actionCount = await remoteActions.count();
-  expect(actionCount).toBeGreaterThan(0);
-  for (let index = 0; index < actionCount; index += 1) {
-    await remoteActions.nth(index).click();
-    await expect(page.getByRole("menuitem", { name: /^Delete / })).toBeDisabled();
-    await page.keyboard.press("Escape");
-    await expect(page.getByRole("menu")).toHaveCount(0);
-  }
+  // Every unmanaged row offers Delete inline, disabled for a remote project.
+  const remoteDeletes = remoteTrees.getByRole("button", { name: /^Delete (?!directory$)/ });
+  const deleteCount = await remoteDeletes.count();
+  expect(deleteCount).toBeGreaterThan(0);
+  for (let index = 0; index < deleteCount; index += 1)
+    await expect(remoteDeletes.nth(index)).toBeDisabled();
   mkdirSync(l3Directory, { recursive: true });
   await page.setViewportSize({
     width: 1280,

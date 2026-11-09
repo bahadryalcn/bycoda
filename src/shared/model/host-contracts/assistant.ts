@@ -1,5 +1,13 @@
 import { z } from "zod";
+import {
+  AssistantJobHoldReasonSchema,
+  AssistantNotificationKindSchema,
+  AssistantSnapshotFeaturesSchema,
+  type AssistantJobHoldReason,
+  type AssistantNotificationKind,
+} from "./assistant-attention";
 import { AssistantProfilePatchSchema, type AssistantProfilePatch } from "./assistant-profile";
+import { AssistantModelPoolOps, AssistantModelPoolResponseSchema } from "../assistantModelPool";
 export {
   AssistantExecutionSchema,
   AssistantProfilePatchSchema,
@@ -44,7 +52,6 @@ import {
   type AssistantOwnerQuestion,
   type AssistantOwnerQuestionReceipt,
 } from "../assistantOwnerQuestions";
-
 const text = (max: number) => z.string().min(1).max(max);
 const id = text(200);
 const version = z.number().int().nonnegative();
@@ -106,6 +113,7 @@ export type AssistantMemory = {
   active: boolean;
   forbiddenTerms: string[];
 };
+export type { AssistantJobHoldReason };
 export type AssistantJobStatus =
   | "queued"
   | "planning"
@@ -258,15 +266,7 @@ export type AssistantAutomaticPresence = {
 export type AssistantEffectivePresence = "present" | "idle" | "away" | "dnd" | "unknown";
 export type AssistantNotification = {
   id: string;
-  kind:
-    | "briefing"
-    | "job.done"
-    | "job.waiting"
-    | "job.failed"
-    | "budget.exhausted"
-    | "owner.question"
-    | "task.done"
-    | "task.needsInput";
+  kind: AssistantNotificationKind;
   title: string;
   body: string;
   createdAt: number;
@@ -278,8 +278,7 @@ export type AssistantNotification = {
   eligible: boolean;
   deferredReason: "quiet" | "away" | "idle" | "dnd" | "unknown" | "settings" | null;
 };
-/** Provider-reported worker root-turn measurements. Percent is the mean of
- * available normalized per-turn percentages, not a billing or weighted rate. */
+/** Provider worker root-turn measurements; percent is a per-turn mean, not a billing rate. */
 export type AssistantCacheUsage = {
   scope: "worker-turns";
   measuredTurns: number;
@@ -340,6 +339,7 @@ export type AssistantSnapshot = {
   briefingSchedule?: { enabled: boolean; time: string };
   notesError?: string;
   keepAwake?: AssistantKeepAwakeStatus;
+  jobHolds?: Record<string, AssistantJobHoldReason>;
   capabilities: {
     jobs: boolean;
     chief: boolean;
@@ -394,8 +394,9 @@ export const AssistantRequestValidationSchema = z.union([
     AssistantOwnerQuestionSnoozeSchema,
     AssistantOwnerQuestionCancelSchema,
     z.strictObject({ op: z.literal("projects.list") }),
-    z.strictObject({ op: z.literal("snapshot"), limit }),
+    z.strictObject({ op: z.literal("snapshot"), limit, features: AssistantSnapshotFeaturesSchema }),
     z.strictObject({ op: z.literal("profile.get") }),
+    ...AssistantModelPoolOps,
     z.strictObject({ op: z.literal("narration.pending"), threadId: id, generation: id }),
     z.strictObject({ op: z.literal("narration.claim"), threadId: id, eventId: id, generation: id }),
     z.strictObject({
@@ -663,6 +664,7 @@ export type AssistantResponse = {
     candidates: ManualSessionCandidate[];
   };
   profile?: AssistantProfile;
+  modelPool?: z.infer<typeof AssistantModelPoolResponseSchema>;
   memory?: AssistantMemory;
   entries?: AssistantMemory[];
   thread?: AssistantThread;
@@ -676,7 +678,6 @@ export type AssistantResponse = {
   trashId?: string;
   deleteReview?: AssistantJobDeleteReview;
 };
-
 const metadata = { id, version, createdAt: version, updatedAt: version };
 const deleteReviewSchema = z.strictObject({
   jobId: id,
@@ -904,16 +905,7 @@ export const AssistantSnapshotSchema = z.strictObject({
     .array(
       z.strictObject({
         id,
-        kind: z.enum([
-          "briefing",
-          "job.done",
-          "job.waiting",
-          "job.failed",
-          "budget.exhausted",
-          "owner.question",
-          "task.done",
-          "task.needsInput",
-        ]),
+        kind: AssistantNotificationKindSchema,
         title: z.string().max(200),
         body: z.string().max(2000),
         createdAt: version,
@@ -972,6 +964,7 @@ export const AssistantSnapshotSchema = z.strictObject({
     })
     .nullable(),
   notesError: z.string().max(2000).optional(),
+  jobHolds: z.record(id, AssistantJobHoldReasonSchema).optional(),
   capabilities: z.strictObject({
     jobs: z.boolean(),
     chief: z.boolean(),
@@ -1021,6 +1014,7 @@ export const AssistantResponseValidationSchema = z.strictObject({
     })
     .optional(),
   profile: profileSchema.optional(),
+  modelPool: AssistantModelPoolResponseSchema.optional(),
   memory: memorySchema.optional(),
   entries: z.array(memorySchema).max(100).optional(),
   thread: threadSchema.optional(),
@@ -1037,7 +1031,6 @@ export const AssistantResponseValidationSchema = z.strictObject({
   trashId: id.optional(),
   deleteReview: deleteReviewSchema.optional(),
 });
-
 /** Canonical wire export currently represents string constraints only through
  * its shared identifier patterns. Keep exact domain bounds in the validation
  * schemas above; omit non-representable lengths, regex/custom predicates only

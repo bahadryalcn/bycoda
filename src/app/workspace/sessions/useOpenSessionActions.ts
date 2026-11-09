@@ -124,7 +124,7 @@ export function useOpenSessionActions({
         workspaceRequestId?: string;
         privacyToken?: PrivacyMutationToken;
       },
-    ): Promise<void> => {
+    ): Promise<boolean> => {
       if (options?.workspaceRequestId && !options.privacyToken)
         return withRoomPrivacyMutation(
           (token) =>
@@ -142,7 +142,7 @@ export function useOpenSessionActions({
       let session = await ensureOpenSession(sessionId);
       if (request !== openRequest.current || !isCurrent() || !session || session.inboxAsk) {
         if (options?.privacyToken) throw new Error("Room session is unavailable.");
-        return;
+        return false;
       }
       let delegatedChild: string | undefined;
       const delegation = delegationParentOf(session);
@@ -171,7 +171,7 @@ export function useOpenSessionActions({
               ),
             ];
           } else if (parseRemotePath(child.cwd)) {
-            if (!remoteSessionFor(child.id)) return;
+            if (!remoteSessionFor(child.id)) return false;
             candidateIds = getSessions()
               .filter(
                 (candidate) =>
@@ -181,9 +181,9 @@ export function useOpenSessionActions({
               .map((candidate) => candidate.id);
           } else candidateIds = [delegation.parentSessionId];
         } catch {
-          return;
+          return false;
         }
-        if (candidateIds.length !== 1 || candidateIds[0] === child.id) return;
+        if (candidateIds.length !== 1 || candidateIds[0] === child.id) return false;
         const parent = await ensureOpenSession(candidateIds[0]);
         if (
           request !== openRequest.current ||
@@ -192,7 +192,7 @@ export function useOpenSessionActions({
           parent.inboxAsk ||
           !isDelegatedChildOf(child, parent)
         )
-          return;
+          return false;
         delegatedChild = child.id;
         session = parent;
       }
@@ -211,7 +211,7 @@ export function useOpenSessionActions({
           delegationParentOf(session)
         ) {
           if (options?.privacyToken) throw new Error("Room session is unavailable.");
-          return;
+          return false;
         }
         inspectedWorkerId = sessionId;
       }
@@ -227,7 +227,7 @@ export function useOpenSessionActions({
         if (inspectedWorkerId) setInspectedWorkerId(inspectedWorkerId);
         if (!options?.preview) onKeepSession(session.id);
         if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
-        return;
+        return true;
       }
       let release: Awaited<ReturnType<typeof reserveSessionWindow>>;
       try {
@@ -235,17 +235,18 @@ export function useOpenSessionActions({
       } catch (error) {
         if (options?.privacyToken) throw error;
         await message(String(error), { title: appName(), kind: "warning" });
-        return;
+        return false;
       }
       if (!release) {
         if (options?.privacyToken) throw new Error("Room session ownership is unavailable.");
-        return;
+        // Another window owns the conversation and was focused: it did open, there.
+        return true;
       }
       let retained = false;
       try {
         if (request !== openRequest.current || !isCurrent()) {
           if (options?.privacyToken) throw new Error("Room session open was superseded.");
-          return;
+          return false;
         }
         if (inspectedWorkerId) setInspectedWorkerId(inspectedWorkerId);
         if (options?.preview) {
@@ -259,7 +260,7 @@ export function useOpenSessionActions({
             if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
             revealDelegated();
             retained = true;
-            return;
+            return true;
           }
         }
         if (replaceBlankPaneWithSession(session)) {
@@ -277,7 +278,7 @@ export function useOpenSessionActions({
           if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
           revealDelegated();
           retained = true;
-          return;
+          return true;
         }
         const tab = {
           ...newTab(session.id),
@@ -292,6 +293,7 @@ export function useOpenSessionActions({
         if (linkedUpdate) revealLinkedSessionUpdate(session.id, linkedUpdate);
         revealDelegated();
         retained = true;
+        return true;
       } finally {
         await release(retained).catch((error) =>
           console.error("Conversation ownership release failed", error),

@@ -1,5 +1,93 @@
 {
   "schemaVersion": 1,
   "purpose": "Existing UI drift counted per file and rule by scripts/checks/check-ui-drift.mjs. Counts may only fall; regenerate with --update-baseline after reducing them.",
-  "counts": {}
+  "counts": {
+    "src/app/shell/Sidebar.tsx": {
+      "theme-palette-literal": 1
+    },
+    "src/features/inbox/ui/InboxProviderMark.tsx": {
+      "theme-palette-literal": 5
+    },
+    "src/features/inbox/ui/InboxView.tsx": {
+      "layer": 1
+    },
+    "src/features/projects/model/projectCodeIcons.ts": {
+      "theme-palette-literal": 56
+    },
+    "src/features/sessions/ui/BycodaSession.css": {
+      "font-weight": 1
+    },
+    "src/features/sessions/ui/crewCharacters.ts": {
+      "theme-palette-literal": 135
+    },
+    "src/features/sessions/ui/crewCodeArt.ts": {
+      "theme-palette-literal": 10
+    },
+    "src/features/sessions/ui/crewEnvironment.ts": {
+      "theme-palette-literal": 63
+    },
+    "src/features/sessions/ui/lotr/lotrCrew.ts": {
+      "theme-palette-literal": 7
+    },
+    "src/features/sessions/ui/lotr/lotrPainter.ts": {
+      "theme-palette-literal": 1
+    },
+    "src/features/sessions/ui/matrix/matrixCrew.ts": {
+      "theme-palette-literal": 3
+    },
+    "src/features/sessions/ui/matrix/matrixPainter.ts": {
+      "theme-palette-literal": 8
+    },
+    "src/features/sessions/ui/pacingAgentArt.ts": {
+      "theme-palette-literal": 10
+    },
+    "src/features/sessions/ui/pacingDroidArt.ts": {
+      "theme-palette-literal": 11
+    },
+    "src/features/sessions/ui/pacingEntArt.ts": {
+      "theme-palette-literal": 11
+    },
+    "src/features/sessions/ui/pacingSprite.ts": {
+      "theme-palette-literal": 2
+    },
+    "src/features/sessions/ui/pacingUncleArt.ts": {
+      "theme-palette-literal": 22
+    },
+    "src/features/sessions/ui/starWarsCrew.ts": {
+      "theme-palette-literal": 7
+    },
+    "src/features/sessions/ui/starWarsPainter.ts": {
+      "theme-palette-literal": 1
+    },
+    "src/features/sessions/ui/starWarsRig.ts": {
+      "theme-palette-literal": 4
+    },
+    "src/features/settings/model/accentContrast.ts": {
+      "theme-palette-literal": 2
+    },
+    "src/features/settings/model/appearance.ts": {
+      "theme-palette-literal": 2
+    },
+    "src/features/settings/model/themePalettes.ts": {
+      "theme-palette-literal": 6
+    },
+    "src/features/settings/ui/appearance/controls/AccentColorPicker.tsx": {
+      "theme-palette-literal": 6
+    },
+    "src/features/settings/ui/appearance/controls/ScrollbarGroup.tsx": {
+      "theme-palette-literal": 1
+    },
+    "src/features/settings/ui/appearance/controls/StateLadder.tsx": {
+      "theme-palette-literal": 2
+    },
+    "src/features/source-control/model/gitGraph.ts": {
+      "theme-palette-literal": 7
+    },
+    "src/features/terminal/model/terminalRenderingPolicy.ts": {
+      "theme-palette-literal": 1
+    },
+    "src/features/terminal/runtime/terminalTheme.ts": {
+      "theme-palette-literal": 37
+    }
+  }
 }

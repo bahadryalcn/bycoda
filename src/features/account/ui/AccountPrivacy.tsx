@@ -1,36 +1,37 @@
 import { useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../shared/i18n";
 import { DiagnosticsSharingSetting } from "../../diagnostics";
-import { SectionLabel } from "../../../shared/ui/SectionLabel";
-import { Switch } from "../../../shared/ui/Switch";
+import { Group, Row, Toggle } from "../../settings/public/settingsControls";
 import {
   isAnonymousStatsEnabled,
   setAnonymousStatsEnabled,
   subscribeAnonymousStats,
 } from "../model/accountPrivacy";
-import styles from "./account.module.css";
 
-/** The statistics choice. It needs no account and is off until turned on. */
+/** The statistics and diagnostic-log choices of this computer. They need no account. */
 export function AccountPrivacy() {
   useLocale();
   const statsOn = useSyncExternalStore(subscribeAnonymousStats, isAnonymousStatsEnabled);
   return (
-    <>
-      <section className={styles.section} aria-labelledby="account-privacy">
-        <SectionLabel labelId="account-privacy">{t("Statistics")}</SectionLabel>
-        <Switch
+    <Group
+      title={t("This computer")}
+      description={t("Choices stored on this computer only, signed in or not.")}
+    >
+      <Row
+        label={t("Share anonymous usage statistics")}
+        description={t(
+          "Once a day bycoda sends the app version and operating system with a random install id. Never your sessions, prompts, code or file names. Off by default.",
+        )}
+      >
+        <Toggle
           label={t("Share anonymous usage statistics")}
-          description={t(
-            "Once a day bycoda sends the app version and operating system with a random install id. Never your sessions, prompts, code or file names. Off by default.",
-          )}
-          checked={statsOn}
-          onCheckedChange={setAnonymousStatsEnabled}
+          on={statsOn}
+          onChange={setAnonymousStatsEnabled}
         />
-      </section>
-      <section className={styles.section} aria-labelledby="account-diagnostics">
-        <SectionLabel labelId="account-diagnostics">{t("Diagnostic logs")}</SectionLabel>
+      </Row>
+      <Row label={t("Diagnostic logs")} stacked>
         <DiagnosticsSharingSetting />
-      </section>
-    </>
+      </Row>
+    </Group>
   );
 }

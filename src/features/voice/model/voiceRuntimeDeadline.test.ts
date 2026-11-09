@@ -1,7 +1,10 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { voiceRuntimeDeadline } from "./voiceRuntimeDeadline";
+import { setVoiceApprovalPort, voiceRuntimeDeadline } from "./voiceRuntimeDeadline";
 
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  setVoiceApprovalPort(undefined);
+});
 
 it("bounds an unresolved effect and consumes a late rejection without retry", async () => {
   vi.useFakeTimers();
@@ -75,4 +78,60 @@ it("still aborts a human wait when its conversation closes", async () => {
   controller.abort(new Error("closed"));
   await rejected;
   expect(vi.getTimerCount()).toBe(0);
+});
+
+function approvalPort() {
+  const listeners = new Set<() => void>();
+  const state = { pending: false };
+  setVoiceApprovalPort({
+    pending: () => state.pending,
+    subscribe: (listener) => (listeners.add(listener), () => listeners.delete(listener)),
+  });
+  return {
+    listeners,
+    set(pending: boolean) {
+      state.pending = pending;
+      listeners.forEach((listener) => listener());
+    },
+  };
+}
+
+it("suspends the deadline while an owner approval is pending and restarts a full window after", async () => {
+  vi.useFakeTimers();
+  const port = approvalPort();
+  let resolve!: (value: string) => void;
+  port.set(true);
+  const result = voiceRuntimeDeadline(
+    () => new Promise<string>((done) => (resolve = done)),
+    new AbortController().signal,
+    100,
+  );
+  let outcome = "";
+  void result.then(
+    (value) => (outcome = value),
+    (error: Error) => (outcome = error.message),
+  );
+  await vi.advanceTimersByTimeAsync(500);
+  expect(outcome).toBe("");
+  port.set(false);
+  await vi.advanceTimersByTimeAsync(99);
+  expect(outcome).toBe("");
+  await vi.advanceTimersByTimeAsync(1);
+  expect(outcome).toContain("outcome is unknown");
+  expect(port.listeners.size).toBe(0);
+  resolve("late");
+});
+
+it("still resolves normally when approvals appear and clear mid-operation", async () => {
+  vi.useFakeTimers();
+  const port = approvalPort();
+  const result = voiceRuntimeDeadline(
+    () => new Promise<string>((done) => setTimeout(() => done("ok"), 300)),
+    new AbortController().signal,
+    100,
+  );
+  const settled = expect(result).resolves.toBe("ok");
+  port.set(true);
+  await vi.advanceTimersByTimeAsync(300);
+  await settled;
 });

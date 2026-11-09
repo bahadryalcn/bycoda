@@ -21,7 +21,7 @@ each rule.
   groups. Preserve capabilities, not tag/button counts. Compare segmented/radio
   choices, split actions and menus. Short stable lists may use Select; long, growing
   or name-searchable lists need Combobox/autocomplete; multiple values need
-  searchable MultiSelect. Preserve free entry.
+  searchable MultiSelect (target API). Preserve free entry.
 - Search `src/shared/ui/`, settings controls and the feature before creating a
   control. Reuse first, extend shared APIs for reusable gaps, and create a shared
   component only for a concrete unmet need. Standard actions use
@@ -115,19 +115,19 @@ Record single/multiple selection, immediate/explicit save, option count and grow
 label length, frequency, discoverability, keyboard/touch behavior and permissions.
 Compare suitable Arc candidates and explain why the selected one fits better.
 
-| User task                                           | Preferred interaction                 | Selection reason                                                                           |
-| --------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------ |
-| Two to five short modes of the same data            | SegmentedControl                      | Visible alternatives and selected state; not three unrelated action buttons                |
-| Peer content panels                                 | Tabs                                  | Named panels with tab navigation, focus and selection semantics                            |
-| A few exclusive form choices                        | RadioGroup                            | Compare choices before submitting; use RadioCards when descriptions or consequences matter |
-| One frequent action with close alternatives         | SplitButton                           | Keep the default action direct and make its variants discoverable                          |
-| Several frequently used independent actions         | ButtonGroup or explicit action row    | Keep genuinely separate commands accessible; hierarchy reflects importance                 |
-| Infrequent contextual commands                      | DropdownMenu or ContextMenu           | Group secondary commands without turning them into mutually exclusive values               |
-| Immediate on/off preference                         | Switch                                | The new value takes effect now; form choices use Checkbox                                  |
-| Short, stable single-choice list                    | Select                                | Compact selection when scanning is easy and typing provides little benefit                 |
-| Long, growing or name-searchable single-choice list | Combobox / autocomplete               | Type to find a project, model, account, time zone or other named value                     |
-| Several values from a long list                     | Searchable MultiSelect                | Search, selected-value summary, removal and reset without a crowded checkbox wall          |
-| A few frequently toggled filters                    | ChipGroup or visible Checkbox choices | Options remain visible when comparison and repeated toggling are useful                    |
+| User task                                           | Preferred interaction                              | Selection reason                                                                                        |
+| --------------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Two to five short modes of the same data            | SegmentedControl                                   | Visible alternatives and selected state; not three unrelated action buttons                             |
+| Peer content panels                                 | Tabs                                               | Named panels with tab navigation, focus and selection semantics                                         |
+| A few exclusive form choices                        | RadioGroup                                         | Compare choices before submitting; use RadioCards (target API) when descriptions or consequences matter |
+| One frequent action with close alternatives         | SplitButton                                        | Keep the default action direct and make its variants discoverable                                       |
+| Several frequently used independent actions         | ButtonGroup or explicit action row                 | Keep genuinely separate commands accessible; hierarchy reflects importance                              |
+| Infrequent contextual commands                      | DropdownMenu or ContextMenu                        | Group secondary commands without turning them into mutually exclusive values                            |
+| Immediate on/off preference                         | Switch                                             | The new value takes effect now; form choices use Checkbox                                               |
+| Short, stable single-choice list                    | Select                                             | Compact selection when scanning is easy and typing provides little benefit                              |
+| Long, growing or name-searchable single-choice list | Combobox / autocomplete                            | Type to find a project, model, account, time zone or other named value                                  |
+| Several values from a long list                     | Searchable MultiSelect (target API)                | Search, selected-value summary, removal and reset without a crowded checkbox wall                       |
+| A few frequently toggled filters                    | ChipGroup (target API) or visible Checkbox choices | Options remain visible when comparison and repeated toggling are useful                                 |
 
 Option count is a guideline, not the entire decision. Two to five short modes and
 two to six visible form choices are useful starting ranges. Use Select for a short
@@ -168,13 +168,13 @@ search field with grouped results. Both it and a value-picking Combobox may expo
 ARIA combobox semantics; the user's task determines the appropriate application
 component, not the shared accessibility role or the word autocomplete alone.
 
-| Task                                                                         | Shared interaction direction                                                                        |
-| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Find a setting, project, document or other destination from a compact header | ExpandingSearch with grouped results, existing ranking and domain navigation callbacks              |
-| Filter the records currently visible                                         | SearchField/SearchInput, composed with collection filters as needed                                 |
-| Set an existing form/property value                                          | SearchableSelect/Combobox or MorphSelect according to list size, local/remote data and presentation |
-| Enter a value that may be absent from suggestions                            | Shared autocomplete with an explicit free-entry contract; do not substitute a closed-list picker    |
-| Run commands or jump across application areas                                | CommandPalette, preserving the command registry, shortcuts, permissions and navigation owner        |
+| Task                                                                         | Shared interaction direction                                                                              |
+| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Find a setting, project, document or other destination from a compact header | ExpandingSearch with grouped results, existing ranking and domain navigation callbacks                    |
+| Filter the records currently visible                                         | SearchField (target API)/SearchInput, composed with collection filters as needed                          |
+| Set an existing form/property value                                          | SearchableSelect/Combobox or MorphSelect according to list size, local/remote data and presentation       |
+| Enter a value that may be absent from suggestions                            | Shared autocomplete with an explicit free-entry contract; do not substitute a closed-list picker          |
+| Run commands or jump across application areas                                | CommandPalette (target API), preserving the command registry, shortcuts, permissions and navigation owner |
 
 Settings quick-jump now uses shared ExpandingSearch with controlled query and
 externally ranked results. It retains searchSettings ordering, translated labels,
@@ -401,9 +401,9 @@ rows migrate in their owning lines.
 | Search                                  | `SearchInput`/`SearchableSelect`; keep query on close; preserve clear, IME and keyboard behavior      |
 | Immediate boolean preference            | Shared Switch; settings Toggle delegates and keeps sounds/persistence                                 |
 | Form membership or multi-selection      | Checkbox; use mixed state for partial collection selection                                            |
-| A few visible exclusive choices         | RadioGroup; RadioCards only when descriptions materially help                                         |
+| A few visible exclusive choices         | RadioGroup; RadioCards (target API) only when descriptions materially help                            |
 | Short stable exclusive list             | Select when scanning is easy; Combobox for long or searchable lists                                   |
-| Several selected options                | MultiSelect, with discoverable removal and reset                                                      |
+| Several selected options                | MultiSelect (target API), with discoverable removal and reset                                         |
 | Same data in a different view           | SegmentedControl for an exclusive filter/display mode; `Tabs` for views or panels of one context      |
 | Number, password, tags, file, date/time | Specialized shared adapter; preserve parsing, validation, timezone and native file behavior           |
 | One independently saved value           | InlineEdit with explicit pending, failure and recovery                                                |
@@ -710,8 +710,7 @@ and 500 only: replace `font-semibold`/`font-bold`/520/550/560/600/650 with
 
 The single stroke is `--ui-icon-stroke` (1.75); pass `strokeWidth={1.75}` for 1.5, 1.75 and
 1.9 alike (use 2 only for tiny check/close marks at 12px). Icons inside shared Button keep
-the Button's `1em` sizing; do not add a size class there. Note: `icons.tsx` `wrap()` still
-defaults to `size=24, strokeWidth=2` and relies on CSS overrides.
+the Button's `1em` sizing; do not add a size class there. `icons.tsx` `wrap()` defaults to `size=24, strokeWidth=1.75`.
 
 ### Floating surfaces
 
@@ -790,8 +789,8 @@ Pages compose these; they never reskin them or add page-local surfaces.
 - **Tile choices:** one exclusive choice shown as tiles (Appearance mode, onboarding mode and crew) uses
   `RadioTiles` (`src/features/settings/ui/RadioTiles.tsx`); the selected tile gets `--ui-border-accent`.
 - **AdvancedSettings:** a disclosure row with the same title x as row titles, chevron on the
-  right, at the end of its group. New pages pass `defaultOpen={false}` so Advanced is closed
-  (the prop still defaults to open for existing pages). Never use it to hold only a paragraph.
+  right, at the end of its group. It is closed by default; pass `defaultOpen` only for a disclosure that must start
+  open. Never use it to hold only a paragraph.
 
 ## Overlays, focus and motion
 
@@ -843,14 +842,14 @@ clarify actions or state. Evaluate them deliberately alongside ordinary controls
 do not reject a useful interaction merely because it animates. Their visual and
 behavioral contracts still belong in shared UI and the existing theme/overlay system.
 
-| Pattern              | Intended use                                                                              | Workbench integration                                                                                                                                                                              |
-| -------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| FloatingButtonGroup  | A named contextual toolbar for text/object selection or a canvas                          | Adopt first inside the existing transcript selection Popover; terminal selection already composes that feature. The group does not own positioning or a new overlay.                               |
-| ExpandingButtonGroup | A compact row of several familiar commands whose labels expand on pointer/keyboard intent | Evaluate Notes editor Copy/Add to chat/Link actions and transcript turn actions. This is not an overflow menu or a selector. Keep frequent/default actions discoverable.                           |
-| MorphSelect          | One known scalar property, including a bounded grouped/searchable local list              | Extend the existing adapter when icons/meta/groups/search help. Do not replace custom-entry autocomplete, huge remote collections, multi-selection or several independent settings with one value. |
-| ConfirmMorph         | A concise in-place confirmation/result flow already appropriate to the operation          | Reuse the existing adapter and domain save/delete queue. Preserve current confirmation/approval semantics and actual retry/undo capability.                                                        |
-| IconMorph            | An existing control's icon changes with a real state                                      | A decorative glyph inside the shared action, for example Copy to check. It must not add another button, accessible name or side effect.                                                            |
-| TextMorph            | A few short, infrequently changing state words                                            | Reuse existing Button label motion first; apply independently only where it adds information without double animation or duplicate announcements.                                                  |
+| Pattern                | Intended use                                                                              | Workbench integration                                                                                                                                                                              |
+| ---------------------- | ----------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FloatingButtonGroup    | A named contextual toolbar for text/object selection or a canvas                          | Adopt first inside the existing transcript selection Popover; terminal selection already composes that feature. The group does not own positioning or a new overlay.                               |
+| ExpandingButtonGroup   | A compact row of several familiar commands whose labels expand on pointer/keyboard intent | Evaluate Notes editor Copy/Add to chat/Link actions and transcript turn actions. This is not an overflow menu or a selector. Keep frequent/default actions discoverable.                           |
+| MorphSelect            | One known scalar property, including a bounded grouped/searchable local list              | Extend the existing adapter when icons/meta/groups/search help. Do not replace custom-entry autocomplete, huge remote collections, multi-selection or several independent settings with one value. |
+| ConfirmMorph           | A concise in-place confirmation/result flow already appropriate to the operation          | Reuse the existing adapter and domain save/delete queue. Preserve current confirmation/approval semantics and actual retry/undo capability.                                                        |
+| IconMorph (target API) | An existing control's icon changes with a real state                                      | A decorative glyph inside the shared action, for example Copy to check. It must not add another button, accessible name or side effect.                                                            |
+| TextMorph (target API) | A few short, infrequently changing state words                                            | Reuse existing Button label motion first; apply independently only where it adds information without double animation or duplicate announcements.                                                  |
 
 Official MorphSelect supports optional local search, groups, icons/meta and disabled
 options. The current bycoda adapter exposes a flat option list and explicitly sets
@@ -864,7 +863,7 @@ reconcile those nodes with Button's shared action rendering, tones, dimensions,
 focus, loading and native event contracts. Extend a shared action rendering hook
 only if required; do not create a feature-specific parallel button skin. Keep the
 official group's useful choreography and keyboard model rather than rebuilding
-an approximation from scratch. IconMorph itself is an SVG renderer, not a control.
+an approximation from scratch. IconMorph (target API) itself is an SVG renderer, not a control.
 
 The floating group's callbacks are synchronous in its public API and it does not
 provide the application's pending/error lifecycle. Preserve async guards and error
@@ -958,13 +957,14 @@ and `bycoda.css`. The rules cover:
 - icon size and stroke drift, and direct `lucide-react` imports;
 - loaders without reduced-motion handling;
 - base-hue colour utilities;
+- `themePalette.hex…`/`rgb…`/`hsl…`/`oklch…` literals in feature and app code (`theme-palette-literal`);
 - native `title=` on actions;
 - hand-written `role="alert"` on `p`/`span` (`role-alert-text`) or `div`/`small`/`li`/`section` (`role-alert-container`), `aria-live` on DOM elements, and `role=` passed to `<Alert>`;
 - feature `createPortal` and `Popover role=menu`;
 - `hover:bg-*` recipes, opacity used as the disabled state, and fixed control heights;
 - raw `<button>`, `<input>`, `<select>`, `<textarea>`, `<a href>` and `target="_blank"` in
   feature code, native date/time inputs, and `Loader*` glyphs used as spinners;
-- weights above 500, arbitrary spacing values, literal layout numbers in `style={{}}`, and
+- weights other than 400 and 500, arbitrary spacing values, literal layout numbers in `style={{}}`, and
   removed focus outlines;
 - English prose left outside `t()` in JSX text or label/placeholder/tooltip props.
 
@@ -973,25 +973,23 @@ imports, `console.log` in UI files and the `jsx-a11y` keyboard/ARIA rules are en
 `.oxlint-invariants.json` through `pnpm check:invariants`. The complete convention table with
 the sanctioned component for each rule is in [code invariants](code-invariants.md).
 
-Existing findings are counted per file and rule in `scripts/checks/ui-drift-baseline.json` (1,964
-findings when created on 2026-11-01, 243 after the wave-2 migrations). A new
+Existing findings are counted per file and rule in `scripts/checks/ui-drift-baseline.json`. A new
 finding (a count above the baseline) fails `check:staged` and the bounded `check:changed` runner;
 lower counts pass and are reported as improvements.
 
 - After a migration, run `node scripts/checks/check-ui-drift.mjs --ratchet`. It lowers buckets only
   and never accepts someone else's new drift.
-- `--update-baseline` rewrites every count, including increases. Use it only for an owner-approved
-  exception.
+- `--update-baseline` rewrites every count, including increases. Use it only for an owner-approved exception or a new or widened
+  rule, and record the rise in `scripts/checks/baseline-approvals.json`
+  (`pnpm check:baselines` rejects it otherwise).
 - `--report` prints totals per rule and folder; `--files <paths>` checks only those files.
 
 Wiring: `scripts/checks/check-staged.mjs` runs the ratchet over the staged text of `src/**`
 `.ts`/`.tsx`/`.css` files (the working tree supplies variable definitions), and
 `scripts/checks/check-local.mjs` (`pnpm check:changed`) runs it over changed `src` files with
 `--files`. The `web` CI job runs `pnpm run check:invariants` after the package boundary check,
-and `check:web` includes it. The whole-tree `check:ui-drift` gate is not in CI yet: the current
-tree already exceeds the baseline for older rules in the voice and assistant features (numeric
-icon sizes, literal font sizes, motion literals), so wiring it needs either those lines fixed or
-an owner-approved `--ratchet`/`--update-baseline` first. The check reads
+and `check:web` includes it. The whole-tree `check:ui-drift` gate runs in the CI repository-hygiene job and in
+`pnpm check:preflight`. The check reads
 `node_modules/tailwindcss/theme.css`, so dependencies must be installed when it runs in CI.
 
 Use `node scripts/checks/inventory-ui.mjs` (or `--json`) to measure remaining source
@@ -999,8 +997,7 @@ sites. It is an advisory inventory, not a conformance gate. Review native semant
 and dynamic/CSS candidates manually. `check-theme-colors.mjs` still owns existing
 literal-color checks. `node scripts/checks/check-ui-boundaries.mjs` compares
 owner-reviewed source/style fingerprint decisions; it is separate from ordinary
-build/test execution and is not wired into staged checks or CI (about 263 findings
-are still unreviewed). Its baseline records historical component decisions with counted
+build/test execution and is not wired into staged checks or CI (its findings have not been triaged, and the check currently fails). Its baseline records historical component decisions with counted
 signal exceptions and explicit semantic owners; its existence or a source count does not
 authorize a blind baseline refresh. Heuristics do not prove behavior or complete CSS ownership:
 local immutable/conditional/template class recipes and static ARIA/feedback selectors are

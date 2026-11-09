@@ -173,7 +173,6 @@ fn ask(
     )
 }
 
-#[allow(clippy::too_many_arguments)] // Private helper; the channel, prompt, details and checks stay explicit at both call sites.
 fn ask_as<T>(
     app: &AppHandle,
     window: &WebviewWindow,

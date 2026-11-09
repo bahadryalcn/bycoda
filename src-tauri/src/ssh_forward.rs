@@ -297,7 +297,6 @@ pub(crate) fn forward_args_kind(
     Ok(args)
 }
 
-#[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 fn start(
     state: &SshForwards,
@@ -325,7 +324,6 @@ fn start(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 pub(crate) fn start_prepared(
     state: &SshForwards,
@@ -356,7 +354,6 @@ pub(crate) fn start_prepared(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 #[cfg(test)]
 fn start_for_owner(
     state: &SshForwards,
@@ -387,7 +384,6 @@ fn start_for_owner(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn start_for_owner_notifying(
     state: &SshForwards,
     owner: &ForwardOwner,
@@ -562,7 +558,6 @@ fn start_for_owner_notifying(
 }
 
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)]
 pub fn ssh_forward_start(
     app: AppHandle,
     window: tauri::Window,

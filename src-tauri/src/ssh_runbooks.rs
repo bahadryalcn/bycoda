@@ -815,7 +815,6 @@ pub(crate) fn ssh_runbook_preview(
     })
 }
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)] // Tauri injects state alongside the established command arguments.
 pub(crate) fn ssh_runbook_start(
     app: AppHandle,
     window: tauri::Window,

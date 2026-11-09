@@ -119,6 +119,27 @@ export function appendNotificationHistory(
   });
 }
 
+const sameOccurrence = (a: NotificationHistoryEntry, b: NotificationHistoryEntry) =>
+  a.key === b.key && a.occurredAt === b.occurredAt;
+
+/**
+ * Removes one recorded arrival and returns the stored list, or `null` when the
+ * store could not be read or written (nothing was removed). Other windows'
+ * newer arrivals are kept: the removal applies to the stored list, not `local`.
+ */
+export function removeNotificationHistoryEntry(
+  target: NotificationHistoryEntry,
+): NotificationHistoryEntry[] | null | Promise<NotificationHistoryEntry[] | null> {
+  return withHistoryLock(() => {
+    const read = readNotificationHistoryStatus();
+    if (read.state !== "ready") return null;
+    const index = read.entries.findIndex((entry) => sameOccurrence(entry, target));
+    if (index < 0) return read.entries;
+    const next = read.entries.filter((_, at) => at !== index);
+    return writeNotificationHistory(next) ? next : null;
+  });
+}
+
 export function clearNotificationHistory(): boolean | Promise<boolean> {
   return withHistoryLock(() => writeNotificationHistory([]));
 }

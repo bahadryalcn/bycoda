@@ -4,7 +4,13 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AccountData } from "./AccountData";
 
-const mocks = vi.hoisted(() => ({ days: 1 }));
+const mocks = vi.hoisted(() => ({
+  days: 1,
+  exportItem: null as null | { id: string; status: string; requestedAt: string; readyAt: string },
+  request: vi.fn(async () => undefined),
+  save: vi.fn(async () => undefined),
+}));
+const keep = ["account_lifetime"];
 
 vi.mock("../../../platform/tauri/openExternal", () => ({ openExternal: vi.fn() }));
 vi.mock("./AccountPrivacy", () => ({ AccountPrivacy: () => null }));
@@ -13,12 +19,27 @@ vi.mock("../hooks/useAccountData", () => ({
     isPending: false,
     isError: false,
     data: {
+      profile: { email: "ada@example.com", displayName: "Ada", createdAt: "2026-01-02T00:00:00Z" },
       devices: { active: 1, revoked: 0 },
       activity: { days: mocks.days, totalMinutes: 60 },
       notifications: { feedItems: 0 },
       support: { tickets: 0 },
       exports: { ready: 0 },
+      retention: {
+        profile: keep,
+        devices: keep,
+        activity: keep,
+        notifications: keep,
+        support: keep,
+        exports: keep,
+      },
     },
+  }),
+  useDataExport: () => ({
+    current: mocks.exportItem,
+    follow: { isError: false },
+    request: { isPending: false, mutateAsync: mocks.request },
+    save: { isPending: false, isSuccess: false, mutateAsync: mocks.save },
   }),
 }));
 
@@ -45,5 +66,24 @@ describe("account data summary", () => {
     await act(async () => root.render(createElement(AccountData)));
     expect(container.textContent).toContain(text);
     expect(container.textContent).not.toContain("1 days");
+  });
+
+  it("requests an export in the app and saves it once ready", async () => {
+    mocks.exportItem = null;
+    await act(async () => root.render(createElement(AccountData)));
+    const find = (text: string) =>
+      [...container.querySelectorAll("button")].find((b) => b.textContent === text);
+    await act(async () => find("Request export")?.click());
+    expect(mocks.request).toHaveBeenCalledTimes(1);
+    mocks.exportItem = {
+      id: "exp_1",
+      status: "ready",
+      requestedAt: "2026-11-09T00:00:00Z",
+      readyAt: "2026-11-09T00:01:00Z",
+    };
+    await act(async () => root.render(createElement(AccountData)));
+    await act(async () => find("Save file")?.click());
+    expect(mocks.save).toHaveBeenCalledWith(mocks.exportItem);
+    expect(container.textContent).toContain("Kept while your account exists");
   });
 });

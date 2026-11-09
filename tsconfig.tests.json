@@ -1,0 +1,13 @@
+{
+  // Type-checks the test files that tsconfig.json excludes and vitest never checks.
+  // ES2024 lib matches the Node runtime that Host tests, and desktop tests importing Host code, run on (Promise.withResolvers).
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "composite": false,
+    "noEmit": true
+  },
+  "include": ["src", "apps/desktop/src"],
+  "exclude": [],
+  "references": []
+}

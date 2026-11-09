@@ -3,7 +3,7 @@
   "purpose": "Existing code-structure findings counted per file and rule by scripts/checks/check-code-structure.mjs. file-lines stores the current line count of an over-budget file. Counts may only fall; regenerate with --update-baseline after reducing them and review the diff.",
   "counts": {
     "host/assistant/service.ts": {
-      "file-lines": 6923
+      "file-lines": 6921
     },
     "host/assistant/sessions/assistant-sessions.ts": {
       "file-lines": 938
@@ -33,14 +33,14 @@
       "file-lines": 1743
     },
     "host/child-backend.ts": {
-      "file-lines": 1521,
+      "file-lines": 1442,
       "loose-host-file": 1
     },
     "host/configurationConflict.ts": {
       "loose-host-file": 1
     },
     "host/conversation/conversation-tools.ts": {
-      "file-lines": 1610,
+      "file-lines": 1237,
       "host-imports-ui": 1
     },
     "host/crews/crews.ts": {
@@ -56,13 +56,13 @@
       "file-lines": 1152
     },
     "host/desktop/desktopLive.ts": {
-      "file-lines": 824
+      "file-lines": 815
     },
     "host/desktop/desktopSessions.test.ts": {
-      "file-lines": 1781
+      "file-lines": 1715
     },
     "host/desktop/desktopSessions.ts": {
-      "file-lines": 1541
+      "file-lines": 1491
     },
     "host/dev-server-guardian.ts": {
       "loose-host-file": 1
@@ -77,10 +77,10 @@
       "loose-host-file": 1
     },
     "host/engine.test.ts": {
-      "file-lines": 6198
+      "file-lines": 6192
     },
     "host/engine.ts": {
-      "file-lines": 5053,
+      "file-lines": 5030,
       "loose-host-file": 1
     },
     "host/git/git-actions.ts": {
@@ -114,7 +114,7 @@
       "loose-host-file": 1
     },
     "host/native-buffer/native-buffer-reports.ts": {
-      "file-lines": 1576
+      "file-lines": 1499
     },
     "host/node-engine.ts": {
       "loose-host-file": 1
@@ -146,29 +146,20 @@
     "host/skills/skills.ts": {
       "file-lines": 927
     },
-    "host/social/social-browser-meta.ts": {
-      "file-lines": 1145
-    },
-    "host/social/social-browser-publishing.ts": {
-      "file-lines": 1768
-    },
     "host/social/social-browser-registration.ts": {
       "file-lines": 1121
     },
     "host/social/social-browser-workflows.ts": {
       "file-lines": 843
     },
-    "host/social/social-browser.ts": {
-      "file-lines": 1432
-    },
     "host/social/social-programs.ts": {
-      "file-lines": 1481
+      "file-lines": 1441
     },
     "host/social/social.test.ts": {
-      "file-lines": 4908
+      "file-lines": 4619
     },
     "host/social/social.ts": {
-      "file-lines": 6473
+      "file-lines": 5671
     },
     "host/stewards/stewards.ts": {
       "file-lines": 859
@@ -177,10 +168,10 @@
       "loose-host-file": 1
     },
     "host/store.test.ts": {
-      "file-lines": 1593
+      "file-lines": 1590
     },
     "host/store.ts": {
-      "file-lines": 2973,
+      "file-lines": 2933,
       "loose-host-file": 1
     },
     "host/suppress-sqlite-warning.ts": {
@@ -193,50 +184,47 @@
       "loose-host-file": 1
     },
     "host/transport/ws/server.ts": {
-      "file-lines": 906
+      "file-lines": 899
     },
     "host/windows.ts": {
       "loose-host-file": 1
     },
     "host/workspace-cleanup.ts": {
-      "file-lines": 1176,
+      "file-lines": 1087,
       "loose-host-file": 1
     },
     "host/workspaces/workspace-commands.ts": {
-      "file-lines": 1546
+      "file-lines": 1540
     },
     "host/workspaces/workspace.ts": {
-      "file-lines": 1685
+      "file-lines": 1680
     },
     "src-tauri/src/azure_devops.rs": {
       "file-lines": 2462
     },
     "src-tauri/src/checkpoint.rs": {
-      "file-lines": 3022
+      "file-lines": 3020
     },
     "src-tauri/src/checkpoint/file_revert.rs": {
-      "file-lines": 2418
+      "file-lines": 2392
     },
     "src-tauri/src/control.rs": {
-      "file-lines": 3794
+      "file-lines": 3785
     },
     "src-tauri/src/conversation_tools_bridge.rs": {
-      "file-lines": 1982
+      "file-lines": 1840
     },
     "src-tauri/src/fs.rs": {
-      "file-lines": 14267
+      "file-lines": 14198
     },
     "src-tauri/src/harness.rs": {
-      "file-lines": 9649
+      "file-lines": 9610
     },
     "src-tauri/src/host_ws/mod.rs": {
       "file-lines": 1607
     },
-    "src-tauri/src/mcp.rs": {
-      "file-lines": 1675
-    },
     "src-tauri/src/native_provider_output.rs": {
-      "file-lines": 2088
+      "file-lines": 2087
     },
     "src-tauri/src/notes.rs": {
       "file-lines": 1653
@@ -245,13 +233,10 @@
       "file-lines": 1604
     },
     "src-tauri/src/pty.rs": {
-      "file-lines": 2650
+      "file-lines": 2641
     },
     "src-tauri/src/remote.rs": {
-      "file-lines": 5595
-    },
-    "src-tauri/src/remote_ssh.rs": {
-      "file-lines": 1836
+      "file-lines": 5581
     },
     "src-tauri/src/session_import.rs": {
       "file-lines": 1695
@@ -260,58 +245,58 @@
       "file-lines": 2301
     },
     "src-tauri/src/session_store.rs": {
-      "file-lines": 7978
+      "file-lines": 7972
     },
     "src-tauri/src/session_store/authority.rs": {
       "file-lines": 2115
     },
     "src-tauri/src/session_store/content_search.rs": {
-      "file-lines": 2451
+      "file-lines": 2450
     },
     "src-tauri/src/skills.rs": {
       "file-lines": 2450
     },
     "src-tauri/src/ssh_sftp_transfer.rs": {
-      "file-lines": 1522
+      "file-lines": 1514
     },
     "src-tauri/src/window.rs": {
-      "file-lines": 1748
+      "file-lines": 1669
     },
     "src-tauri/src/worktrees.rs": {
-      "file-lines": 2438
+      "file-lines": 2430
     },
     "src/app/App.tsx": {
-      "file-lines": 3608
+      "file-lines": 3607
     },
     "src/app/model/appLifecycle.ts": {
-      "file-lines": 1189
+      "file-lines": 1188
     },
     "src/app/shell/MenuBar.tsx": {
       "file-lines": 662
     },
     "src/app/shell/ProjectRail.tsx": {
-      "file-lines": 2716
+      "file-lines": 2702
     },
     "src/app/shell/SessionRecoveryPanel.tsx": {
-      "file-lines": 663
+      "file-lines": 650
     },
     "src/app/shell/Sidebar.tsx": {
-      "file-lines": 6876
+      "file-lines": 6582
     },
     "src/app/shell/SidebarRename.test.ts": {
-      "file-lines": 2828
+      "file-lines": 2827
     },
     "src/app/shell/TitleBar.tsx": {
-      "file-lines": 1426
+      "file-lines": 1424
     },
     "src/app/shell/UsageProviderChip.tsx": {
-      "file-lines": 1202
+      "file-lines": 1198
     },
     "src/app/shell/useProjectMenu.tsx": {
       "file-lines": 1511
     },
     "src/app/workspace/control/useAppControlRequests.ts": {
-      "file-lines": 953
+      "file-lines": 949
     },
     "src/app/workspace/layout/WorkspaceToolPanels.tsx": {
       "file-lines": 644
@@ -355,10 +340,6 @@
     "src/features/assistant/ui/AssistantOwnerQuestions.tsx": {
       "cross-feature-deep-import": 3
     },
-    "src/features/assistant/ui/AssistantProfileFields.tsx": {
-      "cross-feature-deep-import": 4,
-      "file-lines": 722
-    },
     "src/features/assistant/ui/AssistantQuickAutomationFields.tsx": {
       "cross-feature-deep-import": 5
     },
@@ -372,15 +353,14 @@
       "cross-feature-deep-import": 1
     },
     "src/features/assistant/ui/AssistantSetup.tsx": {
-      "cross-feature-deep-import": 5
+      "cross-feature-deep-import": 2
     },
     "src/features/assistant/ui/AssistantView.test.ts": {
-      "file-lines": 2494
+      "file-lines": 2420
     },
     "src/features/assistant/ui/AssistantView.tsx": {
       "cross-feature-deep-import": 3,
-      "feature-imports-app": 1,
-      "file-lines": 4353
+      "feature-imports-app": 1
     },
     "src/features/automations/hooks/useAutomationActions.ts": {
       "cross-feature-deep-import": 1
@@ -424,7 +404,7 @@
     "src/features/automations/ui/AutomationsView.tsx": {
       "cross-feature-deep-import": 23,
       "feature-imports-app": 3,
-      "file-lines": 2027
+      "file-lines": 1943
     },
     "src/features/automations/ui/TriggerEditor.tsx": {
       "cross-feature-deep-import": 2
@@ -434,16 +414,13 @@
     },
     "src/features/connections/model/adoptedSessions.ts": {
       "cross-feature-deep-import": 3,
-      "file-lines": 984
+      "file-lines": 982
     },
     "src/features/connections/model/buildCompatibility.ts": {
       "cross-feature-deep-import": 1
     },
     "src/features/connections/model/connections.ts": {
-      "file-lines": 1505
-    },
-    "src/features/connections/model/desktopLive.ts": {
-      "cross-feature-deep-import": 2
+      "file-lines": 1496
     },
     "src/features/connections/model/hostFeatureClient.ts": {
       "cross-feature-deep-import": 2
@@ -480,7 +457,7 @@
       "cross-feature-deep-import": 2
     },
     "src/features/connections/model/sharedQueueClient.ts": {
-      "file-lines": 858
+      "file-lines": 829
     },
     "src/features/connections/model/sshSnippets.ts": {
       "cross-feature-deep-import": 1
@@ -497,22 +474,24 @@
     "src/features/connections/model/workspaceUrls.ts": {
       "cross-feature-deep-import": 2
     },
-    "src/features/connections/ui/ConnectionSyncLine.tsx": {
-      "cross-feature-deep-import": 2
-    },
     "src/features/connections/ui/ConnectionsSettings.tsx": {
-      "cross-feature-deep-import": 1,
-      "file-lines": 1110
+      "cross-feature-deep-import": 1
+    },
+    "src/features/connections/ui/ConnectionSyncLine.tsx": {
+      "cross-feature-deep-import": 1
     },
     "src/features/connections/ui/HostModelSource.tsx": {
       "cross-feature-deep-import": 1
     },
     "src/features/connections/ui/RemoteSession.test.ts": {
-      "file-lines": 5149
+      "file-lines": 5145
     },
     "src/features/connections/ui/RemoteSession.tsx": {
       "cross-feature-deep-import": 6,
-      "file-lines": 4114
+      "file-lines": 4105
+    },
+    "src/features/connections/ui/serverColor.ts": {
+      "cross-feature-deep-import": 1
     },
     "src/features/connections/ui/ServerColorPopover.tsx": {
       "cross-feature-deep-import": 1
@@ -523,20 +502,17 @@
     "src/features/connections/ui/ServersTerminalWorkspace.tsx": {
       "cross-feature-deep-import": 2,
       "feature-imports-app": 2,
-      "file-lines": 730
+      "file-lines": 707
     },
     "src/features/connections/ui/ServersView.tsx": {
       "feature-imports-app": 3,
-      "file-lines": 979
+      "file-lines": 976
     },
     "src/features/connections/ui/ServersWorkspaceView.tsx": {
       "feature-imports-app": 1
     },
     "src/features/connections/ui/SshRunbooks.tsx": {
-      "file-lines": 838
-    },
-    "src/features/connections/ui/serverColor.ts": {
-      "cross-feature-deep-import": 1
+      "file-lines": 832
     },
     "src/features/crews/model/crew.ts": {
       "cross-feature-deep-import": 2
@@ -566,7 +542,7 @@
       "cross-feature-deep-import": 1
     },
     "src/features/crews/ui/CrewEditor.tsx": {
-      "file-lines": 1298
+      "file-lines": 601
     },
     "src/features/crews/ui/CrewLibrary.tsx": {
       "cross-feature-deep-import": 2
@@ -584,25 +560,20 @@
     "src/features/crews/ui/CrewSessions.tsx": {
       "cross-feature-deep-import": 5
     },
+    "src/features/crews/ui/CrewsSettings.tsx": {
+      "cross-feature-deep-import": 3
+    },
     "src/features/crews/ui/CrewWorkDetail.tsx": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/crews/ui/CrewWorkingSettings.tsx": {
       "cross-feature-deep-import": 1
     },
     "src/features/crews/ui/CrewWorkSessions.tsx": {
       "cross-feature-deep-import": 2
     },
-    "src/features/crews/ui/CrewWorkingSettings.tsx": {
-      "cross-feature-deep-import": 2
-    },
-    "src/features/crews/ui/CrewsSettings.tsx": {
-      "cross-feature-deep-import": 3
-    },
     "src/features/crews/ui/MemberModelPicker.tsx": {
       "cross-feature-deep-import": 3
-    },
-    "src/features/devices/DevicePanel.tsx": {
-      "cross-feature-deep-import": 1,
-      "file-lines": 2301,
-      "loose-feature-file": 1
     },
     "src/features/devices/deviceComposer.ts": {
       "cross-feature-deep-import": 2,
@@ -616,6 +587,11 @@
       "loose-feature-file": 1
     },
     "src/features/devices/deviceInspector.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/devices/DevicePanel.tsx": {
+      "cross-feature-deep-import": 1,
+      "file-lines": 2282,
       "loose-feature-file": 1
     },
     "src/features/devices/types.ts": {
@@ -651,7 +627,7 @@
     },
     "src/features/files/ui/FileEditor.tsx": {
       "cross-feature-deep-import": 1,
-      "file-lines": 1562
+      "file-lines": 1536
     },
     "src/features/files/ui/FilePane.tsx": {
       "cross-feature-deep-import": 6,
@@ -659,17 +635,17 @@
     },
     "src/features/files/ui/FilePicker.tsx": {
       "cross-feature-deep-import": 3,
-      "file-lines": 617
+      "file-lines": 602
     },
     "src/features/files/ui/FilePreviewSearch.tsx": {
-      "file-lines": 627
+      "file-lines": 626
     },
     "src/features/files/ui/FileTree.tsx": {
       "cross-feature-deep-import": 1,
-      "file-lines": 1860
+      "file-lines": 1797
     },
     "src/features/files/ui/PdfViewer.tsx": {
-      "file-lines": 618
+      "file-lines": 617
     },
     "src/features/files/ui/useFileTreeKeyboard.ts": {
       "cross-feature-deep-import": 1
@@ -698,15 +674,29 @@
     "src/features/host-tools/BrowserAnnotationDetails.tsx": {
       "loose-feature-file": 1
     },
+    "src/features/host-tools/browserComposer.ts": {
+      "cross-feature-deep-import": 1,
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/browserDraftTransfer.ts": {
+      "loose-feature-file": 1
+    },
     "src/features/host-tools/BrowserInspectorNavigation.tsx": {
       "loose-feature-file": 1
     },
     "src/features/host-tools/BrowserPanel.tsx": {
       "cross-feature-deep-import": 2,
-      "file-lines": 1966,
+      "file-lines": 1704,
       "loose-feature-file": 1
     },
     "src/features/host-tools/ConversationToolsButton.tsx": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/desktopControlClient.ts": {
+      "cross-feature-deep-import": 1,
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/desktopControlIndicator.ts": {
       "loose-feature-file": 1
     },
     "src/features/host-tools/DesktopControlIndicatorStrip.tsx": {
@@ -722,13 +712,24 @@
     "src/features/host-tools/DesktopControlStripView.tsx": {
       "loose-feature-file": 1
     },
+    "src/features/host-tools/desktopControlWindowMain.tsx": {
+      "cross-feature-deep-import": 2,
+      "loose-feature-file": 1
+    },
     "src/features/host-tools/DesktopHelperSetup.tsx": {
       "cross-feature-deep-import": 1,
       "loose-feature-file": 1
     },
+    "src/features/host-tools/desktopStopShortcut.ts": {
+      "cross-feature-deep-import": 2,
+      "loose-feature-file": 1
+    },
     "src/features/host-tools/DevServersPanel.tsx": {
       "cross-feature-deep-import": 4,
-      "file-lines": 1159,
+      "file-lines": 1142,
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/devServerTypes.ts": {
       "loose-feature-file": 1
     },
     "src/features/host-tools/DiagnosticsPanel.tsx": {
@@ -737,46 +738,6 @@
     },
     "src/features/host-tools/HostToolsWindow.tsx": {
       "feature-imports-app": 4,
-      "loose-feature-file": 1
-    },
-    "src/features/host-tools/RuntimeLogsPanel.tsx": {
-      "cross-feature-deep-import": 4,
-      "file-lines": 1235,
-      "loose-feature-file": 1
-    },
-    "src/features/host-tools/SessionHostTools.tsx": {
-      "cross-feature-deep-import": 10,
-      "loose-feature-file": 1
-    },
-    "src/features/host-tools/ToolsWorkspace.tsx": {
-      "cross-feature-deep-import": 4,
-      "feature-imports-app": 1,
-      "file-lines": 1094,
-      "loose-feature-file": 1
-    },
-    "src/features/host-tools/browserComposer.ts": {
-      "cross-feature-deep-import": 1,
-      "loose-feature-file": 1
-    },
-    "src/features/host-tools/browserDraftTransfer.ts": {
-      "loose-feature-file": 1
-    },
-    "src/features/host-tools/desktopControlClient.ts": {
-      "cross-feature-deep-import": 1,
-      "loose-feature-file": 1
-    },
-    "src/features/host-tools/desktopControlIndicator.ts": {
-      "loose-feature-file": 1
-    },
-    "src/features/host-tools/desktopControlWindowMain.tsx": {
-      "cross-feature-deep-import": 2,
-      "loose-feature-file": 1
-    },
-    "src/features/host-tools/desktopStopShortcut.ts": {
-      "cross-feature-deep-import": 2,
-      "loose-feature-file": 1
-    },
-    "src/features/host-tools/devServerTypes.ts": {
       "loose-feature-file": 1
     },
     "src/features/host-tools/logsComposer.ts": {
@@ -788,10 +749,19 @@
     "src/features/host-tools/runtimeLogPresentation.ts": {
       "loose-feature-file": 1
     },
+    "src/features/host-tools/runtimeLogsModel.ts": {
+      "loose-feature-file": 1
+    },
+    "src/features/host-tools/RuntimeLogsPanel.tsx": {
+      "cross-feature-deep-import": 4,
+      "file-lines": 1090,
+      "loose-feature-file": 1
+    },
     "src/features/host-tools/runtimeLogTypes.ts": {
       "loose-feature-file": 1
     },
-    "src/features/host-tools/runtimeLogsModel.ts": {
+    "src/features/host-tools/SessionHostTools.tsx": {
+      "cross-feature-deep-import": 10,
       "loose-feature-file": 1
     },
     "src/features/host-tools/terminalTypes.ts": {
@@ -818,6 +788,12 @@
     "src/features/host-tools/toolsUiControl.ts": {
       "loose-feature-file": 1
     },
+    "src/features/host-tools/ToolsWorkspace.tsx": {
+      "cross-feature-deep-import": 4,
+      "feature-imports-app": 1,
+      "file-lines": 1090,
+      "loose-feature-file": 1
+    },
     "src/features/host-tools/ui/RuntimeLogRow.tsx": {
       "cross-feature-deep-import": 1
     },
@@ -841,13 +817,13 @@
     },
     "src/features/inbox/model/githubTasks.ts": {
       "cross-feature-deep-import": 1,
-      "file-lines": 1622
+      "file-lines": 1595
     },
     "src/features/inbox/model/gitlab.ts": {
       "cross-feature-deep-import": 1
     },
     "src/features/inbox/model/inboxFilters.ts": {
-      "cross-feature-deep-import": 2
+      "cross-feature-deep-import": 1
     },
     "src/features/inbox/model/inboxMedia.ts": {
       "cross-feature-deep-import": 1
@@ -882,30 +858,30 @@
     },
     "src/features/inbox/ui/InboxDetail.tsx": {
       "cross-feature-deep-import": 6,
-      "file-lines": 812
+      "file-lines": 811
     },
     "src/features/inbox/ui/InboxNotificationMenu.tsx": {
       "cross-feature-deep-import": 6
     },
     "src/features/inbox/ui/InboxPrChecks.tsx": {
-      "file-lines": 870
+      "file-lines": 852
     },
     "src/features/inbox/ui/InboxPrDiff.tsx": {
-      "cross-feature-deep-import": 3
-    },
-    "src/features/inbox/ui/InboxPrOverview.tsx": {
       "cross-feature-deep-import": 3
     },
     "src/features/inbox/ui/InboxPresentation.tsx": {
       "cross-feature-deep-import": 6
     },
+    "src/features/inbox/ui/InboxPrOverview.tsx": {
+      "cross-feature-deep-import": 3
+    },
     "src/features/inbox/ui/InboxView.tsx": {
       "cross-feature-deep-import": 8,
       "feature-imports-app": 4,
-      "file-lines": 1533
+      "file-lines": 1418
     },
     "src/features/inbox/ui/JiraBoardView.tsx": {
-      "file-lines": 1249
+      "file-lines": 1248
     },
     "src/features/inbox/ui/LinkedWorkItemUpdateNotice.tsx": {
       "cross-feature-deep-import": 1
@@ -936,11 +912,11 @@
     "src/features/notes/noteNavigation.ts": {
       "loose-feature-file": 1
     },
-    "src/features/notes/noteServiceIntents.ts": {
-      "loose-feature-file": 1
-    },
     "src/features/notes/notes.ts": {
       "cross-feature-deep-import": 4,
+      "loose-feature-file": 1
+    },
+    "src/features/notes/noteServiceIntents.ts": {
       "loose-feature-file": 1
     },
     "src/features/notes/notesInputClosure.ts": {
@@ -969,11 +945,11 @@
     "src/features/notes/ui/NotesView.tsx": {
       "cross-feature-deep-import": 10,
       "feature-imports-app": 3,
-      "file-lines": 2527
+      "file-lines": 2485
     },
     "src/features/notes/ui/SessionNotesPanel.tsx": {
       "cross-feature-deep-import": 5,
-      "file-lines": 1118
+      "file-lines": 1116
     },
     "src/features/notes/ui/useNoteImageInsertion.ts": {
       "cross-feature-deep-import": 1
@@ -1035,13 +1011,13 @@
     "src/features/onboarding/model/onboardingProviders.ts": {
       "cross-feature-deep-import": 1
     },
+    "src/features/onboarding/ui/GuidedTour.tsx": {
+      "cross-feature-deep-import": 1
+    },
     "src/features/onboarding/ui/GuideHub.tsx": {
       "cross-feature-deep-import": 1
     },
     "src/features/onboarding/ui/GuideShortcuts.tsx": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/onboarding/ui/GuidedTour.tsx": {
       "cross-feature-deep-import": 1
     },
     "src/features/onboarding/ui/OnboardingAgents.tsx": {
@@ -1052,7 +1028,7 @@
     },
     "src/features/onboarding/ui/OnboardingDialog.tsx": {
       "cross-feature-deep-import": 12,
-      "file-lines": 693
+      "file-lines": 640
     },
     "src/features/onboarding/ui/OnboardingPreferences.tsx": {
       "cross-feature-deep-import": 8
@@ -1086,8 +1062,7 @@
       "cross-feature-deep-import": 1
     },
     "src/features/orchestration/ui/OrchestrationPreview.tsx": {
-      "cross-feature-deep-import": 4,
-      "file-lines": 788
+      "cross-feature-deep-import": 4
     },
     "src/features/orchestration/ui/OrchestrationSidebarAgents.tsx": {
       "cross-feature-deep-import": 3
@@ -1158,9 +1133,6 @@
     "src/features/projects/ui/SearchableProjectPicker.tsx": {
       "cross-feature-deep-import": 1
     },
-    "src/features/providers/model/accountUsage.ts": {
-      "feature-imports-app": 1
-    },
     "src/features/providers/model/catalogReceipts.ts": {
       "cross-feature-deep-import": 2
     },
@@ -1184,7 +1156,7 @@
     },
     "src/features/providers/ui/GenericAcpSettings.tsx": {
       "cross-feature-deep-import": 3,
-      "file-lines": 624
+      "file-lines": 620
     },
     "src/features/providers/ui/HarnessUpdateNotice.tsx": {
       "cross-feature-deep-import": 3
@@ -1251,7 +1223,7 @@
       "cross-feature-deep-import": 1
     },
     "src/features/quick-composer/ui/useQuickPickers.ts": {
-      "cross-feature-deep-import": 5
+      "cross-feature-deep-import": 4
     },
     "src/features/search/model/appSearch.ts": {
       "cross-feature-deep-import": 7
@@ -1265,13 +1237,13 @@
     "src/features/search/ui/ChatSearchResults.tsx": {
       "cross-feature-deep-import": 2
     },
+    "src/features/search/ui/searchRowCopy.tsx": {
+      "cross-feature-deep-import": 4
+    },
     "src/features/search/ui/SearchView.tsx": {
       "cross-feature-deep-import": 8,
       "feature-imports-app": 2,
-      "file-lines": 946
-    },
-    "src/features/search/ui/searchRowCopy.tsx": {
-      "cross-feature-deep-import": 4
+      "file-lines": 895
     },
     "src/features/sessions/data/composerClosure.ts": {
       "file-lines": 917
@@ -1297,12 +1269,9 @@
     "src/features/sessions/data/sessionStore.ts": {
       "cross-feature-deep-import": 4,
       "feature-imports-app": 1,
-      "file-lines": 2609
+      "file-lines": 2608
     },
     "src/features/sessions/import/importRunner.ts": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/sessions/model/accountModelChoices.ts": {
       "cross-feature-deep-import": 1
     },
     "src/features/sessions/model/accountSwitch.ts": {
@@ -1345,7 +1314,7 @@
       "cross-feature-deep-import": 1
     },
     "src/features/sessions/model/models.ts": {
-      "file-lines": 1252
+      "file-lines": 1251
     },
     "src/features/sessions/model/newSessionCommand.ts": {
       "cross-feature-deep-import": 1
@@ -1373,7 +1342,7 @@
     },
     "src/features/sessions/model/session.ts": {
       "cross-feature-deep-import": 6,
-      "file-lines": 954
+      "file-lines": 952
     },
     "src/features/sessions/model/sessionFolderCommand.ts": {
       "cross-feature-deep-import": 1
@@ -1408,18 +1377,17 @@
     },
     "src/features/sessions/ui/AgentMarkdown.tsx": {
       "cross-feature-deep-import": 4,
-      "file-lines": 1512
+      "file-lines": 1496
     },
     "src/features/sessions/ui/AgentTranscript.tsx": {
       "cross-feature-deep-import": 3,
-      "file-lines": 2879
+      "file-lines": 2861
     },
     "src/features/sessions/ui/AgentTranscriptActivity.tsx": {
-      "file-lines": 1896
+      "file-lines": 1869
     },
     "src/features/sessions/ui/ApprovalToasts.tsx": {
-      "cross-feature-deep-import": 9,
-      "file-lines": 792
+      "cross-feature-deep-import": 8
     },
     "src/features/sessions/ui/AssistantManagedBadge.tsx": {
       "cross-feature-deep-import": 1
@@ -1431,14 +1399,20 @@
       "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/BtwSheet.tsx": {
-      "file-lines": 672
+      "file-lines": 669
     },
     "src/features/sessions/ui/Composer.test.ts": {
-      "file-lines": 2456
+      "file-lines": 2451
     },
     "src/features/sessions/ui/Composer.tsx": {
       "cross-feature-deep-import": 15,
-      "file-lines": 4812
+      "file-lines": 4127
+    },
+    "src/features/sessions/ui/crewCodeArt.ts": {
+      "file-lines": 2769
+    },
+    "src/features/sessions/ui/crewYoung.ts": {
+      "file-lines": 3011
     },
     "src/features/sessions/ui/EmptySession.tsx": {
       "cross-feature-deep-import": 3
@@ -1451,7 +1425,6 @@
       "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/ModelPicker.tsx": {
-      "cross-feature-deep-import": 1,
       "file-lines": 939
     },
     "src/features/sessions/ui/NotificationHistoryItem.tsx": {
@@ -1469,9 +1442,6 @@
     "src/features/sessions/ui/ReminderNotices.tsx": {
       "cross-feature-deep-import": 1
     },
-    "src/features/sessions/ui/SecondOpinionButton.tsx": {
-      "file-lines": 613
-    },
     "src/features/sessions/ui/SessionAgentIdentity.tsx": {
       "cross-feature-deep-import": 1
     },
@@ -1479,33 +1449,24 @@
       "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/SessionImportDialog.tsx": {
-      "file-lines": 921
+      "file-lines": 824
     },
     "src/features/sessions/ui/SessionPane.tsx": {
       "cross-feature-deep-import": 7,
       "feature-imports-app": 1,
-      "file-lines": 2031
+      "file-lines": 1985
     },
     "src/features/sessions/ui/SkillTokenText.tsx": {
       "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/SubagentSheet.tsx": {
-      "file-lines": 762
+      "file-lines": 728
     },
     "src/features/sessions/ui/TranslationResultDialog.tsx": {
       "cross-feature-deep-import": 1
     },
     "src/features/sessions/ui/UsageLimitNotice.tsx": {
       "cross-feature-deep-import": 1
-    },
-    "src/features/sessions/ui/UserLinkPreview.tsx": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/sessions/ui/crewCodeArt.ts": {
-      "file-lines": 2770
-    },
-    "src/features/sessions/ui/crewYoung.ts": {
-      "file-lines": 3011
     },
     "src/features/sessions/ui/useCliCommands.ts": {
       "cross-feature-deep-import": 2
@@ -1525,13 +1486,16 @@
     "src/features/sessions/ui/useReadOnlyHostSession.ts": {
       "cross-feature-deep-import": 1
     },
-    "src/features/settings/model/appShortcuts.ts": {
+    "src/features/sessions/ui/UserLinkPreview.tsx": {
       "cross-feature-deep-import": 1
     },
     "src/features/settings/model/appearance.ts": {
-      "file-lines": 1263
+      "file-lines": 1244
     },
     "src/features/settings/model/applicationPreferencesControl.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/settings/model/appShortcuts.ts": {
       "cross-feature-deep-import": 1
     },
     "src/features/settings/model/quickComposerPersist.ts": {
@@ -1539,16 +1503,10 @@
     },
     "src/features/settings/model/settings.ts": {
       "cross-feature-deep-import": 1,
-      "file-lines": 2937
+      "file-lines": 2683
     },
     "src/features/settings/model/sounds.ts": {
       "cross-feature-deep-import": 3
-    },
-    "src/features/settings/ui/AppearancePreviews.tsx": {
-      "file-lines": 723
-    },
-    "src/features/settings/ui/AppearanceSettings.tsx": {
-      "file-lines": 847
     },
     "src/features/settings/ui/ArchiveSettings.tsx": {
       "cross-feature-deep-import": 4
@@ -1560,7 +1518,7 @@
       "cross-feature-deep-import": 1
     },
     "src/features/settings/ui/ExternalMcpAccess.tsx": {
-      "file-lines": 637
+      "file-lines": 609
     },
     "src/features/settings/ui/GeneralSettings.tsx": {
       "cross-feature-deep-import": 3,
@@ -1568,13 +1526,16 @@
     },
     "src/features/settings/ui/InboxSettings.tsx": {
       "cross-feature-deep-import": 5,
-      "file-lines": 895
+      "file-lines": 826
     },
     "src/features/settings/ui/JiraSettings.tsx": {
       "cross-feature-deep-import": 3
     },
+    "src/features/settings/ui/live-background/latentFace.ts": {
+      "file-lines": 904
+    },
     "src/features/settings/ui/McpSettings.tsx": {
-      "file-lines": 964
+      "file-lines": 780
     },
     "src/features/settings/ui/NotificationsSettings.tsx": {
       "cross-feature-deep-import": 3
@@ -1584,7 +1545,7 @@
     },
     "src/features/settings/ui/ProviderAccountsSettings.tsx": {
       "cross-feature-deep-import": 12,
-      "file-lines": 668
+      "file-lines": 614
     },
     "src/features/settings/ui/ProviderBinarySettings.tsx": {
       "cross-feature-deep-import": 1
@@ -1593,24 +1554,26 @@
       "cross-feature-deep-import": 6,
       "feature-imports-app": 1
     },
+    "src/features/settings/ui/settingsControls.tsx": {
+      "file-lines": 703
+    },
     "src/features/settings/ui/SettingsView.test.ts": {
       "file-lines": 1960
     },
     "src/features/settings/ui/SettingsView.tsx": {
-      "cross-feature-deep-import": 6,
+      "cross-feature-deep-import": 5,
       "feature-imports-app": 3,
-      "file-lines": 631
+      "file-lines": 629
     },
     "src/features/settings/ui/ShortcutSettings.tsx": {
       "cross-feature-deep-import": 2,
-      "file-lines": 762
+      "file-lines": 732
     },
     "src/features/settings/ui/TerminalProfileDiscovery.tsx": {
       "cross-feature-deep-import": 1
     },
     "src/features/settings/ui/TerminalSettings.tsx": {
-      "cross-feature-deep-import": 1,
-      "file-lines": 602
+      "cross-feature-deep-import": 1
     },
     "src/features/settings/ui/TitleGenerationSettings.tsx": {
       "cross-feature-deep-import": 1
@@ -1621,12 +1584,6 @@
     "src/features/settings/ui/WorkspaceSettings.tsx": {
       "cross-feature-deep-import": 2
     },
-    "src/features/settings/ui/live-background/latentFace.ts": {
-      "file-lines": 904
-    },
-    "src/features/settings/ui/settingsControls.tsx": {
-      "file-lines": 758
-    },
     "src/features/skills/model/cliCommandCatalog.ts": {
       "cross-feature-deep-import": 1
     },
@@ -1636,11 +1593,11 @@
     "src/features/skills/model/skillInstallation.ts": {
       "cross-feature-deep-import": 4
     },
-    "src/features/skills/model/skillTokens.ts": {
-      "cross-feature-deep-import": 1
-    },
     "src/features/skills/model/skills.ts": {
       "cross-feature-deep-import": 3
+    },
+    "src/features/skills/model/skillTokens.ts": {
+      "cross-feature-deep-import": 1
     },
     "src/features/skills/model/transferSkill.ts": {
       "cross-feature-deep-import": 1
@@ -1656,7 +1613,7 @@
     },
     "src/features/skills/ui/SkillsPage.tsx": {
       "cross-feature-deep-import": 10,
-      "file-lines": 1273
+      "file-lines": 1266
     },
     "src/features/social/model/social.ts": {
       "cross-feature-deep-import": 1
@@ -1670,76 +1627,8 @@
     "src/features/social/model/socialProgramForm.ts": {
       "cross-feature-deep-import": 1
     },
-    "src/features/social/ui/CampaignBrowser.tsx": {
-      "file-lines": 668
-    },
-    "src/features/social/ui/CampaignComposer.tsx": {
-      "file-lines": 918
-    },
-    "src/features/social/ui/ContactTagSuggestions.tsx": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/social/ui/ProductKnowledge.tsx": {
-      "cross-feature-deep-import": 1,
-      "file-lines": 731
-    },
-    "src/features/social/ui/ProgramSetupForm.tsx": {
-      "file-lines": 1356
-    },
-    "src/features/social/ui/RuleSimplifyReview.tsx": {
-      "cross-feature-deep-import": 2,
-      "file-lines": 1014
-    },
-    "src/features/social/ui/SocialAccounts.tsx": {
-      "file-lines": 1291
-    },
-    "src/features/social/ui/SocialAssistant.tsx": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/social/ui/SocialAuthority.tsx": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/social/ui/SocialBulkComposer.tsx": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/social/ui/SocialDrafts.tsx": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/social/ui/SocialHistory.tsx": {
-      "file-lines": 798
-    },
-    "src/features/social/ui/SocialManagement.tsx": {
-      "cross-feature-deep-import": 1,
-      "file-lines": 1752
-    },
-    "src/features/social/ui/SocialModelField.tsx": {
-      "cross-feature-deep-import": 2
-    },
-    "src/features/social/ui/SocialPolicySettings.tsx": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/social/ui/SocialPublishingPlans.tsx": {
-      "file-lines": 1011
-    },
     "src/features/social/ui/SocialShortcut.tsx": {
       "cross-feature-deep-import": 1
-    },
-    "src/features/social/ui/SocialToday.tsx": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/social/ui/SocialView.tsx": {
-      "cross-feature-deep-import": 2,
-      "feature-imports-app": 3,
-      "file-lines": 696
-    },
-    "src/features/social/ui/socialBulk.ts": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/social/ui/socialShared.tsx": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/social/ui/useSocialWorkspaceController.ts": {
-      "cross-feature-deep-import": 4
     },
     "src/features/source-control/model/workspaceRepositories.ts": {
       "cross-feature-deep-import": 1
@@ -1748,7 +1637,7 @@
       "cross-feature-deep-import": 1
     },
     "src/features/source-control/ui/ConflictLayout.tsx": {
-      "file-lines": 666
+      "file-lines": 665
     },
     "src/features/source-control/ui/GitActionsMenu.tsx": {
       "file-lines": 790
@@ -1758,13 +1647,13 @@
     },
     "src/features/source-control/ui/GitChangesPanel.tsx": {
       "cross-feature-deep-import": 1,
-      "file-lines": 2225
+      "file-lines": 2141
     },
     "src/features/source-control/ui/GitGenerationSettings.tsx": {
       "cross-feature-deep-import": 1
     },
     "src/features/source-control/ui/UnifiedDiffView.tsx": {
-      "file-lines": 1493
+      "file-lines": 1491
     },
     "src/features/source-control/ui/WorkspaceSourceControl.tsx": {
       "cross-feature-deep-import": 1
@@ -1831,7 +1720,7 @@
     },
     "src/features/tasks/model/taskClient.ts": {
       "cross-feature-deep-import": 6,
-      "file-lines": 834
+      "file-lines": 810
     },
     "src/features/tasks/model/taskTransitions.ts": {
       "cross-feature-deep-import": 1
@@ -1839,52 +1728,28 @@
     "src/features/tasks/model/useTaskBoardQueries.ts": {
       "cross-feature-deep-import": 4
     },
-    "src/features/tasks/ui/SprintManagement.tsx": {
-      "file-lines": 711
-    },
-    "src/features/tasks/ui/TaskAccountPicker.tsx": {
-      "cross-feature-deep-import": 2
-    },
-    "src/features/tasks/ui/TaskBoardCard.tsx": {
-      "cross-feature-deep-import": 3,
-      "file-lines": 727
-    },
-    "src/features/tasks/ui/TaskDetail.tsx": {
-      "cross-feature-deep-import": 5
-    },
     "src/features/tasks/ui/TaskForm.tsx": {
-      "cross-feature-deep-import": 8
-    },
-    "src/features/tasks/ui/TaskFormFields.tsx": {
       "cross-feature-deep-import": 3
     },
-    "src/features/tasks/ui/TaskGoals.tsx": {
-      "cross-feature-deep-import": 7,
-      "file-lines": 1334
-    },
-    "src/features/tasks/ui/TaskSessionSheet.tsx": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/tasks/ui/TaskStatusLine.tsx": {
-      "cross-feature-deep-import": 1
+    "src/features/tasks/ui/TaskFormFields.tsx": {
+      "cross-feature-deep-import": 2
     },
     "src/features/tasks/ui/TaskStewards.tsx": {
-      "cross-feature-deep-import": 9,
-      "file-lines": 673
+      "cross-feature-deep-import": 1
+    },
+    "src/features/tasks/ui/TasksView.test.ts": {
+      "file-lines": 2803
+    },
+    "src/features/tasks/ui/TasksView.tsx": {
+      "cross-feature-deep-import": 4,
+      "feature-imports-app": 3,
+      "file-lines": 1019
     },
     "src/features/tasks/ui/TaskWorkspacePicker.tsx": {
       "cross-feature-deep-import": 2
     },
-    "src/features/tasks/ui/TasksView.test.ts": {
-      "file-lines": 2805
-    },
-    "src/features/tasks/ui/TasksView.tsx": {
-      "cross-feature-deep-import": 11,
-      "feature-imports-app": 3,
-      "file-lines": 1658
-    },
     "src/features/tasks/ui/useTaskTargetMachine.ts": {
-      "cross-feature-deep-import": 6
+      "cross-feature-deep-import": 2
     },
     "src/features/terminal/model/mobilePtyControl.ts": {
       "feature-imports-app": 1
@@ -1907,17 +1772,17 @@
     "src/features/terminal/ui/ProjectTerminalDock.tsx": {
       "cross-feature-deep-import": 2,
       "feature-imports-app": 1,
-      "file-lines": 657
+      "file-lines": 637
     },
     "src/features/terminal/ui/TerminalSelectionMenu.tsx": {
       "cross-feature-deep-import": 4
     },
     "src/features/terminal/ui/TerminalTools.tsx": {
-      "file-lines": 641
+      "file-lines": 630
     },
     "src/features/terminal/ui/TerminalView.tsx": {
       "cross-feature-deep-import": 4,
-      "file-lines": 775
+      "file-lines": 772
     },
     "src/features/usage/model/railGroups.ts": {
       "cross-feature-deep-import": 1
@@ -1938,15 +1803,14 @@
       "cross-feature-deep-import": 2
     },
     "src/features/usage/ui/UsageBudgets.tsx": {
-      "cross-feature-deep-import": 8,
-      "file-lines": 617
+      "cross-feature-deep-import": 8
     },
     "src/features/usage/ui/UsageDisplaySettings.tsx": {
       "cross-feature-deep-import": 2
     },
     "src/features/usage/ui/UsageOverview.tsx": {
       "cross-feature-deep-import": 7,
-      "file-lines": 988
+      "file-lines": 959
     },
     "src/features/usage/ui/UsagePage.tsx": {
       "cross-feature-deep-import": 7,
@@ -2009,6 +1873,12 @@
     "src/features/voice/ui/MicrophonePermissionSettings.tsx": {
       "cross-feature-deep-import": 1
     },
+    "src/features/voice/ui/useVoiceOverlayHost.ts": {
+      "cross-feature-deep-import": 1
+    },
+    "src/features/voice/ui/useVoicePushToTalk.ts": {
+      "cross-feature-deep-import": 2
+    },
     "src/features/voice/ui/VoiceChoiceCard.tsx": {
       "cross-feature-deep-import": 4
     },
@@ -2021,7 +1891,7 @@
     "src/features/voice/ui/VoiceCompanion.tsx": {
       "cross-feature-deep-import": 11,
       "feature-imports-app": 1,
-      "file-lines": 3534
+      "file-lines": 3364
     },
     "src/features/voice/ui/VoiceCompanionGate.tsx": {
       "cross-feature-deep-import": 2
@@ -2033,17 +1903,10 @@
       "cross-feature-deep-import": 3
     },
     "src/features/voice/ui/VoiceSettings.tsx": {
-      "cross-feature-deep-import": 2,
-      "file-lines": 882
+      "cross-feature-deep-import": 1
     },
     "src/features/voice/ui/VoiceSetupSteps.tsx": {
       "cross-feature-deep-import": 1
-    },
-    "src/features/voice/ui/useVoiceOverlayHost.ts": {
-      "cross-feature-deep-import": 1
-    },
-    "src/features/voice/ui/useVoicePushToTalk.ts": {
-      "cross-feature-deep-import": 2
     },
     "src/features/voice/voiceOverlayMain.tsx": {
       "cross-feature-deep-import": 2,
@@ -2072,7 +1935,7 @@
     "src/features/workspace/model/tabGroups.ts": {
       "cross-feature-deep-import": 1,
       "feature-imports-app": 1,
-      "file-lines": 819
+      "file-lines": 818
     },
     "src/features/workspace/model/tabKeys.ts": {
       "cross-feature-deep-import": 1
@@ -2087,20 +1950,19 @@
     "src/features/workspace/ui/PaneTree.tsx": {
       "cross-feature-deep-import": 14,
       "feature-imports-app": 2,
-      "file-lines": 1107
+      "file-lines": 1094
     },
     "src/features/workspace/ui/SurfaceTabs.tsx": {
       "cross-feature-deep-import": 7,
       "feature-imports-app": 4,
-      "file-lines": 809
+      "file-lines": 808
     },
     "src/features/workspace/ui/TabGroupMenu.tsx": {
-      "cross-feature-deep-import": 4,
-      "file-lines": 630
+      "cross-feature-deep-import": 4
     },
     "src/features/workspace/ui/WorkspacePicker.tsx": {
       "cross-feature-deep-import": 7,
-      "file-lines": 605
+      "file-lines": 603
     },
     "src/features/workspaces/model/nativeManagedTurn.ts": {
       "cross-feature-deep-import": 3
@@ -2127,8 +1989,7 @@
       "cross-feature-deep-import": 7
     },
     "src/features/workspaces/ui/WorkspacePolicySettings.tsx": {
-      "cross-feature-deep-import": 4,
-      "file-lines": 929
+      "cross-feature-deep-import": 2
     },
     "src/features/workspaces/ui/WorkspaceReview.tsx": {
       "cross-feature-deep-import": 3
@@ -2137,10 +1998,10 @@
       "foundation-imports-app": 1
     },
     "src/integrations/harness/core/apply.test.ts": {
-      "file-lines": 2197
+      "file-lines": 2182
     },
     "src/integrations/harness/core/apply.ts": {
-      "file-lines": 1712,
+      "file-lines": 1684,
       "foundation-imports-app": 17
     },
     "src/integrations/harness/core/auth.ts": {
@@ -2159,7 +2020,7 @@
       "foundation-imports-app": 1
     },
     "src/integrations/harness/core/child.ts": {
-      "file-lines": 1592,
+      "file-lines": 1582,
       "foundation-imports-app": 1
     },
     "src/integrations/harness/core/conversationToolsBridge.ts": {
@@ -2185,7 +2046,7 @@
       "file-lines": 1840
     },
     "src/integrations/harness/core/registry.ts": {
-      "file-lines": 1477,
+      "file-lines": 1476,
       "foundation-imports-app": 9
     },
     "src/integrations/harness/core/runtimeGuidance.ts": {
@@ -2229,7 +2090,7 @@
       "foundation-imports-app": 3
     },
     "src/integrations/harness/providers/claude/claude.ts": {
-      "file-lines": 2580,
+      "file-lines": 2531,
       "foundation-imports-app": 6
     },
     "src/integrations/harness/providers/claude/claudeCatalog.ts": {
@@ -2242,7 +2103,7 @@
       "file-lines": 3258
     },
     "src/integrations/harness/providers/claude/claudeProtocol.ts": {
-      "file-lines": 1332,
+      "file-lines": 1319,
       "foundation-imports-app": 6
     },
     "src/integrations/harness/providers/claude/claudeText.ts": {
@@ -2252,7 +2113,7 @@
       "foundation-imports-app": 1
     },
     "src/integrations/harness/providers/codex/codex.ts": {
-      "file-lines": 2438,
+      "file-lines": 2436,
       "foundation-imports-app": 5
     },
     "src/integrations/harness/providers/codex/codexCatalog.ts": {
@@ -2268,7 +2129,7 @@
       "file-lines": 3934
     },
     "src/integrations/harness/providers/codex/codexProtocol.ts": {
-      "file-lines": 1573,
+      "file-lines": 1570,
       "foundation-imports-app": 6
     },
     "src/integrations/harness/providers/codex/codexQuestions.ts": {
@@ -2309,7 +2170,7 @@
       "foundation-imports-app": 3
     },
     "src/integrations/harness/providers/grok/grok.ts": {
-      "file-lines": 915,
+      "file-lines": 912,
       "foundation-imports-app": 3
     },
     "src/integrations/harness/providers/grok/grokCatalog.ts": {
@@ -2335,7 +2196,7 @@
       "foundation-imports-app": 3
     },
     "src/integrations/harness/providers/opencode/opencode.ts": {
-      "file-lines": 2250,
+      "file-lines": 2249,
       "foundation-imports-app": 5
     },
     "src/integrations/harness/providers/opencode/opencodeCatalog.ts": {
@@ -2399,13 +2260,7 @@
     "src/integrations/social/linkedinMedia.ts": {
       "foundation-imports-app": 1
     },
-    "src/integrations/social/messaging.ts": {
-      "foundation-imports-app": 1
-    },
     "src/integrations/social/metaMedia.ts": {
-      "foundation-imports-app": 1
-    },
-    "src/integrations/social/platformAdapters.ts": {
       "foundation-imports-app": 1
     },
     "src/integrations/social/publishingFormats.ts": {
@@ -2430,7 +2285,7 @@
       "foundation-imports-app": 2
     },
     "src/platform/tauri/fs.ts": {
-      "file-lines": 1366,
+      "file-lines": 1348,
       "foundation-imports-app": 2
     },
     "src/platform/tauri/turnProbe.ts": {
@@ -2452,40 +2307,16 @@
       "foundation-imports-app": 1
     },
     "src/shared/model/host-contracts/assistant.ts": {
-      "file-lines": 1118
+      "file-lines": 1084
     },
     "src/shared/model/host-contracts/methods.ts": {
-      "file-lines": 1045
-    },
-    "src/shared/ui/ControlBehaviorMatrix.tsx": {
-      "file-lines": 1409
-    },
-    "src/shared/ui/ControlSpecimen.tsx": {
-      "file-lines": 968
-    },
-    "src/shared/ui/Modal.tsx": {
-      "foundation-imports-app": 1
-    },
-    "src/shared/ui/ParticleText.tsx": {
-      "foundation-imports-app": 1
-    },
-    "src/shared/ui/Popover.tsx": {
-      "foundation-imports-app": 1
-    },
-    "src/shared/ui/PrivateEmail.tsx": {
-      "foundation-imports-app": 1
-    },
-    "src/shared/ui/SearchableSelect.tsx": {
-      "file-lines": 893
-    },
-    "src/shared/ui/Sheet.tsx": {
-      "foundation-imports-app": 1
+      "file-lines": 1012
     },
     "src/shared/ui/arc/activity-heatmap/activity-heatmap.tsx": {
       "file-lines": 843
     },
     "src/shared/ui/arc/bar-chart/bar-chart.tsx": {
-      "file-lines": 983
+      "file-lines": 972
     },
     "src/shared/ui/arc/combobox/combobox.tsx": {
       "file-lines": 615
@@ -2521,7 +2352,7 @@
       "file-lines": 786
     },
     "src/shared/ui/arc/sortable-data-table/sortable-data-table.tsx": {
-      "file-lines": 777
+      "file-lines": 612
     },
     "src/shared/ui/arc/tag-input/tag-input.tsx": {
       "file-lines": 740
@@ -2532,7 +2363,31 @@
     "src/shared/ui/arc/usage-meter/usage-meter.tsx": {
       "file-lines": 777
     },
+    "src/shared/ui/ControlBehaviorMatrix.tsx": {
+      "file-lines": 1384
+    },
+    "src/shared/ui/ControlSpecimen.tsx": {
+      "file-lines": 965
+    },
     "src/shared/ui/identity/HarnessIcon.tsx": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/ui/Modal.tsx": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/ui/ParticleText.tsx": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/ui/Popover.tsx": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/ui/PrivateEmail.tsx": {
+      "foundation-imports-app": 1
+    },
+    "src/shared/ui/SearchableSelect.tsx": {
+      "file-lines": 852
+    },
+    "src/shared/ui/Sheet.tsx": {
       "foundation-imports-app": 1
     }
   }

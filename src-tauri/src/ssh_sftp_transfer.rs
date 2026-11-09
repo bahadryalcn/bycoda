@@ -545,7 +545,6 @@ fn regular_remote(
 fn wire_path(path: &Path) -> Result<String, String> {
     quote_path(&path.to_string_lossy().replace('\\', "/"))
 }
-#[allow(clippy::too_many_arguments)] // Carries the transfer's phase and progress offset together.
 fn run_file(
     app: &TransferContext,
     endpoint: &SshEndpoint,
@@ -752,7 +751,6 @@ fn download_core(
     result
 }
 
-#[allow(clippy::too_many_arguments)] // Mirrors the IPC transfer arguments without changing their wire shape.
 pub(super) fn upload(
     app: tauri::AppHandle,
     window: tauri::Window,

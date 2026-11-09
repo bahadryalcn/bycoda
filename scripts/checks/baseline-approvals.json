@@ -1,0 +1,60 @@
+{
+  "approvals": [
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "oxlint/no-restricted-properties",
+      "from": 24,
+      "to": 25,
+      "reason": "K-CLOCK scope widened to Host scheduler, budget and watchdog modules."
+    },
+    {
+      "baseline": "invariants-baseline.json",
+      "rule": "ts-suppression-without-reason",
+      "from": 0,
+      "to": 49,
+      "reason": "New rule K-SUPPRESS recorded with its existing debt."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "font-weight",
+      "from": 0,
+      "to": 1,
+      "reason": "Detection broadened to font weights 501 to 599; existing finding recorded."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "layer",
+      "from": 0,
+      "to": 1,
+      "reason": "Detection broadened to variant prefixes containing / or (; existing finding recorded."
+    },
+    {
+      "baseline": "ui-drift-baseline.json",
+      "rule": "theme-palette-literal",
+      "from": 0,
+      "to": 421,
+      "reason": "New rule theme-palette-literal recorded with its existing debt."
+    },
+    {
+      "baseline": "lint-baseline.json",
+      "rule": "react-hooks(exhaustive-deps)",
+      "from": 0,
+      "to": 609,
+      "reason": "New rule react-hooks exhaustive-deps recorded with its existing debt."
+    },
+    {
+      "baseline": "lint-baseline.json",
+      "rule": "react-hooks(rules-of-hooks)",
+      "from": 0,
+      "to": 12,
+      "reason": "New rule react-hooks rules-of-hooks recorded with its existing debt."
+    },
+    {
+      "baseline": "test-types-baseline.json",
+      "rule": "type-errors",
+      "from": 0,
+      "to": 1506,
+      "reason": "New test-file type ratchet recorded with its existing debt."
+    }
+  ]
+}

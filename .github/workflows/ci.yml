@@ -62,23 +62,30 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          # The baseline guard reads baselines at the pull request base or pre-push tip.
+          fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-deps
         with:
           node-version: 24
       - run: node scripts/checks/check-repository-hygiene.mjs
       - run: node --test .github/scripts/issue-labels.test.cjs
-      - name: Repository quality gates (format, lint baseline, locales, feature skills, theme colors, UI drift, code structure)
+      - name: Repository quality gates (format, lint baseline, locales, feature skills, theme colors, UI drift, code structure, UI catalog)
         # Run every gate and fail once at the end, so one push reports all of them
         # instead of hiding later failures behind the first one.
         run: |
           status=0
-          for gate in format:check lint:baseline check:locales check:feature-skills check:colors check:ui-drift check:structure; do
+          for gate in format:check lint:baseline check:locales check:feature-skills check:colors check:ui-drift check:structure check:ui-catalog; do
             echo "::group::pnpm $gate"
             if ! pnpm "$gate"; then echo "::error title=Repository quality gate::pnpm $gate failed"; status=1; fi
             echo "::endgroup::"
           done
           exit "$status"
+      - name: Baseline guard (a ratchet baseline may not rise without a recorded approval)
+        # Same base as the changes job; an unresolvable base prints a notice and passes.
+        env:
+          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: pnpm run check:baselines ${CI_BASE:+--base "$CI_BASE"}
 
   preflight:
     # Deterministic contract/format failures stop expensive VM builds and browser
@@ -213,6 +220,7 @@ jobs:
         run: pnpm run check:invariants
       - run: pnpm test --reporter=default --reporter=json --outputFile.json=temp/test-results/web-ci/results.json
       - run: pnpm exec tsc-rs --noEmit
+      - run: pnpm run check:types:tests
       - id: playwright
         name: Read pinned web boot browser version
         run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"

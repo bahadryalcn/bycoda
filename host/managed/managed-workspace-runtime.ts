@@ -447,6 +447,7 @@ export function createManagedWorkspaceRuntime(
     get,
     list,
     assertWritable,
+    abandonUnmaterializedCreate: registry.abandonUnmaterializedCreate,
     storageStatus,
     /** Proof is issued only inside an already-authenticated owner transport scope. */
     async withOwner<T>(

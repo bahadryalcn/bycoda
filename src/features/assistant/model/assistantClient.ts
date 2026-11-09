@@ -48,7 +48,7 @@ function runRefresh(showLoading: boolean): Promise<void> {
           "",
           "assistant.v1",
           "assistant.request",
-          { op: "snapshot", limit: 100 },
+          { op: "snapshot", limit: 100, features: ["jobHolds", "jobStalled"] },
           { kind: "local" },
           owner.environmentId,
         ),

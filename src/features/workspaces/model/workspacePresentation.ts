@@ -87,7 +87,9 @@ export function workspaceRosterFacts(
 ): RosterFacts {
   const key = pathKey(workspace.path);
   return {
-    missing: missingPaths.some((path) => pathKey(path) === key),
+    // A retired directory is expected to be absent; storage reads can lag behind its removal.
+    missing:
+      workspace.directoryState !== "removed" && missingPaths.some((path) => pathKey(path) === key),
     cleanupDueAt: policy && workspaceCleanupDueAt(workspace, policy),
   };
 }
@@ -109,4 +111,37 @@ export function matchesRosterFilter(
   if (filter === "active") return workspace.state === "active";
   if (filter === "attention") return workspaceNeedsAttention(workspace, facts);
   return true;
+}
+
+export type WorkspaceRemovalAction = {
+  label: string;
+  /** Set when removal is unavailable; shown as the reason on the disabled control. */
+  disabledReason?: string;
+  /** The record is still marked active but its folder is gone: close it before retiring it. */
+  closeFirst: boolean;
+};
+
+/** The row's removal action. A missing folder retires its record; active work is never removed. */
+export function workspaceRemovalAction(
+  workspace: ManagedWorkspace,
+  facts: RosterFacts,
+  lifecycleAvailable: boolean,
+): WorkspaceRemovalAction {
+  const blocked = workspace.directoryState === "blocked";
+  const label = blocked
+    ? t("Review blocked cleanup")
+    : facts.missing
+      ? t("Remove record")
+      : t("Delete directory");
+  const closeFirst = facts.missing && workspace.state === "active";
+  const disabledReason = !lifecycleAvailable
+    ? t("Update the execution Host to remove managed directories.")
+    : workspace.directoryState === "removed"
+      ? t("This directory is already removed.")
+      : workspace.directoryState === "removing" || workspace.directoryState === "pendingRemoval"
+        ? t("Removal is in progress.")
+        : workspace.state === "active" && !facts.missing
+          ? t("Stop the session using this workspace first.")
+          : undefined;
+  return { label, disabledReason, closeFirst };
 }

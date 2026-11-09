@@ -104,16 +104,24 @@ export function useApprovalActions(deps: ApprovalActionDeps) {
       keepHarnessQuestionOpen(liveTurnHarness(session), sessionId, requestId);
   }, []);
 
+  /**
+   * Resolves whether the conversation actually opened. It may be closed, deleted
+   * or owned by another window, and a caller such as the request history must be
+   * able to say so instead of closing over nothing.
+   */
   const onOpenApprovalSession = useCallback(
-    (sessionId: string) => {
+    async (sessionId: string): Promise<boolean> => {
       const parentId =
         sessionsRef.current.find((session) => session.id === sessionId)?.orchestrationLeadId ??
         orchestrator.forSession(sessionId)?.leadId;
-      if (parentId && parentId !== sessionId) {
-        setInspectedWorkerId(sessionId);
-        if (!focusOpenSession(parentId)) void onSelectHistorySession(parentId);
-      } else if (!focusOpenSession(sessionId)) {
-        void onSelectHistorySession(sessionId);
+      const ownerId = parentId && parentId !== sessionId ? parentId : sessionId;
+      if (ownerId !== sessionId) setInspectedWorkerId(sessionId);
+      if (focusOpenSession(ownerId)) return true;
+      try {
+        return (await onSelectHistorySession(ownerId)) === true;
+      } catch (error) {
+        console.error("Conversation could not be opened", error);
+        return false;
       }
     },
     [focusOpenSession, onSelectHistorySession],

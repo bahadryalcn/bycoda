@@ -274,7 +274,6 @@ export function AssistantSettings({
         }}
         onSubmit={(event) => {
           event.preventDefault();
-          // ast-grep-ignore: ts-void-promise-without-catch -- save() reports its own failures
           void save();
         }}
       >

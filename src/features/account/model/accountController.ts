@@ -28,6 +28,8 @@ export type AccountControllerDeps = {
   storage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
 };
 
+const REVALIDATE_MS = 60_000;
+
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function isNetworkFailure(error: unknown): boolean {
@@ -54,6 +56,8 @@ export function createAccountController(deps: AccountControllerDeps) {
   let deviceId: string | null = null;
   let api: AccountClient | null = null;
   let activeSignIn: { handle: string | null; cancelled: boolean } | null = null;
+  // The start-up verification counts as the first attempt.
+  let lastRevalidate = now();
 
   const dispatch = (event: AccountEvent) => {
     const next = accountReducer(state, event);
@@ -281,6 +285,21 @@ export function createAccountController(deps: AccountControllerDeps) {
     /** Re-confirms an open account view, for example when the window regains focus. */
     async refresh(): Promise<void> {
       if (!isSignedIn(state)) return;
+      try {
+        await verify(false);
+      } catch (error) {
+        await handleFailure(error);
+      }
+    },
+
+    /**
+     * Re-confirms a view shown from the cache or marked stale after a failure, at most once a
+     * minute. The service calls it on window focus and when the network returns, so the view
+     * does not stay "saved hours ago" while the computer is online.
+     */
+    async revalidate(): Promise<void> {
+      if (!isSignedIn(state) || !state.stale || now() - lastRevalidate < REVALIDATE_MS) return;
+      lastRevalidate = now();
       try {
         await verify(false);
       } catch (error) {

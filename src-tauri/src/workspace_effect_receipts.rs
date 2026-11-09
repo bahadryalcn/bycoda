@@ -77,7 +77,6 @@ fn begin_at(path: &Path, key: &str, fingerprint: &str) -> Result<(), String> {
     .map_err(|_| "Workspace receipt storage unavailable")?;
     Ok(())
 }
-#[allow(clippy::too_many_arguments)] // Crate-internal receipt call; each identity field is a separate key input.
 pub(crate) fn begin(
     app: &AppHandle,
     pending_id: &str,
@@ -156,7 +155,6 @@ pub(crate) fn mark_unknown(pending_id: &str) {
         pending.remove(pending_id);
     }
 }
-#[allow(clippy::too_many_arguments)] // Crate-internal receipt call; each identity field is a separate key input.
 pub(crate) fn status(
     app: &AppHandle,
     environment: &str,
@@ -179,7 +177,6 @@ pub(crate) fn status(
         original_input,
     )
 }
-#[allow(clippy::too_many_arguments)] // Crate-internal receipt call; each identity field is a separate key input.
 fn status_at(
     path: &Path,
     environment: &str,

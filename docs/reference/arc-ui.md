@@ -48,7 +48,8 @@ First identify the user's task and compare suitable interaction patterns. The ol
 HTML tag, number of controls and grouping do not prescribe the replacement. A row
 of actions may need a segmented choice, radio group, split action or menu; small
 stable option lists may use Select, while long/growing searchable lists need
-Combobox/autocomplete or searchable MultiSelect. Preserve behavior and capabilities
+Combobox/autocomplete or searchable MultiSelect (target API). Preserve behavior and
+capabilities
 while improving the interaction. A shared import alone does not prove task fit.
 
 1. Find the owning screen and search shared adapters and similar consumers for the
@@ -332,8 +333,7 @@ compositions on top of these adapters. Their API, when-to-use and "replaces" not
 
 ## Appearance and motion
 
-Text-field focus is owned by `src/styles/arc.css` and follows the V3 field/focus contract
-in `docs/reference/ui-components.md`: a faint 1px
+Text-field focus is owned by `src/styles/arc.css` and follows the focus contract in [ui-design-system](ui-design-system.md): a faint 1px
 boundary and 8px radius; focus turns the frame border to adjusted accent ink
 (`--ui-field-border-focus`) and adds `--ui-focus-ring`, a subtle 2px ring in the user's accent at
 low alpha (never a gray halo, never an inset outline); invalid fields use the danger border with
@@ -436,8 +436,7 @@ installed desktop acceptance.
 against explicit owner-reviewed fingerprint decisions. The baseline includes
 historical component decisions plus reviewed current additions and counted
 signal exceptions. Inventory counts alone are not approval; the check has no
-automatic refresh command and is not wired into staged checks or CI yet (about 263
-findings are unreviewed). AST/CSS heuristics cannot prove event, permission,
+automatic refresh command and is not wired into staged checks or CI yet (its findings have not been triaged, and the check currently fails). AST/CSS heuristics cannot prove event, permission,
 native editor or overlay correctness. Local immutable/conditional/template class
 recipes and static ARIA/feedback selectors are tracked; dynamic roles, indirect
 styles and imported recipes still need manual review.
@@ -449,7 +448,7 @@ and release acceptance are separate evidence.
 
 ## Additional data and action controls
 
-Nine free Arc registry items are installed with the pinned CLI. Their shared adapters
+Eight free Arc registry items are installed with the pinned CLI. Their shared adapters
 scope appearance to `bycoda-arc`; registry copy is localized through the existing catalogs.
 
 | Item                | Integration                                                                                                                                                                                                                                    |

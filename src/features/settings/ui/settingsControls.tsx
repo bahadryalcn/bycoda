@@ -226,7 +226,8 @@ function useControlDescriptions(descriptionId: string | undefined) {
 /**
  * Secondary settings as one disclosure row: the title sits on the same x as row titles, the
  * chevron on the right, and a hairline separates it from the rows above. Put it last in a Group.
- * Opens by default for compatibility; new pages pass `defaultOpen={false}` so Advanced is closed.
+ * Closed by default, as the design system requires; pass `defaultOpen` only for a disclosure that
+ * must start open (for example a form the user opened on purpose).
  * A search/reveal landing on this section or one of its `settingIds` opens it. Keep children to
  * Rows; never use it to hold only a paragraph (use `info` on the related row instead).
  */
@@ -235,7 +236,7 @@ export function AdvancedSettings({
   id,
   settingIds,
   title,
-  defaultOpen = true,
+  defaultOpen = false,
   keepMounted = false,
 }: {
   children: ReactNode;

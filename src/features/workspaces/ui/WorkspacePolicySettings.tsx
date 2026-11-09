@@ -6,6 +6,7 @@ import {
   workspacePolicyDiskErrors,
   lifecycleLabel,
   matchesRosterFilter,
+  workspaceRemovalAction,
   workspaceRosterFacts,
   type RosterFilter,
 } from "../model/workspacePresentation";
@@ -13,7 +14,6 @@ import { Button } from "../../../shared/ui/Button";
 import { WorkspaceManagedRow } from "./WorkspaceManagedRow";
 import { WorkspaceStorageSummary } from "./WorkspaceStorageSummary";
 import { WorkspaceRosterFilter } from "./WorkspaceRosterFilter";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import { revealPath } from "../../../platform/tauri/fs";
 import type { Session } from "../../sessions/model/session";
 import { WorkspaceDirectoryRemoval } from "./WorkspaceDirectoryRemoval";
@@ -33,6 +33,8 @@ import {
   workspaceRequest,
 } from "../model/workspaceClient";
 import { setWorkspacePinned, WORKSPACE_PINNING_CAPABILITY } from "../model/workspacePinning";
+import { isBackgroundRemoval } from "../model/backgroundRemoval";
+import { useBackgroundRemovals } from "../hooks/useBackgroundRemovals";
 
 type Stage = "inventory" | "policy" | "storage";
 const samePolicy = (a: WorkspacePolicy, b: WorkspacePolicy) =>
@@ -80,13 +82,14 @@ export function WorkspacePolicySettings({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string>();
   const [cleanup, setCleanup] = useState<ManagedWorkspace>();
+  const [cleanupMode, setCleanupMode] = useState({ closeFirst: false, missing: false });
   const [review, setReview] = useState<ManagedWorkspace>();
   const [pinning, setPinning] = useState<string>();
   const [pinError, setPinError] = useState<{ id: string; message: string }>();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<RosterFilter>("all");
-  const [menu, setMenu] = useState<{ workspace: ManagedWorkspace; anchor: HTMLElement }>();
   const [revealError, setRevealError] = useState<string>();
+  const backgroundRemovals = useBackgroundRemovals();
   const workspaceTitle = (workspace: ManagedWorkspace) =>
     (workspace.owner.kind === "session" &&
       liveSessions.find((session) => session.id === workspace.owner.id)?.title) ||
@@ -430,9 +433,42 @@ export function WorkspacePolicySettings({
                       }
                       pinning={pinning === workspace.id}
                       pinError={pinError?.id === workspace.id ? pinError.message : undefined}
-                      menuOpen={menu?.workspace.id === workspace.id}
+                      removing={isBackgroundRemoval(backgroundRemovals, workspace.path)}
                       onReview={() => setReview(workspace)}
-                      onMenu={(event) => setMenu({ workspace, anchor: event.currentTarget })}
+                      onReveal={() => {
+                        setRevealError(undefined);
+                        void revealPath(workspace.path).catch((failure) =>
+                          setRevealError(String(failure)),
+                        );
+                      }}
+                      pin={{
+                        disabledReason: !capabilities?.includes(WORKSPACE_PINNING_CAPABILITY)
+                          ? t("Update the execution Host to pin or unpin individual workspaces.")
+                          : loading || removing || !!pinning
+                            ? t("Wait for the current change to finish.")
+                            : undefined,
+                        onToggle: () => void pinWorkspace(workspace),
+                      }}
+                      remove={(() => {
+                        const action = workspaceRemovalAction(
+                          workspace,
+                          rosterFacts(workspace),
+                          !!capabilities?.includes("workspaces.lifecycle.v1"),
+                        );
+                        return {
+                          label: action.label,
+                          disabledReason:
+                            action.disabledReason ??
+                            (removing ? t("Another removal is open.") : undefined),
+                          onRemove: () => {
+                            setCleanupMode({
+                              closeFirst: action.closeFirst,
+                              missing: rosterFacts(workspace).missing,
+                            });
+                            setCleanup(workspace);
+                          },
+                        };
+                      })()}
                     />
                   ))}
                   {showUnmanaged && renderWorktrees?.(query)}
@@ -485,58 +521,10 @@ export function WorkspacePolicySettings({
           </SettingsFeedback>
         )}
       {revealError && <SettingsFeedback state="error">{revealError}</SettingsFeedback>}
-      {menu && (
-        <DropdownMenu
-          anchor={menu.anchor}
-          label={t("More actions")}
-          onClose={() => setMenu(undefined)}
-          items={[
-            {
-              kind: "item",
-              id: "pin",
-              label: menu.workspace.pinned ? t("Unpin workspace") : t("Pin workspace"),
-              disabled:
-                !capabilities?.includes(WORKSPACE_PINNING_CAPABILITY) ||
-                loading ||
-                removing ||
-                !!pinning,
-            },
-            {
-              kind: "item",
-              id: "reveal",
-              label: t("Reveal folder"),
-              disabled: menu.workspace.directoryState === "removed",
-            },
-            {
-              kind: "item",
-              id: "delete",
-              label:
-                menu.workspace.directoryState === "blocked"
-                  ? t("Review blocked cleanup")
-                  : t("Delete directory"),
-              danger: true,
-              disabled:
-                !capabilities?.includes("workspaces.lifecycle.v1") ||
-                menu.workspace.state === "active" ||
-                removing ||
-                ["removed", "removing", "pendingRemoval"].includes(menu.workspace.directoryState),
-            },
-          ]}
-          onPick={(id) => {
-            const workspace = menu.workspace;
-            setMenu(undefined);
-            if (id === "pin") void pinWorkspace(workspace);
-            if (id === "delete") setCleanup(workspace);
-            if (id === "reveal") {
-              setRevealError(undefined);
-              void revealPath(workspace.path).catch((failure) => setRevealError(String(failure)));
-            }
-          }}
-        />
-      )}
       {cleanup && (
         <WorkspaceDirectoryRemoval
           workspace={cleanup}
+          {...cleanupMode}
           context={{ cwd, environmentId }}
           onClose={() => setCleanup(undefined)}
           onWorkspaceChange={(next) => {

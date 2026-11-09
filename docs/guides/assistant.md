@@ -359,7 +359,10 @@ Presence settings let you choose idle and away delays, working hours, and which
 updates can notify you while present or away. Equal start and end hours allow
 work throughout the day. Outside working hours, accepted turns can finish while
 new work waits. Do not disturb and quiet hours hold notifications for the next
-briefing. By default, only urgent updates notify you while away.
+briefing. By default, only urgent updates notify you while away. A job that stalls
+(no output for the configured stall minutes) also notifies you and counts as urgent.
+Waiting notifications say why: plan approval needed, needs your input, or stopped
+with an error.
 
 **I'm back** refreshes the return briefing. **Listen** reads it through speaker
 output only, with Stop and playback errors visible. An explicit assistant language

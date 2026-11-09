@@ -240,6 +240,11 @@ it.each([
   "Arif hepsini durdur",
   "Arif lütfen tüm işleri durdur",
   "Lütfen her şeyi durdur.",
+  "Bütün görevleri durdur",
+  "Tüm görevleri durdur",
+  "Her şeyi durdur",
+  "Acil durdur",
+  "Hepsini durdur",
 ])("accepts the current direct emergency imperative: %s", (text) =>
   expect(voiceOwnerRequestedStopAll(text)).toBe(true),
 );
@@ -510,8 +515,13 @@ it("stops a bound session only when the owner names the work", async () => {
     "ajanı durdur",
     "stop the work",
     "stop the agent",
+    "bunu durdur",
+    "Onu durdur.",
+    "şunu durdur lütfen",
+    "stop it",
+    "Stop that.",
   ])
     expect(voiceOwnerRequestedSessionStop(text), text).toBe(true);
-  for (const text of ["işi durdurma", "don't stop the work"])
+  for (const text of ["işi durdurma", "don't stop the work", "bunu durdurma", "don't stop it"])
     expect(voiceOwnerRequestedSessionStop(text), text).toBe(false);
 });

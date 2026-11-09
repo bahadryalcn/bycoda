@@ -376,7 +376,6 @@ pub(super) fn capture_owner(
 
 // The optional owner is captured before admission. It is never rediscovered by
 // label, nor refreshed after an await/SQL effect. Later comparison rechecks it.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn upsert(
     store: &SessionStore,
     conn: &Connection,

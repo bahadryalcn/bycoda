@@ -21,9 +21,10 @@ function render(props: Partial<Parameters<typeof WorkspaceManagedRow>[0]> = {}) 
       title: "Provider settings parity",
       reviewDisabled: false,
       pinning: false,
-      menuOpen: false,
       onReview: () => undefined,
-      onMenu: () => undefined,
+      onReveal: () => undefined,
+      pin: { onToggle: () => undefined },
+      remove: { label: "Delete directory", onRemove: () => undefined },
       ...props,
     }),
   );
@@ -50,4 +51,22 @@ it("keeps details collapsed until the chevron opens them", () => {
   const html = render();
   expect(html).toContain('aria-expanded="false"');
   expect(html).not.toContain("<dl");
+});
+
+it("puts every row action inline instead of behind a menu", () => {
+  const html = render({ remove: { label: "Remove record", onRemove: () => undefined } });
+  expect(html).not.toContain('aria-haspopup="menu"');
+  for (const label of ["Reveal folder", "Pin workspace", "Remove record", "Details"])
+    expect(html).toContain(`aria-label="${label}"`);
+  expect(render({ workspace: { ...workspace, pinned: true } })).toContain(
+    'aria-label="Unpin workspace"',
+  );
+});
+
+it("shows background removal on the row and blocks its actions", () => {
+  const html = render({ removing: true });
+  expect(html).toContain("Removing directory…");
+  expect(html).toMatch(
+    /aria-label="Delete directory"[^>]*aria-disabled="true"|aria-disabled="true"[^>]*aria-label="Delete directory"/,
+  );
 });

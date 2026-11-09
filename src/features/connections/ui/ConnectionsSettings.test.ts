@@ -95,7 +95,7 @@ async function render() {
   await act(async () => root.render(createElement(ConnectionsSettings)));
 }
 
-it("keeps sync diagnostics available behind a short error summary", async () => {
+it("shows a failed sync as one inline message with a retry", async () => {
   machines = [machine];
   vi.mocked(useSyncStatus).mockReturnValue({
     state: "error",
@@ -103,12 +103,28 @@ it("keeps sync diagnostics available behind a short error summary", async () => 
     pendingOps: 2,
   });
   await render();
-  const diagnostics = container.querySelector<HTMLDetailsElement>(".connection-sync-error")!;
-  expect(diagnostics.open).toBe(false);
-  expect(diagnostics.querySelector("summary")?.textContent).toContain("Sync needs attention");
-  expect(diagnostics.querySelector("p")?.textContent).toContain("RPC_HOST_UNAVAILABLE");
-  expect(diagnostics.querySelector("p")?.textContent).toContain("2 pending");
+  const line = container.querySelector(".connection-sync")!;
+  expect(line.getAttribute("data-sync-tone")).toBe("warning");
+  expect(line.querySelector("details")).toBeNull();
+  expect(line.textContent).toContain("Sync is paused");
   expect(container.querySelector('button[aria-haspopup="menu"]')).toBeTruthy();
+});
+
+it("labels the kind and icon of each machine row", async () => {
+  machines = [
+    machine,
+    { id: "url", name: "Lab", environmentId: "env-url", endpoint: "https://lab.example.com" },
+  ];
+  await render();
+  const rows = [...container.querySelectorAll<HTMLElement>("div.flex-wrap.items-start")];
+  const ssh = rows.find((row) => row.textContent?.includes("Home Mac"))!;
+  const direct = rows.find((row) => row.textContent?.includes("Lab"))!;
+  expect(ssh.textContent).toContain("SSH");
+  expect(ssh.textContent).not.toContain("Remote computer");
+  expect(ssh.querySelector("svg.lucide-server")).toBeTruthy();
+  expect(direct.textContent).toContain("Host URL");
+  expect(direct.querySelector("svg.lucide-server")).toBeTruthy();
+  expect(container.textContent).toContain("2 machines");
 });
 
 it("opens the existing add editor for a Servers request made before Settings mounts", async () => {
@@ -139,17 +155,11 @@ it("keeps a machine draft when moving between connection views", async () => {
   expect(requested("remote_ssh_begin")).toBe(false);
 });
 
-it("does not label an untouched URL connection as unsaved", async () => {
+it("no longer renders a separate URL disclosure", async () => {
   await render();
-  const details = container.querySelectorAll("details.connection-disclosure");
-  const url = [...details].find((item) =>
-    item
-      .querySelector(":scope > summary")
-      ?.textContent?.includes("Connect to an existing host by URL"),
-  )!;
-  expect(url.textContent).not.toContain("Unsaved changes");
-  expect(url.hasAttribute("open")).toBe(false);
-  expect(url.querySelector('input[type="url"]')).toBeTruthy();
+  expect(container.querySelector("details.connection-disclosure")).toBeNull();
+  expect(container.textContent).not.toContain("Connect to an existing host by URL");
+  expect(container.querySelector('input[type="url"]')).toBeNull();
 });
 async function fill(selector: string, value: string) {
   const input = container.querySelector<HTMLInputElement>(selector)!;
@@ -170,16 +180,19 @@ async function poll() {
   });
 }
 
-it("keeps the existing-host form open and preserves URL and token when connection fails", async () => {
+const chooseMethod = (label: string) =>
+  act(async () =>
+    container
+      .querySelector<HTMLElement>(
+        `[role="radiogroup"][aria-label="Connection method"] [role="radio"][aria-label="${label}"], [aria-label="Connection method"] button[data-value="${label === "SSH" ? "ssh" : "url"}"]`,
+      )!
+      .click(),
+  );
+
+it("keeps the URL and token drafts across method switches and a failed connect", async () => {
   await render();
-  const disclosure = [
-    ...container.querySelectorAll<HTMLDetailsElement>("details.connection-disclosure"),
-  ].find((item) =>
-    item
-      .querySelector(":scope > summary")
-      ?.textContent?.includes("Connect to an existing host by URL"),
-  )!;
-  disclosure.open = true;
+  await act(async () => button("Add machine").click());
+  await chooseMethod("Host URL");
   await fill('input[type="url"]', "https://remote.example.com");
   await fill('input[type="password"]', "device-token");
   const credential = container.querySelector<HTMLInputElement>('input[type="password"]')!;
@@ -192,23 +205,35 @@ it("keeps the existing-host form open and preserves URL and token when connectio
   expect(credential.type).toBe("text");
   expect(credential.value).toBe("device-token");
   expect(document.activeElement).toBe(credential);
-  expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "remote_connect")).toBe(
-    false,
-  );
   await act(async () =>
     container
       .querySelector<HTMLButtonElement>('button[aria-controls="' + credential.id + '"]')!
       .click(),
   );
   expect(credential.type).toBe("password");
+  // Switching the method back and forth, and closing the form, keeps the drafts.
+  await chooseMethod("SSH");
+  expect(container.querySelector('input[type="url"]')).toBeNull();
+  await chooseMethod("Host URL");
+  await act(async () => button("Cancel").click());
+  await act(async () => button("Add machine").click());
+  // A reopened form starts on SSH again; the URL drafts wait behind the method switch.
+  expect(container.querySelector('input[type="url"]')).toBeNull();
+  await chooseMethod("Host URL");
+  expect(container.querySelector<HTMLInputElement>('input[type="url"]')?.value).toBe(
+    "https://remote.example.com",
+  );
+  expect(container.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe(
+    "device-token",
+  );
+  expect(requested("remote_connect")).toBe(false);
   const previous = vi.mocked(invoke).getMockImplementation()!;
   vi.mocked(invoke).mockImplementation(async (command, args) => {
     if (command === "remote_connect") throw new Error("Host unavailable");
     return previous(command, args);
   });
-  await act(async () => button("Connect by URL").click());
-  expect(disclosure.isConnected).toBe(true);
-  expect(disclosure.open).toBe(true);
+  await act(async () => button("Connect").click());
+  expect(container.querySelector('form[aria-label="Add a new machine"]')).toBeTruthy();
   expect(container.querySelector<HTMLInputElement>('input[type="url"]')?.value).toBe(
     "https://remote.example.com",
   );
@@ -216,8 +241,43 @@ it("keeps the existing-host form open and preserves URL and token when connectio
     "device-token",
   );
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Host unavailable");
-  expect(button("Retry connection").disabled).toBe(false);
-  expect(container.querySelector('[role="status"].text-success')).toBeNull();
+  expect(button("Connect").disabled).toBe(false);
+});
+
+it("connects an existing host by URL from the add form and closes it on success", async () => {
+  const previous = vi.mocked(invoke).getMockImplementation()!;
+  const connected: RemoteMachine = {
+    id: "url",
+    name: "Lab",
+    environmentId: "env-url",
+    endpoint: "https://remote.example.com",
+  };
+  vi.mocked(invoke).mockImplementation(async (command, args) => {
+    if (command === "remote_connect") {
+      machines = [connected];
+      return connected;
+    }
+    return previous(command, args);
+  });
+  await render();
+  await act(async () => button("Add machine").click());
+  expect(container.querySelector('input[type="url"]')).toBeNull();
+  await chooseMethod("Host URL");
+  expect(container.textContent).toContain(
+    "Enter the host URL and a device token issued by that host.",
+  );
+  expect(container.querySelector<HTMLInputElement>('input[type="url"]')?.value).toBe(
+    "http://127.0.0.1:3776",
+  );
+  await fill('input[type="url"]', "https://remote.example.com");
+  await fill('input[type="password"]', "device-token");
+  await act(async () => button("Connect").click());
+  expect(invoke).toHaveBeenCalledWith(
+    "remote_connect",
+    expect.objectContaining({ token: "device-token" }),
+  );
+  expect(container.querySelector("form")).toBeNull();
+  expect(container.textContent).toContain("Lab is connected.");
 });
 
 it("starts SSH setup from Settings and makes the machine available after native pairing", async () => {
@@ -330,7 +390,7 @@ it("does not open the machine edit and remove panels at the same time", async ()
   await editMachine("Home Mac");
   expect(document.querySelector('[role="dialog"]')).toBeNull();
   expect(container.querySelector('form[aria-label="Edit Home Mac"]')).toBeTruthy();
-  expect(container.textContent).not.toContain("Connect to an existing host by URL");
+  expect(container.querySelector('[aria-label="Connection method"]')).toBeNull();
   await pick("Home Mac", "Remove connection…");
   expect(container.querySelector('form[aria-label="Edit Home Mac"]')).toBeNull();
   expect(document.querySelector('[role="dialog"]')).toBeTruthy();

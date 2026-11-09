@@ -84,7 +84,6 @@ export function NoteEditor({
         className={styles.editorForm}
         onSubmit={(event) => {
           event.preventDefault();
-          // ast-grep-ignore: ts-void-promise-without-catch -- save() reports its own failures in state
           void save();
         }}
       >

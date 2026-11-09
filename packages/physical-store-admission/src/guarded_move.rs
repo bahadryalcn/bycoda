@@ -61,7 +61,6 @@ fn same_copy(source: &[SnapshotEntry], copy: &[SnapshotEntry]) -> bool {
 /// Receipt bytes must identify original, stage, recovery and destination paths.
 // Each argument is a distinct held handle, name or proof; grouping them would
 // only rename the same eight inputs at both call sites.
-#[allow(clippy::too_many_arguments)]
 pub fn move_with_recovery(
     source: &Dir,
     source_name: &OsStr,

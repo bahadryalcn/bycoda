@@ -1,0 +1,38 @@
+.phone-pairing-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.phone-pairing-inline {
+  gap: 0.75rem;
+}
+
+.phone-pairing-code {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.phone-pairing-instructions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: center;
+  font-size: var(--ui-font-secondary);
+  line-height: 1.5;
+}
+
+.phone-pairing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: start;
+  gap: 0.5rem;
+}
+
+/* The inline flow reads as one compact column instead of stretching across the page. */
+.phone-pairing-inline {
+  max-inline-size: 34rem;
+}

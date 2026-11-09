@@ -432,7 +432,6 @@ type SendRouteRow = (
 );
 
 /// Binds the already persisted intent to the native-selected route before I/O.
-#[allow(clippy::too_many_arguments)] // Crate-internal route binding; the nine inputs are the explicit identity contract.
 pub(crate) fn prepare_assistant_send(
     window: &tauri::Window,
     expected_page: &str,
@@ -1198,7 +1197,6 @@ pub async fn outbox_export_oversize(
     }).await
 }
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn canonical_store_transaction(
     window: tauri::Window,
     page_token: String,

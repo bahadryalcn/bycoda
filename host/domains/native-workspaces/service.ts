@@ -93,9 +93,34 @@ export function createNativeWorkspacesService(ports: NativeWorkspacesPorts) {
       await assertDomainAuthority(context);
       if (method === "workspaces.cleanup.status") result = await managed.removal.status(request);
       else if (method === "workspaces.cleanup.plan") {
-        await managed.assertWritable(request.workspaceId);
-        result = await managed.removal.plan(request);
-      } else result = await owner((owned) => owned.removal.apply(request));
+        // A creation that never reached Git has nothing to recover; its record can be retired.
+        // A preview reports why removal is blocked instead of failing as an opaque read.
+        const blocker = (await managed.abandonUnmaterializedCreate(request.workspaceId, false))
+          ? undefined
+          : await managed.assertWritable(request.workspaceId).then(
+              () => undefined,
+              (error: unknown) => (error instanceof Error ? error.message : String(error)),
+            );
+        const plan = (await managed.removal.plan(request)) as { blockers: string[] };
+        result = blocker ? { ...plan, blockers: [blocker, ...plan.blockers] } : plan;
+      } else {
+        const pending = await managed.abandonUnmaterializedCreate(request.workspaceId, false);
+        if (pending) {
+          if (pending.revision !== request.expectedRevision)
+            throw new Error("Workspace revision changed; preview again");
+          const retired = (await owner(async () =>
+            managed.abandonUnmaterializedCreate(request.workspaceId, true),
+          ))!;
+          result = {
+            operationId: request.idempotencyKey,
+            workspaceId: retired.id,
+            directoryState: "removed",
+            workspaceRevision: retired.revision,
+            retainedBranchRef: retired.branchRef,
+            recoveryIds: [],
+          };
+        } else result = await owner((owned) => owned.removal.apply(request));
+      }
     }
     await assertDomainAuthority(context);
     return result;

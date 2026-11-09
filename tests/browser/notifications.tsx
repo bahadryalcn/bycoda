@@ -63,7 +63,7 @@ if (!localStorage.getItem(NOTIFICATION_HISTORY_KEY)) {
         key: `history-${index}`,
         sessionId: `old-${index}`,
         cwd,
-        title: `codex · ${titles[index % titles.length]}`,
+        title: index === 1 ? "codex · old-gone" : `codex · ${titles[index % titles.length]}`,
         label: index === 2 ? "long_unbroken_value_".repeat(80) : label,
         kind: index % 2 ? "approval" : "question",
         occurredAt: Date.UTC(2026, 9, 18, 1, 27) - index * 3600000,
@@ -80,6 +80,11 @@ function Fixture() {
         notices={pending}
         popupNotices={[]}
         onFocusSession={(id) => setResult(`Opened ${id}`)}
+        // As in the app: a recorded conversation may no longer exist.
+        onOpenHistorySession={(id) => {
+          setResult(`History ${id}`);
+          return id !== "old-1";
+        }}
         onApproval={(id, requestId, decision) => {
           setResult(`${id}:${requestId}:${decision}`);
           setPending((current) => current.filter((notice) => notice.sessionId !== id));

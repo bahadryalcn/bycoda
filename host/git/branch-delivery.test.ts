@@ -168,6 +168,15 @@ async function fixture() {
 }
 
 describe("SHA-bound branch delivery", () => {
+  it("explains a review whose source branch was deleted outside bycoda", async () => {
+    const r = await fixture();
+    r.git("worktree", "remove", "--force", r.source);
+    r.git("branch", "-D", "bycoda/t/test");
+    await expect(r.review()).rejects.toThrow(
+      "Branch bycoda/t/test no longer exists, so there is nothing to review",
+    );
+  });
+
   it("reviews a patch and commits, merges while preserving unrelated staged/unstaged/untracked bytes", async () => {
     const r = await fixture();
     r.write("unrelated.txt", "owner unstaged\n");

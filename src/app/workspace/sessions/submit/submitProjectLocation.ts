@@ -35,15 +35,15 @@ export function gateProjectLocation(
         ),
       ),
     );
+    // Not committed synchronously: the send that follows marks the conversation
+    // busy again in the same tick, and an idle frame in between flashes the composer.
     const releasePreparation = () => {
       if (!preparationIsCurrent()) return;
-      flushSync(() =>
-        setSessions((prev) =>
-          prev.map((session) =>
-            session.id === sessionId && preparationIsCurrent()
-              ? { ...session, busy: false, worktreePreparing: undefined }
-              : session,
-          ),
+      setSessions((prev) =>
+        prev.map((session) =>
+          session.id === sessionId && preparationIsCurrent()
+            ? { ...session, busy: false, worktreePreparing: undefined }
+            : session,
         ),
       );
     };

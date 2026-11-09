@@ -15,6 +15,7 @@ import {
   materializeManagedWorkspace,
 } from "../git/git-worktrees";
 import { projectRepositoryIdentity } from "../workspaces/workspace-policy";
+import { entryMissing } from "../workspaces/workspace-cleanup-paths";
 import type { HostStore } from "../store";
 import type {
   ManagedWorkspace,
@@ -48,6 +49,10 @@ export function createManagedWorkspaceRegistry(
   touchActivity(workspaceId: string): Promise<void>;
   touchOwnerActivity(owner: WorkspaceOwner): Promise<void>;
   recoverCreate(operationId: string): Promise<ManagedWorkspace>;
+  abandonUnmaterializedCreate(
+    workspaceId: string,
+    apply: boolean,
+  ): Promise<ManagedWorkspace | null>;
   pin(
     request: WorkspaceMutation & { pinned: boolean },
     owner: WorkspaceOwnerAuthorization,
@@ -544,6 +549,81 @@ export function createManagedWorkspaceRegistry(
     },
     async listOperations(id) {
       return store.workspaceOperations(id);
+    },
+    /** A creation blocked before Git ran (no folder, branch or registration) settles as an
+     * abandoned, removed record without touching disk. Anything else stays with recoverCreate. */
+    async abandonUnmaterializedCreate(workspaceId, apply) {
+      const unmaterialized = async () => {
+        const workspace = await required(workspaceId);
+        const pending = (await store.workspaceOperations(workspaceId)).filter(
+          (operation) => operation.phase !== "complete",
+        );
+        const [op] = pending;
+        if (
+          pending.length !== 1 ||
+          op.kind !== "create" ||
+          op.phase !== "blocked" ||
+          op.resumePhase !== "registered" ||
+          workspace.directoryState !== "blocked" ||
+          workspace.revision !== op.expectedRevision ||
+          !(await entryMissing(workspace.path))
+        )
+          return null;
+        const project = await store.project(workspace.projectId);
+        const git = (args: string[]) =>
+          runGitText(args, {
+            cwd: project.cwd,
+            windowsHide: true,
+            timeout: 30_000,
+            env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" },
+          });
+        const branch = await git(["rev-parse", "--verify", "--quiet", workspace.branchRef]).then(
+          () => true,
+          () => false,
+        );
+        const registrations = (await git(["worktree", "list", "--porcelain", "-z"])).split("\0");
+        const pathKey = workspacePathKey(workspace.path);
+        if (
+          branch ||
+          registrations.some(
+            (field) =>
+              field.startsWith("worktree ") && workspacePathKey(field.slice(9)) === pathKey,
+          )
+        )
+          return null;
+        return { workspace, op, cwd: project.cwd };
+      };
+      const found = await unmaterialized();
+      if (!found || !apply) return found?.workspace ?? null;
+      if (await options.isActive?.(found.workspace))
+        throw new Error("Workspace is still active or activity is unknown");
+      return withHostGitMutation(found.cwd, async () => {
+        const current = await unmaterialized();
+        if (!current || current.op.id !== found.op.id)
+          throw new Error("Workspace creation changed; refresh and retry");
+        return store.transaction(async () => {
+          const result: ManagedWorkspace = {
+            ...current.workspace,
+            state: "abandoned",
+            directoryState: "removed",
+            closedAt: Date.now(),
+            revision: current.workspace.revision + 1,
+          };
+          await store.updateManagedWorkspace(result, current.workspace.revision);
+          await store.saveWorkspaceOperation(
+            {
+              ...current.op,
+              phase: "complete",
+              resumePhase: undefined,
+              error: undefined,
+              updatedAt: Date.now(),
+            },
+            "blocked",
+          );
+          await releaseClaims(result.id);
+          return result;
+        });
+      });
     },
     async touchActivity(id) {
       const active = await options.isActive?.(await required(id));

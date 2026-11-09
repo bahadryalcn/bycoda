@@ -3,6 +3,7 @@ import { voiceToolCatalog } from "../../../../host/voice/voice-tools";
 import {
   readVoiceToolCatalog,
   selectVoiceTools,
+  VOICE_TOOL_MAX_LIMIT,
   type VoiceToolDescriptor,
 } from "./voiceToolCatalog";
 
@@ -84,6 +85,35 @@ describe("voice tool discovery", () => {
         selectVoiceTools(catalog, { query }).tools.map((entry) => entry.action),
         query,
       ).toContain("devServers.start");
+  });
+
+  it("maps Turkish cancel, git and desktop speech to their features", () => {
+    // Synthetic: the Host advertises no tasks cancel tool yet, so this checks the mapping only.
+    const tasks = [tool("tasks.cancel"), tool("tasks.list")];
+    expect(
+      selectVoiceTools(tasks, { query: "görevi iptal et" }).tools.map((t) => t.action),
+    ).toEqual(["tasks.cancel"]);
+    const catalog = readVoiceToolCatalog({ tools: voiceToolCatalog() });
+    expect(
+      selectVoiceTools(catalog, { query: "git değişikliklerini" }).tools.map((t) => t.action),
+    ).toContain("git.status");
+    expect(selectVoiceTools(catalog, { query: "ekrana bak" }).tools.map((t) => t.action)).toContain(
+      "desktop.status",
+    );
+  });
+
+  it("ranks exact and action-word matches before family and description matches", () => {
+    const catalog = [
+      { ...tool("tasks.update"), description: "Update a task; may list its notes." },
+      tool("notes.create"),
+      tool("notes.list"),
+      tool("notes.listArchived"),
+      { ...tool("inbox.read"), description: "Reads inbox items and notes list." },
+    ];
+    const ranked = selectVoiceTools(catalog, { query: "notes list" }).tools.map((t) => t.action);
+    expect(ranked[0]).toBe("notes.list");
+    expect(ranked.indexOf("notes.list")).toBeLessThan(ranked.indexOf("notes.listArchived"));
+    expect(VOICE_TOOL_MAX_LIMIT).toBe(40);
   });
 
   it("does not disguise incomplete or malformed catalogs as an empty available set", () => {

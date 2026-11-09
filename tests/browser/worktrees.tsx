@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { ToastRegion } from "../../src/shared/ui/ToastRegion";
 import { invoke } from "@tauri-apps/api/core";
 import { mockIPC, mockWindows } from "@tauri-apps/api/mocks";
 import { setRemoteCommandRunner } from "../../src/platform/tauri/fs";
@@ -347,7 +348,11 @@ mockIPC((command, args = {}) => {
         warningRatio: policy.disk.warningRatio,
         minimumFreeBytes: policy.disk.minimumFreeBytes,
         materialization: storageMode,
-        missingPaths: query.has("missingFolder") ? ["/fixture/worktrees/wt-merged"] : [],
+        missingPaths: [
+          ...(query.has("missingFolder") ? ["/fixture/worktrees/wt-merged"] : []),
+          // `?missingActive`: the first managed folder was deleted outside bycoda while active.
+          ...(query.has("missingActive") ? [workspaces[0].path] : []),
+        ],
         requiredFreeBytes:
           storageMode === "unknown" ? null : storageMode === "paused" ? 2 * 1_073_741_824 : 0,
       };
@@ -384,6 +389,14 @@ mockIPC((command, args = {}) => {
         recoveryIds: ["recovery-1"],
       };
     }
+    if (method === "workspaces.close") {
+      const workspace = workspaces.find((entry) => entry.id === params.workspaceId)!;
+      if (workspace.revision !== params.expectedRevision)
+        throw new Error("Workspace revision moved");
+      workspace.state = "abandoned";
+      ++workspace.revision;
+      return structuredClone(workspace);
+    }
     if (method === "workspaces.cleanup.status")
       return {
         workspace: workspaces.find((entry) => entry.id === params.workspaceId),
@@ -407,45 +420,53 @@ void Promise.all([
   setDomainLanguagePreference("git", "app"),
 ]).then(() => {
   createRoot(document.getElementById("root")!).render(
-    populated ? (
-      // Mirrors the Settings workspace track: category rail, then the wide presentation scroller.
-      // The app shell locks the document, so the track scrolls inside itself as in Settings.
-      <main
-        className="bg-background-base text-content"
-        style={{ display: "flex", height: "100vh" }}
-      >
-        <nav
-          aria-hidden="true"
-          style={{ flex: "none", inlineSize: 200, background: "var(--ui-surface-panel)" }}
-        />
-        <div
-          className="bycoda-settings-workbench"
-          data-testid="populated-scroller"
-          style={{ flex: 1, minInlineSize: 0, overflowY: "auto" }}
+    <>
+      {/* The app mounts one toast region per window; background removals report through it. */}
+      <ToastRegion />
+      {populated ? (
+        // Mirrors the Settings workspace track: category rail, then the wide presentation scroller.
+        // The app shell locks the document, so the track scrolls inside itself as in Settings.
+        <main
+          className="bg-background-base text-content"
+          style={{ display: "flex", height: "100vh" }}
         >
-          <div data-settings-scroller data-settings-width="workspace">
-            <div className="bycoda-settings-form" data-testid="populated-settings">
-              <div className="settings-topics">
-                <SourceControlSettings />
-                <WorktreesPage
-                  boundary
-                  cwd={fixtureCwd}
-                  liveSessions={liveSessions}
-                  onRemove={removeDisabled}
-                />
+          <nav
+            aria-hidden="true"
+            style={{ flex: "none", inlineSize: 200, background: "var(--ui-surface-panel)" }}
+          />
+          <div
+            className="bycoda-settings-workbench"
+            data-testid="populated-scroller"
+            style={{ flex: 1, minInlineSize: 0, overflowY: "auto" }}
+          >
+            <div data-settings-scroller data-settings-width="workspace">
+              <div className="bycoda-settings-form" data-testid="populated-settings">
+                <div className="settings-topics">
+                  <SourceControlSettings />
+                  <WorktreesPage
+                    boundary
+                    cwd={fixtureCwd}
+                    liveSessions={liveSessions}
+                    onRemove={removeDisabled}
+                  />
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </main>
-    ) : (
-      <main className="min-h-screen bg-background-base p-6 text-content">
-        <Modal title="Worktrees" size="lg" onClose={() => {}}>
-          <div className="bycoda-settings-workbench">
-            <WorktreesPage cwd={fixtureCwd} liveSessions={liveSessions} onRemove={removeDisabled} />
-          </div>
-        </Modal>
-      </main>
-    ),
+        </main>
+      ) : (
+        <main className="min-h-screen bg-background-base p-6 text-content">
+          <Modal title="Worktrees" size="lg" onClose={() => {}}>
+            <div className="bycoda-settings-workbench">
+              <WorktreesPage
+                cwd={fixtureCwd}
+                liveSessions={liveSessions}
+                onRemove={removeDisabled}
+              />
+            </div>
+          </Modal>
+        </main>
+      )}
+    </>,
   );
 });

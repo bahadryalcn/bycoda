@@ -1,39 +1,35 @@
 import { t, useLocale } from "../../../shared/i18n";
 import { wallClockNow } from "../../../shared/lib/time/wallClock";
-import { Disclosure } from "../../../shared/ui/Disclosure";
-import { describeSyncStatus } from "../../sync/model/syncStatusText";
+import { InlineMessage } from "../../../shared/ui/InlineError";
 import { useSyncStatus } from "../../sync/model/useSyncStatus";
+import { summarizeSync } from "../model/syncSummary";
 
-export function ConnectionSyncLine({ machineId }: { machineId: string }) {
+export function ConnectionSyncLine({
+  machineId,
+  onSyncNow,
+}: {
+  machineId: string;
+  onSyncNow?: () => void;
+}) {
   useLocale();
   const sync = useSyncStatus(machineId);
-  const failed = sync.state === "error";
+  const { tone, text } = summarizeSync(sync, wallClockNow());
   return (
-    <div className="connection-sync">
-      {failed ? (
-        <Disclosure
-          size="sm"
-          className="connection-sync-error"
-          summary={
-            <>
-              {t("Sync needs attention")}
-              {sync.pendingOps > 0
-                ? ` · ${t("{p0} pending changes", { p0: sync.pendingOps })}`
-                : ""}
-            </>
+    <div className="connection-sync" data-sync-tone={tone}>
+      {tone === "muted" ? (
+        <span className="min-w-0 text-(--ui-text-muted)">{text}</span>
+      ) : (
+        <InlineMessage
+          tone={tone}
+          live="off"
+          retry={
+            onSyncNow && sync.state === "error"
+              ? { onRetry: onSyncNow, label: t("Sync now") }
+              : undefined
           }
         >
-          <p>{describeSyncStatus(sync, wallClockNow())}</p>
-        </Disclosure>
-      ) : (
-        <span className="min-w-0 text-(--ui-text-muted)">
-          {sync.state === "ok" && sync.lastSyncAt
-            ? t("Synced {p0} min ago", {
-                p0: Math.max(0, Math.floor((wallClockNow() - sync.lastSyncAt) / 60_000)),
-              }) +
-              (sync.pendingOps ? ` · ${t("{p0} pending changes", { p0: sync.pendingOps })}` : "")
-            : describeSyncStatus(sync, wallClockNow())}
-        </span>
+          {text}
+        </InlineMessage>
       )}
     </div>
   );

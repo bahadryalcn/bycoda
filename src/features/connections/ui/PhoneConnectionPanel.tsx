@@ -1,5 +1,4 @@
-import { useSyncExternalStore } from "react";
-import { Button } from "../../../shared/ui/Button";
+import { useEffect, useSyncExternalStore } from "react";
 import { Switch } from "../../../shared/ui/Switch";
 import {
   isPhoneConnectEnabled,
@@ -11,17 +10,17 @@ import {
 import { t, useLocale } from "../../../shared/i18n";
 import { InlineMessage } from "../../../shared/ui/InlineError";
 import { Surface } from "../../../shared/ui/Surface";
-import { Internet } from "../../../shared/ui/icons";
 import { isLocalSyncMachine } from "../model/localSync";
 import type { PhoneConnectionPanelProps } from "../model/phonePairingTypes";
 import { usePhonePairing } from "../model/usePhonePairing";
-import { PhonePairingDialog } from "./PhonePairingDialog";
+import { PhonePairingFlow } from "./PhonePairingFlow";
 
 export function PhoneConnectionPanel({
   machines,
   loaded,
   loading,
   onRefresh,
+  active = true,
 }: PhoneConnectionPanelProps) {
   useLocale();
   const { state, coordinator } = usePhonePairing();
@@ -31,6 +30,18 @@ export function PhoneConnectionPanel({
     (a, b) => Number(isLocalSyncMachine(b)) - Number(isLocalSyncMachine(a)),
   );
   const machine = ordered[0];
+  const ready = active && loaded && !loading;
+
+  // Opening only reads access state (nothing is enabled or created). A live pairing code is
+  // released as soon as the tab is left, and the flow starts over when the tab is shown again.
+  useEffect(() => {
+    if (!active) {
+      coordinator.close();
+      return;
+    }
+    if (ready && machine && coordinator.getSnapshot().stage === "closed")
+      void coordinator.open(machine);
+  }, [active, ready, machine, coordinator]);
 
   return (
     <Surface
@@ -40,46 +51,12 @@ export function PhoneConnectionPanel({
       className="flex flex-col gap-3"
       aria-label={t("Connect your phone")}
     >
-      <div className="flex flex-wrap items-center gap-3">
-        <Internet className="icon-lg shrink-0 text-(--ui-text-muted)" />
-        <div className="min-w-0 flex-1 basis-48">
-          <p className="mbs-1 text-ui-secondary leading-relaxed text-(--ui-text-muted)">
-            {t("Scan a QR code to manage your computers from your phone.")}
-          </p>
-        </div>
-        <Button
-          type="button"
-
-          disabled={!machine || loading || !loaded}
-          onClick={() => {
-            if (machine) void coordinator.open(machine);
-          }}
-          variant="primary"
-        >
-          {t("Connect your phone")}
-        </Button>
-      </div>
-      <Switch
-        checked={accountConnect && signedIn}
-        disabled={!signedIn}
-        onCheckedChange={setPhoneConnectEnabled}
-        label={t("Let my signed-in phones find this computer")}
-        description={t(
-          "Phones signed in to your account can ask to connect, and you approve each one here. Needs bycoda open and your account signed in; route addresses are stored in your account.",
-        )}
-      />
-      {loaded && !loading && !machine ? (
-        <InlineMessage
-          tone="neutral"
-          retry={{ onRetry: () => void onRefresh(), label: t("Check again") }}
-        >
-          {t(
-            "Your local host is not connected yet. Check again after bycoda finishes starting, or add a computer below.",
-          )}
-        </InlineMessage>
-      ) : null}
+      <p className="text-ui-secondary leading-relaxed text-(--ui-text-muted)">
+        {t("Scan a QR code with bycoda on your phone to manage this computer.")}
+      </p>
       {state.stage !== "closed" ? (
-        <PhonePairingDialog
+        <PhonePairingFlow
+          variant="inline"
           machines={ordered}
           state={state}
           onSelect={(selected) => void coordinator.open(selected)}
@@ -90,8 +67,42 @@ export function PhoneConnectionPanel({
           onDisable={() => void coordinator.disable()}
           onCreate={() => void coordinator.create()}
           onRegenerate={() => void coordinator.regenerate()}
-        />
+        >
+          <AccountConnectSwitch accountConnect={accountConnect} signedIn={signedIn} />
+        </PhonePairingFlow>
+      ) : (
+        <AccountConnectSwitch accountConnect={accountConnect} signedIn={signedIn} />
+      )}
+      {loaded && !loading && !machine ? (
+        <InlineMessage
+          tone="neutral"
+          retry={{ onRetry: () => void onRefresh(), label: t("Check again") }}
+        >
+          {t(
+            "Your local host is not connected yet. Check again after bycoda finishes starting, or add a computer below.",
+          )}
+        </InlineMessage>
       ) : null}
     </Surface>
+  );
+}
+
+function AccountConnectSwitch({
+  accountConnect,
+  signedIn,
+}: {
+  accountConnect: boolean;
+  signedIn: boolean;
+}) {
+  return (
+    <Switch
+      checked={accountConnect && signedIn}
+      disabled={!signedIn}
+      onCheckedChange={setPhoneConnectEnabled}
+      label={t("Let my signed-in phones find this computer")}
+      description={t(
+        "Phones signed in to your account can ask to connect, and you approve each one here. Needs bycoda open and your account signed in; route addresses are stored in your account.",
+      )}
+    />
   );
 }

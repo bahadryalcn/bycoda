@@ -9,7 +9,7 @@ export interface SessionReminderActionsDeps {
   sessions: Session[];
   sessionsRef: { current: Session[] };
   ensureOpenSession: (sessionId: string) => Promise<Session | null>;
-  onSelectHistorySession: (sessionId: string) => Promise<void>;
+  onSelectHistorySession: (sessionId: string) => Promise<unknown>;
   setSearchViewOpen: Dispatch<SetStateAction<boolean>>;
   setInboxViewOpen: Dispatch<SetStateAction<boolean>>;
   setNotesViewOpen: Dispatch<SetStateAction<boolean>>;

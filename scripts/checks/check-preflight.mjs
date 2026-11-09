@@ -68,6 +68,16 @@ export const preflightGates = [
     command: node("scripts/checks/check-code-structure.mjs"),
   },
   {
+    job: "repository-hygiene",
+    name: "UI component catalog",
+    command: node("scripts/checks/ui-catalog.mjs"),
+  },
+  {
+    job: "repository-hygiene",
+    name: "Baseline guard (no raised ratchet without an approval)",
+    command: node("scripts/checks/check-baselines.mjs"),
+  },
+  {
     job: "preflight",
     name: "Host contracts",
     command: node("scripts/checks/check-host-contracts.mjs"),
@@ -101,6 +111,11 @@ export const preflightGates = [
     job: "web",
     name: "Application types (tsc-rs --fast)",
     command: bin("tsc-rs", "--noEmit", "--fast"),
+  },
+  {
+    job: "web",
+    name: "Test file types ratchet",
+    command: node("scripts/checks/check-test-types.mjs"),
   },
   {
     job: "host",

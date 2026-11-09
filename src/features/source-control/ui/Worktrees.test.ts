@@ -1,7 +1,6 @@
 // @vitest-environment happy-dom
 import { LOADING_DELAY_MS } from "../../../shared/hooks/useDelayedVisible";
 import { act, createElement } from "react";
-import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -74,21 +73,12 @@ import { DeleteWorktreeDialog } from "./DeleteWorktreeDialog";
 import { DeleteSessionDialog } from "../../sessions/ui/DeleteSessionDialog";
 import { WorktreesPage } from "./WorktreesPage";
 
-// Existing deletion cases now enter through the row overflow menu.
+// Deletion is an inline row action; a reasoned disabled state stays focusable (aria-disabled).
 function worktreeDelete(scope: ParentNode, selector: string): HTMLButtonElement | null {
-  const label = selector.match(/aria-label="Delete (.*)"/)?.[1];
-  if (!label) return null;
-  const trigger = [...scope.querySelectorAll<HTMLButtonElement>("button")].find(
-    (button) => button.getAttribute("aria-label") === `Actions for ${label}`,
-  );
-  if (!trigger) return null;
-  if (trigger.getAttribute("aria-expanded") !== "true") act(() => flushSync(() => trigger.click()));
-  return (
-    [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')].find(
-      (button) => button.textContent?.trim() === `Delete ${label}`,
-    ) ?? null
-  );
+  return scope.querySelector<HTMLButtonElement>(selector);
 }
+const unavailable = (button: HTMLButtonElement | null) =>
+  !!button && (button.disabled || button.getAttribute("aria-disabled") === "true");
 
 let container: HTMLDivElement;
 let root: Root;
@@ -407,7 +397,7 @@ it("keeps the settings rows mounted through focus refreshes and failures", async
   expect(container.querySelector('[aria-label="Reveal feature"]')).toBe(reveal);
   expect(container.querySelector('[role="alert"]')?.textContent).toContain("Git unavailable");
   expect(container.textContent).toContain("Deletion is unavailable until Refresh succeeds.");
-  expect(worktreeDelete(container, '[aria-label="Delete feature"]')?.disabled).toBe(true);
+  expect(unavailable(worktreeDelete(container, '[aria-label="Delete feature"]'))).toBe(true);
   expect(
     await tooltipText(container.querySelector<HTMLElement>('[aria-label="Refresh worktrees"]')!),
   ).toContain("Git unavailable");
@@ -986,12 +976,12 @@ it.each(["partial", "rejected", "worktree", "refresh"] as const)(
     vi.mocked(listWorktrees).mockReturnValue(refresh.promise);
     await act(async () => button("Delete worktree and sessions").click());
     expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(remove().disabled).toBe(true);
+    expect(unavailable(remove())).toBe(true);
     expect(onDeleteSessions).toHaveBeenCalledWith(["deleted", "remaining"]);
     const sessionIds = failure === "worktree" ? [] : ["remaining"];
     if (failure === "refresh") {
       await act(async () => refresh.reject(new Error("Refresh unavailable")));
-      expect(remove().disabled).toBe(true);
+      expect(unavailable(remove())).toBe(true);
       vi.mocked(listWorktrees).mockResolvedValue({
         ...result(),
         worktrees: [{ ...tree, sessionIds }],
@@ -999,7 +989,7 @@ it.each(["partial", "rejected", "worktree", "refresh"] as const)(
       await act(async () => button("Refresh").click());
     }
     await act(async () => refresh.resolve({ ...result(), worktrees: [{ ...tree, sessionIds }] }));
-    expect(remove().disabled).toBe(false);
+    expect(unavailable(remove())).toBe(false);
     onDeleteSessions.mockResolvedValue(true);
     onRemove.mockResolvedValue(undefined);
     await act(async () => remove().click());
@@ -1215,7 +1205,7 @@ it("keeps create and delete off for a project on a connected machine", async () 
   );
   expect(container.textContent).toContain("unavailable for a project on a connected machine");
   expect(button("Create worktree").disabled).toBe(true);
-  expect(worktreeDelete(container, '[aria-label="Delete feature"]')!.disabled).toBe(true);
+  expect(unavailable(worktreeDelete(container, '[aria-label="Delete feature"]'))).toBe(true);
   // Listing and Reveal still follow the machine that owns the path.
   expect(
     container.querySelector<HTMLButtonElement>('[aria-label="Reveal feature"]')!.disabled,

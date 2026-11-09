@@ -66,8 +66,9 @@ Take the first option that fully works:
 - Lazy about the solution, never about the change: finish every caller, test, fixture,
   locale key and doc the change breaks. Deletion beats addition; no new abstraction,
   wrapper or config nobody asked for.
-- Bug fix: reproduce with a failing test first, grep every caller of the code you
-  touch, then fix the root cause once in the shared code, not at each call site.
+- Bug fix: reproduce with a failing test first (for a purely visual defect, a before
+  screenshot), grep every caller of the code you touch, then fix the root cause once
+  in the shared code, not at each call site.
 - New logic with a branch, loop, parser, money, security or persistence leaves a test.
   A known shortcut gets `// shortcut: <limit>, <when to upgrade>`.
 - Never cut validation at trust boundaries, security, accessibility, error handling
@@ -80,7 +81,8 @@ One feature, one folder per layer: `src/features/<feature>/` (`model/`, `ui/`, `
 root or a feature root; `server.ts`, `engine.ts`, `App.tsx`, `Sidebar.tsx` and the Rust
 root modules only compose and register. Ceilings: 600 lines for `.tsx`, 800 for `.ts`,
 1,500 for Rust; files already over budget may not grow, so move the part you touch into
-the owning folder. `src/shared|platform|integrations` never import `features` or `app`;
+the owning folder (a file within 25% of its ceiling may grow by ten lines in total for
+small fixes). `src/shared|platform|integrations` never import `features` or `app`;
 `features` never import `app`; `host` never imports UI.
 
 # Code invariants
@@ -95,8 +97,11 @@ format dates, numbers, bytes and durations with `src/shared/i18n`; open links wi
 or hand-written `role`/`aria-live`. Suppress one line only, with `-- <reason>`. A fix for
 one of these defect classes adds a regression test. Code, rules and docs are in English.
 
-`pnpm check:structure`, `pnpm check:invariants` and `pnpm check:ui-drift` are ratchets:
-their baselines may only fall.
+`pnpm check:structure`, `pnpm check:invariants`, `pnpm check:ui-drift`,
+`pnpm lint:baseline` and `pnpm check:types:tests` are ratchets: their baselines may
+only fall, and a cleanup lowers them (`--ratchet`). `pnpm check:baselines` rejects a
+per-rule total above the base branch unless `scripts/checks/baseline-approvals.json`
+records the rise and its reason; only a new or widened rule justifies an entry.
 
 # Shared UI
 
@@ -137,7 +142,9 @@ behavior changes. After editing `.agents/skills/`, run
 
 Order, once the change set is complete: `pnpm check:changed`; focused tests for the
 touched folders; one full `pnpm check:web` (or the Host/Rust gate the change needs);
-screenshots; review.
+for T1/T2 `pnpm check:preflight`, which runs the cheap whole-repository CI gates
+`check:web` does not (format, lint baseline, locales, skills, colors, UI drift,
+baseline guard); screenshots; review.
 
 Screenshots only when the UI visibly changes: T0 the changed surface; T1 affected
 surfaces in light and dark at the default width, plus 800 px for layout changes; T2 all

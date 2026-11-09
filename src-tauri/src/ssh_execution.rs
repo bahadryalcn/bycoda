@@ -435,7 +435,6 @@ impl RunWork {
 }
 impl SshExecutions {
     #[cfg(test)]
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn start_fixture(
         self: &Arc<Self>,
         reviews: &SshExecutionReviews,
@@ -467,7 +466,6 @@ impl SshExecutions {
             }),
         )
     }
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn start(
         self: &Arc<Self>,
         reviews: &SshExecutionReviews,
@@ -494,7 +492,6 @@ impl SshExecutions {
         )
     }
     #[cfg(test)]
-    #[allow(clippy::too_many_arguments)]
     fn start_with_runner(
         self: &Arc<Self>,
         reviews: &SshExecutionReviews,
@@ -520,7 +517,6 @@ impl SshExecutions {
             NativeWriteAdmission::Unqualified,
         )
     }
-    #[allow(clippy::too_many_arguments)]
     fn start_admitted_with_runner(
         self: &Arc<Self>,
         reviews: &SshExecutionReviews,
@@ -626,7 +622,6 @@ impl SshExecutions {
             }
         }
     }
-    #[allow(clippy::too_many_arguments)]
     fn prepare_start(
         &self,
         reviews: &SshExecutionReviews,

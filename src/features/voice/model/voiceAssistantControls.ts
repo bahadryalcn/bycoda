@@ -97,11 +97,11 @@ export function voiceOwnerRequestedControl(text: string, action: keyof typeof ve
     !/(?:how (?:do|can)|how to|nasıl).*(?:stop|pause|delete|durdur|sil)/iu.test(text)
   );
 }
-/** A bare "stop"/"durdur" only silences speech; stopping a session's work must name the work. */
+/** A bare "stop"/"durdur" only silences speech; stopping a session's work must name the work or point at it ("bunu durdur", "stop it"). */
 export function voiceOwnerRequestedSessionStop(text: string) {
   return (
     voiceOwnerRequestedControl(text, "stop") &&
-    /\b(?:work|task|job|session|agent|run)\b|(?:^|\s)(?:işi?|görevi?|çalışmayı|oturumu?|ajanı?|agent)(?=\s|$)/iu.test(
+    /\b(?:work|task|job|session|agent|run)\b|\bstop\s+(?:it|that|this)\b|(?:^|\s)(?:işi?|görevi?|çalışmayı|oturumu?|ajanı?|agent|bunu|onu|şunu)(?=\s|$)/iu.test(
       text,
     )
   );
@@ -129,7 +129,7 @@ export function voiceOwnerRequestedStopAll(text: string) {
     /^(?:(?:hey|okay|ok|please|can you|could you|would you)\s+)*(?:[\p{L}\d_-]{1,40}[,:]?\s+)?stop\s+(?:everything|all(?:\s+(?:work|jobs|tasks|assistant work))?)(?:\s+(?:now|please|immediately|right now|for now|thanks))*$/iu.test(
       clean,
     ) ||
-    /^(?:[\p{L}\d_-]{1,40}[,:]?\s+)?(?:lütfen\s+)?(?:hepsini|her şeyi|herşeyi|tüm işleri|bütün işleri|tüm çalışmaları)\s+(?:hemen\s+)?durdur(?:\s+(?:lütfen|hemen|artık))*$/iu.test(
+    /^(?:[\p{L}\d_-]{1,40}[,:]?\s+)?(?:lütfen\s+)?(?:(?:acil(?:\s+olarak)?\s+)?(?:hepsini|her şeyi|herşeyi|tüm işleri|bütün işleri|tüm görevleri|bütün görevleri|tüm çalışmaları|bütün çalışmaları)\s+(?:hemen\s+)?|acil\s+)durdur(?:\s+(?:lütfen|hemen|artık))*$/iu.test(
       clean,
     )
   );
@@ -246,6 +246,7 @@ export class VoiceAssistantControls {
                 ...(projectIds.length > 1 ? { projectIds } : {}),
                 ...(item.pendingTaskDeletion ? { pendingTaskDeletion: true } : {}),
                 ...(item.awaitingOwnerRestart ? { awaitingOwnerRestart: true } : {}),
+                ...(snapshot.jobHolds?.[id] ? { holdReason: snapshot.jobHolds[id] } : {}),
               };
             }),
           notes: snapshot.notes
@@ -464,7 +465,11 @@ export class VoiceAssistantControls {
     request = this.ports.request.bind(this.ports),
   ) {
     const before = await this.ports.allowedProjectIds();
-    const response = await request({ op: "snapshot", limit: 100 });
+    const response = await request({
+      op: "snapshot",
+      limit: 100,
+      features: ["jobHolds", "jobStalled"],
+    });
     const current = await this.ports.allowedProjectIds();
     const allowed = new Set(
       [...before].filter((id) => current.has(id) && (!frozen || frozen.has(id))),

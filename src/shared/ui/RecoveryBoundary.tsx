@@ -50,20 +50,20 @@ export class RecoveryBoundary extends Component<
   },
   { failed: boolean; error: unknown; attempt: number; componentStack: string }
 > {
-  state = { failed: false, error: undefined as unknown, attempt: 0, componentStack: "" };
+  override state = { failed: false, error: undefined as unknown, attempt: 0, componentStack: "" };
 
   static getDerivedStateFromError(error: unknown) {
     return { failed: true, error };
   }
 
-  componentDidCatch(error: unknown, info: ErrorInfo) {
+  override componentDidCatch(error: unknown, info: ErrorInfo) {
     const componentStack = info.componentStack ?? "";
     this.setState({ componentStack });
     recordRenderError(error, componentStack);
     this.props.onError?.(error, info);
   }
 
-  componentDidUpdate(previous: { resetKeys?: readonly unknown[] }) {
+  override componentDidUpdate(previous: { resetKeys?: readonly unknown[] }) {
     if (this.state.failed && keysChanged(previous.resetKeys, this.props.resetKeys)) this.reset();
   }
 
@@ -77,7 +77,7 @@ export class RecoveryBoundary extends Component<
     this.props.onReset?.();
   };
 
-  render() {
+  override render() {
     if (!this.state.failed)
       return <Fragment key={this.state.attempt}>{this.props.children}</Fragment>;
     const moduleError = isModuleLoadError(this.state.error);

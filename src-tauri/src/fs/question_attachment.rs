@@ -479,7 +479,6 @@ pub async fn list_question_attachment_drafts(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn create_question_attachment(
     app: AppHandle,
     window: tauri::Window,
@@ -553,7 +552,6 @@ pub async fn create_question_attachment(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn claim_question_attachment(
     app: AppHandle,
     window: tauri::Window,
@@ -586,7 +584,6 @@ pub async fn claim_question_attachment(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn read_question_attachment(
     app: AppHandle,
     window: tauri::Window,
@@ -627,7 +624,6 @@ pub async fn read_question_attachment(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn retain_question_attachment(
     app: AppHandle,
     window: tauri::Window,
@@ -667,7 +663,6 @@ pub async fn retain_question_attachment(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn release_question_attachment(
     app: AppHandle,
     window: tauri::Window,

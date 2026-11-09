@@ -44,9 +44,20 @@ export function accountController(): AccountController {
 }
 
 let started: Promise<void> | null = null;
+let listening = false;
 
 /** Starts the account once per window; calling it again returns the same promise. */
 export function startAccount(): Promise<void> {
+  if (!listening && typeof window !== "undefined") {
+    listening = true;
+    const revalidate = () => {
+      accountController()
+        .revalidate()
+        .catch(() => undefined); // -- failures are classified inside; the view stays as it was.
+    };
+    window.addEventListener("focus", revalidate);
+    window.addEventListener("online", revalidate);
+  }
   started ??= accountController()
     .start()
     .catch(() => undefined); // -- a failed start leaves the app signed out, which is fully usable.

@@ -184,7 +184,7 @@ class BlameMarker extends GutterMarker {
     super();
   }
 
-  eq(other: BlameMarker) {
+  override eq(other: BlameMarker) {
     return (
       other.entry?.sha === this.entry?.sha &&
       other.first === this.first &&
@@ -192,7 +192,7 @@ class BlameMarker extends GutterMarker {
     );
   }
 
-  toDOM() {
+  override toDOM() {
     const { entry, first, onOpen } = this;
     const el = document.createElement("div");
     el.className = `cm-blameEntry ${first ? "cm-blameFirst" : "cm-blameContinued"}`;
@@ -225,7 +225,7 @@ class BlameMarker extends GutterMarker {
     return el;
   }
 
-  destroy(dom: Node) {
+  override destroy(dom: Node) {
     hideCard(dom as HTMLElement);
   }
 }

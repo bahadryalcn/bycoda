@@ -66,6 +66,8 @@ import { saveVoiceTurnEndChoice, VOICE_TURN_CHOICE_FAILED } from "../model/voice
 import { createVoiceController } from "../model/voiceController";
 import { converseWithAssistant } from "../model/voiceAssistant";
 import { voiceTools } from "../model/realtimeVoice";
+import { installVoiceApprovalPort } from "./companion/voiceApprovalPort";
+import { voiceJobReceipt, voiceJobsAcceptedSpeech } from "../model/voiceJobReceipt";
 import type { VoiceWorkspaceProject } from "../model/voiceWorkspaceActions";
 import type { useVoiceWorkspaceActions } from "../../../app/workspace/bridges/useVoiceWorkspaceActions";
 import { voiceVisualState } from "../model/voiceVisualState";
@@ -239,6 +241,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
       return Boolean(props.workspace);
     }
   });
+  useEffect(installVoiceApprovalPort, []);
   useEffect(() => {
     try {
       localStorage.setItem("bycoda.voice.scope", globalScope ? "global" : "project");
@@ -487,6 +490,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
     batch: VoiceJobBatch;
     resolve: (value: unknown) => void;
     released?: boolean;
+    wait?: { waitForOwner(): void };
   } | null>(null);
   function changeJobReview(rows: VoiceJobDraft[]) {
     const pending = pendingJobs.current;
@@ -605,31 +609,14 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         )
       )
         throw new Error("The project is hidden, locked or no longer available.");
-      const receipt = {
-        status: "accepted",
-        jobs: jobs.map((job) => ({ id: job.id, title: job.title, status: job.status })),
-      };
+      const receipt = await voiceJobReceipt(jobs, (input) =>
+        assistantRequest(input, pending.environmentId),
+      );
+      if (pendingJobs.current !== pending) return;
       pending.resolve(receipt);
       pendingJobs.current = null;
       setJobReview(null);
-      if (pending.released)
-        client.current?.speak(
-          t(
-            jobs.filter((job) => job.kind !== "quick").length === 1
-              ? "{p0} personal notes saved. {p1} automations created. 1 project job accepted."
-              : "{p0} personal notes saved. {p1} automations created. {p2} project jobs accepted.",
-            {
-              p0: jobs.filter(
-                (job) => job.kind === "quick" && job.status === "done" && job.quickResult?.noteId,
-              ).length,
-              p1: jobs.filter(
-                (job) =>
-                  job.kind === "quick" && job.status === "done" && job.quickResult?.automationId,
-              ).length,
-              p2: jobs.filter((job) => job.kind !== "quick").length,
-            },
-          ),
-        );
+      if (pending.released) client.current?.speak(voiceJobsAcceptedSpeech(jobs));
     } catch (cause) {
       if (pendingJobs.current === pending) {
         pending.review = {
@@ -641,6 +628,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         // A direct start that fails shows its one coherent error in the review.
         pending.shown = true;
         setJobReview(pending.review);
+        pending.wait?.waitForOwner();
       }
     }
   }
@@ -2175,6 +2163,7 @@ export function VoiceCompanion(props: VoiceCompanionProps) {
         pendingJobs.current = {
           review,
           shown: showReview,
+          wait,
           environmentId: owner.environmentId,
           batch: new VoiceJobBatch(
             async (request) => {

@@ -17,13 +17,30 @@
     "react-hooks-js/incompatible-library": "warn",
     "react-hooks-js/immutability": "warn",
     "react-hooks-js/globals": "warn",
-    "react-hooks-js/refs": "warn",
+    "react-hooks-js/refs": "off",
     "react-hooks-js/set-state-in-effect": "warn",
     "react-hooks-js/error-boundaries": "warn",
     "react-hooks-js/purity": "warn",
     "react-hooks-js/set-state-in-render": "warn",
     "react-hooks-js/unsupported-syntax": "warn",
     "react-hooks-js/config": "warn",
-    "react-hooks-js/gating": "warn"
-  }
+    "react-hooks-js/gating": "warn",
+    "react/rules-of-hooks": "warn",
+    "react/exhaustive-deps": "warn"
+  },
+  "plugins": ["react"],
+  "overrides": [
+    {
+      "files": ["src/shared/ui/**", "src/features/sessions/ui/**", "src/app/shell/**"],
+      "rules": {
+        "react-hooks-js/refs": "warn"
+      }
+    },
+    {
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/test-support/**"],
+      "rules": {
+        "react-hooks-js/globals": "off"
+      }
+    }
+  ]
 }

@@ -313,7 +313,7 @@ Open an SSH tunnel from your laptop:
 ssh -N -L 3776:127.0.0.1:3776 user@your-host
 ```
 
-Under **Settings → Connections → Connect to an existing host by URL**, enter `http://127.0.0.1:3776` and the device token.
+Under **Settings → Connections → Machines → Add machine**, choose **Host URL** and enter `http://127.0.0.1:3776` and the device token.
 
 When the laptop wakes, restore the SSH tunnel. The remote view reconnects automatically and loads the host's latest persisted snapshot. An uncertain request retains its original command ID, including creation of a new session and its first message. **Retry** asks the host for that same command’s receipt, so a lost response does not create another conversation or submit the prompt again. Pending requests survive restarting the desktop and belong to the tab that created them.
 
@@ -383,7 +383,7 @@ alternate image is used.
 
 Each tagged release publishes `bycoda-host-{darwin,linux}-{arm64,x64}.tar.gz`, `bycoda-host-win32-{arm64,x64}.zip`, and their `.sha256` files alongside the desktop installers, and its desktop builds are configured with that release's download address (`BYCODA_HOST_RELEASE_URL`). SSH setup installs the matching version under `~/.bycoda-host/runtime`.
 
-**The host on this computer** ships inside the Windows and macOS installers. On start, an installed release app installs that host if this computer has none, and upgrades it when the bundled version is newer, using the same verified installer as SSH setup. It never downgrades, waits while the host has running sessions or another update is being installed, and treats an unreadable host database as busy. A waiting or failed update is shown in Settings → Connections and retried while the app is open.
+**The host on this computer** ships inside the Windows and macOS installers. On start, an installed release app installs that host if this computer has none, and upgrades it when the bundled version is newer, using the same verified installer as SSH setup. It never downgrades, waits while the host has running sessions or another update is being installed, and treats an unreadable host database as busy. A waiting or failed update is shown in Settings → Connections and retried while the app is open. Nothing is shown while the running host is already the build that ships with this app, even if its install record still awaits a repair.
 
 **Unreleased development builds:** automatic first-time installation and **Update Host** require host archives published for the desktop version. Tagged releases include the matching archives; an unreleased checkout does not. Until the matching release is available, use the manual development connection above. A missing archive produces an explicit error in Settings. No fallback to an arbitrary latest release or unverified download is used. Connecting does not automatically upgrade a running host. When an SSH host lacks Explorer or Changes, Settings → Connections offers **Update Host**. This downloads and verifies the matching package, restarts the host service, and reconnects using the existing device credential. The restart interrupts active agent turns; sessions and history remain on the host. URL connections must be updated on the host manually.
 

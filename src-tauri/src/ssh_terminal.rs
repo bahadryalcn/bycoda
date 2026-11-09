@@ -63,7 +63,6 @@ pub(crate) fn validate_configuration_review(
 }
 
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)]
 pub fn ssh_terminal_spawn(
     app: AppHandle,
     window: tauri::Window,
@@ -152,7 +151,6 @@ pub fn ssh_terminal_spawn(
 }
 
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)]
 pub fn ssh_terminal_quick_spawn(
     app: AppHandle,
     window: tauri::Window,

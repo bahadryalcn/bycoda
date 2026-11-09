@@ -462,7 +462,6 @@ impl Drop for PtyHost {
 /// resize sent after it resolves finds it.
 #[tauri::command(async)]
 // Preserve the existing IPC/process-launch argument contract.
-#[allow(clippy::too_many_arguments)]
 pub fn pty_spawn(
     app: AppHandle,
     window: tauri::Window,
@@ -616,7 +615,6 @@ pub(crate) fn integration_for_spawn(
 
 /// Explicit SSH connect only. This uses the same PTY lifecycle, job ownership,
 /// window cleanup and byte transport as local terminals, without output logging.
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_ssh(
     app: AppHandle,
     window: tauri::Window,
@@ -668,7 +666,6 @@ fn validate_new_key_path(path: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn spawn_keygen(
     app: AppHandle,
     window: tauri::Window,
@@ -1065,7 +1062,6 @@ pub fn pty_kill_all(window: tauri::Window, host: State<'_, PtyHost>) -> Result<(
 
 #[cfg(unix)]
 // Preserve the existing IPC/process-launch argument contract.
-#[allow(clippy::too_many_arguments)]
 fn spawn_unix(
     app: AppHandle,
     host: State<PtyHost>,
@@ -1324,7 +1320,6 @@ fn spawn_unix(
 
 #[cfg(windows)]
 // Preserve the existing IPC/process-launch argument contract.
-#[allow(clippy::too_many_arguments)]
 fn spawn_windows(
     app: AppHandle,
     host: State<PtyHost>,

@@ -287,9 +287,14 @@ draft, cursor and attachments stay as they are. Actions under an assistant reply
 with tooltips; a failed copy or save shows the reason and a retry icon in place.
 
 The notifications sheet lists pending requests and **Recent requests** (the last
-100). A recent request opens its conversation when it is still available. Clearing
-the list happens only after it is saved; if saving fails, the list stays and offers
-Retry. Allow and Deny show their progress and any error on the request itself.
+100). A pending approval is decided in place with Allow or Deny, which show their
+progress and any error on the request itself; a pending question opens its
+conversation with **Answer**. Clicking a recent request opens its conversation; if
+that conversation no longer exists, the row says so and the sheet stays open. A
+recent request that is still unanswered is marked **Waiting for you**. Each recent
+request can be removed on its own, and **Clear all** above the list removes them
+all. Removing and clearing happen only after the change is saved; if saving fails,
+the list stays and says so.
 
 Desktop banners appear only while bycoda is in the background. While any bycoda
 window is focused, conversation updates, pending requests and reminders remain

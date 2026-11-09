@@ -13,6 +13,12 @@
   line-height: 1;
 }
 
+.root[data-size="lg"] {
+  inline-size: 3.5rem;
+  block-size: 3.5rem;
+  font-size: var(--ui-font-title);
+}
+
 .root[data-signed-in="true"] {
   background: var(--ui-tone-accent-solid);
   color: var(--ui-tone-accent-on-solid);

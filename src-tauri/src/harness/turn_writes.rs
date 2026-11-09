@@ -459,7 +459,6 @@ fn write_controlled_within(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub async fn harness_write_controlled(
     app: AppHandle,
     window: tauri::WebviewWindow,

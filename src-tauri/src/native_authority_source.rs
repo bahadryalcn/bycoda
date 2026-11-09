@@ -418,7 +418,6 @@ impl SourceRequest {
     }
 }
 
-#[allow(clippy::too_many_arguments)] // Captured native lifetime plus optional private composition.
 fn serve(
     binding: CapturedSourceBinding,
     expected: NativeCapturedSource,

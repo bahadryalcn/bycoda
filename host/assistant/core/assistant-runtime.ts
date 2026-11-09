@@ -3,7 +3,7 @@ import type { HostGoals } from "../../goals/goals";
 import type { HostTasks } from "../../tasks/tasks";
 import type { HostAutomations } from "../../automations/automations";
 import { HostAssistantJobDeletion } from "../work/assistant-job-deletion";
-import type { AssistantPorts, AssistantUsageTurn } from "../service";
+import type { AssistantGoalStatus, AssistantPorts, AssistantUsageTurn } from "../service";
 import type { AsyncHostNotes } from "../../host-notes-async";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
@@ -433,8 +433,17 @@ export function assistantExecutionPorts(
           )
             recoveryAttention = recovery.message;
         }
+      const waitingReason: AssistantGoalStatus["waitingReason"] =
+        goal.status === "blocked"
+          ? "error"
+          : goal.status === "awaiting-approval"
+            ? "planApproval"
+            : recoveryAttention || (status === "running" && needsOwner)
+              ? "owner"
+              : undefined;
       return {
         status: recoveryAttention || (status === "running" && needsOwner) ? "waiting" : status,
+        ...(waitingReason ? { waitingReason } : {}),
         taskIds: goal.taskIds,
         sessionIds,
         tokens,

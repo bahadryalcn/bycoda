@@ -1,4 +1,4 @@
-import { useId, useState, type MouseEventHandler } from "react";
+import { useId, useState } from "react";
 import { t } from "../../../shared/i18n/git";
 import { prettyCwd, projectName } from "../../../shared/lib/paths";
 import { Badge } from "../../../shared/ui/Badge";
@@ -6,7 +6,7 @@ import { Button } from "../../../shared/ui/Button";
 import { InlineError, InlineMessage } from "../../../shared/ui/InlineError";
 import { StatusDot } from "../../../shared/ui/StatusDot";
 import { Tooltip } from "../../../shared/ui/Tooltip";
-import { ChevronDown, ChevronUp, FolderOpen, MoreHorizontal } from "../../../shared/ui/icons";
+import { ChevronDown, ChevronUp, FolderOpen, Trash2 } from "../../../shared/ui/icons";
 import type { Worktree } from "../model/worktrees";
 import { DescriptionItem, DescriptionList } from "../../../shared/ui/DescriptionList";
 import styles from "./WorktreesPage.module.css";
@@ -19,9 +19,10 @@ export function WorktreeRow({
   identityHint,
   warning,
   revealError,
-  menuOpen,
+  deleteDisabledReason,
+  removing = false,
   onReveal,
-  onMenu,
+  onDelete,
 }: {
   tree: Worktree;
   /** This worktree is the folder the page is showing. */
@@ -31,9 +32,12 @@ export function WorktreeRow({
   /** Why deletion is unavailable here; shown as a warning under the caption. */
   warning?: string;
   revealError?: string;
-  menuOpen: boolean;
+  /** Why Delete is unavailable; omit when it is available. */
+  deleteDisabledReason?: string;
+  /** Deletion of this worktree runs in the background. */
+  removing?: boolean;
   onReveal: () => void;
-  onMenu: MouseEventHandler<HTMLButtonElement>;
+  onDelete: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const detailsId = useId();
@@ -95,6 +99,7 @@ export function WorktreeRow({
               {t("Publication unknown")}
             </Badge>
           )}
+          {removing && <Badge size="sm">{t("Removing directory…")}</Badge>}
           {tree.locked && (
             <Badge size="sm" tone="warning">
               {t("Locked")}
@@ -125,24 +130,26 @@ export function WorktreeRow({
           size="sm"
           iconOnly
           variant="ghost"
+          tone="danger"
+          label={t("Delete {p0}", { p0: tree.branch ?? "worktree" })}
+          disabled={!!deleteDisabledReason || removing}
+          disabledReason={
+            removing ? t("Deletion is running in the background.") : deleteDisabledReason
+          }
+          onClick={onDelete}
+        >
+          <Trash2 className="icon-sm" />
+        </Button>
+        <Button
+          size="sm"
+          iconOnly
+          variant="ghost"
           label={t("Details")}
           aria-expanded={open}
           aria-controls={open ? detailsId : undefined}
           onClick={() => setOpen((value) => !value)}
         >
           {open ? <ChevronUp className="icon-sm" /> : <ChevronDown className="icon-sm" />}
-        </Button>
-        <Button
-          size="sm"
-          iconOnly
-          variant="ghost"
-          label={t("Actions for {p0}", { p0: tree.branch ?? "worktree" })}
-          tooltip={t("More actions")}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          onClick={onMenu}
-        >
-          <MoreHorizontal className="icon-sm" />
         </Button>
       </div>
       {open && (

@@ -1,5 +1,4 @@
 import { Button } from "../../../shared/ui/Button";
-import { DropdownMenu } from "../../../shared/ui/DropdownMenu";
 import styles from "./WorktreesPage.module.css";
 import { t, useLocale } from "../../../shared/i18n/git";
 import { useMemo, useState } from "react";
@@ -24,6 +23,11 @@ import {
 } from "../model/worktrees";
 import { WorkspacePolicySettings } from "../../workspaces/ui/WorkspacePolicySettings";
 import type { ManagedWorkspace } from "../../workspaces/model/contracts";
+import {
+  isBackgroundRemoval,
+  runBackgroundRemoval,
+  useBackgroundRemovals,
+} from "../../workspaces/public/backgroundRemoval";
 
 export function WorktreesPage({
   cwd,
@@ -65,9 +69,8 @@ export function WorktreesPage({
   const [error, setError] = useState<string>();
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState<Worktree>();
-  const [refreshingAfterFailure, setRefreshingAfterFailure] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [menu, setMenu] = useState<{ tree: Worktree; anchor: HTMLElement }>();
+  const removals = useBackgroundRemovals();
   const [revealFailure, setRevealFailure] = useState<{
     path: string;
     message: string;
@@ -82,8 +85,6 @@ export function WorktreesPage({
   const [managedLoading, setManagedLoading] = useState(true);
   const managedPaths = new Set(managedWorkspaces?.map((workspace) => pathKey(workspace.path)));
   const worktrees = rawWorktrees.filter((tree) => !managedPaths.has(pathKey(tree.path)));
-  // Menus can stay open across an inventory refresh; never act on their old snapshot.
-  const menuTree = menu && worktrees.find((tree) => pathKey(tree.path) === pathKey(menu.tree.path));
   const revealWorktree = (path: string) => {
     setRevealFailure(undefined);
     void revealPath(path).catch((failure) => setRevealFailure({ path, message: String(failure) }));
@@ -114,7 +115,6 @@ export function WorktreesPage({
                   setProject(path);
                   setError(undefined);
                   setDeleting(undefined);
-                  setMenu(undefined);
                   setRevealFailure(undefined);
                   setManagedWorkspaces(null);
                   setManagedLoading(true);
@@ -196,11 +196,6 @@ export function WorktreesPage({
           <>
             {error && <SettingsFeedback state="error">{error}</SettingsFeedback>}
             {loadError && <SettingsFeedback state="error">{loadError}</SettingsFeedback>}
-            {refreshingAfterFailure && (
-              <p role="status">
-                {t("Refreshing after a failed deletion. Wait for current status before retrying.")}
-              </p>
-            )}
             {!data && !loadError && (
               <p role="status" className={styles.empty}>
                 {t("Loading worktrees…")}
@@ -240,10 +235,13 @@ export function WorktreesPage({
                     : undefined;
                 const warning =
                   blocked ??
-                  (loadError
-                    ? t("Deletion is unavailable until Refresh succeeds.")
-                    : refreshingAfterFailure
-                      ? t("Deletion is unavailable while status is being refreshed.")
+                  (loadError ? t("Deletion is unavailable until Refresh succeeds.") : undefined);
+                const deleteDisabledReason =
+                  warning ??
+                  (remoteProject
+                    ? remoteLifecycleNotice
+                    : managedLoading
+                      ? t("Wait for managed workspaces to load.")
                       : undefined);
                 return (
                   <WorktreeRow
@@ -258,47 +256,19 @@ export function WorktreesPage({
                         ? t("Couldn't reveal this folder: {p0}", { p0: revealFailure.message })
                         : undefined
                     }
-                    menuOpen={menu?.tree.path === tree.path}
+                    deleteDisabledReason={deleteDisabledReason}
+                    removing={isBackgroundRemoval(removals, tree.path)}
                     onReveal={() => revealWorktree(tree.path)}
-                    onMenu={(event) => setMenu({ tree, anchor: event.currentTarget })}
+                    onDelete={() => {
+                      setError(undefined);
+                      setDeleting(tree);
+                    }}
                   />
                 );
               })}
           </>
         )}
       />
-      {menu && menuTree && (
-        <DropdownMenu
-          anchor={menu.anchor}
-          label={t("More actions")}
-          onClose={() => setMenu(undefined)}
-          items={[
-            { kind: "item", id: "reveal", label: t("Reveal folder"), disabled: menuTree.missing },
-            {
-              kind: "item",
-              id: "delete",
-              label: t("Delete {p0}", { p0: menuTree.branch ?? "worktree" }),
-              danger: true,
-              disabled:
-                menuTree.locked ||
-                !menuTree.branch ||
-                refreshingAfterFailure ||
-                !!loadError ||
-                remoteProject ||
-                managedLoading,
-            },
-          ]}
-          onPick={(id) => {
-            const tree = menuTree;
-            setMenu(undefined);
-            if (id === "reveal") revealWorktree(tree.path);
-            if (id === "delete") {
-              setError(undefined);
-              setDeleting(tree);
-            }
-          }}
-        />
-      )}
       {creating && (
         <CreateWorktreeDialog
           cwd={project}
@@ -317,46 +287,45 @@ export function WorktreesPage({
           tree={deleting}
           sessionCount={worktreeSessionIds(deleting, liveSessions).length}
           onRemove={async (cwd, path, force, deleteSessions) => {
-            // Check predictable blockers before any conversation is destroyed.
+            // Check predictable blockers before the dialog closes; nothing is destroyed yet.
             await onCheckRemove(cwd, path, force);
-            const sessionIds = worktreeSessionIds(deleting, liveSessions);
-            let sessionsDeleted = false;
-            try {
-              if (sessionIds.length && deleteSessions) {
-                if (!onDeleteSessions) {
-                  throw new Error("Sessions still use this worktree and could not be deleted.");
+            const tree = deleting;
+            const sessionIds = worktreeSessionIds(tree, liveSessions);
+            void runBackgroundRemoval(path, tree.branch ?? projectName(path), async () => {
+              let sessionsDeleted = false;
+              try {
+                if (sessionIds.length && deleteSessions) {
+                  if (!onDeleteSessions) {
+                    throw new Error("Sessions still use this worktree and could not be deleted.");
+                  }
+                  if (!(await onDeleteSessions(sessionIds))) {
+                    throw new Error(
+                      "Some sessions could not be deleted, so the worktree was kept.",
+                    );
+                  }
+                  sessionsDeleted = true;
                 }
-                if (!(await onDeleteSessions(sessionIds))) {
-                  throw new Error("Some sessions could not be deleted, so the worktree was kept.");
+                await onRemove(cwd, path, force, !deleteSessions);
+                if (isEqualOrInside(project, path)) {
+                  const main = data?.worktrees.find((item) => item.isMain);
+                  if (main) setProject(main.path);
                 }
-                sessionsDeleted = true;
+              } catch (error) {
+                const failure = sessionsDeleted
+                  ? new Error(
+                      `The sessions were deleted, but the worktree was kept. ${String(error)}`,
+                    )
+                  : error;
+                setError(String(failure));
+                throw failure;
+              } finally {
+                // The row stays blocked until a fresh listing replaces its saved session IDs.
+                await refresh().catch(() => false);
               }
-              await onRemove(cwd, path, force, !deleteSessions);
-            } catch (error) {
-              const failure = sessionsDeleted
-                ? new Error(
-                    `The sessions were deleted, but the worktree was kept. ${String(error)}`,
-                  )
-                : error;
-              // A partial deletion invalidates the dialog's saved session IDs.
-              // Require a fresh listing before another destructive attempt.
-              setDeleting(undefined);
-              setError(String(failure));
-              setRefreshingAfterFailure(true);
-              await refresh();
-              setRefreshingAfterFailure(false);
-              throw failure;
-            }
+            });
           }}
           onClose={() => setDeleting(undefined)}
-          onDeleted={() => {
-            if (isEqualOrInside(project, deleting.path)) {
-              const main = data?.worktrees.find((tree) => tree.isMain);
-              if (main) setProject(main.path);
-            }
-            setDeleting(undefined);
-            refresh();
-          }}
+          onDeleted={() => setDeleting(undefined)}
         />
       )}
     </div>

@@ -697,6 +697,75 @@ describe("durable assistant ownership and supervision", () => {
     await expect(f.request({ op: "resumeAll" }, "chief")).rejects.toThrow("owner");
   });
 });
+describe("job attention", () => {
+  const create = {
+    op: "jobs.create",
+    title: "Stuck job",
+    request: "Do work",
+    projectId: "project",
+    idempotencyKey: "attention",
+  };
+  const kinds = async (f: Awaited<ReturnType<typeof setup>>, features?: string[]) =>
+    (
+      (await f.request({ op: "snapshot", ...(features ? { features } : {}) })).snapshot!
+        .notifications ?? []
+    ).map((n) => [n.kind, n.body]);
+  it("notifies once when a job stalls and hides it from requests without features", async () => {
+    let now = 1_000_000;
+    const f = await setup({
+      now: () => now,
+      createGoal: async () => ({ goalId: "goal" }),
+      goalStatus: async () => ({
+        status: "running",
+        taskIds: [],
+        sessionIds: [],
+        progress: { done: 0, total: 1 },
+        lastActivityAt: now - 20 * 60000,
+        summary: "Compiling",
+      }),
+    });
+    await f.configure();
+    await f.request(create);
+    await f.service.tick();
+    await f.service.tick();
+    expect(await kinds(f, ["jobStalled"])).toEqual([
+      ["job.stalled", "No output for 15 minutes. Compiling"],
+    ]);
+    expect(await kinds(f)).toEqual([]);
+    const response = await f.request({ op: "snapshot" });
+    expect(JSON.stringify(response.snapshot!.notifications)).not.toContain("job.stalled");
+    expect(response.snapshot).not.toHaveProperty("jobHolds");
+    expect(AssistantResponseSchema.safeParse(response).success).toBe(true);
+    now += 60000;
+    await f.service.tick();
+    expect(await kinds(f, ["jobStalled"])).toHaveLength(1);
+  });
+  it("says why a blocked goal is waiting", async () => {
+    const f = await setup({
+      createGoal: async () => ({ goalId: "goal" }),
+      goalStatus: async () => ({
+        status: "waiting",
+        waitingReason: "error",
+        summary: "Planner crashed",
+        taskIds: [],
+        sessionIds: [],
+        progress: { done: 0, total: 1 },
+      }),
+    });
+    await f.configure();
+    await f.request(create);
+    await f.service.tick();
+    expect(await kinds(f)).toEqual([["job.waiting", "Stopped with an error: Planner crashed"]]);
+  });
+  it("reports why a queued job is not starting only when asked", async () => {
+    const f = await setup({ createGoal: async () => ({ goalId: "goal" }) });
+    await f.configure("report");
+    const job = (await f.request(create)).job!;
+    const asked = (await f.request({ op: "snapshot", features: ["jobHolds"] })).snapshot!;
+    expect(asked.jobHolds).toEqual({ [job.id]: "report" });
+    expect((await f.request({ op: "snapshot" })).snapshot).not.toHaveProperty("jobHolds");
+  });
+});
 it("uses bounded context actions and the 150k/250k chief defaults", () => {
   expect(workerContextAction(40000, 1000000)).toBe("send");
   expect(workerContextAction(150000, 1000000)).toBe("compact");

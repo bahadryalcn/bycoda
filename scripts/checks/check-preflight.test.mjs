@@ -11,6 +11,9 @@ test("preflight mirrors the cheap CI gates that failed main after local checks p
     "evals/tsconfig.json",
     "check-lint-baseline.mjs",
     "check-code-structure.mjs",
+    "ui-catalog.mjs",
+    "check-baselines.mjs",
+    "check-test-types.mjs",
     "browser-test-inventory.mjs --check",
     "tests/browser/tsconfig.json",
   ])
@@ -27,6 +30,9 @@ test("preflight mirrors the cheap CI gates that failed main after local checks p
     "check:colors",
     "check:ui-drift",
     "check:structure",
+    "check:ui-catalog",
+    "check:baselines",
+    "check:types:tests",
   ])
     assert(workflow.includes(script), `CI no longer runs ${script}; update the preflight mirror`);
   assert(

@@ -11,6 +11,7 @@
   "ignorePatterns": [
     "vendor/**",
     "scripts/checks/ui-reviewed-baseline.json",
-    "src/styles/palette.css"
+    "src/styles/palette.css",
+    "docs/reference/ui-components.md"
   ]
 }

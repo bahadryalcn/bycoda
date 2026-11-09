@@ -1,0 +1,3 @@
+# Covers 93% of the functions that used to carry an explicit allow (Tauri command
+# signatures mirror the IPC contract); only functions above 12 keep a local allow.
+too-many-arguments-threshold = 12

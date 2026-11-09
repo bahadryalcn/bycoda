@@ -1335,7 +1335,6 @@ impl HarnessHost {
         self.spawn_tracked_for_target(session_id, session_id, epoch, kill_all, command, authority)
     }
 
-    #[allow(clippy::too_many_arguments)] // Routing generation and private logical authority target stay distinct.
     #[cfg(test)]
     fn spawn_tracked_for_target(
         &self,
@@ -1358,7 +1357,6 @@ impl HarnessHost {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn spawn_tracked_reserved(
         &self,
         session_id: &str,
@@ -3668,7 +3666,6 @@ fn reserve_authority_within(
 /// write runs on the blocking pool — never on an async worker or the IPC path,
 /// where it would starve `harness_kill` and make the wedged child unrecoverable.
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn harness_write(
     app: AppHandle,
     window: tauri::Window,
@@ -4293,7 +4290,6 @@ fn localhost_http_agent_builder() -> ureq::AgentBuilder {
 
 #[tauri::command]
 // AppHandle plus the existing flat IPC fields and optional authority provenance.
-#[allow(clippy::too_many_arguments)]
 pub async fn harness_http(
     app: AppHandle,
     window: tauri::Window,
@@ -4527,7 +4523,6 @@ pub fn harness_set_owner(
 /// connection and must never freeze the UI while another write holds it.
 #[tauri::command]
 // Window/AppHandle/State are injected natively; retain the existing flat IPC shape.
-#[allow(clippy::too_many_arguments)]
 pub async fn harness_sse_open(
     app: AppHandle,
     window: tauri::WebviewWindow,
@@ -4563,7 +4558,6 @@ pub async fn harness_sse_open(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 fn harness_sse_open_blocking(
     app: AppHandle,
     window: tauri::WebviewWindow,
@@ -5234,7 +5228,6 @@ fn default_binary_matches(provider: &str, command: &Path) -> bool {
 
 /// One-shot capture of stdout (used for `cursor-agent --list-models`).
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Tauri command arguments are the frontend IPC contract.
 pub async fn harness_exec(
     app: AppHandle,
     window: tauri::Window,

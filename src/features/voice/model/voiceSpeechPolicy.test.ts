@@ -34,4 +34,31 @@ describe("voice speech policy", () => {
     ).toBe(false);
     expect(shouldSilentlyAcknowledgeVoice({ transcript: "tamam" })).toBe(false);
   });
+  it.each([
+    "İstersen başlatırım.",
+    "Want me to start it",
+    "I can do that if you like.",
+    "Başlatayım mı",
+    "Yapabilirim.",
+    "Shall I continue",
+  ])("treats an acknowledgement after the offer %s as a yes", (lastDeliveredAssistant) => {
+    expect(shouldSilentlyAcknowledgeVoice({ transcript: "tamam", lastDeliveredAssistant })).toBe(
+      false,
+    );
+    expect(shouldSilentlyAcknowledgeVoice({ transcript: "ok", lastDeliveredAssistant })).toBe(
+      false,
+    );
+  });
+  it.each([
+    "bir dakika dur",
+    "biraz bekle",
+    "dur bir saniye",
+    "dur bakayım",
+    "Hold on a sec.",
+    "hold on a second",
+  ])("waits on %s", (text) => expect(shouldWaitForVoice(text)).toBe(true));
+  it.each(["dur bakayım ekipleri aç", "biraz bekle ve testleri çalıştır"])(
+    "does not wait on compound speech %s",
+    (text) => expect(shouldWaitForVoice(text)).toBe(false),
+  );
 });

@@ -149,7 +149,6 @@ pub(crate) fn harness_utility_cleanup_grant(
         Ok(ManagementGrant { token, route_id })
     })
 }
-#[allow(clippy::too_many_arguments)] // Each argument is a separately validated authority field of the consumed route.
 pub(super) fn consume(
     window: &tauri::Window,
     token: &str,
@@ -452,7 +451,6 @@ pub(super) fn consume_spawn(
         Ok(policy)
     })
 }
-#[allow(clippy::too_many_arguments)] // Each argument is a separately validated authority field of the spawn request.
 pub(super) fn spawn_input_policy(
     window: &tauri::Window,
     token: Option<&str>,

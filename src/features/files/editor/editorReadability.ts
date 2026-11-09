@@ -38,7 +38,7 @@ class ColorSwatch extends WidgetType {
   constructor(readonly color: string) {
     super();
   }
-  eq(other: ColorSwatch) {
+  override eq(other: ColorSwatch) {
     return this.color === other.color;
   }
   toDOM() {
@@ -60,7 +60,7 @@ class DiagnosticLabel extends WidgetType {
   ) {
     super();
   }
-  eq(other: DiagnosticLabel) {
+  override eq(other: DiagnosticLabel) {
     return this.message === other.message && this.severity === other.severity;
   }
   toDOM() {

@@ -452,7 +452,6 @@ fn relay(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub async fn remote_dev_server_url(
     app: AppHandle,
     machine_id: String,

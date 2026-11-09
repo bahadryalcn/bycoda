@@ -22,7 +22,6 @@ import {
   moveSelectedProjects,
   selectProjectRange,
 } from "../../features/projects/model/projectSelection";
-import { PRODUCT_IDENTITY } from "../../shared/lib/productIdentity";
 import {
   AlertCircle,
   Archive,
@@ -47,7 +46,6 @@ import {
   FileDiff,
   StickyNote,
   Plus,
-  Search,
   Sparkles,
   Zap,
   DashboardSquare,
@@ -131,7 +129,8 @@ import {
 import { TerminalSpinner } from "../../features/sessions/ui/TerminalSpinner";
 import { ProjectLogoIcon } from "../../features/projects/ui/ProjectLogoIcon";
 import { ProjectMascot } from "../../features/projects/ui/ProjectMascot";
-import { RailAction, RailSearch } from "./RailAction";
+import { RailAction } from "./RailAction";
+import { RailBrand } from "./RailBrand";
 import {
   dismissRemoteProjects,
   type RemoteOnlyProject,
@@ -765,25 +764,14 @@ export function ProjectRail({
     socialActive ||
     assistantActive ||
     serversActive;
-  const brand = (
-    <div
-      className={`bycoda-rail-brand ${IS_MAC ? "@max-[140px]/rail:flex-col @max-[140px]/rail:justify-center" : "bycoda-rail-brand--title"}`}
-    >
-      <img src={PRODUCT_IDENTITY.smallLogoSrc} alt={PRODUCT_IDENTITY.displayName} />
-      {settingsOpen ? null : (
-        <div
-          className={`bycoda-rail-search-slot min-w-0 flex-1 ${IS_MAC ? "@max-[140px]/rail:w-full @max-[140px]/rail:flex-none" : ""}`}
-        >
-          <RailSearch
-            label={t("Search")}
-            icon={Search}
-            onClick={onSearch}
-            active={searchActive}
-            command="App: Search"
-          />
-        </div>
-      )}
-    </div>
+  const brand = (placement: "title" | "column", narrowOnly = false) => (
+    <RailBrand
+      placement={placement}
+      narrowOnly={narrowOnly}
+      showSearch={!settingsOpen}
+      searchActive={searchActive}
+      onSearch={onSearch}
+    />
   );
   const renderProjectGroup = (
     { group, items, workspaceItems, locked }: (typeof groupedProjectSections.grouped)[number],
@@ -1012,18 +1000,18 @@ export function ProjectRail({
       )}
       {!navigator ? (
         <div
-          className="@container/rail flex h-10 shrink-0 select-none items-center overflow-hidden pr-1.5"
+          className="@container/rail flex h-10 shrink-0 select-none items-center overflow-hidden"
           data-tauri-drag-region="deep"
         >
           <WindowChromeInset />
-          {IS_MAC ? null : brand}
+          {IS_MAC ? null : brand("title")}
           {IS_MAC ? <div className="min-w-0 flex-1" /> : null}
           {/* Icon-only, just the panel toggle fits; in settings nothing does. */}
           <div
-            className={`shrink-0 ${
+            className={`me-1.5 shrink-0 @max-[140px]/rail:mx-auto ${
               settingsOpen
-                ? "@max-[140px]/rail:hidden"
-                : "@max-[140px]/rail:[&_button:not(:last-child)]:hidden"
+                ? "bycoda-rail-visit-nav--settings @max-[140px]/rail:hidden"
+                : "bycoda-rail-visit-nav"
             }`}
           >
             <TabVisitNav
@@ -1048,7 +1036,7 @@ export function ProjectRail({
             : "[container:rail/size] overflow-y-auto overflow-x-hidden overscroll-none"
         }`}
       >
-        {IS_MAC && !navigator ? brand : null}
+        {navigator ? null : IS_MAC ? brand("column") : brand("column", true)}
         {settingsOpen && !navigator ? (
           <Button
             variant="ghost"

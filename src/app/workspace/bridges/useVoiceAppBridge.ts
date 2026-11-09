@@ -54,7 +54,10 @@ type Deps = {
   launch: (launch: QuickLaunch, id: string) => Promise<void>;
   appendEmpty: (session: Session) => void;
   onOpenRemote?: (projectPath: string, sessionId: string) => void;
-  onOpen?: (sessionId: string, options?: { workspaceRequestId?: string }) => void | Promise<void>;
+  onOpen?: (
+    sessionId: string,
+    options?: { workspaceRequestId?: string },
+  ) => void | Promise<unknown>;
 } & Pick<
   VoiceWorkspaceActionsDeps,
   | "onSelectProject"

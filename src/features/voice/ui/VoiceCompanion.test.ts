@@ -665,7 +665,7 @@ it("keeps the automatic runtime reachable if saving the owner turn choice fails"
     expect.objectContaining({ manualTurnEnd: true }),
   );
 });
-it("persists the exact owner correction as a rule and exposes real Finish turn without submitting work", async () => {
+it("persists the exact owner correction as a rule and waits longer without switching to manual turns", async () => {
   const { onSubmit } = await setup();
   const quote = "Sözümü kesme.";
   await speech(quote);
@@ -678,15 +678,11 @@ it("persists the exact owner correction as a rule and exposes real Finish turn w
       quote,
     }),
   );
-  expect(mock.speak).toHaveBeenCalledWith(
-    "Your rule was saved. Choose Finish turn when you are done speaking.",
-    false,
-  );
+  expect(mock.speak).toHaveBeenCalledWith("Your rule was saved.", false);
   expect(onSubmit).not.toHaveBeenCalled();
-  const finish = container.querySelector<HTMLButtonElement>('button[aria-label="Finish turn"]')!;
-  expect(finish).toBeDefined();
-  await act(async () => finish.click());
-  expect(mock.finishTurn).toHaveBeenCalledOnce();
+  const { loadVoiceSettings } = await import("../model/voiceSettings");
+  expect(loadVoiceSettings()).toMatchObject({ holdAnnouncements: true, turnEndSilence: 2 });
+  expect(loadVoiceSettings().manualTurnEnd).not.toBe(true);
 });
 it("routes an explicit emergency stop directly without handing it to a model or stopping a manual session", async () => {
   const { onSubmit, onStop } = await setup();
@@ -2235,19 +2231,19 @@ it("dismisses an outstanding voice choice on disconnect without authorizing an a
   await expect(answer!).resolves.toEqual({ kind: "skipped" });
   expect(onSubmit).not.toHaveBeenCalled();
 });
-it("starts proposed jobs directly when the owner has job review turned off", async () => {
+it("starts proposed jobs directly and tells the model which wait and why", async () => {
   assistantHost.snapshot.profile.confirmJobs = false;
+  Object.assign(assistantHost.snapshot, { jobHolds: new Proxy({}, { get: () => "report" }) });
   localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai" }));
   await setup();
   await act(async () => mock.realtime.captureTurn()());
+  const jobs = [{ title: "Direct title", request: "Owner request", projectPath: "/a" }];
   let receipt!: Promise<unknown>;
-  await act(async () => {
-    receipt = mock.realtime.tool("give_jobs", {
-      jobs: [{ title: "Direct title", request: "Owner request", projectPath: "/a" }],
-    });
+  await act(async () => void (receipt = mock.realtime.tool("give_jobs", { jobs })));
+  await expect(receipt).resolves.toMatchObject({
+    jobs: [{ started: false, holdReason: "report" }],
+    next: expect.stringContaining("report mode"),
   });
-  await expect(receipt).resolves.toMatchObject({ status: "accepted" });
-  expect(page.textContent).not.toContain("Review jobs before starting");
 });
 it("reviews and edits a job before an explicit Start creates it", async () => {
   localStorage.setItem("bycoda.voice", JSON.stringify({ mode: "openai" }));

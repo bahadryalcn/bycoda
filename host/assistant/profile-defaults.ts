@@ -1,6 +1,7 @@
 import type { AssistantProfile } from "../../src/shared/model/host-contracts/assistant";
 import { DEFAULT_WORKER_CONTEXT_SETTINGS } from "../../src/shared/model/assistantContext";
 import { DEFAULT_ASSISTANT_POLICY } from "../../src/shared/model/assistantPolicy";
+import type { AssistantRepository } from "./repository";
 
 /** Profile values used until the owner saves a profile. */
 export const assistantProfileDefaults: AssistantProfile = {
@@ -39,3 +40,17 @@ export const assistantProfileDefaults: AssistantProfile = {
   version: 0,
   updatedAt: 0,
 };
+
+/** The saved profile with defaults filled in for fields an older record lacks. */
+export async function readAssistantProfile(
+  repository: Pick<AssistantRepository, "get">,
+): Promise<AssistantProfile> {
+  const row = await repository.get<AssistantProfile>("profile", "profile");
+  if (!row) return { ...assistantProfileDefaults };
+  return Object.fromEntries(
+    Object.keys(assistantProfileDefaults).map((key) => [
+      key,
+      row[key as keyof AssistantProfile] ?? assistantProfileDefaults[key as keyof AssistantProfile],
+    ]),
+  ) as AssistantProfile;
+}

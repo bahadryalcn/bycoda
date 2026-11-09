@@ -23,7 +23,8 @@ messaging browser sign-in. Host and mobile have no part in this feature.
   `accountState.ts` is the pure state machine, `accountCache.ts` the expiring cache,
   `accountClient.ts`, `accountNative.ts`, `accountMock.ts`, `accountPrivacy.ts`, `anonymousStats.ts`,
   `notificationSettingsModel.ts`, `supportTicket.ts`, `announcementFeed.ts`, `feedback.ts`, `feedbackDialog.ts`), hooks in `hooks/`,
-  screen in `ui/AccountScreen.tsx` (tabs incl. `AccountSupport.tsx`; `FeedbackDialog.tsx`, opened by `openFeedbackDialog()`; `AccountNews.tsx` in Notifications).
+  screen in `ui/AccountScreen.tsx` (`FeedbackDialog.tsx`
+  via `openFeedbackDialog()`).
 - Public surface for other features: `src/features/account/index.ts`
   (`useAccountContext`, `isAnonymousStatsEnabled`, `AccountScreen`, `AnnouncementNotices`).
 - Contract: `packages/account-contracts` (read-only for this feature).
@@ -70,6 +71,8 @@ messaging browser sign-in. Host and mobile have no part in this feature.
   environment is `not_configured` and the app runs as a guest. Release builds ignore runtime
   endpoint overrides. Portal links come from `model/accountPortal.ts` and hide when unset.
   Variables: account guide and `.env.example`.
+- Export, deletion/undo and security activity run in the app; the portal keeps only password and
+  two-step. A stale view revalidates on focus and `online`.
 
 ## Focused checks
 

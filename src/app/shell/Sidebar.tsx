@@ -26,6 +26,7 @@ import {
   preloadSidebarSurfaces,
 } from "./sidebarSurfaces";
 import { RelativeSessionTime } from "./RelativeSessionTime";
+import { CompactRailLogo } from "./RailBrand";
 import { SessionDetailTimes } from "./SessionDetailTimes";
 import { useMinuteNow } from "../../shared/hooks/useMinuteNow";
 import { SIDE_BY_SIDE_LIMIT } from "../../features/workspace/model/workspaceTabGroups";
@@ -5004,23 +5005,6 @@ function CompactRailAction({
       </span>
       {marks}
     </Button>
-  );
-}
-
-/** The existing product mark at the start of the collapsed rail; not a control. */
-function CompactRailLogo() {
-  return (
-    <span
-      data-compact-rail-logo
-      className="grid size-(--ui-control-height-sm) shrink-0 place-items-center"
-    >
-      <img
-        src={PRODUCT_IDENTITY.smallLogoSrc}
-        alt={PRODUCT_IDENTITY.displayName}
-        draggable={false}
-        className="size-6 select-none object-contain"
-      />
-    </span>
   );
 }
 

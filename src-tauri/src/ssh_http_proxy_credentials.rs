@@ -237,7 +237,6 @@ impl HttpProxyGrant {
 }
 impl HttpProxyCredentials {
     #[cfg(test)]
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn approve(
         &self,
         owner: &str,
@@ -258,7 +257,6 @@ impl HttpProxyCredentials {
             lease,
         )
     }
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn approve_with_lease(
         &self,
         owner: &str,
@@ -286,7 +284,6 @@ impl HttpProxyCredentials {
         })
     }
     #[cfg(test)]
-    #[allow(clippy::too_many_arguments)]
     fn approve_at(
         &self,
         owner: &str,
@@ -309,7 +306,6 @@ impl HttpProxyCredentials {
             )
         })
     }
-    #[allow(clippy::too_many_arguments)]
     fn approve_at_lease(
         &self,
         owner: &str,
@@ -493,7 +489,6 @@ impl Drop for HttpProxyCredentials {
 }
 
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn ssh_http_proxy_credentials_approve(
     app: AppHandle,
     window: tauri::Window,

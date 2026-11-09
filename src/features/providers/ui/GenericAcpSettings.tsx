@@ -357,6 +357,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
           <AdvancedSettings
             key={`${formRevision}:${editing ? form.id : "new"}`}
             title={editing ? t("Edit agent") : t("Add agent")}
+            defaultOpen
             settingIds={["acp-advanced"]}
           >
             <form
@@ -427,6 +428,7 @@ function GenericAcpMachineSettings({ cwd, embedded }: { cwd: string; embedded: b
                 <AdvancedSettings
                   key={editing ? form.id : "new"}
                   title={t("ACP arguments, environment and model context")}
+                  defaultOpen
                   settingIds={["acp-advanced"]}
                 >
                   <div

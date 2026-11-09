@@ -1,0 +1,7 @@
+{
+  // Same as tsconfig.json in this folder, plus the Host test files it excludes.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "lib": ["ES2024", "DOM", "DOM.Iterable"] },
+  "include": ["./**/*.ts", "../src/vite-env.d.ts", "../src/mammoth-browser.d.ts"],
+  "exclude": []
+}

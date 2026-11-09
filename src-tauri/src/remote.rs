@@ -1315,7 +1315,6 @@ fn apply_edit(
 /// dropped) and its cached failure goes with it; the caller then reconnects
 /// through `remote_ssh_reconnect`, which can ask the user about a new host key.
 #[tauri::command(async)]
-#[allow(clippy::too_many_arguments)] // Keep the existing named IPC arguments compatible.
 pub fn remote_machine_update(
     app: AppHandle,
     state: State<'_, RemoteConnections>,
@@ -1477,7 +1476,6 @@ fn disconnect_saved_machine(
 /// stall true async commands such as `harness_write` and `harness_kill`.
 #[tauri::command]
 // Preserve the existing IPC/process-launch argument contract.
-#[allow(clippy::too_many_arguments)]
 pub async fn remote_request(
     app: AppHandle,
     window: tauri::Window,
@@ -1896,7 +1894,6 @@ pub async fn assistant_native_reconcile(
     .await
 }
 
-#[allow(clippy::too_many_arguments)]
 fn remote_request_blocking(
     app: &AppHandle,
     window: &tauri::Window,
@@ -2189,7 +2186,6 @@ pub fn host_connection_detach(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)]
 pub async fn host_connection_request(
     app: AppHandle,
     window: tauri::WebviewWindow,
@@ -2822,7 +2818,6 @@ pub(crate) fn conversation_machine_call(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn conversation_machine_call_pinned(
     app: &AppHandle,
     action: &str,

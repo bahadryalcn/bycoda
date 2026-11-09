@@ -4,6 +4,7 @@ import {
   matchesRosterFilter,
   workspaceCleanupDueAt,
   workspaceNeedsAttention,
+  workspaceRemovalAction,
   workspaceRosterFacts,
 } from "./workspacePresentation";
 
@@ -114,4 +115,40 @@ it("filters the roster by Active and Needs attention and keeps All open", () => 
   expect(matchesRosterFilter("active", blocked, none)).toBe(false);
   expect(matchesRosterFilter("attention", active, none)).toBe(false);
   expect(matchesRosterFilter("attention", blocked, none)).toBe(true);
+});
+
+it("retires a missing folder's record, closing a stale active record first", () => {
+  const missing = { missing: true };
+  expect(workspaceRemovalAction(workspace({ state: "active" }), missing, true)).toEqual({
+    label: "Remove record",
+    closeFirst: true,
+    disabledReason: undefined,
+  });
+  expect(workspaceRemovalAction(workspace({}), missing, true)).toMatchObject({
+    label: "Remove record",
+    closeFirst: false,
+  });
+});
+
+it("explains why removal is unavailable", () => {
+  const present = { missing: false };
+  expect(workspaceRemovalAction(workspace({ state: "active" }), present, true)).toMatchObject({
+    label: "Delete directory",
+    disabledReason: "Stop the session using this workspace first.",
+  });
+  expect(
+    workspaceRemovalAction(workspace({ directoryState: "removed" }), present, true).disabledReason,
+  ).toBe("This directory is already removed.");
+  expect(workspaceRemovalAction(workspace({}), present, false).disabledReason).toMatch(/Update/);
+  expect(workspaceRemovalAction(workspace({ directoryState: "blocked" }), present, true)).toEqual({
+    label: "Review blocked cleanup",
+    closeFirst: false,
+    disabledReason: undefined,
+  });
+});
+
+it("does not report a retired directory as a missing folder", () => {
+  const removed = workspace({ directoryState: "removed" });
+  expect(workspaceRosterFacts(removed, [removed.path]).missing).toBe(false);
+  expect(workspaceRosterFacts(workspace({}), ["/repo-worktrees/a"]).missing).toBe(true);
 });

@@ -14,11 +14,21 @@ const mocks = vi.hoisted(() => ({
   openExternal: vi.fn(async (_url: string) => undefined),
   deactivate: vi.fn(async (_reason?: string) => undefined),
   reactivate: vi.fn(async () => undefined),
+  scheduleDeletion: vi.fn(async (_reason?: string) => undefined),
+}));
+
+vi.mock("../hooks/useAccountData", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  useDeletion: () => ({
+    schedule: { isPending: false, mutateAsync: mocks.scheduleDeletion },
+    cancel: { isPending: false, mutateAsync: vi.fn() },
+  }),
 }));
 
 vi.mock("../../../platform/tauri/openExternal", () => ({ openExternal: mocks.openExternal }));
 vi.mock("../../today", () => ({ TodayView: () => null }));
 vi.mock("../hooks/useAccount", () => ({
+  useAccountState: () => mocks.state,
   useAccount: () => ({
     state: mocks.state,
     signIn: vi.fn(async () => undefined),
@@ -128,7 +138,7 @@ describe("account center", () => {
     await click(
       [...container.querySelectorAll('[role="tab"]')].find((t) => t.textContent === "Security"),
     );
-    await click(button("Manage security on the web"));
+    await click(button("Open account page"));
     expect(mocks.openExternal).toHaveBeenCalledWith("https://portal.example.test/security");
   });
 
@@ -140,10 +150,24 @@ describe("account center", () => {
         (t) => t.textContent === "Account status",
       ),
     );
-    await click(button(/Deactivate account/));
+    await click(button("Deactivate…"));
     expect(mocks.deactivate).not.toHaveBeenCalled();
     await click(button("Deactivate"));
     expect(mocks.deactivate).toHaveBeenCalledWith(undefined);
+  });
+
+  it("schedules deletion in the app only after a confirmation", async () => {
+    mocks.state = signedIn();
+    await render(AccountScreen);
+    await click(
+      [...container.querySelectorAll('[role="tab"]')].find(
+        (t) => t.textContent === "Account status",
+      ),
+    );
+    await click(button("Delete account…"));
+    expect(mocks.scheduleDeletion).not.toHaveBeenCalled();
+    await click(button("Delete account"));
+    expect(mocks.scheduleDeletion).toHaveBeenCalledWith(undefined);
   });
 
   it("limits a deactivated account to three tabs and offers reactivation", async () => {

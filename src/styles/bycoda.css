@@ -131,17 +131,95 @@
   font-weight: 500;
   letter-spacing: -0.025em;
 }
-/* The rail mark is a quiet 22px identity, aligned with the compact tool row. */
-.bycoda-rail-brand img {
-  width: 22px;
-  height: 22px;
+/* Mark plus outlined wordmark; both stay legible on screen shares at every rail width. */
+.bycoda-rail-lockup {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+.bycoda-rail-mark {
+  width: 24px;
+  height: 24px;
   flex: none;
   object-fit: contain;
 }
+/* The 280x56 artwork carries side padding; cover-cropping keeps only the lettering. */
+.bycoda-rail-wordmark {
+  width: 58px;
+  height: 14px;
+  flex: none;
+  object-fit: cover;
+}
+/* The 56px collapsed rail stacks a smaller mark over the wordmark inside its header row. */
+.bycoda-rail-lockup--stacked {
+  flex-direction: column;
+  gap: 2px;
+}
+.bycoda-rail-lockup--stacked .bycoda-rail-mark {
+  width: 20px;
+  height: 20px;
+}
+.bycoda-rail-lockup--stacked .bycoda-rail-wordmark {
+  width: 44px;
+  height: 11px;
+}
+/* Windows: the column copy only fills in what the title row drops at narrow widths. */
+@container rail (width >= 200px) {
+  .bycoda-rail-brand--narrow-only {
+    display: none;
+  }
+}
+@container rail (width >= 140px) {
+  .bycoda-rail-brand--narrow-only .bycoda-rail-lockup {
+    display: none;
+  }
+}
+/* Back and Forward yield to the lockup before Search does; the panel toggle always stays. */
+@container rail (width < 240px) {
+  .bycoda-rail-visit-nav button:not(:last-child) {
+    display: none;
+  }
+}
+/* Settings has no Search or panel toggle; its Back/Forward pair yields whole below 200px. */
+@container rail (width < 200px) {
+  .bycoda-rail-visit-nav--settings {
+    display: none;
+  }
+}
+/* The column row (macOS, Windows narrow fallback) fits lockup and Search from 140px. */
+.bycoda-rail-brand.bycoda-rail-brand--column {
+  gap: 6px;
+}
+@container rail (width < 200px) {
+  .bycoda-rail-brand--title .bycoda-rail-search-slot {
+    display: none;
+  }
+}
 @container rail (width < 140px) {
-  .bycoda-rail-brand {
-    gap: 8px;
-    padding-inline: 7px;
+  .bycoda-rail-brand--title {
+    display: none;
+  }
+  /* Icon-only rail: a centered stacked lockup above an icon-only Search. */
+  .bycoda-rail-brand--column {
+    flex-direction: column;
+    justify-content: center;
+    gap: 6px;
+    padding-inline: 4px;
+  }
+  .bycoda-rail-brand--column .bycoda-rail-lockup {
+    flex-direction: column;
+    gap: 3px;
+  }
+  .bycoda-rail-brand--column .bycoda-rail-search-slot {
+    width: 100%;
+    flex: none;
+  }
+}
+@container rail (width < 80px) {
+  .bycoda-rail-brand--column .bycoda-rail-wordmark {
+    width: 44px;
+    height: 11px;
   }
 }
 .bycoda-rail-brand button > svg {
@@ -520,17 +598,8 @@ html.theme-light .project-sigil {
   .bycoda-rail-brand {
     padding-block: 6px 4px;
   }
-  .bycoda-rail-brand img {
-    width: 24px;
-    height: 24px;
-  }
   .bycoda-project-ledger {
     padding-top: 4px;
-  }
-}
-@media (max-height: 560px) {
-  .bycoda-rail-brand img {
-    display: none;
   }
 }
 .bycoda-project-rail > [data-tauri-drag-region] {
@@ -542,10 +611,6 @@ html.theme-light .project-sigil {
   gap: 4px;
   padding-block: 0;
   padding-inline: 7px 0;
-}
-.bycoda-rail-brand--title img {
-  inline-size: 24px;
-  block-size: 24px;
 }
 .bycoda-rail-search-slot {
   container: rail-search / inline-size;
@@ -562,11 +627,6 @@ html.theme-light .project-sigil {
 }
 @container rail (width < 340px) {
   .bycoda-rail-brand--title [data-rail-search-shortcut] {
-    display: none;
-  }
-}
-@container rail (width < 220px) {
-  .bycoda-rail-brand--title img {
     display: none;
   }
 }

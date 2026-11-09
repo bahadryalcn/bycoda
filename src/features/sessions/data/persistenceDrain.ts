@@ -9,7 +9,7 @@
 export type PersistenceScope = readonly string[] | "profile";
 
 export class PersistenceDrainError extends Error {
-  readonly cause?: unknown;
+  override readonly cause?: unknown;
   constructor(
     readonly code:
       | "late-producer"

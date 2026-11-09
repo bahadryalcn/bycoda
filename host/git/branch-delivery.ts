@@ -193,7 +193,23 @@ export class HostBranchDeliveryService implements BranchDeliveryService {
       if ((await hostGitRepositoryKey(target)) !== workspace.repositoryId)
         throw new Error("Delivery target belongs to another repository");
       const sourceHead = (
-        await git(target, ["rev-parse", "--verify", `${workspace.branchRef}^{commit}`])
+        await git(target, ["rev-parse", "--verify", `${workspace.branchRef}^{commit}`]).catch(
+          async (error: unknown) => {
+            const exists = await git(target, [
+              "show-ref",
+              "--verify",
+              "--quiet",
+              workspace.branchRef,
+            ]).then(
+              () => true,
+              () => false,
+            );
+            if (exists) throw error;
+            throw new Error(
+              `Branch ${workspace.branchRef.replace(/^refs\/heads\//, "")} no longer exists, so there is nothing to review`,
+            );
+          },
+        )
       ).trim();
       const targetHead = (
         await git(target, ["rev-parse", "--verify", `${workspace.targetBranchRef}^{commit}`])

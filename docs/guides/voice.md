@@ -83,9 +83,11 @@ as “crew”, share the same feature vocabulary. A name such as “Kree” is n
 rewritten. This improves feature discovery; it does not bypass confirmations or
 guarantee microphone recognition of every pronunciation.
 
-Say “remember that I prefer short answers” or ask to forget a saved note. Explicit
-corrections such as “never mention bananas to me” save an owner rule with the exact
-accepted quote. Session, worker and tool text cannot create owner rules. Saves
+Say “remember that I prefer short answers” or ask to forget a saved note. A rule is saved only when
+you phrase it as a lasting instruction to the assistant, such as “from now on…”,
+“bundan sonra…”, “always answer in Turkish”, “asla küfür etme” or “never mention
+bananas to me”. The exact accepted quote is kept with the rule. Descriptions such as
+“this test always breaks” go to the assistant as normal speech. Session, worker and tool text cannot create owner rules. Saves
 and removals are acknowledged only after the Host confirms them; forgetting requires
 the exact saved entry and your confirmation. Disabled memory
 rejects new saves. Existing local notes and persona rules migrate once, retaining
@@ -93,10 +95,11 @@ the original keys as backup. Rules can apply everywhere, only to voice or only
 to coding sessions. A pending rule save keeps its original request and offers Retry;
 an uncertain save does not change speech settings before acknowledgement.
 
-A “don't interrupt me” rule acknowledged through voice enables **I decide when my
-turn ends** and holds spoken progress updates. Long pauses then keep listening;
-choose **Finish turn** to transcribe and send the captured turn. Silence and Smart
-Turn cannot finish it automatically. Long silent intervals are omitted from the
+A “don't interrupt me” rule saves like any other rule. It makes the assistant wait
+longer before answering, at least two seconds of silence, and holds spoken progress
+updates. It does not switch to Finish-turn mode. In that mode, long pauses keep
+listening and **Finish turn** transcribes and sends the captured turn; silence and
+Smart Turn cannot finish it automatically. Long silent intervals are omitted from the
 capture buffer. At its two-minute audio limit, capture waits for Finish turn and
 shows a notice rather than answering automatically. While voice is connected,
 the companion and floating window offer **Reply when I pause** and
@@ -106,7 +109,7 @@ tooltip; choose the turn mode from its options menu.
 The menu checks the current mode. Floating
 windows use a native menu so both choices remain reachable in the compact pill.
 The same choice remains available as **I decide when my turn ends**
-in Voice settings, independently of the saved rule.
+in Voice settings.
 Pause length, barge-in and progress announcements remain separate settings.
 
 In **Conversation style**, choose **Apply professional preset** to
@@ -178,16 +181,19 @@ Ask for assistant job status or to pause, resume or stop a specific job. Voice
 controls keep the captured project scope and current visible-project restrictions.
 Deleting a job or assistant notebook entry requires an exact target/version and a
 confirmation card; a changed target must be reviewed again. Owner conversation
-history is not deletable through these tools. An explicit “stop all assistant work”
-pauses assistant work immediately without closing voice or stopping unrelated manual
-conversations. Unknown operation outcomes remain visible instead of being replayed.
+history is not deletable through these tools. “Stop it” or “bunu durdur” stops the work of
+the bound session; a bare “stop” or “durdur” only silences speech. “Stop everything”,
+“her şeyi durdur” or “acil durdur” pauses all assistant work immediately without
+closing voice or stopping unrelated manual conversations. Unknown operation outcomes remain visible instead of being replayed.
 
 Clickable choice cards accept option labels, spoken numbers/ordinals and keyboard
 selection. Escape dismisses the card without disconnecting voice. Choices never
 replace application approval dialogs. Jobs start directly unless **Confirm jobs before
 starting** is on in assistant settings. Then multi-job requests show an editable
 review with a project per job; nothing is created until **Start jobs**. Accepted
-jobs keep running independently. After an uncertain result, retry checks existing
+jobs keep running independently. When a job waits instead of starting, the assistant
+says why: report mode, outside working hours, budget, paused, no worker model, or
+turned off. After an uncertain result, retry checks existing
 Host jobs and retains the original request keys.
 
 When returning after sleep, the assistant may read the Host's welcome-back
@@ -299,7 +305,7 @@ Speech is segmented locally. When the installation includes Smart Turn (setup
 downloads it, 32 MB), a pause of about 0.2 s asks a small local model whether the
 sentence sounds finished: if so, the turn ends and is transcribed right away; if
 you paused mid-sentence, voice keeps listening for up to 1.3 s. Without Smart Turn
-the turn ends after roughly 600 ms of silence. Recognition detects the spoken
+the turn ends after 1.2 seconds of silence. Recognition detects the spoken
 language independently of the interface language and knows common coding words
 (commit, branch, pull request, TypeScript…).
 
@@ -658,8 +664,12 @@ is a bounded long poll of committed project changes, without durable replay or a
 external PR event feed. Sign-in, credential changes, pairing, publication and
 destructive recovery remain in their existing owner workflows.
 
-Optional native computer use exposes `desktop.status`, `desktop.snapshot` and
-`desktop.act`. The owner configures the verified helper and app allowlist in
+Optional native computer use exposes status, snapshot, find, screenshot, window list,
+wait, launch, clipboard and act (`desktop.status`, `desktop.snapshot`, `desktop.find`,
+`desktop.screenshot`, `desktop.windows.list`, `desktop.wait`, `desktop.launch`,
+`desktop.clipboard` and `desktop.act`). Voice currently receives screenshots as data it
+cannot view; it reads app contents through snapshots and find. Physical input is
+available on Windows only. The owner configures the verified helper and app allowlist in
 **Computer use** settings. Observations and element refs belong to the captured
 conversation and expire after five minutes. App content remains untrusted data.
 When the owner is present, every input requires the native approval dialog for the

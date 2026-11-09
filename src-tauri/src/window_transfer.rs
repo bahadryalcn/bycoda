@@ -574,7 +574,6 @@ pub fn window_closed(app: &AppHandle, label: &str) {
 /// cannot resurrect a hint after release/cancel or a subsequent gesture.
 #[tauri::command]
 // Optional group identity extends the existing drag IPC without breaking callers.
-#[allow(clippy::too_many_arguments)]
 pub fn preview_window_tab_drag(
     window: WebviewWindow,
     state: State<'_, WindowTransferState>,
@@ -743,7 +742,6 @@ pub async fn try_relocate_workspace_window(
 /// screen pixels before comparing windows on monitors with different scaling.
 #[tauri::command]
 // Preserve the existing window-transfer IPC argument contract.
-#[allow(clippy::too_many_arguments)]
 pub async fn move_window_tabs(
     window: WebviewWindow,
     transfer: String,

@@ -198,6 +198,7 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
         .name("assistant-presence".into())
         .spawn(move || {
             let _ = refresh(&app);
+            let mut last_connect = Instant::now();
             let mut ticks = 0;
             while app.state::<State>().running.load(Ordering::Acquire) {
                 std::thread::sleep(Duration::from_millis(250));
@@ -214,21 +215,39 @@ pub(crate) fn init(app: &AppHandle) -> Result<(), String> {
                     if owned.core.view.pending {
                         continue;
                     }
-                    (owned.core.generation, owned.source.clone())
+                    (
+                        owned.core.generation,
+                        owned.source.clone().filter(|source| source.is_current()),
+                        owned.core.view.write_error,
+                    )
                 };
-                if let Some(source) = current.1 {
-                    let result = read(&source);
-                    if let Ok(mut owned) = app.state::<State>().owned.lock() {
-                        owned.core.finish(current.0, result, false);
+                match current.1 {
+                    Some(source) => {
+                        let result = read(&source);
+                        if let Ok(mut owned) = app.state::<State>().owned.lock() {
+                            owned.core.finish(current.0, result, false);
+                        }
+                        publish(&app);
                     }
-                    publish(&app);
+                    // The Host was not up at start or restarted (every local update does):
+                    // reconnect so the mark does not stay Unknown until a menu opens. The new
+                    // source gets a new token, so a menu opened earlier cannot write to it.
+                    None if heartbeat_reconnects(current.2, last_connect.elapsed()) => {
+                        last_connect = Instant::now();
+                        let _ = refresh(&app);
+                    }
+                    None => {}
                 }
-                // An absent/changed source is refreshed only by an explicit owner
-                // action, never by a failed write or a heartbeat on a new target.
             }
         })
         .map_err(|error| error.to_string())?;
     Ok(())
+}
+const RECONNECT_EVERY: Duration = Duration::from_secs(15);
+/// The heartbeat reconnects a missing or replaced source, at most every 15 s, and never over an
+/// unconfirmed write: that one waits for the owner's explicit retry.
+fn heartbeat_reconnects(write_error: bool, since_last: Duration) -> bool {
+    !write_error && since_last >= RECONNECT_EVERY
 }
 pub(crate) fn shutdown(app: &AppHandle) {
     if let Some(state) = app.try_state::<State>() {
@@ -403,6 +422,12 @@ mod tests {
             true,
         );
         assert_eq!(core.view.status.unwrap().state, Presence::Away);
+    }
+    #[test]
+    fn heartbeat_reconnects_lost_source_but_not_over_unconfirmed_write() {
+        assert!(heartbeat_reconnects(false, RECONNECT_EVERY));
+        assert!(!heartbeat_reconnects(false, Duration::from_secs(5)));
+        assert!(!heartbeat_reconnects(true, Duration::from_secs(60)));
     }
     #[test]
     fn strict_status_and_finite_choices() {

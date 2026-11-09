@@ -28,7 +28,13 @@ export function AssistantNotifications() {
       request: assistantRequest,
       lead: isLeadWindow,
       current: async (id) => {
-        const state = (await assistantRequest({ op: "snapshot", limit: 100 })).snapshot;
+        const state = (
+          await assistantRequest({
+            op: "snapshot",
+            limit: 100,
+            features: ["jobHolds", "jobStalled"],
+          })
+        ).snapshot;
         return state?.profile.enabled && state.profile.setupComplete
           ? state.notifications?.find((notification) => notification.id === id)
           : undefined;
@@ -43,7 +49,9 @@ export function AssistantNotifications() {
           title: notification.title,
           body: notification.body,
           kind:
-            notification.kind === "job.waiting" || notification.kind === "task.needsInput"
+            notification.kind === "job.waiting" ||
+            notification.kind === "job.stalled" ||
+            notification.kind === "task.needsInput"
               ? "input"
               : notification.kind === "job.failed" || notification.kind === "budget.exhausted"
                 ? "failed"

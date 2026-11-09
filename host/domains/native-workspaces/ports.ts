@@ -69,6 +69,11 @@ export interface NativeWorkspacesPorts {
   managed: {
     exactGitRewind: { enabled(): Promise<boolean> };
     assertWritable(workspaceId: string): Promise<void>;
+    /** Settles (apply) or detects a creation blocked before Git ran; null when not applicable. */
+    abandonUnmaterializedCreate(
+      workspaceId: string,
+      apply: boolean,
+    ): Promise<{ id: string; revision: number; branchRef: string } | null>;
     removal: {
       plan: Operation<"workspaces.cleanup.plan">;
       status: Operation<"workspaces.cleanup.status">;

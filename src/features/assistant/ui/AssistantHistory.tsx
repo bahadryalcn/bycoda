@@ -23,6 +23,7 @@ const labels: Record<string, string> = {
   "profile.updated": "Settings updated",
   "task.started": "Task started",
   "job.waiting": "Waiting for you",
+  "job.stalled": "Stalled",
   "job.problem": "Job problem",
 };
 /** Problems keep the danger tone; every other kind stays neutral. */

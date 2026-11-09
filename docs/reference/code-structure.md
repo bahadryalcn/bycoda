@@ -56,7 +56,11 @@ one-line registration at most.
 
 Files already over budget are listed in the baseline with their current line count and
 may not grow. Touching one of them means either keeping its length flat or moving the
-part you touch into the owning feature folder. Other review triggers that are not gated:
+part you touch into the owning feature folder. One exception keeps small fixes small: a
+baselined file whose recorded line count is at most 1.25 times its limit may exceed that
+count by up to 10 lines. The allowance is not renewed by `--ratchet`; files further over
+budget, and files not in the baseline, keep the hard limit. Other review triggers that are
+not gated:
 a component with more than fifteen `useState` calls, more than one exported component
 per `ui/` file, a `model/` file importing React, inline Rust test modules over 500 lines.
 
@@ -94,13 +98,13 @@ Cross-feature imports may use feature root paths or exact `public/<contract>.ts`
 
 ## Commands
 
-| Command                                     | Effect                                                                      |
-| ------------------------------------------- | --------------------------------------------------------------------------- |
-| `pnpm check:structure`                      | Gate against the baseline (part of `check:web` and CI)                      |
-| `pnpm check:structure -- --report`          | Totals per rule and owner, the 25 largest over-budget files                 |
-| `pnpm check:structure -- --files a.ts b.rs` | Only the given files (what `check-local` runs for changed files)            |
-| `pnpm check:structure -- --ratchet`         | Lower baseline buckets after a cleanup; never raises                        |
-| `pnpm check:structure -- --update-baseline` | Rewrite the baseline. Only for an owner-approved exception; review the diff |
+| Command                                     | Effect                                                                                                                                                    |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm check:structure`                      | Gate against the baseline (part of `check:web` and CI)                                                                                                    |
+| `pnpm check:structure -- --report`          | Totals per rule and owner, the 25 largest over-budget files                                                                                               |
+| `pnpm check:structure -- --files a.ts b.rs` | Only the given files (what `check-local` runs for changed files)                                                                                          |
+| `pnpm check:structure -- --ratchet`         | Lower baseline buckets after a cleanup; never raises                                                                                                      |
+| `pnpm check:structure -- --update-baseline` | Rewrite the baseline. Only for an owner-approved exception or a new rule; review the diff and record any rise in `scripts/checks/baseline-approvals.json` |
 
 A baseline count that goes up is a review finding, not an accepted exception. Rules
 and gating decisions change here first, then in the check; a new gated rule needs

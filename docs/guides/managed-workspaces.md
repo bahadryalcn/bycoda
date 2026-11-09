@@ -167,8 +167,16 @@ pauses; it does not discard dirty work or unmerged branches. If storage cannot b
 measured, new worktrees also pause until a refresh succeeds.
 
 A managed folder deleted outside bycoda counts as 0 bytes and is listed as
-**Missing folder** in **Settings → Source control**. Its **Delete directory**
-action prunes only the stale Git registration; the branch and conversation stay.
+**Missing folder** in **Settings → Source control**. Its **Remove record** action
+prunes only the stale Git registration; the branch and conversation stay. A
+record still marked active whose folder is gone is closed first, after you
+confirm. A workspace whose creation was paused before Git ran (no folder, branch
+or registration) is retired the same way instead of retrying on every Host start.
+
+Each worktree row shows its actions inline: Review changes, Reveal folder, Pin,
+Delete and Details. After you confirm a deletion the dialog closes, the row shows
+**Removing directory…** and a notification reports the result, so other work
+continues meanwhile; large folders on Windows can take minutes.
 
 **Pin workspaces** in the project policy protects every managed directory of that
 project from automatic cleanup, not only ones created after the change.

@@ -570,7 +570,6 @@ pub async fn ssh_sftp_download(
 }
 
 #[tauri::command]
-#[allow(clippy::too_many_arguments)] // Preserve the reviewed IPC transfer contract.
 pub async fn ssh_sftp_upload(
     app: tauri::AppHandle,
     window: tauri::Window,
