@@ -81,7 +81,9 @@ test("hidden shortcut parents, single letters and already-visible keycaps keep d
 }) => {
   await hint(page, page.getByTestId("hidden-shortcut"), /Ctrl.*H/);
   await expect(page.getByRole("tooltip").getByRole("img", { name: "Control H" })).toBeVisible();
-  await hint(page, page.getByTestId("single-letter-shortcut"), "Sessions");
+  // The visible label is not repeated; the hint adds only the single-letter key cap.
+  await hint(page, page.getByTestId("single-letter-shortcut"), "S");
+  await expect(page.getByRole("tooltip")).not.toContainText("Sessions");
   await expect(
     page.getByRole("tooltip").getByRole("img", { name: "S", exact: true }),
   ).toBeVisible();
