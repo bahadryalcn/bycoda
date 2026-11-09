@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setDiagnosticsMode } from "./diagnosticsConsent";
 import { createDiagnosticsScheduler } from "./diagnosticsScheduler";
@@ -16,6 +17,8 @@ beforeEach(() => {
   localStorage.clear();
   now = new Date("2026-11-09T12:00:00Z");
   vi.stubGlobal("navigator", {}); // -- no Web Locks: the work runs directly and deterministically.
+  // Real gzip streams finish outside fake time; the synchronous native fallback keeps sends deterministic.
+  vi.stubGlobal("CompressionStream", undefined);
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -23,8 +26,10 @@ afterEach(() => {
 });
 
 type Kit = ReturnType<typeof makeDeps>;
+const gzipBase64 = async (text: string) => gzipSync(text).toString("base64");
 const start = (kit: Kit) => {
-  const scheduler = createDiagnosticsScheduler({ ...kit.deps, now: () => now });
+  const native = { ...kit.deps.native, gzipBase64 };
+  const scheduler = createDiagnosticsScheduler({ ...kit.deps, native, now: () => now });
   return { scheduler, stop: scheduler.start() };
 };
 const triggers = (kit: Kit, trigger: string) =>
