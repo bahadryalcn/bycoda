@@ -41,6 +41,11 @@ export function safeRelative(file) {
   );
   return file;
 }
+// Runtime payload copied verbatim (for example npm's bundled `.npmrc` or `py.typed`) may be
+// empty; named release artifacts never are.
+const EMPTY_PAYLOAD_ROLES = new Set(["hostPayload", "appPayload"]);
+const minimumBytes = (role) => (EMPTY_PAYLOAD_ROLES.has(role) ? 0 : 1);
+
 export function packageFile(root, file, role = "payload") {
   safeRelative(file);
   const absolute = path.resolve(root, file);
@@ -49,7 +54,7 @@ export function packageFile(root, file, role = "payload") {
   assert(!relative.startsWith("..") && !path.isAbsolute(relative), "Artifact escapes its root");
   const stat = lstatSync(absolute);
   assert(
-    stat.isFile() && stat.size > 0 && stat.size <= 512 * 1024 * 1024,
+    stat.isFile() && stat.size >= minimumBytes(role) && stat.size <= 512 * 1024 * 1024,
     "Artifact must be a bounded regular file",
   );
   return { path: file, sha256: digest(readFileSync(absolute)), bytes: stat.size, role };
@@ -350,7 +355,7 @@ export function validatePackageManifest(manifest, root, { requireSmoke = false }
     assert(
       sha256.test(file.sha256) &&
         Number.isSafeInteger(file.bytes) &&
-        file.bytes > 0 &&
+        file.bytes >= minimumBytes(file.role) &&
         file.bytes <= 512 * 1024 * 1024,
       "Invalid package file metadata",
     );

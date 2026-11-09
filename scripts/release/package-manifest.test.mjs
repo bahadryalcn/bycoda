@@ -19,6 +19,7 @@ import {
   smokeChecks,
   safeRelative,
   digest,
+  packageFile,
 } from "./package-manifest.mjs";
 const sha = "a".repeat(40);
 function fixture(t, channel = "stable", { external = false, beforeCreate } = {}) {
@@ -307,4 +308,14 @@ test("hosted defaults ignore ambient Cargo targets and explicit targets cannot r
       createPackageManifest({ ...input, platform: "macos-arm64", cargoTargetDir: current.root }),
     /Windows-only/,
   );
+});
+
+test("runtime payload may hold empty files while named artifacts may not", (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), "bycoda-package-empty-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(path.join(root, ".npmrc"), "");
+  assert.equal(packageFile(root, ".npmrc", "hostPayload").bytes, 0);
+  assert.equal(packageFile(root, ".npmrc", "appPayload").bytes, 0);
+  assert.throws(() => packageFile(root, ".npmrc", "installer"), /bounded regular file/);
+  assert.throws(() => packageFile(root, ".npmrc"), /bounded regular file/);
 });
