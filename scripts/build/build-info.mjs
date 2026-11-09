@@ -180,11 +180,19 @@ export async function sourceIdentity(sourceRoot, { signal } = {}) {
 export async function captureBuildIdentity(request) {
   const before = await sourceIdentity(request.sourceRoot);
   const names = await sourceFiles(request.sourceRoot);
-  const frozen = new Map(
-    await Promise.all(
-      [...names.keys()].map(async (name) => [name, await readFile(join(request.frozenRoot, name))]),
-    ),
-  );
+  // Bound open handles like sourceFiles: thousands of parallel reads hit EMFILE on Windows.
+  const frozenNames = [...names.keys()];
+  const frozenBytes = [];
+  for (let offset = 0; offset < frozenNames.length; offset += 48) {
+    frozenBytes.push(
+      ...(await Promise.all(
+        frozenNames
+          .slice(offset, offset + 48)
+          .map((name) => readFile(join(request.frozenRoot, name))),
+      )),
+    );
+  }
+  const frozen = new Map(frozenNames.map((name, index) => [name, frozenBytes[index]]));
   const after = await sourceIdentity(request.sourceRoot);
   if (
     JSON.stringify(before) !== JSON.stringify(after) ||
