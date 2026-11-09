@@ -16,7 +16,10 @@ const schedule = {
   maxProposals: { type: "integer", minimum: 1, maximum: 10 },
   maxOpen: { type: "integer", minimum: 1, maximum: 30 },
 };
-const target = { stewardId: text, expectedUpdatedAt: { type: "integer", minimum: 0 } };
+const target = {
+  stewardId: text,
+  expectedUpdatedAt: { type: "integer", minimum: 0 },
+};
 const object = (properties: Record<string, unknown>, required: string[]) => ({
   type: "object",
   properties,
@@ -26,7 +29,11 @@ const object = (properties: Record<string, unknown>, required: string[]) => ({
 export const STEWARD_CONVERSATION_TOOLS = {
   "stewards.delete": object(target, ["stewardId", "expectedUpdatedAt"]),
   "stewards.decline": object(
-    { ...target, taskId: text, expectedTaskUpdatedAt: { type: "integer", minimum: 0 } },
+    {
+      ...target,
+      taskId: text,
+      expectedTaskUpdatedAt: { type: "integer", minimum: 0 },
+    },
     ["stewardId", "expectedUpdatedAt", "taskId", "expectedTaskUpdatedAt"],
   ),
   "stewards.create": object({ stewardId: text, ...schedule, enabled: { type: "boolean" } }, [
@@ -160,7 +167,11 @@ export class ConversationStewardTools {
       throw new Error("This steward's execution settings require owner management.");
     if (action === "stewards.runNow") {
       if (existing.run)
-        return { requested: false, reason: "already-running", run: runReceipt(existing.run) };
+        return {
+          requested: false,
+          reason: "already-running",
+          run: runReceipt(existing.run),
+        };
       const result = await this.stewards.runNow(id);
       if (!(await authorized()))
         throw new Error("Session authority revoked. Read steward state before retrying.");

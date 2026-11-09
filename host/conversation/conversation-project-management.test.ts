@@ -12,7 +12,11 @@ async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "bycoda-voice-git-"));
   roots.push(root);
   const git = (...args: string[]) =>
-    execFileAsync("git", args, { cwd: root, windowsHide: true, timeout: 10_000 });
+    execFileAsync("git", args, {
+      cwd: root,
+      windowsHide: true,
+      timeout: 10_000,
+    });
   await git("init", "-b", "main");
   await writeFile(join(root, "owned.txt"), "original");
   await writeFile(join(root, "other.txt"), "original");
@@ -75,6 +79,8 @@ it("rejects a deleted directory prefix while allowing an exact deleted tracked f
     runConversationGitAction(f.root, "git.stash", { paths: ["deleted"] }),
   ).rejects.toThrow("explicit regular files");
   expect((await f.git("stash", "list")).stdout).toBe("");
-  await runConversationGitAction(f.root, "git.stash", { paths: ["deleted/owned.txt"] });
+  await runConversationGitAction(f.root, "git.stash", {
+    paths: ["deleted/owned.txt"],
+  });
   expect(await readFile(file, "utf8")).toBe("nested original");
 });

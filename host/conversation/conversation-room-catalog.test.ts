@@ -51,7 +51,9 @@ describe("Room and coding-session tool catalogs", () => {
       throw new Error("must not reach network");
     };
     expect(() =>
-      validateSessionConversationTool("workspace.projects.select", { requestId: "x" }),
+      validateSessionConversationTool("workspace.projects.select", {
+        requestId: "x",
+      }),
     ).toThrow("Room source");
     expect(() =>
       validateConversationTool("workspace.projects.select", { requestId: "x" }),
@@ -67,10 +69,16 @@ describe("Room and coding-session tool catalogs", () => {
   });
   it("preserves the established Session dev-server log bound", () => {
     expect(() =>
-      validateSessionConversationTool("devServers.logs", { id: "server", maxBytes: 100000 }),
+      validateSessionConversationTool("devServers.logs", {
+        id: "server",
+        maxBytes: 100000,
+      }),
     ).not.toThrow();
     expect(() =>
-      validateSessionConversationTool("devServers.logs", { id: "server", maxBytes: 100001 }),
+      validateSessionConversationTool("devServers.logs", {
+        id: "server",
+        maxBytes: 100001,
+      }),
     ).toThrow();
   });
 });

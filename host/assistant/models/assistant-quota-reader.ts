@@ -15,15 +15,21 @@ type Sample = { sampledAt: number; report: UsageLimitsReport };
 const normalize = (value: string) => value.trim().toLowerCase().replace(/\s+/g, "-");
 const BOUNDARY = /[-_.:/@ ]/;
 
-/** Conservative model match: equal, or one id extends the other at a delimiter
- * ("sonnet" ~ "sonnet-4-5", never "gpt-5" ~ "gpt-50"). */
+/** Conservative model match: equal, one id extends the other at a delimiter
+ * ("sonnet" ~ "sonnet-4-5", never "gpt-5" ~ "gpt-50"), or a family card name appears as whole
+ * delimited words inside the row id (Claude reports `seven_day_opus` as "Opus", which must
+ * match "claude-opus-5-5" but never "claude-opusx"). */
 export function quotaModelMatches(cardModel: string, rowModel: string): boolean {
   const a = normalize(cardModel);
   const b = normalize(rowModel);
   if (!a || !b) return false;
   if (a === b) return true;
   const [short, long] = a.length < b.length ? [a, b] : [b, a];
-  return long.startsWith(short) && BOUNDARY.test(long.charAt(short.length));
+  if (long.startsWith(short) && BOUNDARY.test(long.charAt(short.length))) return true;
+  const words = (value: string) => value.split(BOUNDARY).filter(Boolean);
+  const family = words(a);
+  const id = words(b);
+  return id.some((_, start) => family.every((word, offset) => id[start + offset] === word));
 }
 
 export type AssistantQuotaReaderDeps = {

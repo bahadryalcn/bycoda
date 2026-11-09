@@ -6,6 +6,10 @@ import {
   RoomAttestationSigner,
   roomAttestationKeyPath,
 } from "../assistant/room/assistant-room-attestation";
+import { createAssistantModelSelector } from "../assistant/models/assistant-model-execution";
+import { setAssistantModelPoolPorts } from "../assistant/models/assistant-model-pool";
+import { AssistantQuotaReader } from "../assistant/models/assistant-quota-reader";
+import { AssistantRepository } from "../assistant/repository";
 import { HostAssistant } from "../assistant/service";
 import { HostAssistantManualSessions } from "../assistant/sessions/assistant-manual-sessions";
 import { assistantSessionRuntime } from "../assistant/sessions/assistant-session-runtime";
@@ -13,13 +17,23 @@ import { HostDesktopHelper } from "../desktop-helper";
 import { HostDesktopControl } from "../desktop/desktop-control-host";
 import { readDesktopPresence } from "../desktop/desktop-presence";
 import { projectDisplayNames } from "../projects/project-display-names";
+import { readUsageLimits } from "../usage/limits-report";
 import type { ServerBindings } from "./bindings";
+import { hostUsageLimitsDeps } from "./usage-limits-deps";
 export async function createAssistantRuntime(
   dependencies: Pick<
     ServerBindings,
-    "engine" | "goals" | "tasks" | "hostNotes" | "automations" | "desktop"
+    | "engine"
+    | "goals"
+    | "tasks"
+    | "hostNotes"
+    | "automations"
+    | "desktop"
+    | "models"
   >,
-  publish: (runtime: Awaited<ReturnType<typeof createAssistantRuntime>>) => void,
+  publish: (
+    runtime: Awaited<ReturnType<typeof createAssistantRuntime>>,
+  ) => void,
 ) {
   publish({
     get assistantPorts() {
@@ -57,12 +71,25 @@ export async function createAssistantRuntime(
     },
   });
 
+  // One quota reader per Host: selection never blocks on provider reads.
+  const quota = new AssistantQuotaReader({
+    readLimits: () =>
+      readUsageLimits(
+        hostUsageLimitsDeps(dependencies.engine.store.environmentId),
+      ),
+  });
+  // The catalog cache is created after the assistant, so it is read lazily at validation time.
+  setAssistantModelPoolPorts({ catalog: () => dependencies.models() });
   const assistantPorts = assistantExecutionPorts(
     dependencies.engine.store,
     dependencies.goals,
     dependencies.tasks,
     () => dependencies.hostNotes,
     () => dependencies.automations,
+    createAssistantModelSelector({
+      repository: new AssistantRepository(dependencies.engine.store),
+      quota,
+    }),
   );
   const namedProjects = async () => {
     const registered = await dependencies.engine.store.projects();
@@ -81,16 +108,21 @@ export async function createAssistantRuntime(
       name: project.name,
     }));
   const assistantKeepAwake = new HostAssistantKeepAwake();
-  assistantPorts.keepAwake = (enabled) => assistantKeepAwake.setEnabled(enabled);
+  assistantPorts.keepAwake = (enabled) =>
+    assistantKeepAwake.setEnabled(enabled);
   assistantPorts.readPresence = readDesktopPresence;
-  const assistant = new HostAssistant(dependencies.engine.store, assistantPorts);
+  const assistant = new HostAssistant(
+    dependencies.engine.store,
+    assistantPorts,
+  );
   const roomAttestationSigner = new RoomAttestationSigner(
     roomAttestationKeyPath(dirname(dependencies.engine.store.attachmentDir)),
     dependencies.engine.store.environmentId,
     (id) => assistant.threadBinding(id),
   );
   await assistant.ready;
-  dependencies.tasks.assistantGoalAdmission = (goalId) => assistant.autonomousJobAllowed(goalId);
+  dependencies.tasks.assistantGoalAdmission = (goalId) =>
+    assistant.autonomousJobAllowed(goalId);
   const previousProviderSchedule = dependencies.engine.beforeProviderTurn;
   dependencies.engine.beforeProviderTurn = async (input) => {
     await previousProviderSchedule?.(input);
@@ -98,7 +130,9 @@ export async function createAssistantRuntime(
     const authorId = input.author.id;
     const task = await dependencies.tasks.get(authorId);
     const goalId =
-      task?.goalId ?? (await dependencies.goals.list()).find((goal) => goal.id === authorId)?.id;
+      task?.goalId ??
+      (await dependencies.goals.list()).find((goal) => goal.id === authorId)
+        ?.id;
     if (goalId && !(await assistant.autonomousJobAllowed(goalId)))
       throw new AssistantTurnPolicyDeferredError();
   };
@@ -107,13 +141,19 @@ export async function createAssistantRuntime(
       await dependencies.engine.store.projects(),
       dependencies.engine.store.environmentId,
     );
-    return directory.privacyReady && directory.projects.some((project) => project.id === id);
+    return (
+      directory.privacyReady &&
+      directory.projects.some((project) => project.id === id)
+    );
   };
-  const manualAssistantSessions = new HostAssistantManualSessions(dependencies.engine.store, {
-    enabled: () => assistant.manualSupervisionAllowed(),
-    name: () => assistant.identityName(),
-    visibleProject: (id) => assistant.manualProjectAllowed(id),
-  });
+  const manualAssistantSessions = new HostAssistantManualSessions(
+    dependencies.engine.store,
+    {
+      enabled: () => assistant.manualSupervisionAllowed(),
+      name: () => assistant.identityName(),
+      visibleProject: (id) => assistant.manualProjectAllowed(id),
+    },
+  );
   await manualAssistantSessions.ready;
   assistantPorts.manual = manualAssistantSessions;
   const managedAssistantSessions = assistantSessionRuntime(
@@ -130,13 +170,19 @@ export async function createAssistantRuntime(
       input.sessionId,
       input.expectedVersion,
     );
-    await dependencies.engine.store.markAssistantManagedSession(input.sessionId, input.jobId);
+    await dependencies.engine.store.markAssistantManagedSession(
+      input.sessionId,
+      input.jobId,
+    );
     return result;
   };
   assistantPorts.manageSession = async (input) => {
     const result = await managedAssistantSessions.request(
       { op: "nudge", ...input },
-      { kind: "chief", id: `assistant-chief:${dependencies.engine.store.environmentId}` },
+      {
+        kind: "chief",
+        id: `assistant-chief:${dependencies.engine.store.environmentId}`,
+      },
     );
     if (result.recovery) return result.recovery;
     if (result.operation?.delivery !== "delivered")
@@ -147,7 +193,10 @@ export async function createAssistantRuntime(
   assistantPorts.manageManualSession = async (input) => {
     const result = await managedAssistantSessions.request(
       { op: "nudge", ...input },
-      { kind: "chief", id: `assistant-chief:${dependencies.engine.store.environmentId}` },
+      {
+        kind: "chief",
+        id: `assistant-chief:${dependencies.engine.store.environmentId}`,
+      },
     );
     if (result.operation?.delivery !== "delivered")
       throw new Error(
@@ -157,7 +206,10 @@ export async function createAssistantRuntime(
   assistantPorts.answerSession = async (input) => {
     const result = await managedAssistantSessions.request(
       { op: "answer", ...input },
-      { kind: "chief", id: `assistant-chief:${dependencies.engine.store.environmentId}` },
+      {
+        kind: "chief",
+        id: `assistant-chief:${dependencies.engine.store.environmentId}`,
+      },
     );
     if (result.operation?.delivery !== "submitted")
       throw new Error(
@@ -181,7 +233,10 @@ export async function createAssistantRuntime(
   });
   const previousOwnerInstructions = dependencies.engine.ownerInstructions;
   dependencies.engine.ownerInstructions = async () =>
-    [await previousOwnerInstructions?.(), await assistant.instructions("sessions")]
+    [
+      await previousOwnerInstructions?.(),
+      await assistant.instructions("sessions"),
+    ]
       .filter(Boolean)
       .join("\n");
   return {

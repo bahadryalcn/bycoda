@@ -19,17 +19,33 @@ function setup() {
     ownerProject: vi.fn(async () => "project"),
     workspace: vi.fn(async () => workspace),
     assertWritable: vi.fn(async () => {}),
-    registry: { prepare: vi.fn(async () => ({ workspace, operationId: "create" })) },
+    registry: {
+      prepare: vi.fn(async () => ({ workspace, operationId: "create" })),
+    },
     featureClaims: {
-      acquire: vi.fn(async () => ({ acquired: false, conflicts: [{ id: "other" }] })),
+      acquire: vi.fn(async () => ({
+        acquired: false,
+        conflicts: [{ id: "other" }],
+      })),
       release: vi.fn(async () => ({ released: true })),
     },
     removal: {
-      plan: vi.fn(async () => ({ blockers: ["Unknown activity"], token: "review", links: [] })),
-      status: vi.fn(async () => ({ workspace, operations: [] as WorkspaceOperation[] })),
+      plan: vi.fn(async () => ({
+        blockers: ["Unknown activity"],
+        token: "review",
+        links: [],
+      })),
+      status: vi.fn(async () => ({
+        workspace,
+        operations: [] as WorkspaceOperation[],
+      })),
     },
     delivery: {
-      review: vi.fn(async () => ({ token: "review", blockers: [], changedPaths: [] as string[] })),
+      review: vi.fn(async () => ({
+        token: "review",
+        blockers: [],
+        changedPaths: [] as string[],
+      })),
     },
     reviewTaskDelivery: vi.fn(async () => ({
       token: "task-review",
@@ -137,7 +153,10 @@ it("retains claim conflicts and exact revision/request identity", async () => {
 it("returns cleanup blockers without running an apply operation", async () => {
   const { ports, call } = setup();
   await expect(
-    call("workspaces.cleanup.plan", { workspaceId: "work", expectedRevision: 3 }),
+    call("workspaces.cleanup.plan", {
+      workspaceId: "work",
+      expectedRevision: 3,
+    }),
   ).resolves.toMatchObject({ blockers: ["Unknown activity"], token: "review" });
   expect(ports.assertWritable).toHaveBeenCalledWith("work");
   expect(Object.keys(WORKSPACE_MANAGEMENT_TOOLS)).not.toContain("workspaces.cleanup.apply");
@@ -195,6 +214,9 @@ it("marks bounded delivery detail as incomplete", async () => {
     expectedRevision: 3,
     action: "merge",
   });
-  expect(result).toMatchObject({ truncated: true, truncatedFields: { changedPaths: 150 } });
+  expect(result).toMatchObject({
+    truncated: true,
+    truncatedFields: { changedPaths: 150 },
+  });
   expect((result as { changedPaths: unknown[] }).changedPaths).toHaveLength(100);
 });

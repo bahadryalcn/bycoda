@@ -1,6 +1,7 @@
 import { ConversationManagementTools, type ManagementPorts } from "./conversation-management-tools";
 import type { HostCrews } from "../crews/crews";
 import type { AssistantThreadPrincipal } from "../sessions/session-authority";
+import { assertPoolModel, type ModelPoolSource } from "./conversation-model-pool-guard";
 
 export const THREAD_CREW_READS = new Set([
   "crews.list",
@@ -41,6 +42,7 @@ export class ConversationThreadCrewTools {
   constructor(
     private readonly crews: HostCrews,
     ports: Ports,
+    private readonly pool: ModelPoolSource,
   ) {
     this.management = new ConversationManagementTools<string, AssistantThreadPrincipal>(
       {
@@ -59,6 +61,20 @@ export class ConversationThreadCrewTools {
       },
       new Set(),
     );
+  }
+  /** Candidate models written by the voice/Room model must be rows of the owner's model pool. */
+  private async assertCandidatesInPool(action: string, input: Record<string, unknown>) {
+    const value = JSON.parse(
+      String(input[action === "crews.save" ? "definitionJson" : "agentJson"]),
+    ) as { agents?: { candidates?: unknown[] }[]; candidates?: unknown[] };
+    const candidates = (
+      action === "crews.save"
+        ? (value.agents ?? []).flatMap((agent) => agent.candidates ?? [])
+        : (value.candidates ?? [])
+    ) as { harness?: unknown; model?: unknown }[];
+    if (!candidates.length) return;
+    const pool = await this.pool();
+    for (const candidate of candidates) assertPoolModel(candidate, pool);
   }
   async call(
     action: string,
@@ -95,6 +111,8 @@ export class ConversationThreadCrewTools {
       !/^[a-f0-9]{64}$/.test(input.expectedRevision)
     )
       throw new Error("Read the Crew state and retain its expectedRevision before a change.");
+    if (action === "crews.save" || action === "crews.agent.save")
+      await this.assertCandidatesInPool(action, input);
     return this.management.call(
       action,
       {

@@ -68,13 +68,27 @@ it("pages redacted text and refuses traversal and binary reads", async () => {
 it("creates without overwriting and saves only the version read by the caller", async () => {
   const cwd = root();
   expect(() =>
-    validateConversationTool("files.create", { parent: ".", name: "a.txt", isDir: false }),
+    validateConversationTool("files.create", {
+      parent: ".",
+      name: "a.txt",
+      isDir: false,
+    }),
   ).not.toThrow();
-  await callFileConversationTool(cwd, "files.create", { parent: ".", name: "a.txt", isDir: false });
+  await callFileConversationTool(cwd, "files.create", {
+    parent: ".",
+    name: "a.txt",
+    isDir: false,
+  });
   await expect(
-    callFileConversationTool(cwd, "files.create", { parent: ".", name: "a.txt", isDir: false }),
+    callFileConversationTool(cwd, "files.create", {
+      parent: ".",
+      name: "a.txt",
+      isDir: false,
+    }),
   ).rejects.toThrow();
-  const first = (await callFileConversationTool(cwd, "files.read", { path: "a.txt" })) as any;
+  const first = (await callFileConversationTool(cwd, "files.read", {
+    path: "a.txt",
+  })) as any;
   await callFileConversationTool(cwd, "files.write", {
     path: "a.txt",
     expectedHash: first.hash,
@@ -87,9 +101,13 @@ it("creates without overwriting and saves only the version read by the caller", 
       content: "stale",
     }),
   ).rejects.toThrow("changed");
-  expect(((await callFileConversationTool(cwd, "files.read", { path: "a.txt" })) as any).text).toBe(
-    "first",
-  );
+  expect(
+    (
+      (await callFileConversationTool(cwd, "files.read", {
+        path: "a.txt",
+      })) as any
+    ).text,
+  ).toBe("first");
   expect(
     conversationToolCatalog().find((tool) => tool.action === "files.write")?.annotations
       .readOnlyHint,
@@ -116,7 +134,9 @@ it("uses real workspace search, pagination and Git diff without changing the che
   writeFileSync(join(cwd, "a.txt"), "changed api_key=private-value\n");
   writeFileSync(join(cwd, "b.txt"), "changed\n");
   const before = git("status", "--porcelain");
-  const listing = (await callFileConversationTool(cwd, "files.list", { limit: 1 })) as any;
+  const listing = (await callFileConversationTool(cwd, "files.list", {
+    limit: 1,
+  })) as any;
   expect(listing.items).toHaveLength(1);
   expect(listing.nextOffset).toBe(1);
   const search = (await callFileConversationTool(cwd, "files.searchContent", {
@@ -125,10 +145,14 @@ it("uses real workspace search, pagination and Git diff without changing the che
   })) as any;
   expect(search.items).toHaveLength(1);
   expect(JSON.stringify(search)).not.toContain("private-value");
-  const diff = (await callFileConversationTool(cwd, "git.fileDiff", { path: "a.txt" })) as any;
+  const diff = (await callFileConversationTool(cwd, "git.fileDiff", {
+    path: "a.txt",
+  })) as any;
   expect(diff.original.text).toBe("base\n");
   expect(diff.current.text).toContain("[REDACTED]");
-  const index = (await callFileConversationTool(cwd, "git.index", { limit: 1 })) as any;
+  const index = (await callFileConversationTool(cwd, "git.index", {
+    limit: 1,
+  })) as any;
   expect(index.items).toHaveLength(1);
   expect(git("status", "--porcelain")).toBe(before);
 });

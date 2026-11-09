@@ -109,7 +109,11 @@ export async function mutateConversationPath(
           : "copy_path",
       action === "files.rename"
         ? { path, name: input.name, expectedHash: input.expectedHash }
-        : { from: path, destParent: dirname(target), expectedHash: input.expectedHash },
+        : {
+            from: path,
+            destParent: dirname(target),
+            expectedHash: input.expectedHash,
+          },
     );
     return {
       path: relative(root, String(output)).replaceAll("\\", "/"),

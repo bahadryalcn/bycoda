@@ -27,6 +27,7 @@ import {
   dispatchWorkspaceManagement,
   isWorkspaceManagementAction,
 } from "../conversation/conversation-workspace-management";
+import { assistantModelPoolSource } from "../conversation/conversation-model-pool-source";
 import { type HostDomainContext } from "../domains/context";
 import type { ServerBindings } from "./bindings";
 export function createManagementRuntime(
@@ -39,6 +40,7 @@ export function createManagementRuntime(
     | "goals"
     | "automations"
     | "crews"
+    | "assistant"
     | "projectSessionList"
     | "environmentService"
     | "persistenceService"
@@ -59,7 +61,11 @@ export function createManagementRuntime(
   >,
 ) {
   const approveManagementOperation = async (
-    operation: { action: string; input: Record<string, unknown>; operationHash: string },
+    operation: {
+      action: string;
+      input: Record<string, unknown>;
+      operationHash: string;
+    },
     principal: import("../execution/runtime-log-tools").RuntimeLogSubjectPrincipal,
     authorized: () => Promise<boolean>,
   ) => {
@@ -82,29 +88,35 @@ export function createManagementRuntime(
       throw new Error("The target project became unavailable or locked during review.");
     return decision;
   };
+  const modelPool = assistantModelPoolSource(dependencies.assistant);
   const conversationThreadWork = new ConversationThreadWorkTools(
     dependencies.engine.store,
     dependencies.tasks,
     dependencies.goals,
     dependencies.automations,
     approveManagementOperation,
+    modelPool,
   );
-  const conversationThreadCrews = new ConversationThreadCrewTools(dependencies.crews, {
-    approve: approveManagementOperation,
-    receipt: async (key) => {
-      const row = await dependencies.engine.store.db
-        .prepare("SELECT value FROM metadata WHERE key=?")
-        .get(key);
-      return row ? (JSON.parse(String(row.value)) as ManagementReceipt) : undefined;
+  const conversationThreadCrews = new ConversationThreadCrewTools(
+    dependencies.crews,
+    {
+      approve: approveManagementOperation,
+      receipt: async (key) => {
+        const row = await dependencies.engine.store.db
+          .prepare("SELECT value FROM metadata WHERE key=?")
+          .get(key);
+        return row ? (JSON.parse(String(row.value)) as ManagementReceipt) : undefined;
+      },
+      saveReceipt: async (key, value) => {
+        await dependencies.engine.store.db
+          .prepare(
+            "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+          )
+          .run(key, JSON.stringify(value));
+      },
     },
-    saveReceipt: async (key, value) => {
-      await dependencies.engine.store.db
-        .prepare(
-          "INSERT INTO metadata(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        )
-        .run(key, JSON.stringify(value));
-    },
-  });
+    modelPool,
+  );
   const conversationManagementRuntime = new ConversationManagementRuntime({
     subscribe: (listener) => dependencies.engine.store.subscribeChanges(listener),
     snapshot: async (projectId) => {
@@ -120,11 +132,21 @@ export function createManagementRuntime(
       const taskRows = (await dependencies.tasks.list())
         .filter((row) => row.projectId === projectId)
         .slice(0, 100)
-        .map((row) => ({ kind: "task", id: row.id, status: row.status, updatedAt: row.updatedAt }));
+        .map((row) => ({
+          kind: "task",
+          id: row.id,
+          status: row.status,
+          updatedAt: row.updatedAt,
+        }));
       const goalRows = (await dependencies.goals.list())
         .filter((row) => row.projectIds.length === 1 && row.projectIds[0] === projectId)
         .slice(0, 100)
-        .map((row) => ({ kind: "goal", id: row.id, status: row.status, updatedAt: row.updatedAt }));
+        .map((row) => ({
+          kind: "goal",
+          id: row.id,
+          status: row.status,
+          updatedAt: row.updatedAt,
+        }));
       return [...sessions, ...taskRows, ...goalRows].sort(
         (a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id),
       );
@@ -211,6 +233,7 @@ export function createManagementRuntime(
           session: dependencies.featureSession,
           preview: (input, source) => dependencies.engine.previewContextual(input, source),
           dispatch: (command) => dependencies.commandService.dispatch(command, context),
+          modelPool,
         });
       if (isWorkspaceManagementAction(action))
         return dispatchWorkspaceManagement(action, args, principal, authorized, {
@@ -230,7 +253,12 @@ export function createManagementRuntime(
           reviewTaskDelivery: (id) => dependencies.tasks.reviewDelivery(id),
         });
       if (action === "projects.get")
-        return { id: project.id, name: project.name, cwd: project.cwd, environmentId };
+        return {
+          id: project.id,
+          name: project.name,
+          cwd: project.cwd,
+          environmentId,
+        };
       if (["projects.browse", "projects.createDirectory", "projects.open"].includes(action)) {
         const path = await projectManagementPath(project.cwd, args.path);
         if (action === "projects.open")
@@ -245,9 +273,12 @@ export function createManagementRuntime(
         return dependencies.workspacePolicy.get({ projectId, environmentId });
       if (action === "workspaces.list")
         return managementPage(
-          (await dependencies.managedWorkspaces.list({ projectId, environmentId })).filter(
-            (row) => row.projectId === projectId,
-          ),
+          (
+            await dependencies.managedWorkspaces.list({
+              projectId,
+              environmentId,
+            })
+          ).filter((row) => row.projectId === projectId),
           args,
         );
       if (action === "workspaces.featureClaims.list")
@@ -296,7 +327,14 @@ export function createManagementRuntime(
               input: {
                 ...input,
                 id: sprintId,
-                projects: [{ environmentId, projectId, cwd: project.cwd, name: project.name }],
+                projects: [
+                  {
+                    environmentId,
+                    projectId,
+                    cwd: project.cwd,
+                    name: project.name,
+                  },
+                ],
                 capacityPoints: args.capacityPoints ?? null,
                 projectCapacities: {},
               },

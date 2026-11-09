@@ -23,7 +23,12 @@ describe("conversation browser annotation catalog", () => {
           trust: "untrusted-page-data",
           element: { tag: "button", text: "Save" },
           limitations: ["Private fields masked"],
-          screenshot: { mimeType: "image/jpeg", data, width: 1280, height: 720 },
+          screenshot: {
+            mimeType: "image/jpeg",
+            data,
+            width: 1280,
+            height: 720,
+          },
         },
       };
       const running = runConversationMcp(input, output, async () => result);
@@ -44,7 +49,11 @@ describe("conversation browser annotation catalog", () => {
       );
       await running;
       const content = JSON.parse(raw).result.content;
-      expect(content[1]).toEqual({ type: "image", mimeType: "image/jpeg", data });
+      expect(content[1]).toEqual({
+        type: "image",
+        mimeType: "image/jpeg",
+        data,
+      });
       expect(content[0].text.length).toBeLessThan(1000);
       expect(JSON.parse(content[0].text)).toMatchObject({
         selection: {
@@ -102,7 +111,10 @@ describe("conversation browser annotation catalog", () => {
       "browser.annotation.clear",
     ])
       expect(() =>
-        validateConversationTool(action, { leaseId: "lease", navigationId: "navigation" }),
+        validateConversationTool(action, {
+          leaseId: "lease",
+          navigationId: "navigation",
+        }),
       ).toThrow();
   });
 });

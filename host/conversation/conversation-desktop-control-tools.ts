@@ -7,7 +7,11 @@ import {
   type DesktopControlResponse,
 } from "../../src/shared/model/host-contracts/desktop-control";
 
-const string = (maxLength: number) => ({ type: "string", minLength: 1, maxLength });
+const string = (maxLength: number) => ({
+  type: "string",
+  minLength: 1,
+  maxLength,
+});
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object",
   properties,
@@ -162,7 +166,11 @@ export type DesktopToolAuthorization = () => boolean | Promise<boolean>;
 export interface ConversationDesktopControlPorts {
   environmentId: string;
   desktop: Pick<HostDesktopControl, "request">;
-  presence(): Promise<{ supported: boolean; locked: boolean; ownerPresent: boolean | undefined }>;
+  presence(): Promise<{
+    supported: boolean;
+    locked: boolean;
+    ownerPresent: boolean | undefined;
+  }>;
   approveOperation?(
     input: {
       operation: DesktopApprovalOperation;
@@ -283,7 +291,11 @@ export class ConversationDesktopControlTools {
     const clipboard = input.op === "clipboard";
     const headed = input.op === "act" && input.headed === true;
     if (input.op === "launch") {
-      operation = Object.freeze({ kind: "launch", requestId: input.requestId, app: input.app });
+      operation = Object.freeze({
+        kind: "launch",
+        requestId: input.requestId,
+        app: input.app,
+      });
     } else if (input.op === "clipboard") {
       if ((input.action === "set") !== (input.text !== undefined) || input.text?.includes("\0"))
         throw new Error("Clipboard text must match the selected plain-text command.");
@@ -334,7 +346,10 @@ export class ConversationDesktopControlTools {
         { operation, operationHash, principal, cwd },
         authorized,
       );
-      const result = response as { approved?: unknown; operationHash?: unknown } | null;
+      const result = response as {
+        approved?: unknown;
+        operationHash?: unknown;
+      } | null;
       if (!result || result.approved !== true || result.operationHash !== operationHash)
         throw new Error("Desktop operation was not approved; no input was dispatched.");
       approved = true;

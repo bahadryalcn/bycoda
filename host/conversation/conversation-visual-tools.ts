@@ -81,7 +81,11 @@ export function describeVisualConversationTool(action: string) {
 /** The Host's optional preview browser: the pinned runtime in host/browser/browser-runtime.ts. */
 export type VisualPreviewBrowser = {
   load: BrowserLoader;
-  status(): Promise<{ installed: boolean; installing: boolean; lastError?: string }>;
+  status(): Promise<{
+    installed: boolean;
+    installing: boolean;
+    lastError?: string;
+  }>;
   setup(): Promise<unknown>;
 };
 

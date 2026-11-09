@@ -8,6 +8,7 @@ import {
 } from "../../src/shared/model/host-contracts/session-commands";
 import type { HostSession, RemoteAttachment } from "../../src/features/connections/model/protocol";
 import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
+import { assertPoolExecution, type ModelPoolSource } from "./conversation-model-pool-guard";
 
 const identity = z.string().min(1).max(300);
 const revision = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
@@ -49,7 +50,10 @@ const schemas = {
 };
 export type SessionManagementAction = keyof typeof schemas;
 // JSON Schema cannot express the bounded-map refinement; call() repeats full validation.
-const settingsJson = { type: "object", additionalProperties: { type: "string", maxLength: 128 } };
+const settingsJson = {
+  type: "object",
+  additionalProperties: { type: "string", maxLength: 128 },
+};
 const text = { type: "string", minLength: 1, maxLength: 300 };
 const integer = { type: "integer", minimum: 0 };
 const object = (properties: Record<string, unknown>, required: string[]) => ({
@@ -123,6 +127,8 @@ export type SessionManagementPorts = {
   preview(input: Record<string, unknown>, source: HostSession): Promise<unknown>;
   /** Must retain configure/draft expectedRevision in the engine's atomic admission. */
   dispatch(command: SessionCommand): Promise<unknown>;
+  /** Owner's model pool; the assistant-thread principal may only choose models from it. */
+  modelPool: ModelPoolSource;
 };
 
 /** Called behind ConversationManagementTools' exact-operation approval and durable receipts. */
@@ -137,7 +143,7 @@ export async function dispatchSessionManagement(
     if (!(await authorized())) throw new Error("Conversation authority revoked.");
   };
   await check();
-  const input = schemas[action].parse(raw);
+  let input = schemas[action].parse(raw);
   const source = await ports.session(input.sessionId);
   await check();
   if (source.projectId !== principal.projectId || source.session.id !== input.sessionId)
@@ -156,6 +162,27 @@ export async function dispatchSessionManagement(
     };
   if (!("expectedRevision" in input) || source.revision !== input.expectedRevision)
     throw new Error("The conversation changed. Read it again before continuing.");
+  // Only the voice/Room model is pool-bound; a focused coding session keeps the owner's own choice.
+  if (principal.kind === "assistant-thread" && "model" in input) {
+    const pool = await ports.modelPool();
+    const chosen = assertPoolExecution(
+      {
+        harness: input.harness ?? source.session.harness,
+        model: input.model,
+        providerAccountId:
+          "providerAccountId" in input
+            ? (input.providerAccountId ?? undefined)
+            : source.session.providerAccountId,
+      },
+      pool,
+    );
+    input = {
+      ...input,
+      harness: chosen.harness,
+      modelSettings: chosen.modelSettings,
+    };
+    await check();
+  }
   if (action === "sessions.contextual.preview") {
     const result = await ports.preview(input, source);
     await check();

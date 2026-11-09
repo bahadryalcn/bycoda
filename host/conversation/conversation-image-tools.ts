@@ -26,7 +26,11 @@ export const MAX_IMAGES_PER_SESSION = 12;
 const TIMEOUT_MS = 200_000;
 
 export const CONVERSATION_IMAGE_TOOLS = {
-  "images.status": { type: "object", properties: {}, additionalProperties: false },
+  "images.status": {
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  },
   "images.generate": {
     type: "object",
     properties: {
@@ -43,13 +47,20 @@ export const CONVERSATION_IMAGE_TOOLS = {
         description:
           "New workspace-relative .png or .jpg path inside your write scope, such as games/snake/assets/menu.png. Existing files are never overwritten.",
       },
-      aspectRatio: { enum: ["1:1", "4:5", "16:9"], description: "Default 1:1." },
+      aspectRatio: {
+        enum: ["1:1", "4:5", "16:9"],
+        description: "Default 1:1.",
+      },
       provider: {
         enum: ["automatic", ...PROVIDERS, "antigravity"],
         description:
           "Default automatic: the session's selected models, Codex, then Gemini, then ComfyUI, then Nano Banana (antigravity).",
       },
-      model: { type: "string", maxLength: 200, description: "Only with an explicit provider." },
+      model: {
+        type: "string",
+        maxLength: 200,
+        description: "Only with an explicit provider.",
+      },
     },
     required: ["prompt", "path"],
     additionalProperties: false,

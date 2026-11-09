@@ -1,3 +1,8 @@
+import {
+  assistantModelPoolSource,
+  callModelPoolTool,
+  isModelPoolConversationTool,
+} from "../conversation/conversation-model-pool-source";
 import { createHash } from "node:crypto";
 import { sessionConversationPage } from "../../src/features/agent-app/model/sessionConversation";
 import { conversationSessionPage } from "../../src/shared/model/conversationSessionPage";
@@ -130,7 +135,10 @@ export function registerRoomManagement(
           return ports.roomRemote.call(
             call.action,
             call.input,
-            { threadId: call.threadId, environmentId: dependencies.engine.store.environmentId },
+            {
+              threadId: call.threadId,
+              environmentId: dependencies.engine.store.environmentId,
+            },
             call.requestId,
             authorized,
           );
@@ -251,6 +259,12 @@ export function registerRoomManagement(
               call.input,
               principal,
               authorized,
+            );
+          if (isModelPoolConversationTool(call.action))
+            return callModelPoolTool(
+              call.action,
+              call.input,
+              assistantModelPoolSource(dependencies.assistant),
             );
           if (
             ["tools.list", "tools.search", "tools.describe", "tools.status"].includes(call.action)
@@ -436,7 +450,11 @@ export function registerRoomManagement(
                 }
               : call.input,
             call.requestId,
-          ) as { operationId: string; action: string; originalInput: Record<string, unknown> };
+          ) as {
+            operationId: string;
+            action: string;
+            originalInput: Record<string, unknown>;
+          };
           return dependencies.withRoomProjectScope(call, authorized, async (valid, source) => {
             const current = async () => valid() && (await authorized()) && valid();
             const owner = await dependencies.assistantWorkspaceOwner.lookup(
@@ -547,6 +565,12 @@ export function registerRoomManagement(
             ),
           );
         }
+        if (isModelPoolConversationTool(call.action))
+          return callModelPoolTool(
+            call.action,
+            call.input,
+            assistantModelPoolSource(dependencies.assistant),
+          );
         if (["tools.list", "tools.search", "tools.describe", "tools.status"].includes(call.action))
           return roomManagementDiscovery(call.action, call.input, call.projectId);
         if (
@@ -574,7 +598,10 @@ export function registerRoomManagement(
           return dependencies.withRoomProjectScope(call, authorized, async () => {
             const { list } = await dependencies.projectSessionList(call.projectId!);
             return conversationSessionPage(
-              list.map((row) => ({ ...row, busy: row.status === "running" })),
+              list.map((row) => ({
+                ...row,
+                busy: row.status === "running",
+              })),
               call.input,
             );
           });
@@ -700,6 +727,7 @@ export function registerRoomManagement(
         // project read. A missing fence on project data must not be repaired by
         // attaching a later cwd after the data has already been read.
         const metadataOnly = [
+          "models.pool.list",
           "tools.list",
           "tools.search",
           "tools.describe",

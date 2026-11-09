@@ -15,10 +15,15 @@ import type { AssistantProfile } from "../../../src/shared/model/host-contracts/
 const paths: string[] = [];
 afterEach(() => {
   vi.resetAllMocks();
-  for (const path of paths.splice(0)) rmSync(path, { recursive: true, force: true });
+  for (const path of paths.splice(0))
+    rmSync(path, { recursive: true, force: true });
 });
 const profile = {
-  execution: { harness: "codex", model: "codex:test", modelSettings: { effort: "low" } },
+  execution: {
+    harness: "codex",
+    model: "codex:test",
+    modelSettings: { effort: "low" },
+  },
 } as AssistantProfile;
 function runner() {
   const path = mkdtempSync(join(tmpdir(), "bycoda-assistant-text-"));
@@ -27,12 +32,27 @@ function runner() {
 }
 it("keeps isolated reasoning and accounts monotonic valid provider metrics", async () => {
   vi.mocked(runHarnessTextPrompt).mockImplementation(async (input) => {
-    input.onEvent?.({ type: "turn.metrics", inputTokens: 100, outputTokens: 30 });
-    input.onEvent?.({ type: "turn.metrics", inputTokens: 90, outputTokens: 10 });
-    input.onEvent?.({ type: "turn.metrics", inputTokens: -100, outputTokens: 20 });
+    input.onEvent?.({
+      type: "turn.metrics",
+      inputTokens: 100,
+      outputTokens: 30,
+    });
+    input.onEvent?.({
+      type: "turn.metrics",
+      inputTokens: 90,
+      outputTokens: 10,
+    });
+    input.onEvent?.({
+      type: "turn.metrics",
+      inputTokens: -100,
+      outputTokens: 20,
+    });
     return "Answer";
   });
-  expect(await runner()(profile, "Prompt")).toEqual({ text: "Answer", tokens: 130 });
+  expect(await runner()(profile, "Prompt")).toEqual({
+    text: "Answer",
+    tokens: 130,
+  });
   expect(runHarnessTextPrompt).toHaveBeenCalledWith(
     expect.objectContaining({
       harness: "codex",
@@ -50,7 +70,10 @@ it("retains only a valid provider-reported context window for the next Chief adm
     input.onEvent?.({ type: "context", used: 5500, window: 0 });
     return "Answer";
   });
-  expect(await runner()(profile, "Prompt")).toEqual({ text: "Answer", contextWindow: 128000 });
+  expect(await runner()(profile, "Prompt")).toEqual({
+    text: "Answer",
+    contextWindow: 128000,
+  });
 });
 it("does not manufacture usage when the provider reports no metrics", async () => {
   vi.mocked(runHarnessTextPrompt).mockResolvedValue("Answer");
@@ -63,7 +86,11 @@ it("carries utility allowances without turning a conversational request into a p
     maxOutputChars: 500,
   });
   expect(runHarnessTextPrompt).toHaveBeenCalledWith(
-    expect.objectContaining({ ephemeral: true, maxOutputTokens: 125, maxOutputChars: 500 }),
+    expect.objectContaining({
+      ephemeral: true,
+      maxOutputTokens: 125,
+      maxOutputChars: 500,
+    }),
   );
 });
 it("opts only the Chief into its durably captured provider thread", async () => {
@@ -88,18 +115,36 @@ it("refuses late output after reasoning cancellation", async () => {
     controller.abort();
     return "Late answer";
   });
-  await expect(runner()(profile, "Prompt", controller.signal)).rejects.toMatchObject({
+  await expect(
+    runner()(profile, "Prompt", controller.signal),
+  ).rejects.toMatchObject({
     name: "AbortError",
   });
 });
 it("adds actual compaction and reasoning metrics without counting repeated snapshots twice", async () => {
   const receipt = vi.fn(async () => undefined);
   vi.mocked(runHarnessTextPrompt).mockImplementation(async (input) => {
-    input.onEvent?.({ type: "turn.metrics", inputTokens: 100, outputTokens: 30 });
-    input.onEvent?.({ type: "turn.metrics", inputTokens: 90, outputTokens: 20 });
+    input.onEvent?.({
+      type: "turn.metrics",
+      inputTokens: 100,
+      outputTokens: 30,
+    });
+    input.onEvent?.({
+      type: "turn.metrics",
+      inputTokens: 90,
+      outputTokens: 20,
+    });
     await input.onCompacted!({ threadId: "chief-thread" });
-    input.onEvent?.({ type: "turn.metrics", inputTokens: 200, outputTokens: 40 });
-    input.onEvent?.({ type: "turn.metrics", inputTokens: 100, outputTokens: 10 });
+    input.onEvent?.({
+      type: "turn.metrics",
+      inputTokens: 200,
+      outputTokens: 40,
+    });
+    input.onEvent?.({
+      type: "turn.metrics",
+      inputTokens: 100,
+      outputTokens: 10,
+    });
     return "Answer";
   });
   expect(
@@ -115,7 +160,11 @@ it("adds actual compaction and reasoning metrics without counting repeated snaps
 it("keeps total usage unknown when compaction metrics are missing", async () => {
   vi.mocked(runHarnessTextPrompt).mockImplementation(async (input) => {
     await input.onCompacted!({ threadId: "chief-thread" });
-    input.onEvent?.({ type: "turn.metrics", inputTokens: 200, outputTokens: 40 });
+    input.onEvent?.({
+      type: "turn.metrics",
+      inputTokens: 200,
+      outputTokens: 40,
+    });
     return "Answer";
   });
   expect(
@@ -137,4 +186,45 @@ it("rejects reasoning output if the adapter skipped the requested compaction rec
       onCompacted: async () => undefined,
     }),
   ).rejects.toThrow("confirm Chief compaction");
+});
+it("runs reply and Chief under their own pool rows and accounts, and keeps the profile when no pool is saved", async () => {
+  vi.mocked(runHarnessTextPrompt).mockResolvedValue("Answer");
+  const path = mkdtempSync(join(tmpdir(), "bycoda-assistant-text-"));
+  paths.push(path);
+  const select = vi.fn(async (role: string) =>
+    role === "reply"
+      ? {
+          execution: {
+            harness: "claude" as const,
+            model: "claude:quick",
+            modelSettings: { effort: "low" },
+            runtimeMode: "auto" as const,
+            maxRunMinutes: 5,
+            providerAccountId: "work",
+          },
+          rowId: "r",
+          reason: "first",
+        }
+      : { held: "limits" as const, nextResetAt: 7 },
+  );
+  await assistantText(path, "reply", select as never)(profile, "Prompt");
+  expect(runHarnessTextPrompt).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      harness: "claude",
+      model: "quick",
+      providerAccountId: "work",
+      modelSettings: { effort: "low" },
+    }),
+  );
+  await expect(
+    assistantText(path, "chief", select as never)(profile, "Prompt"),
+  ).rejects.toMatchObject({ name: "AssistantModelsHeldError", nextResetAt: 7 });
+  await assistantText(
+    path,
+    "reply",
+    (async () => null) as never,
+  )(profile, "Prompt");
+  const last = vi.mocked(runHarnessTextPrompt).mock.calls.at(-1)![0];
+  expect(last).toMatchObject({ harness: "codex", model: "test" });
+  expect(last).not.toHaveProperty("providerAccountId");
 });

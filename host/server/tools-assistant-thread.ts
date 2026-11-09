@@ -7,6 +7,11 @@ import {
   validateRoomWorkspaceAction,
 } from "../assistant/room/assistant-room-workspace";
 import { isDesktopControlConversationTool } from "../conversation/conversation-desktop-control-tools";
+import {
+  assistantModelPoolSource,
+  callModelPoolTool,
+  isModelPoolConversationTool,
+} from "../conversation/conversation-model-pool-source";
 import { isManagementAction } from "../conversation/conversation-management-tools";
 import { threadCrewAction } from "../conversation/conversation-thread-crew-tools";
 import { THREAD_WORK_ACTIONS } from "../conversation/conversation-thread-work-tools";
@@ -19,6 +24,7 @@ import type { HttpToolRequest } from "./http-tool-context";
 export async function handleAssistantThreadTools(
   dependencies: Pick<
     ServerBindings,
+    | "assistant"
     | "conversationAccess"
     | "engine"
     | "projectSessionList"
@@ -94,6 +100,8 @@ export async function handleAssistantThreadTools(
               voiceThreadToolAllowed(tool.family, tool.action),
             ),
           };
+        if (isModelPoolConversationTool(action))
+          return callModelPoolTool(action, args, assistantModelPoolSource(dependencies.assistant));
         if (["tools.search", "tools.describe", "tools.status"].includes(action))
           return managedDiscoveryResult(action, args, managedMcpCatalog());
         if (action === "sessions.list") {

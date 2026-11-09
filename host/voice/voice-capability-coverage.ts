@@ -130,7 +130,7 @@ export const VOICE_CAPABILITY_COVERAGE: Record<
     remaining: "Pairing/access enable/disable secrets remain owner-device scoped.",
   },
   models: {
-    tools: [],
+    tools: ["models.pool.list"],
     sessionOnly: ["models.list"],
     remaining: "Catalog availability is not provider entitlement.",
   },

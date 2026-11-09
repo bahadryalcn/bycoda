@@ -122,7 +122,11 @@ it("starts the one-time preview browser setup in the background and answers with
     load: async () => {
       throw new Error("Preview must not load a missing runtime");
     },
-    status: async () => ({ installed: false, installing: setups > 0, lastError: "npm missing" }),
+    status: async () => ({
+      installed: false,
+      installing: setups > 0,
+      lastError: "npm missing",
+    }),
     setup: () => {
       setups++;
       return new Promise<void>((done) => (finish = done));
@@ -135,7 +139,11 @@ it("starts the one-time preview browser setup in the background and answers with
     allow,
     { browser },
   );
-  expect(result).toMatchObject({ ready: false, installing: true, previousError: "npm missing" });
+  expect(result).toMatchObject({
+    ready: false,
+    installing: true,
+    previousError: "npm missing",
+  });
   expect(setups).toBe(1);
   finish();
   await expect(

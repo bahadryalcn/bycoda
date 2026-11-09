@@ -73,6 +73,9 @@ describe("quotaModelMatches", () => {
     expect(quotaModelMatches("gpt-5", "gpt-50")).toBe(false);
     expect(quotaModelMatches("opus", "sonnet")).toBe(false);
     expect(quotaModelMatches("", "sonnet")).toBe(false);
+    expect(quotaModelMatches("Opus", "claude-opus-5-5")).toBe(true);
+    expect(quotaModelMatches("Opus", "claude-opusx-1")).toBe(false);
+    expect(quotaModelMatches("Sonnet", "claude-opus-5-5")).toBe(false);
   });
 });
 

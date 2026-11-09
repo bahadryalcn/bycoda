@@ -38,7 +38,11 @@ async function setup(managed = false) {
   if (managed) {
     mkdirSync(projectDirectory);
     const git = (...args: string[]) =>
-      execFileSync("git", args, { cwd: projectDirectory, windowsHide: true, stdio: "pipe" });
+      execFileSync("git", args, {
+        cwd: projectDirectory,
+        windowsHide: true,
+        stdio: "pipe",
+      });
     git("init", "-q", "-b", "main");
     git("config", "user.name", "Workspace Tools Test");
     git("config", "user.email", "workspace-tools@example.test");
@@ -79,7 +83,9 @@ async function setup(managed = false) {
   await workspaces?.attachEngine(engine);
   const automations = new HostAutomations(store, engine, () => 1000, workspaces);
   const inbox = new ProviderInboxBridge(store.db);
-  const approval = vi.fn(async (_operation: Record<string, unknown>) => ({ approved: true }));
+  const approval = vi.fn(async (_operation: Record<string, unknown>) => ({
+    approved: true,
+  }));
   const attention = vi.fn(async (_projectId: string) => [{ id: "attention" }]);
   const service = new ConversationWorkspaceTools(
     store,
@@ -103,7 +109,12 @@ async function setup(managed = false) {
   cleanup.push(async () => {
     await engine.close();
     await store.close();
-    rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    rmSync(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    });
   });
   return {
     call,
@@ -132,7 +143,12 @@ const automation = {
   time: "09:30",
   enabled: false,
 };
-const item = { provider: "github", kind: "pr", number: 7, repo: "owner/project" };
+const item = {
+  provider: "github",
+  kind: "pr",
+  number: 7,
+  repo: "owner/project",
+};
 
 describe("direct application workspace tools", () => {
   it("creates, reads, edits and deletes project notes with atomic scope and stale edit protection", async () => {
@@ -155,10 +171,20 @@ describe("direct application workspace tools", () => {
     expect(updated.title).toBe("Plan");
     expect(updated.tags).toEqual(["work"]);
     await expect(
-      s.call("notes.update", { id: "note", expectedUpdatedAt: note.updatedAt, body: "Stale" }),
+      s.call("notes.update", {
+        id: "note",
+        expectedUpdatedAt: note.updatedAt,
+        body: "Stale",
+      }),
     ).rejects.toThrow("changed");
     const foreign = s.notes.save(
-      { id: "foreign", title: "Other", body: "private", tags: [], sourceCwd: s.other.cwd },
+      {
+        id: "foreign",
+        title: "Other",
+        body: "private",
+        tags: [],
+        sourceCwd: s.other.cwd,
+      },
       0,
     );
     await expect(s.call("notes.read", { id: foreign.id })).rejects.toThrow("another project");
@@ -174,7 +200,10 @@ describe("direct application workspace tools", () => {
     await expect(s.call("notes.create", { id: "note", body: "duplicate" })).rejects.toThrow(
       "already exists",
     );
-    await s.call("notes.delete", { id: "note", expectedUpdatedAt: updated.updatedAt });
+    await s.call("notes.delete", {
+      id: "note",
+      expectedUpdatedAt: updated.updatedAt,
+    });
     expect(s.notes.get("note")).toBeNull();
   });
   it("manages automations using the session's permission mode, scheduler and version controls", async () => {
@@ -195,7 +224,10 @@ describe("direct application workspace tools", () => {
     expect(resumed.enabled).toBe(true);
     expect(resumed.updatedAt).toBeGreaterThan(saved.updatedAt);
     await expect(
-      s.call("automations.pause", { automationId: "daily", expectedUpdatedAt: saved.updatedAt }),
+      s.call("automations.pause", {
+        automationId: "daily",
+        expectedUpdatedAt: saved.updatedAt,
+      }),
     ).rejects.toThrow("changed");
     const paused: any = await s.call("automations.pause", {
       automationId: "daily",
@@ -208,7 +240,11 @@ describe("direct application workspace tools", () => {
     });
     expect(changed.time).toBe("09:30");
     expect(changed.prompt).toBe("New instructions");
-    await s.automations.save({ ...saved, id: "foreign", projectId: s.other.id });
+    await s.automations.save({
+      ...saved,
+      id: "foreign",
+      projectId: s.other.id,
+    });
     await expect(s.call("automations.runNow", { automationId: "foreign" })).rejects.toThrow(
       "another project",
     );
@@ -241,7 +277,10 @@ describe("direct application workspace tools", () => {
       "Open the updated",
     );
     await s.inbox.beat("native", "desktop", { version: 1 });
-    const queued: any = await s.call("inbox.providers.list", { requestId: "list", state: "open" });
+    const queued: any = await s.call("inbox.providers.list", {
+      requestId: "list",
+      state: "open",
+    });
     expect(queued.state).toBe("queued");
     const jobs = (await s.inbox.beat("native", "desktop", { version: 1 })).jobs;
     expect(jobs[0].operation).toMatchObject({
@@ -251,12 +290,21 @@ describe("direct application workspace tools", () => {
     await s.inbox.beat("native", "desktop", {
       version: 1,
       replies: [
-        { id: queued.id, result: { items: [{ ...item, projectPath: s.project.cwd }], errors: {} } },
+        {
+          id: queued.id,
+          result: {
+            items: [{ ...item, projectPath: s.project.cwd }],
+            errors: {},
+          },
+        },
       ],
     });
     expect(((await s.call("inbox.result", { requestId: "list" })) as any).state).toBe("completed");
     await expect(
-      s.call("inbox.details", { requestId: "foreign", item: { ...item, number: 99 } }),
+      s.call("inbox.details", {
+        requestId: "foreign",
+        item: { ...item, number: 99 },
+      }),
     ).rejects.toThrow("Discover");
     expect(((await s.call("inbox.details", { requestId: "details", item })) as any).state).toBe(
       "queued",
@@ -284,27 +332,44 @@ describe("direct application workspace tools", () => {
       ),
     ).rejects.toThrow("own automation");
     expect(
-      await s.call("automations.stopRun", { automationId: "daily", runId: run.id }),
+      await s.call("automations.stopRun", {
+        automationId: "daily",
+        runId: run.id,
+      }),
     ).toMatchObject({ requested: true, run: { id: run.id } });
     await expect(
-      s.call("automations.stopRun", { automationId: "daily", runId: "foreign" }),
+      s.call("automations.stopRun", {
+        automationId: "daily",
+        runId: "foreign",
+      }),
     ).rejects.toThrow("not running");
   });
   it("requires exact owner approval, refuses revoked authority and never replays approved provider writes", async () => {
     const s = await setup();
     await s.inbox.beat("native", "desktop", { version: 1 });
-    const listed: any = await s.call("inbox.providers.list", { requestId: "list" });
+    const listed: any = await s.call("inbox.providers.list", {
+      requestId: "list",
+    });
     await s.inbox.beat("native", "desktop", { version: 1 });
     await s.inbox.beat("native", "desktop", {
       version: 1,
-      replies: [{ id: listed.id, result: { items: [{ ...item, projectPath: s.project.cwd }] } }],
+      replies: [
+        {
+          id: listed.id,
+          result: { items: [{ ...item, projectPath: s.project.cwd }] },
+        },
+      ],
     });
     const input = { requestId: "send", item, body: "Exact comment" };
     s.approval.mockResolvedValueOnce({ approved: false });
     await expect(s.call("inbox.comment", input)).rejects.toThrow("declined");
     const first: any = await s.call("inbox.comment", input);
     expect(s.approval).toHaveBeenLastCalledWith(
-      expect.objectContaining({ action: "comment", body: "Exact comment", cwd: s.project.cwd }),
+      expect.objectContaining({
+        action: "comment",
+        body: "Exact comment",
+        cwd: s.project.cwd,
+      }),
       s.project.cwd,
       s.principal,
       expect.any(Function),
@@ -332,11 +397,18 @@ describe("direct application workspace tools", () => {
     async (prAction) => {
       const s = await setup();
       await s.inbox.beat("native", "desktop", { version: 1 });
-      const listed: any = await s.call("inbox.providers.list", { requestId: "list-head" });
+      const listed: any = await s.call("inbox.providers.list", {
+        requestId: "list-head",
+      });
       await s.inbox.beat("native", "desktop", { version: 1 });
       await s.inbox.beat("native", "desktop", {
         version: 1,
-        replies: [{ id: listed.id, result: { items: [{ ...item, projectPath: s.project.cwd }] } }],
+        replies: [
+          {
+            id: listed.id,
+            result: { items: [{ ...item, projectPath: s.project.cwd }] },
+          },
+        ],
       });
       let approve!: (value: { approved: boolean }) => void;
       s.approval.mockImplementationOnce(
@@ -345,7 +417,12 @@ describe("direct application workspace tools", () => {
             approve = resolve;
           }),
       );
-      const input = { requestId: "merge-head", item, prAction, expectedHeadOid: "a".repeat(40) };
+      const input = {
+        requestId: "merge-head",
+        item,
+        prAction,
+        expectedHeadOid: "a".repeat(40),
+      };
       const pending = s.call("inbox.prAction", input);
       await vi.waitFor(() => expect(s.approval).toHaveBeenCalled());
       expect(s.approval.mock.calls[0][0]).toMatchObject({
@@ -365,13 +442,23 @@ describe("direct application workspace tools", () => {
   it("requires exact approval for inline reviews and deduplicates the entire batch", async () => {
     const s = await setup();
     await s.inbox.beat("native", "desktop", { version: 1 });
-    const listed: any = await s.call("inbox.providers.list", { requestId: "list-review" });
+    const listed: any = await s.call("inbox.providers.list", {
+      requestId: "list-review",
+    });
     await s.inbox.beat("native", "desktop", { version: 1 });
     await s.inbox.beat("native", "desktop", {
       version: 1,
-      replies: [{ id: listed.id, result: { items: [{ ...item, projectPath: s.project.cwd }] } }],
+      replies: [
+        {
+          id: listed.id,
+          result: { items: [{ ...item, projectPath: s.project.cwd }] },
+        },
+      ],
     });
-    const context: any = await s.call("inbox.reviewContext", { requestId: "context", item });
+    const context: any = await s.call("inbox.reviewContext", {
+      requestId: "context",
+      item,
+    });
     expect(s.approval).not.toHaveBeenCalled();
     expect((await s.inbox.beat("native", "desktop", { version: 1 })).jobs).toContainEqual(
       expect.objectContaining({
@@ -385,7 +472,14 @@ describe("direct application workspace tools", () => {
       commitId: "a".repeat(40),
       event: "REQUEST_CHANGES",
       body: "Şu noktaya bakalım.",
-      comments: [{ path: "src/a.ts", line: 9, side: "RIGHT", body: "Yetki kontrolü eksik." }],
+      comments: [
+        {
+          path: "src/a.ts",
+          line: 9,
+          side: "RIGHT",
+          body: "Yetki kontrolü eksik.",
+        },
+      ],
     };
     s.approval.mockResolvedValueOnce({ approved: false });
     await expect(s.call("inbox.review", input)).rejects.toThrow("declined");
@@ -407,27 +501,43 @@ describe("direct application workspace tools", () => {
     const dispatched = await s.inbox.beat("native", "desktop", {
       version: 1,
       replies: [
-        { id: context.id, result: { commitId: input.commitId, patch: "diff", truncated: false } },
+        {
+          id: context.id,
+          result: { commitId: input.commitId, patch: "diff", truncated: false },
+        },
       ],
     });
     expect(dispatched.jobs).toContainEqual(
       expect.objectContaining({
         id: first.id,
-        operation: expect.objectContaining({ action: "review", comments: input.comments }),
+        operation: expect.objectContaining({
+          action: "review",
+          comments: input.comments,
+        }),
       }),
     );
     await s.inbox.beat("native", "desktop", {
       version: 1,
       replies: [{ id: first.id, error: "Response lost after submission" }],
     });
-    expect(await s.call("inbox.review", input)).toMatchObject({ id: first.id, state: "uncertain" });
+    expect(await s.call("inbox.review", input)).toMatchObject({
+      id: first.id,
+      state: "uncertain",
+    });
     expect((await s.inbox.beat("native", "desktop", { version: 1 })).jobs).toEqual([]);
     expect(s.approval).toHaveBeenCalledTimes(2);
     await expect(
-      s.call("inbox.review", { ...input, comments: [{ ...input.comments[0], line: 10 }] }),
+      s.call("inbox.review", {
+        ...input,
+        comments: [{ ...input.comments[0], line: 10 }],
+      }),
     ).rejects.toThrow("another operation");
     await expect(
-      s.call("inbox.review", { ...input, requestId: "unknown", item: { ...item, number: 999 } }),
+      s.call("inbox.review", {
+        ...input,
+        requestId: "unknown",
+        item: { ...item, number: 999 },
+      }),
     ).rejects.toThrow("Discover");
     s.approval.mockImplementationOnce(async () => {
       s.revoke();

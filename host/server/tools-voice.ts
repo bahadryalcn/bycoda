@@ -4,6 +4,11 @@ import { voiceGlobalToolAllowed } from "../../src/shared/model/voiceToolScope";
 import { isAssistantObservationAction } from "../assistant/observations/assistant-observation-tools";
 import { isRoomNotebookAction } from "../assistant/room/assistant-room-notebook";
 import { isGlobalRuntimeRead } from "../conversation/conversation-management-runtime";
+import {
+  assistantModelPoolSource,
+  callModelPoolTool,
+  isModelPoolConversationTool,
+} from "../conversation/conversation-model-pool-source";
 import { isManagementAction } from "../conversation/conversation-management-tools";
 import { managedDiscoveryResult, managedMcpCatalog } from "../mcp/mcp-http";
 import { serializedResponse } from "../sync/sync-transfer";
@@ -421,6 +426,12 @@ export async function handleVoiceTools(
         },
         authorizeGlobal,
       );
+    else if (isModelPoolConversationTool(call.action))
+      request.result = await callModelPoolTool(
+        call.action,
+        call.input,
+        assistantModelPoolSource(dependencies.assistant),
+      );
     else if (call.action === "tools.list")
       request.result = {
         environmentId: dependencies.engine.store.environmentId,
@@ -440,7 +451,10 @@ export async function handleVoiceTools(
       request.result = await dependencies.conversationDesktop.callAssistantThread(
         call.action,
         call.input,
-        { threadId: call.threadId!, environmentId: dependencies.engine.store.environmentId },
+        {
+          threadId: call.threadId!,
+          environmentId: dependencies.engine.store.environmentId,
+        },
         authorizeGlobal,
       );
     else if (call.action === "servers.ssh.save" || call.action === "servers.ssh.remove") {

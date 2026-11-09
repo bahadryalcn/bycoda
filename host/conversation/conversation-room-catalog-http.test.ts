@@ -44,7 +44,12 @@ it("hides and rejects Room-only tools for real Session and voice Session HTTP so
         await fetch(endpoint, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ version: 1, environmentId: store.environmentId, method, params }),
+          body: JSON.stringify({
+            version: 1,
+            environmentId: store.environmentId,
+            method,
+            params,
+          }),
         })
       ).json()) as { result?: any; error?: string };
     const direct = await call(

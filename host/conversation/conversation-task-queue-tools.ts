@@ -1,7 +1,12 @@
 import type { HostTasks } from "../tasks/tasks";
 import type { RuntimeLogPrincipal } from "../execution/runtime-log-tools";
 
-const id = { type: "string", minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" };
+const id = {
+  type: "string",
+  minLength: 1,
+  maxLength: 64,
+  pattern: "^[A-Za-z0-9_-]+$",
+};
 const version = { type: "integer", minimum: 0 };
 const revision = {
   type: "object",
@@ -13,7 +18,9 @@ export const TASK_QUEUE_TOOLS = {
   "tasks.queue.pause": revision,
   "tasks.reorder": {
     type: "object",
-    properties: { order: { type: "array", minItems: 1, maxItems: 100, items: revision } },
+    properties: {
+      order: { type: "array", minItems: 1, maxItems: 100, items: revision },
+    },
     required: ["order"],
     additionalProperties: false,
   },

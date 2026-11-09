@@ -9,7 +9,13 @@ const principal = {
 };
 function setup() {
   const rows = ["first", "second"].map(
-    (id) => ({ id, projectId: "project", status: "queued", updatedAt: 1 }) as HostTask,
+    (id) =>
+      ({
+        id,
+        projectId: "project",
+        status: "queued",
+        updatedAt: 1,
+      }) as HostTask,
   );
   const tasks = {
     get: (id: string) => rows.find((task) => task.id === id),
@@ -27,7 +33,10 @@ function setup() {
 describe("conversation task queue", () => {
   it("pauses only a never-started queued task with a current revision", async () => {
     const f = setup();
-    await f.call("tasks.queue.pause", { taskId: "first", expectedUpdatedAt: 1 });
+    await f.call("tasks.queue.pause", {
+      taskId: "first",
+      expectedUpdatedAt: 1,
+    });
     expect(f.tasks.move).toHaveBeenCalledWith("first", "todo");
     f.tasks.move.mockClear();
     for (const patch of [

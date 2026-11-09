@@ -3,11 +3,17 @@ const utility = vi.hoisted(() => ({
   text: vi.fn(async () => ({ text: "Reply", tokens: 1 })),
   wake: vi.fn(async () => ({ actions: [], tokens: 1 })),
 }));
-vi.mock("./assistant-text", () => ({ assistantText: () => utility.text, chiefActions: () => [] }));
+vi.mock("./assistant-text", () => ({
+  assistantText: () => utility.text,
+  chiefActions: () => [],
+}));
 vi.mock("../chief/assistant-chief-context", () => ({
   createAssistantChiefContext: () => ({ wake: utility.wake }),
 }));
-import { assistantExecutionPorts, readManualSessionUsage } from "./assistant-runtime";
+import {
+  assistantExecutionPorts,
+  readManualSessionUsage,
+} from "./assistant-runtime";
 import type { HostStore } from "../../store";
 import type { HostGoals } from "../../goals/goals";
 import type { HostTasks } from "../../tasks/tasks";
@@ -48,7 +54,11 @@ it("selects independent reply and Chief utilities before provider context bindin
   const profile = {
     execution,
     chiefExecution: { ...execution, harness: "claude", model: "chief-saved" },
-    replyExecution: { ...execution, model: "reply-saved", modelSettings: { effort: "low" } },
+    replyExecution: {
+      ...execution,
+      model: "reply-saved",
+      modelSettings: { effort: "low" },
+    },
   } as unknown as AssistantProfile;
   await ports.reply!({
     profile,
@@ -118,7 +128,9 @@ it("passes planning identity separately to a canonical Goal while workers retain
       modelSettings: { effort: "low" },
     },
   });
-  expect(f.create.mock.calls[0][0].plannerExecution).not.toHaveProperty("runtimeMode");
+  expect(f.create.mock.calls[0][0].plannerExecution).not.toHaveProperty(
+    "runtimeMode",
+  );
 });
 it("uses durable job identity and never enables automatic delivery", async () => {
   const f = fixture();
@@ -139,7 +151,9 @@ it("uses durable job identity and never enables automatic delivery", async () =>
     },
     planApproval: "always",
   } as AssistantProfile;
-  expect(await ports.createGoal!({ job, profile })).toEqual({ goalId: "assistant-j1" });
+  expect(await ports.createGoal!({ job, profile })).toEqual({
+    goalId: "assistant-j1",
+  });
   expect(f.create).toHaveBeenCalledWith(
     expect.objectContaining({
       id: "assistant-j1",
@@ -151,7 +165,9 @@ it("uses durable job identity and never enables automatic delivery", async () =>
       model: "chosen-model",
     }),
   );
-  f.list.mockResolvedValue([{ id: "assistant-j1", projectIds: ["p1"], leadProjectId: "p1" }]);
+  f.list.mockResolvedValue([
+    { id: "assistant-j1", projectIds: ["p1"], leadProjectId: "p1" },
+  ]);
   expect(await ports.findGoal!("j1", job)).toEqual({ goalId: "assistant-j1" });
   await ports.createGoal!({ job, profile });
   expect(f.create).toHaveBeenCalledOnce();
@@ -160,7 +176,9 @@ it("reports a missing linked goal with its typed code so the job can be resubmit
   const f = fixture();
   const ports = assistantExecutionPorts(f.store, f.goals, f.tasks);
   f.list.mockResolvedValue([]);
-  await expect(ports.goalStatus!("assistant-j2", undefined, [])).rejects.toMatchObject({
+  await expect(
+    ports.goalStatus!("assistant-j2", undefined, []),
+  ).rejects.toMatchObject({
     code: "ASSISTANT_GOAL_MISSING",
     message: "The linked goal is unavailable.",
   });
@@ -186,7 +204,12 @@ it("gives assigned Claude workers provider compaction while preserving separate 
     workerCompactPercent: 50,
   } as AssistantProfile;
   await ports.createGoal!({
-    job: { id: "compaction", projectId: "p1", title: "Work", request: "Implement" } as AssistantJob,
+    job: {
+      id: "compaction",
+      projectId: "p1",
+      title: "Work",
+      request: "Implement",
+    } as AssistantJob,
     profile,
   });
   expect(f.create.mock.calls[0][0]).toMatchObject({
@@ -197,7 +220,10 @@ it("gives assigned Claude workers provider compaction while preserving separate 
       autoCompactWindow: "150000",
     },
     runtimeMode: "supervised",
-    plannerExecution: { model: "claude:planner", modelSettings: { effort: "low" } },
+    plannerExecution: {
+      model: "claude:planner",
+      modelSettings: { effort: "low" },
+    },
   });
   expect(profile.execution!.modelSettings).not.toHaveProperty("autoCompact");
 });
@@ -210,18 +236,35 @@ it("refuses to overwrite an owner or project note through an assistant id", asyn
   } as unknown as AsyncHostNotes;
   const ports = assistantExecutionPorts(f.store, f.goals, f.tasks, () => notes);
   await expect(
-    ports.saveNote!({ id: "owner", title: "New", body: "New", expectedUpdatedAt: 0 }),
+    ports.saveNote!({
+      id: "owner",
+      title: "New",
+      body: "New",
+      expectedUpdatedAt: 0,
+    }),
   ).rejects.toThrow("not a global assistant note");
-  await expect(ports.deleteNote!("owner", 0)).rejects.toThrow("not a global assistant note");
+  await expect(ports.deleteNote!("owner", 0)).rejects.toThrow(
+    "not a global assistant note",
+  );
   expect(notes.save).not.toHaveBeenCalled();
   expect(notes.delete).not.toHaveBeenCalled();
 });
 it("uses actual current-run output for job stalls and treats missing activity as unknown", async () => {
   const f = fixture(),
     now = Date.now(),
-    goal = { id: "assistant-j1", status: "running", taskIds: ["task"], projectIds: ["p1"] };
+    goal = {
+      id: "assistant-j1",
+      status: "running",
+      taskIds: ["task"],
+      projectIds: ["p1"],
+    };
   f.list.mockResolvedValue([goal]);
-  const task = { id: "task", goalId: goal.id, projectId: "p1", sessionId: "worker" };
+  const task = {
+    id: "task",
+    goalId: goal.id,
+    projectId: "p1",
+    sessionId: "worker",
+  };
   Object.assign(f.tasks, {
     list: vi.fn(async () => [task]),
     hasRunningGoalWork: vi.fn(async () => true),
@@ -236,9 +279,13 @@ it("uses actual current-run output for job stalls and treats missing activity as
   };
   Object.assign(f.store, { session: vi.fn(async () => record) });
   const ports = assistantExecutionPorts(f.store, f.goals, f.tasks);
-  expect((await ports.goalStatus!(goal.id)).lastActivityAt).toBe(now - 20 * 60000);
+  expect((await ports.goalStatus!(goal.id)).lastActivityAt).toBe(
+    now - 20 * 60000,
+  );
   record.updatedAt = now + 1;
-  expect((await ports.goalStatus!(goal.id)).lastActivityAt).toBe(now - 20 * 60000);
+  expect((await ports.goalStatus!(goal.id)).lastActivityAt).toBe(
+    now - 20 * 60000,
+  );
   record.runActivity.runId = "previous";
   expect((await ports.goalStatus!(goal.id)).lastActivityAt).toBeUndefined();
   record.runActivity = { runId: "current", lastActivityAt: now + 60000 };
@@ -252,7 +299,9 @@ it("explains why a goal is waiting: error, plan approval or owner input", async 
     hasRunningGoalWork: vi.fn(async () => false),
   });
   const status = async (goal: Record<string, unknown>) => {
-    f.list.mockResolvedValue([{ id: "g", taskIds: [], projectIds: ["p1"], ...goal }] as never);
+    f.list.mockResolvedValue([
+      { id: "g", taskIds: [], projectIds: ["p1"], ...goal },
+    ] as never);
     return ports.goalStatus!("g");
   };
   expect(await status({ status: "blocked", error: "boom" })).toMatchObject({
@@ -264,11 +313,18 @@ it("explains why a goal is waiting: error, plan approval or owner input", async 
     status: "waiting",
     waitingReason: "planApproval",
   });
-  expect(await status({ status: "running" })).not.toHaveProperty("waitingReason");
+  expect(await status({ status: "running" })).not.toHaveProperty(
+    "waitingReason",
+  );
 });
 it("keeps mid-turn question answers/steers on the original usage key without prematurely settling or double charging", async () => {
   const f = fixture(),
-    goal = { id: "assistant-j1", status: "running", taskIds: ["task"], projectIds: ["p1"] };
+    goal = {
+      id: "assistant-j1",
+      status: "running",
+      taskIds: ["task"],
+      projectIds: ["p1"],
+    };
   f.list.mockResolvedValue([goal]);
   Object.assign(f.tasks, {
     list: vi.fn(async () => [
@@ -281,7 +337,12 @@ it("keeps mid-turn question answers/steers on the original usage key without pre
     role: "user",
     text: "Original work",
     startedAt: 1000,
-    turnMetrics: { inputTokens: 10, outputTokens: 20, cacheReadTokens: 2, cacheHitPercent: 20 },
+    turnMetrics: {
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheReadTokens: 2,
+      cacheHitPercent: 20,
+    },
     durationMs: undefined as number | undefined,
   };
   const record = {
@@ -322,14 +383,23 @@ it("keeps mid-turn question answers/steers on the original usage key without pre
 });
 
 it("reads manual cache metrics only from the original accepted authored root turn", async () => {
-  const author = { kind: "assistant-manual", supervisionId: "grant", operationId: "op" };
+  const author = {
+    kind: "assistant-manual",
+    supervisionId: "grant",
+    operationId: "op",
+  };
   const root = {
     id: "root",
     role: "user",
     text: "Continue",
     author,
     startedAt: 1000,
-    turnMetrics: { inputTokens: 10, outputTokens: 20, cacheReadTokens: 0, cacheHitPercent: 0 },
+    turnMetrics: {
+      inputTokens: 10,
+      outputTokens: 20,
+      cacheReadTokens: 0,
+      cacheHitPercent: 0,
+    },
   };
   const store = {
     session: async () => ({
@@ -365,4 +435,136 @@ it("reads manual cache metrics only from the original accepted authored root tur
     },
   ]);
   expect(result.incomplete).toBe(false);
+});
+
+const poolProfile = {
+  execution: {
+    harness: "codex",
+    model: "profile-model",
+    modelSettings: {},
+    runtimeMode: "full-access",
+    maxRunMinutes: 30,
+  },
+  planApproval: "always",
+} as AssistantProfile;
+const poolJob = {
+  id: "pool",
+  projectId: "p1",
+  title: "Work",
+  request: "Do",
+} as AssistantJob;
+const poolChoice = (model: string, providerAccountId?: string) => ({
+  execution: {
+    harness: "claude" as const,
+    model,
+    modelSettings: { effort: "low" },
+    runtimeMode: "supervised" as const,
+    maxRunMinutes: 20,
+    ...(providerAccountId ? { providerAccountId } : {}),
+  },
+  rowId: `row-${model}`,
+  reason: "first",
+});
+it("creates the goal from the selected pool row with its provider account and planner row", async () => {
+  const f = fixture();
+  const models = vi.fn(async (role: string) =>
+    role === "worker"
+      ? poolChoice("claude:worker", "work")
+      : poolChoice("claude:plan", "plan"),
+  );
+  const ports = assistantExecutionPorts(
+    f.store,
+    f.goals,
+    f.tasks,
+    undefined,
+    undefined,
+    models,
+  );
+  const result = await ports.createGoal!({
+    job: poolJob,
+    profile: poolProfile,
+  });
+  expect(f.create.mock.calls[0][0]).toMatchObject({
+    harness: "claude",
+    model: "claude:worker",
+    providerAccountId: "work",
+    runtimeMode: "supervised",
+    maxRunMinutes: 20,
+    plannerExecution: {
+      harness: "claude",
+      model: "claude:plan",
+      providerAccountId: "plan",
+    },
+  });
+  expect(result).toMatchObject({
+    goalId: "assistant-pool",
+    modelChoice: {
+      rowId: "row-claude:worker",
+      reason: "first",
+      providerAccountId: "work",
+    },
+  });
+});
+it("creates no separate planner when the pool has no planning row", async () => {
+  const f = fixture();
+  const models = vi.fn(async (role: string) =>
+    role === "worker"
+      ? poolChoice("claude:worker")
+      : { held: "noRow" as const },
+  );
+  const ports = assistantExecutionPorts(
+    f.store,
+    f.goals,
+    f.tasks,
+    undefined,
+    undefined,
+    models,
+  );
+  await ports.createGoal!({ job: poolJob, profile: poolProfile });
+  expect(f.create.mock.calls[0][0]).not.toHaveProperty("plannerExecution");
+  expect(f.create.mock.calls[0][0]).not.toHaveProperty("providerAccountId");
+});
+it("throws the typed held error and creates nothing when every pool row is limited", async () => {
+  const f = fixture();
+  const models = vi.fn(async () => ({
+    held: "limits" as const,
+    nextResetAt: 9000,
+  }));
+  const ports = assistantExecutionPorts(
+    f.store,
+    f.goals,
+    f.tasks,
+    undefined,
+    undefined,
+    models,
+  );
+  await expect(
+    ports.createGoal!({ job: poolJob, profile: poolProfile }),
+  ).rejects.toMatchObject({
+    name: "AssistantModelsHeldError",
+    held: "limits",
+    nextResetAt: 9000,
+  });
+  expect(f.create).not.toHaveBeenCalled();
+});
+it("reproduces the profile goal input exactly when the pool is derived", async () => {
+  const plain = fixture();
+  await assistantExecutionPorts(plain.store, plain.goals, plain.tasks)
+    .createGoal!({
+    job: poolJob,
+    profile: poolProfile,
+  });
+  const derived = fixture();
+  const result = await assistantExecutionPorts(
+    derived.store,
+    derived.goals,
+    derived.tasks,
+    undefined,
+    undefined,
+    async () => null,
+  ).createGoal!({ job: poolJob, profile: poolProfile });
+  expect(derived.create.mock.calls[0][0]).toEqual(
+    plain.create.mock.calls[0][0],
+  );
+  expect(result).toEqual({ goalId: "assistant-pool" });
 });

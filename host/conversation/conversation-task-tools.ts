@@ -29,7 +29,12 @@ export function assertConversationWorkspaceIntent(input: Record<string, unknown>
     );
 }
 
-const id = { type: "string", minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" };
+const id = {
+  type: "string",
+  minLength: 1,
+  maxLength: 64,
+  pattern: "^[A-Za-z0-9_-]+$",
+};
 const pageFields = {
   offset: { type: "integer", minimum: 0 },
   limit: { type: "integer", minimum: 1, maximum: 100 },

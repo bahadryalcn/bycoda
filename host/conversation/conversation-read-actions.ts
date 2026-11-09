@@ -7,6 +7,7 @@ import { TASK_READ_TOOLS } from "./conversation-task-tools";
 import { DESKTOP_CONTROL_READ_ACTIONS } from "./conversation-desktop-control-tools";
 import { BROWSER_ANNOTATION_READ_ACTIONS } from "./conversation-browser-tools";
 import { RUNTIME_READ_ACTIONS } from "./conversation-runtime-read-tools";
+import { MODEL_POOL_CONVERSATION_TOOLS } from "./conversation-model-pool-source";
 import { AGENT_READ_ACTIONS } from "../delegation/tools";
 
 /** Actions that only read; every other Conversation Tool needs write authorization. */
@@ -33,6 +34,7 @@ export const CONVERSATION_READ_ACTIONS: ReadonlySet<string> = new Set<string>([
   ...Object.keys(TASK_READ_TOOLS),
   ...BROWSER_ANNOTATION_READ_ACTIONS,
   ...RUNTIME_READ_ACTIONS,
+  ...Object.keys(MODEL_POOL_CONVERSATION_TOOLS),
   "tasks.notes.read",
   "skills.search",
   "skills.read",

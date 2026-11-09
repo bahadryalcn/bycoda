@@ -76,6 +76,7 @@ const CONVERSATION_ACTIONS = new Set(
   ),
 );
 CONVERSATION_ACTIONS.add("browser.preview");
+CONVERSATION_ACTIONS.add("models.pool.list");
 for (const action of [
   "devices.control.status",
   "devices.control.claim",

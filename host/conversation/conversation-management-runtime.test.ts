@@ -13,12 +13,24 @@ const principal = {
 afterEach(() => vi.useRealTimers());
 it("reads only finite Host metadata from a real projectless Room principal", async () => {
   const read = vi.fn(async (_action: string, _input: unknown, source: unknown) => {
-    expect(source).toEqual({ kind: "assistant-thread", threadId: "global", environmentId: "host" });
+    expect(source).toEqual({
+      kind: "assistant-thread",
+      threadId: "global",
+      environmentId: "host",
+    });
     return { environmentId: "host", secret: "not disclosed" };
   });
   const snapshot = vi.fn(async () => []);
-  const runtime = new ConversationManagementRuntime({ read, snapshot, subscribe: () => () => {} });
-  const room = { kind: "assistant-thread" as const, threadId: "global", environmentId: "host" };
+  const runtime = new ConversationManagementRuntime({
+    read,
+    snapshot,
+    subscribe: () => () => {},
+  });
+  const room = {
+    kind: "assistant-thread" as const,
+    threadId: "global",
+    environmentId: "host",
+  };
   expect(await runtime.call("environment.describe", {}, room, async () => true)).toEqual({
     environmentId: "host",
   });
@@ -92,7 +104,10 @@ it("returns a bounded heartbeat without fabricating a new event", async () => {
   const initial = await f.call();
   const pending = f.call({ cursor: initial.cursor, waitMs: 100 });
   await vi.advanceTimersByTimeAsync(101);
-  expect(await pending).toMatchObject({ heartbeat: true, cursor: initial.cursor });
+  expect(await pending).toMatchObject({
+    heartbeat: true,
+    cursor: initial.cursor,
+  });
   expect(f.listeners.size).toBe(0);
 });
 it("revocation during a wait prevents snapshot disclosure and removes listener", async () => {
@@ -143,7 +158,11 @@ it("strips mobile access secrets and limits tunnel disclosure", () => {
     },
     { limit: 1 },
   );
-  expect(status).toMatchObject({ items: [{ id: "one", state: "ready" }], total: 2, nextOffset: 1 });
+  expect(status).toMatchObject({
+    items: [{ id: "one", state: "ready" }],
+    total: 2,
+    nextOffset: 1,
+  });
   expect(JSON.stringify(status)).not.toContain("secret");
   expect(
     runtimeStatusProjection("environment.describe", {

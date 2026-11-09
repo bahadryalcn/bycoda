@@ -50,6 +50,7 @@ export function voiceGlobalToolAllowed(family: string, action: string) {
       "tools.search",
       "tools.describe",
       "tools.status",
+      "models.pool.list",
       "preferences.read",
       "preferences.patch",
       "preferences.status",
@@ -276,6 +277,7 @@ export function voiceThreadToolAllowed(family: string, action: string) {
     /^(notes|inbox)\./.test(action) ||
     [
       "host.limits.status",
+      "models.pool.list",
       "shell.profiles",
       "desktop.status",
       "desktop.snapshot",

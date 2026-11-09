@@ -134,7 +134,9 @@ describe("runtime read conversation tools", () => {
   it("does not advertise missing host attachment bytes as readable", async () => {
     const { call, store, id } = await setup();
     unlinkSync(attachmentPath(store, id));
-    const list = (await call("attachments.list")) as { items: { readable: boolean }[] };
+    const list = (await call("attachments.list")) as {
+      items: { readable: boolean }[];
+    };
     expect(list.items).toHaveLength(3);
     expect(list.items.every((item) => !item.readable)).toBe(true);
   });
@@ -176,7 +178,11 @@ describe("runtime read conversation tools", () => {
     };
     expect(Buffer.from(first.data, "base64")).toEqual(bytes.subarray(0, 6));
     expect(first.nextOffset).toBe(6);
-    const last = await call("attachments.read", { id, offset: 24, maxBytes: 6 });
+    const last = await call("attachments.read", {
+      id,
+      offset: 24,
+      maxBytes: 6,
+    });
     expect(last).toMatchObject({
       data: bytes.subarray(24).toString("base64"),
       nextOffset: null,

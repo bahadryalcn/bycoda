@@ -12,12 +12,32 @@ import type { HostAutomations } from "../automations/automations";
 import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
 import { normalizeConversationTaskConfiguration } from "./conversation-task-tools";
 import type { DelegatedRoomPrincipal } from "../assistant/room/assistant-room-delegation";
+import {
+  assertPoolExecution,
+  type ModelPoolSource,
+  type PoolExecution,
+} from "./conversation-model-pool-guard";
 
+/** The voice/Room model names a pool row; explicit fields are still parsed but must match one. */
 const executionSchema = z.strictObject({
-  harness: SessionProviderSchema,
-  model: z.string().min(1).max(200),
-  modelSettings: ModelSettingsSchema.default({}),
-  runtimeMode: SessionRuntimeModeSchema,
+  poolRowId: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe(
+      "Id of a row from models.pool.list. Omit to use the first worker model in the pool. Models outside the pool are rejected.",
+    ),
+  harness: SessionProviderSchema.optional(),
+  model: z.string().min(1).max(200).optional(),
+  modelSettings: ModelSettingsSchema.optional(),
+  runtimeMode: SessionRuntimeModeSchema.optional(),
+});
+const executionFields = (execution: PoolExecution) => ({
+  harness: execution.harness,
+  model: execution.model,
+  modelSettings: execution.modelSettings,
+  runtimeMode: execution.runtimeMode,
 });
 export const THREAD_WORK_EXECUTION_SCHEMA = z.toJSONSchema(executionSchema);
 export const THREAD_WORK_ACTIONS = new Set([
@@ -69,7 +89,13 @@ export class ConversationThreadWorkTools {
       "list" | "save" | "delete" | "runs" | "runNow" | "stopRun"
     >,
     private readonly approve: Approve,
+    private readonly pool: ModelPoolSource,
   ) {}
+
+  /** Every execution the thread principal creates must come from the owner's model pool. */
+  private async resolveExecution(raw: unknown) {
+    return assertPoolExecution(executionSchema.parse(raw), await this.pool());
+  }
 
   /** Called only after exact native review and a retained delegated receipt/permit. */
   async callDelegated(
@@ -95,7 +121,7 @@ export class ConversationThreadWorkTools {
     )
       throw new Error("Work changed. Read it again.");
     const execution =
-      action === "tasks.create" ? executionSchema.parse(input.execution) : undefined;
+      action === "tasks.create" ? await this.resolveExecution(input.execution) : undefined;
     if (!(await authorized())) throw new Error("Delegated Room authority revoked.");
     const result = await this.execute(action, input, principal.projectId, id, current, execution);
     if (!(await authorized())) throw new Error("Delegated Room authority revoked.");
@@ -170,7 +196,8 @@ export class ConversationThreadWorkTools {
     if (!creating && !current) throw new Error("Work is not wholly in this project.");
     if (!requestId || requestId.length > 300)
       throw new Error("Global work mutations require a stable requestId.");
-    const execution = creating ? executionSchema.parse(input.execution) : undefined;
+    // Validated before review so the owner sees the resolved pool model, and again at effect time.
+    const reviewedExecution = creating ? await this.resolveExecution(input.execution) : undefined;
     const fingerprint = hash([principal.threadId, principal.projectId, action, input]);
     const key = `voice-work:${hash([principal.threadId, principal.projectId, requestId])}`;
     const receipt = await this.store.db.prepare("SELECT value FROM metadata WHERE key=?").get(key);
@@ -198,7 +225,12 @@ export class ConversationThreadWorkTools {
     const approved = await this.approve(
       {
         action,
-        input: { ...input, projectId: principal.projectId, current: current ?? null },
+        input: {
+          ...input,
+          ...(reviewedExecution ? { execution: reviewedExecution } : {}),
+          projectId: principal.projectId,
+          current: current ?? null,
+        },
         operationHash,
       },
       principal,
@@ -226,6 +258,9 @@ export class ConversationThreadWorkTools {
     const result = await qualify(async () => {
       if (hash((await read()).find((item) => item.id === id) ?? null) !== currentHash)
         throw new Error("Work changed during qualification. Read it again.");
+      const execution = creating ? await this.resolveExecution(input.execution) : undefined;
+      if (execution && execution.poolRowId !== reviewedExecution?.poolRowId)
+        throw new Error("The assistant's model pool changed during approval. Review again.");
       return this.execute(action, input, principal.projectId, id, current, execution);
     });
     await check();
@@ -246,14 +281,17 @@ export class ConversationThreadWorkTools {
     projectId: string,
     id: string,
     current: unknown,
-    execution?: z.infer<typeof executionSchema>,
+    execution?: PoolExecution,
   ): Promise<unknown> {
+    // shortcut: tasks and automations carry no provider account field, so a non-default
+    // pool account applies only to goals; upgrade when those records gain an account.
+    const exec = execution ? executionFields(execution) : {};
     if (action.startsWith("tasks.")) {
       const task = current as Awaited<ReturnType<HostTasks["list"]>>[number] | undefined;
       if (action === "tasks.create")
         return this.tasks.save({
           ...normalizeConversationTaskConfiguration(input, id, projectId, await this.tasks.list()),
-          ...execution,
+          ...exec,
           expectedAbsent: true,
           id,
           projectId,
@@ -286,7 +324,10 @@ export class ConversationThreadWorkTools {
     if (action.startsWith("goals.")) {
       if (action === "goals.create")
         return this.goals.create({
-          ...execution,
+          ...exec,
+          ...(execution?.providerAccountId
+            ? { providerAccountId: execution.providerAccountId }
+            : {}),
           expectedAbsent: true,
           id,
           title: input.title,
@@ -350,7 +391,7 @@ export class ConversationThreadWorkTools {
     return this.automations.save({
       ...(action === "automations.create"
         ? {
-            ...execution,
+            ...exec,
             expectedAbsent: true,
             minute: 0,
             time: "09:00",

@@ -1,14 +1,21 @@
 /** Saved Servers are desktop inventory records, distinct from project dev servers. */
 const text = { type: "string", minLength: 1, maxLength: 300 };
 const port = { type: "integer", minimum: 1, maximum: 65535 };
-const requestId = { type: "string", minLength: 1, maxLength: 100, pattern: "^[a-zA-Z0-9_-]+$" };
+const requestId = {
+  type: "string",
+  minLength: 1,
+  maxLength: 100,
+  pattern: "^[a-zA-Z0-9_-]+$",
+};
 const object = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: "object",
   properties,
   required,
   additionalProperties: false,
 });
-const nullable = (schema: Record<string, unknown>) => ({ oneOf: [schema, { enum: [null] }] });
+const nullable = (schema: Record<string, unknown>) => ({
+  oneOf: [schema, { enum: [null] }],
+});
 const nullablePath = nullable({ type: "string", maxLength: 4096 });
 const jump = object(
   {
@@ -51,7 +58,14 @@ export const SERVER_CONVERSATION_TOOLS = {
     "terminalId",
   ]),
   "terminals.create": object(
-    { requestId: { type: "string", minLength: 1, maxLength: 100, pattern: "^[a-zA-Z0-9_-]+$" } },
+    {
+      requestId: {
+        type: "string",
+        minLength: 1,
+        maxLength: 100,
+        pattern: "^[a-zA-Z0-9_-]+$",
+      },
+    },
     ["requestId"],
   ),
   "terminals.close": object({ terminalId: { type: "string", minLength: 1, maxLength: 400 } }, [
@@ -102,7 +116,11 @@ export const SERVER_CONVERSATION_TOOLS = {
       id: text,
       metadata: object({
         group: nullable({ type: "string", maxLength: 100 }),
-        tags: { type: "array", maxItems: 32, items: { type: "string", maxLength: 80 } },
+        tags: {
+          type: "array",
+          maxItems: 32,
+          items: { type: "string", maxLength: 80 },
+        },
         favorite: { type: "boolean" },
         forwards: { type: "array", maxItems: 32, items: forward },
         colorIndex: nullable({ type: "integer", minimum: 0, maximum: 8 }),
@@ -123,7 +141,12 @@ export const SERVER_CONVERSATION_TOOLS = {
     {
       id: text,
       tree: { type: "boolean" },
-      expectedImpact: { type: "string", minLength: 64, maxLength: 64, pattern: "^[a-f0-9]{64}$" },
+      expectedImpact: {
+        type: "string",
+        minLength: 64,
+        maxLength: 64,
+        pattern: "^[a-f0-9]{64}$",
+      },
       identity: object({ pid: { type: "integer", minimum: 1 }, startedAt: text }, [
         "pid",
         "startedAt",

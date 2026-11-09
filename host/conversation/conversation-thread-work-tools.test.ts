@@ -87,7 +87,12 @@ const input = {
   taskId: "task",
   title: "Task",
   prompt: "Do work",
-  execution: { harness: "codex", model: "gpt", runtimeMode: "auto", modelSettings: {} },
+  execution: {
+    harness: "codex",
+    model: "gpt",
+    runtimeMode: "auto",
+    modelSettings: {},
+  },
 };
 it("creates global work with explicit reviewed execution and deduplicates across service recreation", async () => {
   const f = fixture();
@@ -163,7 +168,13 @@ it("requires explicit execution and current thread authority; hides foreign work
 });
 it("retains reviewed configuration through task and automation canonical saves", async () => {
   const f = fixture();
-  const task = { id: "task", projectId: "p", title: "Old", status: "todo", updatedAt: 1 };
+  const task = {
+    id: "task",
+    projectId: "p",
+    title: "Old",
+    status: "todo",
+    updatedAt: 1,
+  };
   f.records = [task];
   await f
     .service()
@@ -177,18 +188,24 @@ it("retains reviewed configuration through task and automation canonical saves",
     .service()
     .call("automations.pause", { automationId: "auto" }, f.principal, f.authorized, "auto-edit");
   expect(f.automations.save).toHaveBeenCalledWith(
-    expect.objectContaining({ enabled: false, expectedConfiguration: automation }),
+    expect.objectContaining({
+      enabled: false,
+      expectedConfiguration: automation,
+    }),
   );
   f.automations.list.mockResolvedValue([]);
-  await f
-    .service()
-    .call(
-      "automations.create",
-      { automationId: "new-auto", execution: input.execution, name: "New", prompt: "Work" },
-      f.principal,
-      f.authorized,
-      "auto-create",
-    );
+  await f.service().call(
+    "automations.create",
+    {
+      automationId: "new-auto",
+      execution: input.execution,
+      name: "New",
+      prompt: "Work",
+    },
+    f.principal,
+    f.authorized,
+    "auto-create",
+  );
   expect(f.automations.save).toHaveBeenLastCalledWith(
     expect.objectContaining({ id: "new-auto", expectedAbsent: true }),
   );
