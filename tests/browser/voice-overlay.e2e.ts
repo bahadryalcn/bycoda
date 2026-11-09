@@ -477,7 +477,10 @@ for (const theme of ["light", "dark"])
       expect(sourceGuard).toEqual({ environmentId: "fixture-host", frozen: true, rejected: true });
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await page.evaluate(() => (window as any).fixtureVoice.speech("delete recovery job"));
-      await expect(panel.getByText("Delete job only: Recovery?", { exact: true })).toBeVisible();
+      // The question shows beside its icon (aria-hidden) and names the answer group.
+      await expect(
+        panel.getByRole("group", { name: "Delete job only: Recovery?", exact: true }),
+      ).toBeVisible();
       await expect(panel.getByText("Project: Fixture project", { exact: true })).toBeVisible();
       expect(await page.evaluate(() => (window as any).fixtureVoice.actions)).not.toContain(
         "assistant.delete",
@@ -569,8 +572,9 @@ for (const theme of ["light", "dark"])
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/voice-overlay.html?theme=${theme}&compact=0&choice`);
       const panel = page.locator("main[aria-label]");
+      // The question shows beside its icon (aria-hidden) and names the answer group.
       await expect(
-        panel.getByText("Which project should I follow?", { exact: true }),
+        panel.getByRole("group", { name: "Which project should I follow?", exact: true }),
       ).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-overlay-choice.png`) });
       await panel.getByRole("radio", { name: "Clinic", exact: true }).click();
@@ -645,8 +649,9 @@ for (const theme of ["light", "dark"])
       await panel.getByRole("button", { name: "Start voice", exact: true }).click();
       await expect(panel).toHaveAttribute("data-voice-state", "listening");
       await page.evaluate(() => (window as any).fixtureVoice.speech("show choices"));
+      // The question shows beside its icon (aria-hidden) and names the answer group.
       await expect(
-        panel.getByText("Which project should I follow?", { exact: true }),
+        panel.getByRole("group", { name: "Which project should I follow?", exact: true }),
       ).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-choice.png`) });
       await panel.getByRole("radio", { name: /Clinic/ }).click();

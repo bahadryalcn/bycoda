@@ -1027,7 +1027,13 @@ for (const theme of ["light", "dark"])
       });
       await expect(created).toHaveCount(1);
       await created.click();
-      await expect(page.getByRole("dialog")).toContainText("Lead project: Backend");
+      // Job details is a term/value list: the lead project is the value after its term.
+      await expect(
+        page
+          .getByRole("dialog")
+          .locator("dt", { hasText: /^Lead project$/ })
+          .locator("+ dd"),
+      ).toHaveText("Backend");
       await expect(page.getByRole("dialog")).toContainText("Backend · Upstream");
       await page.screenshot({
         animations: "disabled",
