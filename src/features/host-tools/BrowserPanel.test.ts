@@ -987,6 +987,8 @@ it("uses the explicitly selected local browser and blocks conversation annotatio
   expect(container.textContent).toContain("Shared host browser · This computer");
   expect(button("Select element and add to composer").disabled).toBe(true);
   await act(async () => button("Select element and add to composer").click());
+  // The setup action renders after the blocked annotation attempt settles.
+  await vi.waitFor(() => expect(button("Set up host browser")).toBeDefined());
   await act(async () => button("Set up host browser").click());
   expect(hostToolRequest).toHaveBeenCalledWith(
     "remote://macbook/repo",
