@@ -13,7 +13,7 @@ for (const theme of ["dark", "light"])
         documents.getByRole("tab", { name: "Privacy policy", exact: true }),
       ).toHaveAttribute("aria-selected", "true");
       await expect(policies.locator("article")).toContainText(
-        "No developer collection or tracking",
+        "What bycoda collects, and what it does not",
       );
       await expect(page.getByRole("dialog")).toHaveCount(0);
       const reader = policies.locator(".policy-reader");

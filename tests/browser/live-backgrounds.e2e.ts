@@ -154,7 +154,11 @@ test("the scene picker persists canonical scenes and supports keyboard selection
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/settings.html?section=appearance&lang=en");
-  // The scene picker lives in the collapsed "Live" background layer.
+  // The scene picker lives in the collapsed "Live" layer of the Background tab.
+  await page
+    .getByRole("tablist", { name: "Appearance", exact: true })
+    .getByRole("tab", { name: "Background", exact: true })
+    .click();
   await page
     .getByRole("button", { name: /Animated scene that moves behind the workspace/ })
     .click();
