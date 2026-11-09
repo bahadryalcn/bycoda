@@ -154,14 +154,18 @@ test("the scene picker persists canonical scenes and supports keyboard selection
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/settings.html?section=appearance&lang=en");
-  // The scene picker lives in the collapsed "Live" layer of the Background tab.
-  await page
-    .getByRole("tablist", { name: "Appearance", exact: true })
-    .getByRole("tab", { name: "Background", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: /Animated scene that moves behind the workspace/ })
-    .click();
+  // The scene picker lives in the collapsed "Live" layer of the Background tab; a reload
+  // returns to the default tab with every layer closed.
+  const openPicker = async () => {
+    await page
+      .getByRole("tablist", { name: "Appearance", exact: true })
+      .getByRole("tab", { name: "Background", exact: true })
+      .click();
+    await page
+      .getByRole("button", { name: /Animated scene that moves behind the workspace/ })
+      .click();
+  };
+  await openPicker();
   const picker = page.getByRole("radiogroup", { name: "Live background scene", exact: true });
   const radios = picker.getByRole("radio");
   await expect(radios).toHaveCount(sceneChoices.length);
@@ -174,6 +178,7 @@ test("the scene picker persists canonical scenes and supports keyboard selection
       .poll(() => page.evaluate((key) => localStorage.getItem(key), preferenceKey))
       .toBe(effect);
     await page.reload();
+    await openPicker();
     await expect(radios.nth(index)).toBeChecked();
   }
   await radios.last().focus();
