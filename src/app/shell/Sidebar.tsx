@@ -2913,7 +2913,7 @@ function SidebarComponent({
           folderId={row.folderId}
           groupSection={row.groupSection}
         >
-          {renderSessionCard(row.session, row.section === "reminders")}
+          {renderSessionCard(row.session, row.section === "pinned" || row.section === "reminders")}
         </SessionListItem>
       );
     }
