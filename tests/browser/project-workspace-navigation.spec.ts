@@ -755,10 +755,11 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
   await page.goto("/tests/browser/project-workspace-navigation.html?worktrees=1");
   const panel = page.locator('[data-workspace-source-control="G:/wallet/api"]');
   await expect(panel).toBeVisible();
-  // The picker opens on the session's own checkout; the overview lists every checkout.
+  // The picker opens on the session's own checkout, named by its folder (the branch control
+  // below already names the branch); the overview lists every checkout.
   await expect(
     panel.getByRole("button", {
-      name: /^Working copy: main · api · This session/,
+      name: /^Working copy: api · This session/,
     }),
   ).toBeVisible();
   await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
@@ -787,9 +788,9 @@ test("main and worktrees remain separate and usable in narrow and wide Changes p
   await expect(
     panel.getByRole("button", { name: "Working copy: All checkouts", exact: true }),
   ).toBeVisible();
-  await choose(panel, "Working copy", /^mc\/task · task/);
+  await choose(panel, "Working copy", /^task\b/);
   await expect(panel.locator("[data-checkout-overview]")).toHaveCount(0);
-  await expect(panel.getByRole("button", { name: /^Working copy: mc\/task · task/ })).toBeVisible();
+  await expect(panel.getByRole("button", { name: /^Working copy: task\b/ })).toBeVisible();
   await choose(panel, "Working copy", "All checkouts");
   await expect(checkouts).toHaveCount(2);
   await expect(taskToggle).toHaveAttribute("aria-expanded", "true");

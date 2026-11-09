@@ -25,13 +25,14 @@ for (const theme of ["dark", "light"]) {
       }
       const running = dock.locator('[data-dock-agent="status-running"]');
       const geometry = await running.evaluate((node) => {
-        const identity = node.querySelector(".activity-dock-agent-identity > span")!;
+        // The title leads; the model line (marks, model, account) sits beneath it.
+        const model = node.querySelector(".activity-dock-agent-identity > span:last-child")!;
         const metrics = node.querySelector(".activity-dock-agent-metrics")!;
         const title = node.querySelector(".whitespace-pre-wrap")!;
         const arrow = node.lastElementChild!;
         return {
-          modelAboveTitle:
-            identity.getBoundingClientRect().bottom <= title.getBoundingClientRect().top + 1,
+          modelBelowTitle:
+            model.getBoundingClientRect().top >= title.getBoundingClientRect().bottom - 1,
           metricsAfterTitle:
             metrics.getBoundingClientRect().left >= title.getBoundingClientRect().right,
           metricsBeforeArrow:
@@ -40,12 +41,12 @@ for (const theme of ["dark", "light"]) {
         };
       });
       expect(geometry).toEqual({
-        modelAboveTitle: true,
+        modelBelowTitle: true,
         metricsAfterTitle: true,
         metricsBeforeArrow: true,
         fits: true,
       });
-      await expect(running.locator(".activity-dock-agent-identity > span").first()).toContainText(
+      await expect(running.locator(".activity-dock-agent-identity > span").last()).toContainText(
         /gpt-6.1-sol/i,
       );
       await expect(running.locator(".activity-dock-agent-metrics")).toContainText(

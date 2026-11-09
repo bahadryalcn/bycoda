@@ -1913,7 +1913,8 @@ function ProjectGroupSection({
             )}
           </div>
         </Button>
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 @max-[140px]/rail:hidden">
+        {/* The name keeps a readable minimum while hover reveals the group actions beside it. */}
+        <div className="flex min-w-12 flex-1 items-center gap-1.5 @max-[140px]/rail:hidden">
           {workspaceRoot && !locked ? (
             <Button
               variant="ghost"
@@ -1930,7 +1931,7 @@ function ProjectGroupSection({
               onClick={() => onSelect(workspaceRoot)}
               size="sm"
               // With its 1px border, this starts the name where a plain group's `ps-1.5` label does.
-              className="min-w-0 flex-1 justify-start ps-1.25 text-left"
+              className="min-w-8 flex-1 justify-start ps-1.25 text-left"
             >
               <span className={nameClassName}>{group.name}</span>
             </Button>
