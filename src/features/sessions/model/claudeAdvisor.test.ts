@@ -75,7 +75,7 @@ describe("Claude advisor selection", () => {
       offeredDelegationSetting(setting, [main], "claude-private-advisor", main).options.at(-1),
     ).toEqual({ value: "claude-private-advisor", label: "claude-private-advisor" });
   });
-  it("deduplicates resolved aliases, labels generic names and excludes unknown targets", () => {
+  it("deduplicates resolved aliases, labels generic names and admits newer releases", () => {
     const main = model("opus", "Opus", "claude-opus-5-5");
     const offered = [
       main,
@@ -87,6 +87,7 @@ describe("Claude advisor selection", () => {
     expect(offeredDelegationSetting(setting, offered, undefined, main).options.slice(2)).toEqual([
       { value: "claude-opus-5-5", label: "Opus 5.5" },
       { value: "claude-fable-5-1", label: "Fable 5.1" },
+      { value: "claude-fable-99", label: "Fable 99" },
     ]);
     expect(offeredDelegationSetting(setting, [main], "opus", main).options.at(-1)?.value).toBe(
       "opus",
