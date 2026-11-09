@@ -155,7 +155,8 @@ export function QuestionFields({
           fieldClassName={styles.answer}
         />
       ) : (
-        <div className={styles.options} role="group" aria-label={question.prompt}>
+        // The radio group or the field legend already names this set with the prompt.
+        <div className={styles.options}>
           {!question.multiSelect ? (
             <RadioGroup
               variant="list"
