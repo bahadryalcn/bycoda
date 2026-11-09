@@ -738,6 +738,7 @@ async function entry() {
   await main();
 }
 entry().catch((error) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  // `serve` routes console.* into the diagnostic log; the exit reason must still reach the caller.
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 });

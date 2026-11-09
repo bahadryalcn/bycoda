@@ -34,14 +34,14 @@ for (const theme of ["dark", "light"]) {
       });
       const list = page.locator(".project-notification-list");
       await expect(list.locator("fieldset")).toHaveCount(41);
-      // The project list flows with the settings page instead of nesting a second scroller.
+      // Long project sets scroll inside the bounded card instead of stretching the page.
       const geometry = await list.evaluate((element) => ({
         height: element.clientHeight,
         content: element.scrollHeight,
         overflow: getComputedStyle(element).overflowY,
       }));
-      expect(geometry.overflow).toBe("visible");
-      expect(geometry.content).toBeLessThanOrEqual(geometry.height + 1);
+      expect(geometry.overflow).toBe("auto");
+      expect(geometry.content).toBeGreaterThan(geometry.height);
       const search = page.getByRole("textbox", { name: "Search projects", exact: true });
       await search.fill("project-39");
       await expect(list.locator("fieldset")).toHaveCount(1);

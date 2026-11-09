@@ -154,6 +154,10 @@ test("the scene picker persists canonical scenes and supports keyboard selection
 }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/tests/browser/settings.html?section=appearance&lang=en");
+  // The scene picker lives in the collapsed "Live" background layer.
+  await page
+    .getByRole("button", { name: /Animated scene that moves behind the workspace/ })
+    .click();
   const picker = page.getByRole("radiogroup", { name: "Live background scene", exact: true });
   const radios = picker.getByRole("radio");
   await expect(radios).toHaveCount(sceneChoices.length);

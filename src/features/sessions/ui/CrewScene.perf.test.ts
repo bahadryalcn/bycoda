@@ -7,6 +7,7 @@ import { CrewScene } from "./CrewScene";
 const state = vi.hoisted(() => ({ enabled: true, paint: vi.fn(), dispose: vi.fn() }));
 vi.mock("../../settings/model/decorativeMotion", () => ({
   useDecorativeMotionEnabled: () => state.enabled,
+  useWindowHasFocus: () => true,
 }));
 vi.mock("./crewCodeArt", () => ({
   CODE_WIDTH: 1040,

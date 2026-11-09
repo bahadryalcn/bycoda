@@ -116,6 +116,7 @@ vi.mock("../model/remotePageCache", () => ({
   writeRemotePageCache: vi.fn(),
   flushRemotePageCache: vi.fn().mockResolvedValue(undefined),
   deleteRemotePageCache: vi.fn(),
+  forgetDeletedRemotePage: vi.fn(),
 }));
 vi.mock("@tauri-apps/api/webview", () => ({
   getCurrentWebview: () => ({ onDragDropEvent: async () => () => {} }),

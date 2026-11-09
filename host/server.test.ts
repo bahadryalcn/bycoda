@@ -596,6 +596,7 @@ it("requires the dedicated review confirmation before queuing an exact PR review
         body: "Reviewed summary",
         cwd: s.project.cwd,
       }),
+      "Laptop",
     );
     expect(s.send).not.toHaveBeenCalled();
   } finally {
@@ -638,13 +639,18 @@ it("requires a dedicated owner confirmation and derives project identity for Jir
       (await s.call("inbox.provider.request", { ...input, confirm: "CHANGE_JIRA_BOARD" })).value
         .result,
     ).toEqual({ id: "job", state: "queued" });
-    expect(request).toHaveBeenCalledWith(expect.stringMatching(/^[a-f0-9]{64}$/), "jira-rpc", {
-      action: "jira-board-transition",
-      cwd: s.project.cwd,
-      snapshotId: input.snapshotId,
-      key: "ENG-7",
-      transitionId: "9",
-    });
+    expect(request).toHaveBeenCalledWith(
+      expect.stringMatching(/^[a-f0-9]{64}$/),
+      "jira-rpc",
+      {
+        action: "jira-board-transition",
+        cwd: s.project.cwd,
+        snapshotId: input.snapshotId,
+        key: "ENG-7",
+        transitionId: "9",
+      },
+      "Laptop",
+    );
     expect(
       (
         await s.call("inbox.provider.request", {

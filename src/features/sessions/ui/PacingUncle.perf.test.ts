@@ -7,6 +7,7 @@ import { PacingUncle } from "./PacingUncle";
 const state = vi.hoisted(() => ({ paint: vi.fn() }));
 vi.mock("../../settings/model/decorativeMotion", () => ({
   useDecorativeMotionEnabled: () => true,
+  useWindowHasFocus: () => true,
 }));
 vi.mock("./pacingUncleArt", () => ({ drawPacingUncle: state.paint }));
 
