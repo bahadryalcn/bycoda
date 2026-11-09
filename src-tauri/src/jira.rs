@@ -292,24 +292,58 @@ fn jira_authorization(config: &JiraConfig) -> String {
 
 fn jira_get(config: &JiraConfig, path: &str) -> Result<Value, String> {
     let agent = crate::integrations::http::agent(HTTP_TIMEOUT, None);
-    let result = agent
-        .get(&format!("{}{path}", config.site))
-        .set("Authorization", &jira_authorization(config))
-        .set("Accept", "application/json")
-        .call();
+    let result = retry_transport(true, || {
+        agent
+            .get(&format!("{}{path}", config.site))
+            .set("Authorization", &jira_authorization(config))
+            .set("Accept", "application/json")
+            .call()
+    });
     read_jira_response(result)
 }
 
 fn jira_post(config: &JiraConfig, path: &str, body: &Value) -> Result<Value, String> {
     let agent = crate::integrations::http::agent(HTTP_TIMEOUT, None);
     let payload = serde_json::to_string(body).map_err(|error| error.to_string())?;
-    let result = agent
-        .post(&format!("{}{path}", config.site))
-        .set("Authorization", &jira_authorization(config))
-        .set("Accept", "application/json")
-        .set("Content-Type", "application/json")
-        .send_string(&payload);
+    // The issue search is a read; every other POST (comments) may have been applied.
+    let result = retry_transport(path.ends_with("/search/jql"), || {
+        agent
+            .post(&format!("{}{path}", config.site))
+            .set("Authorization", &jira_authorization(config))
+            .set("Accept", "application/json")
+            .set("Content-Type", "application/json")
+            .send_string(&payload)
+    });
     read_jira_response(result)
+}
+
+/// Whether a failed attempt may be repeated without risking a duplicate effect: reads always,
+/// writes only when the connection was never established.
+fn transport_retryable(kind: ureq::ErrorKind, idempotent: bool) -> bool {
+    idempotent
+        || matches!(
+            kind,
+            ureq::ErrorKind::Dns | ureq::ErrorKind::ConnectionFailed
+        )
+}
+
+/// A cold connection (DNS, TLS, a sleeping network) often fails once and works at once after:
+/// retry transport failures quietly so the first load does not surface "Could not reach Jira".
+fn retry_transport(
+    idempotent: bool,
+    attempt: impl Fn() -> Result<ureq::Response, ureq::Error>,
+) -> Result<ureq::Response, ureq::Error> {
+    let mut result = attempt();
+    for delay_ms in [400u64, 1200] {
+        match &result {
+            Err(ureq::Error::Transport(error)) if transport_retryable(error.kind(), idempotent) => {
+                std::thread::sleep(Duration::from_millis(delay_ms));
+                result = attempt();
+            }
+            _ => break,
+        }
+    }
+    result
 }
 
 fn read_jira_response(result: Result<ureq::Response, ureq::Error>) -> Result<Value, String> {
@@ -947,6 +981,14 @@ fn write_secret_file(path: &Path, value: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transport_retry_never_repeats_a_possibly_applied_write() {
+        assert!(transport_retryable(ureq::ErrorKind::Io, true));
+        assert!(!transport_retryable(ureq::ErrorKind::Io, false));
+        assert!(transport_retryable(ureq::ErrorKind::ConnectionFailed, false));
+        assert!(transport_retryable(ureq::ErrorKind::Dns, false));
+    }
 
     const SITE: &str = "https://acme.atlassian.net";
 

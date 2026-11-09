@@ -18,6 +18,14 @@ function temp() {
   return dir;
 }
 
+const stripColors = (catalog: Awaited<ReturnType<typeof hostProviderAccounts>>) =>
+  Object.fromEntries(
+    Object.entries(catalog).map(([provider, accounts]) => [
+      provider,
+      accounts.map(({ color: _color, ...account }) => account),
+    ]),
+  );
+
 describe("providerAccountEnvironment", () => {
   it("leaves the default account to the inherited environment", async () => {
     expect(await providerAccountEnvironment(undefined, {}, [])).toBeNull();
@@ -74,8 +82,12 @@ it("exposes only safe metadata for real Host profiles and validates the exact la
     terminal = temp();
   const codex = join(root, "provider-accounts", "codex", "account-work");
   mkdirSync(codex, { recursive: true });
-  mkdirSync(join(root, "provider-accounts", "claude", "account-other"), { recursive: true });
-  mkdirSync(join(root, "provider-accounts", "codex", "email@example.test"), { recursive: true });
+  mkdirSync(join(root, "provider-accounts", "claude", "account-other"), {
+    recursive: true,
+  });
+  mkdirSync(join(root, "provider-accounts", "codex", "email@example.test"), {
+    recursive: true,
+  });
   writeFileSync(
     join(codex, "auth.json"),
     '{"email":"private@example.test","token":"DO_NOT_READ_OR_EXPOSE"}',
@@ -89,7 +101,7 @@ it("exposes only safe metadata for real Host profiles and validates the exact la
     }),
   );
   const catalog = await hostProviderAccounts([root]);
-  expect(catalog).toEqual({
+  expect(stripColors(catalog)).toEqual({
     codex: [
       { id: "default", label: "Host default" },
       { id: "account-work", label: "Codex account 1" },
@@ -100,6 +112,8 @@ it("exposes only safe metadata for real Host profiles and validates the exact la
       { id: "account-other", label: "Claude account 1" },
     ],
   });
+  for (const accounts of Object.values(catalog))
+    for (const account of accounts) expect(account.color).toMatch(/^hsl\(/);
   const serialized = JSON.stringify(catalog);
   for (const secret of [
     "private@example.test",
@@ -130,6 +144,45 @@ it("bounds named Host account inventory and ignores malformed terminal metadata"
   writeFileSync(join(root, "terminal-profiles.json"), "malformed metadata");
   const catalog = await hostProviderAccounts([root]);
   expect(catalog.codex).toHaveLength(129);
-  expect(catalog.claude).toEqual([{ id: "default", label: "Host default" }]);
+  expect(catalog.claude).toEqual([
+    {
+      id: "default",
+      label: "Host default",
+      color: expect.stringMatching(/^hsl\(/),
+    },
+  ]);
   expect(await assertHostProviderAccount("codex", "account-129", [root])).toBe("account-129");
+});
+
+describe("provider account styles", () => {
+  it("applies the owner's names and palette colours and drops malformed entries", async () => {
+    const { applyProviderAccountStyles, parseProviderAccountStyles } =
+      await import("./provider-account-styles");
+    const styles = parseProviderAccountStyles({
+      claude: {
+        "account-a": { label: "  Work   Max ", color: "coral" },
+        "account-b": { color: "not-a-colour" },
+        "bad id": { label: "x" },
+      },
+      grok: { a: { label: "x" } },
+    });
+    expect(styles).toEqual({ claude: { "account-a": { label: "Work Max", color: "coral" } } });
+    const merged = applyProviderAccountStyles(
+      {
+        claude: [
+          { id: "default", label: "Host default", color: "#111" },
+          { id: "account-a", label: "Claude account 1", color: "#222" },
+          { id: "account-b", label: "Claude account 2", color: "#333" },
+        ],
+      },
+      styles,
+    );
+    expect(merged.claude?.[1]).toMatchObject({ label: "Work Max" });
+    expect(merged.claude?.[1].color).not.toBe("#222");
+    expect(merged.claude?.[2]).toEqual({
+      id: "account-b",
+      label: "Claude account 2",
+      color: "#333",
+    });
+  });
 });

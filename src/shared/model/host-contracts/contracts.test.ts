@@ -177,6 +177,18 @@ describe("Host WS method contracts", () => {
       resultSchema.parse([{ ...summary, managedBy: { ...summary.managedBy, extra: 1 } }]),
     ).toThrow();
   });
+  it("accepts managedBy on a session view (session open regression)", () => {
+    const schema = getHostRpcMethod("sessions.get")!.resultSchema;
+    const view = {
+      projectId: "project-a",
+      revision: 1,
+      status: "idle",
+      updatedAt: 1,
+      session: { id: "session-a" },
+      managedBy: { assistant: true, managedAt: 1 },
+    };
+    expect(schema.parse(view)).toEqual(view);
+  });
   it("accepts only JSON results and notifications, not native values or mixed outcomes", () => {
     const response = {
       jsonrpc: "2.0",

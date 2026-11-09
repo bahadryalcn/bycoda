@@ -29,7 +29,11 @@ export const CatalogModelSchema = z.strictObject({
     .optional(),
   contextWindow: z.number().optional(),
 });
-const account = z.strictObject({ id: z.string(), label: z.string() });
+const account = z.strictObject({
+  id: z.string(),
+  label: z.string(),
+  color: z.string().optional(),
+});
 export const HostModelAccountsSchema = z.strictObject({
   codex: z.array(account).optional(),
   claude: z.array(account).optional(),

@@ -25,8 +25,8 @@ export async function resumeCodexThread<T extends { thread?: { id?: string } }>(
     result = await resume();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const expected = `session ${threadId} is archived.`;
-    if (!message.includes(expected)) throw error;
+    // Codex words this as "session <id> is archived." or "thread <id> is archived"; only the exact id qualifies.
+    if (!message.includes(threadId) || !/\bis archived\b/i.test(message)) throw error;
     const archived = new CodexArchivedThreadError(threadId, error);
     // Never retry an uncertain restore: a timeout may have changed provider state.
     const restored = await rpc

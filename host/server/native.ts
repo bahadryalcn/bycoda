@@ -25,6 +25,10 @@ import { bindNativeDevicesOwner } from "../ports/native-devices";
 import { bindNativeServicesOwner } from "../ports/native-services";
 import { nativeBufferUploadPlatform } from "../ports/native-workspaces";
 import { hostProviderAccounts } from "../providers/provider-accounts";
+import {
+  applyProviderAccountStyles,
+  readProviderAccountStyles,
+} from "../providers/provider-account-styles";
 import type { ServerBindings } from "./bindings";
 export function createNativeRuntime(
   dependencies: Pick<
@@ -89,7 +93,11 @@ export function createNativeRuntime(
   });
   const modelsService = createModelsService({
     read: dependencies.models,
-    accounts: hostProviderAccounts,
+    accounts: async () =>
+      applyProviderAccountStyles(
+        await hostProviderAccounts(),
+        await readProviderAccountStyles(dependencies.engine.store).catch(() => ({})),
+      ),
     providers: dependencies.providers,
   });
   const nativeDevicesService = createNativeDevicesService();

@@ -22,6 +22,8 @@ import { handleRuntimeLogsRpc } from "./rpc-runtime-logs";
 import { handleSessionsRpc } from "./rpc-sessions";
 import { handleTasksRpc } from "./rpc-tasks";
 import { handleTerminalsRpc } from "./rpc-terminals";
+import { handlePullRequestsRpc } from "./rpc-pull-requests";
+import { handleUsageRpc } from "./rpc-usage";
 import { handleActivityOwnerRpc, handleSessionLifecycleRpc } from "./rpc-account-platform";
 import { handleDecisionModelsRpc } from "./rpc-decision-models";
 import { handleSecretsOwnerRpc } from "./rpc-secrets";
@@ -37,6 +39,7 @@ import { handleWorktreesRpc } from "./rpc-worktrees";
 type Dependencies = Pick<
   ServerBindings,
   | "engine"
+  | "pullRequestWatch"
   | "managedWorkspaces"
   | "workspaceForOwnerRpc"
   | "withWorkspaceOwner"
@@ -280,6 +283,11 @@ const handlers: Record<
   "sync.pull": handleSessionsRpc,
   "sync.push": handleSessionsRpc,
   "usage.sessions.read": handleSessionsRpc,
+  "usage.limits.read": handleUsageRpc,
+  "usage.cost.read": handleUsageRpc,
+  "pullRequests.link": handlePullRequestsRpc,
+  "pullRequests.unlink": handlePullRequestsRpc,
+  "pullRequests.linked": handlePullRequestsRpc,
   "attachments.claim": handleSessionsRpc,
   "attachments.release": handleSessionsRpc,
   "attachments.claims": handleSessionsRpc,

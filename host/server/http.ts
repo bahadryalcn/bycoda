@@ -78,6 +78,7 @@ export function createHttpRuntime(
     | "conversationGoals"
     | "conversationSecrets"
     | "pullRequestWatchTools"
+    | "pullRequestWatch"
     | "conversationProject"
     | "browserRuntime"
     | "workspace"

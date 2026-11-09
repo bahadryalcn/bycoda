@@ -158,8 +158,8 @@ it("exposes safe Host account catalog only to owner model discovery, preserving 
     const owner = await s.call("models.list", { projectId: s.project.id });
     expect(owner.value.result.accounts).toEqual({
       codex: [
-        { id: "default", label: "Host default" },
-        { id: "account-host", label: "Codex account 1" },
+        { id: "default", label: "Host default", color: expect.any(String) },
+        { id: "account-host", label: "Codex account 1", color: expect.any(String) },
       ],
     });
     expect(JSON.stringify(owner.value.result.accounts)).not.toContain(

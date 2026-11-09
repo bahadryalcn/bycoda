@@ -26770,7 +26770,11 @@
               "claude": {
                 "items": {
                   "additionalProperties": false,
-                  "properties": { "id": { "type": "string" }, "label": { "type": "string" } },
+                  "properties": {
+                    "color": { "type": "string" },
+                    "id": { "type": "string" },
+                    "label": { "type": "string" }
+                  },
                   "required": ["id", "label"],
                   "type": "object"
                 },
@@ -26779,7 +26783,11 @@
               "codex": {
                 "items": {
                   "additionalProperties": false,
-                  "properties": { "id": { "type": "string" }, "label": { "type": "string" } },
+                  "properties": {
+                    "color": { "type": "string" },
+                    "id": { "type": "string" },
+                    "label": { "type": "string" }
+                  },
                   "required": ["id", "label"],
                   "type": "object"
                 },
@@ -33280,6 +33288,24 @@
               },
               "historyLoading": { "type": "boolean" },
               "lastActivityAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+              "managedBy": {
+                "additionalProperties": false,
+                "properties": {
+                  "assistant": { "const": true, "type": "boolean" },
+                  "detachedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "jobId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  },
+                  "managedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+                  "supervisionId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                    "type": "string"
+                  }
+                },
+                "required": ["assistant", "managedAt"],
+                "type": "object"
+              },
               "pinned": { "type": "boolean" },
               "projectId": {
                 "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -34344,6 +34370,32 @@
                             "minimum": 0,
                             "type": "integer"
                           },
+                          "managedBy": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "assistant": { "const": true, "type": "boolean" },
+                              "detachedAt": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "jobId": {
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                                "type": "string"
+                              },
+                              "managedAt": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "supervisionId": {
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                                "type": "string"
+                              }
+                            },
+                            "required": ["assistant", "managedAt"],
+                            "type": "object"
+                          },
                           "pinned": { "type": "boolean" },
                           "projectId": {
                             "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -34501,6 +34553,32 @@
                             "maximum": 9007199254740991,
                             "minimum": 0,
                             "type": "integer"
+                          },
+                          "managedBy": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "assistant": { "const": true, "type": "boolean" },
+                              "detachedAt": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "jobId": {
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                                "type": "string"
+                              },
+                              "managedAt": {
+                                "maximum": 9007199254740991,
+                                "minimum": 0,
+                                "type": "integer"
+                              },
+                              "supervisionId": {
+                                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                                "type": "string"
+                              }
+                            },
+                            "required": ["assistant", "managedAt"],
+                            "type": "object"
                           },
                           "pinned": { "type": "boolean" },
                           "projectId": {
@@ -37432,6 +37510,32 @@
                         "minimum": 0,
                         "type": "integer"
                       },
+                      "managedBy": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assistant": { "const": true, "type": "boolean" },
+                          "detachedAt": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "jobId": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "managedAt": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "supervisionId": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                            "type": "string"
+                          }
+                        },
+                        "required": ["assistant", "managedAt"],
+                        "type": "object"
+                      },
                       "pinned": { "type": "boolean" },
                       "projectId": {
                         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -37570,6 +37674,32 @@
                         "maximum": 9007199254740991,
                         "minimum": 0,
                         "type": "integer"
+                      },
+                      "managedBy": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assistant": { "const": true, "type": "boolean" },
+                          "detachedAt": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "jobId": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                            "type": "string"
+                          },
+                          "managedAt": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "supervisionId": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                            "type": "string"
+                          }
+                        },
+                        "required": ["assistant", "managedAt"],
+                        "type": "object"
                       },
                       "pinned": { "type": "boolean" },
                       "projectId": {
@@ -66421,6 +66551,32 @@
                       "minimum": 0,
                       "type": "integer"
                     },
+                    "managedBy": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assistant": { "const": true, "type": "boolean" },
+                        "detachedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "jobId": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
+                        "managedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "supervisionId": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        }
+                      },
+                      "required": ["assistant", "managedAt"],
+                      "type": "object"
+                    },
                     "pinned": { "type": "boolean" },
                     "projectId": {
                       "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -66555,6 +66711,32 @@
                       "maximum": 9007199254740991,
                       "minimum": 0,
                       "type": "integer"
+                    },
+                    "managedBy": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assistant": { "const": true, "type": "boolean" },
+                        "detachedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "jobId": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        },
+                        "managedAt": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "supervisionId": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+                          "type": "string"
+                        }
+                      },
+                      "required": ["assistant", "managedAt"],
+                      "type": "object"
                     },
                     "pinned": { "type": "boolean" },
                     "projectId": {
@@ -66691,6 +66873,24 @@
         },
         "historyLoading": { "type": "boolean" },
         "lastActivityAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+        "managedBy": {
+          "additionalProperties": false,
+          "properties": {
+            "assistant": { "const": true, "type": "boolean" },
+            "detachedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+            "jobId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            },
+            "managedAt": { "maximum": 9007199254740991, "minimum": 0, "type": "integer" },
+            "supervisionId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
+              "type": "string"
+            }
+          },
+          "required": ["assistant", "managedAt"],
+          "type": "object"
+        },
         "pinned": { "type": "boolean" },
         "projectId": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,199}(?![\\s\\S])",
@@ -66804,5 +67004,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "6843e8c7da3a4d9b7752ecc722ae760241c085be251ad003268909b386628583"
+  "schemaHash": "00e3fdbff552069d356bf979a5feea56a4261542b965ce4890475b288ea2d412"
 }

@@ -9,3 +9,4 @@ export {
   subscribeProviderAccounts,
 } from "../model/providerAccounts";
 export type { ProviderAccount, ProviderAccountProvider } from "../model/providerAccounts";
+export { startProviderAccountHostSync } from "../model/providerAccountHostSync";

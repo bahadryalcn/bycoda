@@ -29,6 +29,16 @@ describe("Codex thread recovery", () => {
     expect(request.mock.calls[1][1]).toEqual({ threadId: "abc" });
   });
 
+  it("restores when codex words the archived error as a thread without a trailing period", async () => {
+    const request = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Thread abc is archived; run codex unarchive abc"))
+      .mockResolvedValueOnce({ thread: { id: "abc" } })
+      .mockResolvedValueOnce({ thread: { id: "abc" } });
+    await expect(run(request)).resolves.toEqual({ thread: { id: "abc" } });
+    expect(request).toHaveBeenCalledTimes(3);
+  });
+
   it("does not restore another identity or treat missing history as archived", async () => {
     for (const message of [
       "session other is archived. Run codex unarchive other.",
