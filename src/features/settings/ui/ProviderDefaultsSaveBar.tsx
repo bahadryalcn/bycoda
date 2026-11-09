@@ -39,6 +39,8 @@ const subscribeGroups = (listener: () => void) =>
 
 export function useDefaultsTargets(cwd: string | undefined, recents: RecentProject[] | undefined) {
   const revision = useSyncExternalStore(subscribeGroups, groupsSnapshot, groupsSnapshot);
+  // Labels are translated when the options are built, so a language change rebuilds them.
+  const locale = getLocale();
   return useMemo(() => {
     const groups = loadProjectGroups();
     const options: {
@@ -91,8 +93,7 @@ export function useDefaultsTargets(cwd: string | undefined, recents: RecentProje
       has: (target: DefaultsTarget) =>
         options.some((option) => option.value === targetValue(target) && !option.disabled),
     };
-    // getLocale(): labels are translated when the options are built.
-  }, [getLocale(), cwd, recents, revision]);
+  }, [locale, cwd, recents, revision]);
 }
 
 /**

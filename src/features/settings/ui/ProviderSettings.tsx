@@ -94,6 +94,10 @@ const retained: { tab: ProvidersTab; draft: DefaultsDraft; target: string } = {
   target: "global",
 };
 
+const retain = (patch: Partial<typeof retained>) => {
+  Object.assign(retained, patch);
+};
+
 /** Test seam: start the next page from the first tab with no pending defaults. */
 export function resetRetainedProvidersPage() {
   retained.tab = "providers";
@@ -134,14 +138,14 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
   );
   const [tab, setTabState] = useState<ProvidersTab>(retained.tab);
   const setTab = (next: ProvidersTab) => {
-    retained.tab = next;
+    retain({ tab: next });
     setTabState(next);
   };
   const [draft, setDraftState] = useState(retained.draft);
   const [targetChoice, setTargetChoice] = useState(retained.target);
   const [saveState, setSaveState] = useState<DefaultsSaveState>({ state: "idle" });
   const setDraft = (next: DefaultsDraft) => {
-    retained.draft = next;
+    retain({ draft: next });
     setDraftState(next);
     setSaveState({ state: "idle" });
   };
@@ -537,7 +541,7 @@ export function ProvidersPage({ cwd, recents }: { cwd?: string; recents?: Recent
               target={target}
               options={targets.options}
               onTargetChange={(value) => {
-                retained.target = value;
+                retain({ target: value });
                 setTargetChoice(value);
                 setSaveState({ state: "idle" });
               }}
