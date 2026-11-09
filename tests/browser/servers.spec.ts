@@ -241,8 +241,10 @@ for (const theme of ["light", "dark"]) {
           .at(-1);
         fixture.serversFixtureEmit("pty-exit", { id: request.input.id, code: 255 });
       });
-      await expect(page.getByRole("alert")).toContainText("Terminal closed");
-      await expect(page.getByRole("alert")).toContainText("255");
+      // The exit notice is a warning-tone polite `role="status"` (the tab badge is one too).
+      await expect(
+        page.getByRole("status").filter({ hasText: "Terminal closed · Exit code: 255" }),
+      ).toHaveCount(1);
       await expect(page.getByRole("button", { name: "Resume input", exact: true })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
         true,
@@ -527,9 +529,9 @@ for (const theme of ["light", "dark"]) {
     const refresh = page.getByRole("button", { name: "Refresh servers", exact: true });
     await refresh.focus();
     await page.keyboard.press("Enter");
-    const alert = page.getByRole("alert");
+    // Warning-tone notices are polite `role="status"`; scope to the notice by its text.
+    const alert = page.getByRole("status").filter({ hasText: "Showing last loaded data" });
     await expect(alert).toHaveCount(1);
-    await expect(alert).toContainText("Showing last loaded data");
     await expect(alert.getByRole("button", { name: "Retry", exact: true })).toBeInViewport();
     await expect(inventory.locator("[data-server-row]")).toHaveCount(35);
     await expect(inventory.getByRole("button").first()).toHaveAttribute("aria-pressed", "true");

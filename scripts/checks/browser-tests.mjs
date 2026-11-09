@@ -151,7 +151,14 @@ export async function main(args = process.argv.slice(2)) {
         { env, capture: true },
       );
       if (listed.code !== 0)
-        throw new Error(`Browser discovery failed: ${suite.id}: ${listed.stderr}`);
+        throw new Error(
+          `Browser discovery failed: ${suite.id} (exit ${listed.code}): ${[
+            listed.stderr.trim(),
+            listed.stdout.trim().slice(-2000),
+          ]
+            .filter(Boolean)
+            .join("\n")}`,
+        );
       const discoveryFile = join(suiteDirectory, "discovery.json");
       writeFileSync(discoveryFile, listed.stdout);
       if (forwarded.length && listedCases(JSON.parse(listed.stdout)).length === 0) {

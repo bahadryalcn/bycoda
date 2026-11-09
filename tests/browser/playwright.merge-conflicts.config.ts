@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 export default defineConfig({
   testDir: ".",
   testMatch: ["merge-conflicts.spec.ts", "git-workspace.spec.ts"],
-  grep: /merge editor|conflict sonucu/,
+  grep: /merge editor|conflict result/,
   outputDir: "../../temp/test-results/merge-conflicts",
   workers: 1,
   timeout: 30_000,

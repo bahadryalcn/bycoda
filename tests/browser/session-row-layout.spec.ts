@@ -35,26 +35,28 @@ for (const light of [false, true]) {
     });
   }
 }
-test("sidebar glass retains selection and grouped action focus without main glass", async ({
-  page,
-}) => {
+test("sidebar glass retains selection and focus without main glass", async ({ page }) => {
+  // The GitHub prompt group no longer lives in this sidebar (the footer owns feedback; the
+  // joined-action glass and focus are covered by update-footer.spec.ts).
   await page.goto("/tests/browser/session-row-layout.html", { waitUntil: "domcontentloaded" });
   const row = page.locator('[data-session-card="row-multi"]');
-  const group = page.locator("[data-github-star-prompt]");
+  const sidebar = page.getByRole("complementary").first();
   await expect(row).toBeVisible();
-  await expect(group).toBeVisible();
-  const normal = await group.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const normal = await sidebar.evaluate((element) => getComputedStyle(element).backgroundColor);
   await page.evaluate(() => {
     document.documentElement.classList.remove("glass-body", "theme-light");
     document.documentElement.classList.add("has-native-glass");
   });
-  const glass = await group.evaluate((element) => getComputedStyle(element).backgroundColor);
+  const glass = await sidebar.evaluate((element) => getComputedStyle(element).backgroundColor);
   expect(glass).not.toBe(normal);
   const selected = await row.evaluate((element) => getComputedStyle(element).backgroundImage);
   expect(selected).not.toBe("none");
-  const dismiss = group.getByRole("button", { name: "Dismiss GitHub repository prompt" });
-  await dismiss.focus();
-  await expect(dismiss).toBeFocused();
+  const main = page.getByRole("main");
+  expect(await main.evaluate((element) => getComputedStyle(element).backgroundColor)).toMatch(
+    /^(rgba\(0, 0, 0, 0\)|transparent)$/,
+  );
+  await row.getByRole("button").first().focus();
+  await expect(row.getByRole("button").first()).toBeFocused();
   await page.emulateMedia({ forcedColors: "active" });
   await expect(row).toHaveCSS("outline-style", "solid");
 });
@@ -468,7 +470,8 @@ for (const light of [false, true]) {
       const dialog = page.getByRole("dialog", { name: "Choose a project for the new session" });
       const search = dialog.getByRole("combobox", { name: "Search projects" });
       await expect(search).toBeFocused();
-      await expect(dialog.getByRole("option")).toHaveCount(2);
+      // Options: "No project" (default folder) plus the two fixture projects.
+      await expect(dialog.getByRole("option")).toHaveCount(3);
       await expect(page.getByRole("status", { name: "Created sessions" })).toHaveText("0");
       const evidence = path.resolve("temp/verification/2026-11-04-new-session-project");
       await mkdir(evidence, { recursive: true });

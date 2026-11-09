@@ -189,16 +189,19 @@ async function setup(fullAuthority = false) {
 it("limits transcript hydration before candidate ownership probes and rechecks visibility", async () => {
   const f = await setup();
   const original = await f.store.session(f.sessionId);
-  for (let i = 0; i < 1001; i++)
-    await f.store.save(
-      {
-        ...original,
-        revision: 1,
-        updatedAt: i + 1000,
-        session: { ...original.session, id: `candidate-${i}`, title: `Candidate ${i}` },
-      },
-      {},
-    );
+  // One transaction: 1001 separate commits take over 30s on a loaded Windows runner.
+  await f.store.transaction(async () => {
+    for (let i = 0; i < 1001; i++)
+      await f.store.save(
+        {
+          ...original,
+          revision: 1,
+          updatedAt: i + 1000,
+          session: { ...original.session, id: `candidate-${i}`, title: `Candidate ${i}` },
+        },
+        {},
+      );
+  });
   const read = vi.spyOn(f.store, "session");
   const candidates = await f.manual.listCandidates("owner");
   expect(candidates).toHaveLength(100);

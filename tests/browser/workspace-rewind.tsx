@@ -555,7 +555,11 @@ function Fixture() {
       settings: [],
     };
     return (
-      <main className="relative h-dvh min-h-0 min-w-0 bg-(--ui-surface) text-(--ui-text)">
+      <main
+        className="relative min-h-0 min-w-0 bg-(--ui-surface) text-(--ui-text)"
+        // Inline: the bounded tasks fixture CSS does not scan tests/, so h-dvh is never generated.
+        style={{ height: "100dvh" }}
+      >
         <ModelSourceContext.Provider
           value={{
             modelsFor: () => [model],

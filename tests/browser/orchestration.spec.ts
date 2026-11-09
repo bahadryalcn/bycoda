@@ -27,7 +27,12 @@ for (const width of [390, 1000])
     await page.getByRole("button", { name: "Model for UI task", exact: true }).click();
     await search.fill("Claude");
     await search.dispatchEvent("keydown", { key: "Enter", isComposing: true });
-    await expect(page.getByRole("menuitemradio")).toHaveCount(0);
+    // The filtered model row stays; a composing Enter must not open its effort menu.
+    await expect(page.getByRole("menuitemradio", { name: "Fixture Two" })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    await expect(page.getByRole("menuitemradio", { name: "High", exact: true })).toHaveCount(0);
     await search.press("Enter");
     await page.getByRole("menuitemradio", { name: "High", exact: true }).click();
     await page.getByRole("button", { name: "Details for UI task", exact: true }).click();
@@ -42,15 +47,17 @@ for (const width of [390, 1000])
       overscroll: getComputedStyle(el).overscrollBehavior,
     }));
     expect(dimensions.resize).toBe("none");
-    if (dimensions.overscroll !== undefined) expect(dimensions.overscroll).toBe("none");
-    expect(
-      await instruction.evaluate((el) => {
-        el.scrollTop = el.scrollHeight;
-        const wheel = new WheelEvent("wheel", { deltaY: 100, bubbles: true, cancelable: true });
-        el.dispatchEvent(wheel);
-        return wheel.defaultPrevented;
-      }),
-    ).toBe(true);
+    // The shared lock either chains no scroll on the compositor (`contain`, where there is no
+    // bounce) or cancels the wheel at the edge (macOS rubber band). An engine without
+    // `overscroll-behavior` reports nothing to check.
+    const wheelPrevented = await instruction.evaluate((el) => {
+      el.scrollTop = el.scrollHeight;
+      const wheel = new WheelEvent("wheel", { deltaY: 100, bubbles: true, cancelable: true });
+      el.dispatchEvent(wheel);
+      return wheel.defaultPrevented;
+    });
+    if (dimensions.overscroll !== undefined)
+      expect(dimensions.overscroll === "contain" || wheelPrevented).toBe(true);
     expect(dimensions.height).toBeGreaterThan(30);
     expect(dimensions.height).toBeLessThanOrEqual(dimensions.max);
     expect(dimensions.scroll).toBeGreaterThan(dimensions.height);
