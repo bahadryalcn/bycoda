@@ -42,9 +42,9 @@ export function OutreachBoard({ client, lists, onChanged }: OutreachBoardProps) 
   const [error, setError] = useState<string>();
 
   const load = useCallback(() => {
-    setError(undefined);
     Promise.all([client.sequences.list(), client.sequences.stats(selectedId)])
       .then(([list, result]) => {
+        setError(undefined);
         setSequences(list.items);
         setStats(result);
       })

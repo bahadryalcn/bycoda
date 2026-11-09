@@ -1,4 +1,5 @@
 import { formatDate, t } from "../../../../shared/i18n";
+import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { ActionHost } from "../../../../shared/ui/ActionHost";
 import { Button } from "../../../../shared/ui/Button";
 import { Plus } from "../../../../shared/ui/icons";
@@ -35,7 +36,7 @@ export function ContentCalendar({
 }: ContentCalendarProps) {
   const days = view === "week" ? weekDays(anchor) : monthCells(anchor);
   const byDay = entriesByDay(entries);
-  const now = Date.now();
+  const now = wallClockNow();
   const month = new Date(anchor).getMonth();
   return (
     <div className="content-calendar" data-view={view}>

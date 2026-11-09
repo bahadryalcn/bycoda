@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import { t } from "../../../shared/i18n";
 import { checkFailure, setupConfigKey, stageLabel, type Failure } from "./voiceSetupPresentation";
@@ -44,7 +44,9 @@ export function useVoiceSetup(
   );
   const configKey = JSON.stringify(setupConfig);
   const currentKey = useRef(configKey);
-  currentKey.current = configKey;
+  useLayoutEffect(() => {
+    currentKey.current = configKey;
+  });
   const installing = job.state === "installing";
   useEffect(() => {
     mounted.current = true;

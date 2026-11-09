@@ -219,7 +219,7 @@ it("shows the setup card instead of a generic error when no AI model is set, and
   await click(buttonWithText("Use this model"));
   const calls = client.request.mock.calls as unknown as [string, Record<string, unknown>?][];
   expect(calls[0]?.[0]).toBe("policy.get");
-  const save = calls.find(([action]) => /^policy\.save/.test(action));
+  const save = calls.find(([action]) => action.startsWith("policy.save"));
   expect(save).toBeDefined();
   expect(save?.[1]?.policies).toMatchObject({
     global: { keep: true, agent: { provider: "codex", model: "fixture-model" } },

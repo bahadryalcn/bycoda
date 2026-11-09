@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { t } from "../../../shared/i18n";
@@ -92,7 +92,9 @@ export function SshSettings({
   const [config, setConfig] = useState("");
   // Mirrors the textarea so a preview that resolves after an edit is dropped, not applied.
   const configRef = useRef(config);
-  configRef.current = config;
+  useLayoutEffect(() => {
+    configRef.current = config;
+  });
   const [preview, setPreview] = useState<Preview>();
   const [error, setError] = useState("");
   const hostsError = hostInventory.error;

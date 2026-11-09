@@ -70,7 +70,7 @@ export function MessagesPanel({
   const [detailOpen, setDetailOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const filterRef = useRef<HTMLButtonElement>(null);
-  const resize = useDragResize({
+  const { setPaneRef, sashProps } = useDragResize({
     min: MIN_WIDTH,
     max: () => Math.min(MAX_WIDTH, Math.round(window.innerWidth * 0.5)),
     defaultWidth: DEFAULT_WIDTH,
@@ -169,7 +169,7 @@ export function MessagesPanel({
   return (
     <div className="inbox-list-detail flex min-h-0 min-w-0 flex-1" data-detail-open={detailOpen}>
       <div
-        ref={resize.setPaneRef}
+        ref={setPaneRef}
         className="inbox-list-panel relative flex h-full min-h-0 shrink-0 flex-col border-r border-(--ui-pane-border) bg-transparent"
       >
         {sourceRow}
@@ -245,7 +245,7 @@ export function MessagesPanel({
         ) : null}
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{listBody}</div>
         <Sash
-          {...resize.sashProps}
+          {...sashProps}
           appearance="hidden"
           label={t("Resize conversation list")}
           className="absolute inset-y-0 -right-px"

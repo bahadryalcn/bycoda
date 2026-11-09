@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { DECISION_TASK_TYPES } from "../../../shared/model/host-contracts/decision-models";
 import { t } from "../../../shared/i18n";
 import { Badge } from "../../../shared/ui/Badge";
@@ -44,10 +44,12 @@ export function RoutingTable({
   const [saveError, setSaveError] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
+  const [draftSource, setDraftSource] = useState(routing);
+  if (draftSource !== routing) {
+    setDraftSource(routing);
     setDraft(routing);
     setThresholdText({});
-  }, [routing]);
+  }
 
   const invalid = DECISION_TASK_TYPES.some(
     (task) => thresholdText[task] !== undefined && parseThreshold(thresholdText[task]) === null,

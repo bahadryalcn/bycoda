@@ -75,7 +75,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
     summaryRefreshing,
     summaryLabel,
     history,
-    followMessages,
+    onHistoryScroll,
     messageElements,
     query,
     loadedThreads,
@@ -97,10 +97,7 @@ export function ConversationPanel(props: ConversationPanelProps) {
         <div
           className={styles.messages}
           ref={history}
-          onScroll={(event) => {
-            const node = event.currentTarget;
-            followMessages.current = node.scrollHeight - node.scrollTop - node.clientHeight < 64;
-          }}
+          onScroll={(event) => onHistoryScroll(event.currentTarget)}
         >
           {hasMore[threadId] && (
             <CollectionFooter

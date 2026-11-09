@@ -283,7 +283,11 @@ def backup(db, destination, seconds=15):
     started = time.monotonic()
     with contextlib.closing(sqlite3.connect(pathlib.Path(db).resolve().as_uri() + '?mode=ro', uri=True, timeout=1)) as source:
         with contextlib.closing(sqlite3.connect(destination, timeout=1)) as target:
-            source.backup(target, pages=-1)
+            def expired(status, remaining, total):
+                # BUSY/LOCKED steps are retried forever by sqlite3; this runs on every retry.
+                if time.monotonic() - started > seconds:
+                    raise TimeoutError(f'Database backup exceeded {seconds}s')
+            source.backup(target, pages=-1, progress=expired)
             if time.monotonic() - started > seconds:
                 raise TimeoutError(f'Database backup exceeded {seconds}s')
             if target.execute('pragma quick_check').fetchone()[0] != 'ok':

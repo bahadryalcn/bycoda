@@ -36,9 +36,9 @@ export function CaptureRules({ client, accounts, lists, onChanged }: CaptureRule
   const [busyId, setBusyId] = useState<string>();
 
   const load = useCallback(() => {
-    setError(undefined);
     Promise.all([client.captureRules.list(), client.sequences.list()])
       .then(([ruleResult, sequenceResult]) => {
+        setError(undefined);
         setRules(ruleResult.items);
         setSequences(sequenceResult.items);
       })

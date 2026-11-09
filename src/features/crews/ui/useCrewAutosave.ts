@@ -6,6 +6,12 @@ export type CrewAutosaveStatus = "idle" | "saving" | "saved" | "error";
 
 const AUTOSAVE_DELAY_MS = 800;
 
+type Mirror = {
+  returned: CrewDefinition | undefined;
+  lastSent: string | undefined;
+  failed: { fingerprint: string; message: string } | undefined;
+};
+
 type Live = {
   draft: CrewDefinition | null;
   saved: CrewDefinition | undefined;
@@ -14,6 +20,33 @@ type Live = {
   save: (definition: CrewDefinition) => Promise<CrewDefinition>;
   onSaved: (returned: CrewDefinition, sent: CrewDefinition) => void;
 };
+
+// The stored copy this draft is compared with: the newest of the listed and the returned one.
+function baseline(
+  listed: CrewDefinition | undefined,
+  id: string | undefined,
+  known: Mirror,
+): CrewDefinition | undefined {
+  return known.returned &&
+    known.returned.id === id &&
+    known.returned.updatedAt >= (listed?.updatedAt ?? 0)
+    ? known.returned
+    : listed;
+}
+
+function isPending(state: Live, known: Mirror): boolean {
+  return (
+    !!state.draft &&
+    state.enabled &&
+    shouldAutosave(
+      state.draft,
+      baseline(state.saved, state.draft.id, known),
+      state.valid,
+      known.lastSent,
+      known.failed?.fingerprint,
+    )
+  );
+}
 
 /**
  * Saves a stored crew's valid draft shortly after the last edit. One save runs at a
@@ -34,26 +67,11 @@ export function useCrewAutosave(input: Live & { delayMs?: number }) {
   const [failed, setFailed] = useState<{ fingerprint: string; message: string }>();
   const [saving, setSaving] = useState(false);
   const mirror = useRef({ returned, lastSent, failed });
-  mirror.current = { returned, lastSent, failed };
+  useLayoutEffect(() => {
+    mirror.current = { returned, lastSent, failed };
+  });
 
-  // The stored copy this draft is compared with: the newest of the listed and the returned one.
-  const baseline = (listed: CrewDefinition | undefined, id: string | undefined) =>
-    mirror.current.returned &&
-    mirror.current.returned.id === id &&
-    mirror.current.returned.updatedAt >= (listed?.updatedAt ?? 0)
-      ? mirror.current.returned
-      : listed;
-
-  const pending = (state: Live) =>
-    !!state.draft &&
-    state.enabled &&
-    shouldAutosave(
-      state.draft,
-      baseline(state.saved, state.draft.id),
-      state.valid,
-      mirror.current.lastSent,
-      mirror.current.failed?.fingerprint,
-    );
+  const pending = (state: Live) => isPending(state, mirror.current);
 
   const pump = useCallback((): Promise<void> => {
     if (inflight.current) return inflight.current;
@@ -142,7 +160,7 @@ export function useCrewAutosave(input: Live & { delayMs?: number }) {
     pump().catch(() => {});
   }, [pump]);
 
-  const dirty = pending(input);
+  const dirty = isPending(input, { returned, lastSent, failed });
   const failedNow = !!failed && failed.fingerprint === fingerprint;
   const status: CrewAutosaveStatus = failedNow
     ? "error"

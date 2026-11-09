@@ -38,7 +38,6 @@ export function ScanSettings({ client }: { client: DecisionModelsClient }) {
   }, []);
 
   useEffect(() => {
-    setLoadError(null);
     void client.discovery.settings.get({}).then(
       (result) => {
         if (!alive.current) return;
@@ -55,6 +54,7 @@ export function ScanSettings({ client }: { client: DecisionModelsClient }) {
         if (alive.current) setLoadError(error);
       },
     );
+    return () => setLoadError(null);
   }, [client, attempt]);
 
   const dirty = ports !== saved.ports || folders !== saved.folders;

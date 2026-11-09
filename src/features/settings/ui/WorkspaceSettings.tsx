@@ -30,6 +30,7 @@ function ExactGitRewindSetting() {
   const [pending, setPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [readAttempt, setReadAttempt] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
   const saving = useRef(false);
 
   useEffect(() => {
@@ -59,6 +60,7 @@ function ExactGitRewindSetting() {
   const save = async (next: boolean) => {
     if (saving.current || pending || !loaded) return;
     saving.current = true;
+    setIsSaving(true);
     setPending(true);
     setError(null);
     try {
@@ -67,6 +69,7 @@ function ExactGitRewindSetting() {
       setError(String(cause));
     } finally {
       saving.current = false;
+      setIsSaving(false);
       setPending(false);
     }
   };
@@ -80,8 +83,8 @@ function ExactGitRewindSetting() {
       )}
       feedback={
         pending ? (
-          <SettingsFeedback state="loading" immediate={saving.current}>
-            {saving.current ? t("Saving…") : t("Loading…")}
+          <SettingsFeedback state="loading" immediate={isSaving}>
+            {isSaving ? t("Saving…") : t("Loading…")}
           </SettingsFeedback>
         ) : error ? (
           <SettingsFeedback state="error">

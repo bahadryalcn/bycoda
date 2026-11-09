@@ -30,18 +30,24 @@ export function useCommandScreen(client: SocialClient, projectId?: string) {
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState<string | undefined>();
 
-  const refresh = useCallback(async () => {
-    const [sum, feed] = await Promise.allSettled([client.ai.summary(), client.ai.actions()]);
+  const read = useCallback(
+    () => Promise.allSettled([client.ai.summary(), client.ai.actions()]),
+    [client],
+  );
+  const apply = useCallback(([sum, feed]: Awaited<ReturnType<typeof read>>) => {
     if (sum.status === "fulfilled") setSummary(sum.value);
     if (feed.status === "fulfilled") setActions(feed.value.items);
     // A failed read is reported, never shown as an empty feed.
     if (sum.status === "rejected" || feed.status === "rejected")
       throw new Error(t("Could not load AI activity."));
-  }, [client]);
+  }, []);
+  const refresh = useCallback(async () => apply(await read()), [read, apply]);
 
   useEffect(() => {
-    refresh().catch(() => setError(t("Could not load AI activity.")));
-  }, [refresh]);
+    read()
+      .then(apply)
+      .catch(() => setError(t("Could not load AI activity.")));
+  }, [read, apply]);
 
   const run = useCallback(async (label: string, task: () => Promise<void>) => {
     setBusy(label);

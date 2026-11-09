@@ -3622,7 +3622,9 @@ it("shows host activity alongside a preserved local conversation conflict", asyn
   };
   await render(session);
   expect(
-    container.querySelector('button[aria-label^="This conversation is running in the background"]'),
+    container.querySelector(
+      '[role="img"][aria-label*="This conversation is running in the background"]',
+    ),
   ).not.toBeNull();
   // Sending is not refused: the message waits in the shared queue instead.
   expect(container.querySelector('button[aria-label^="Send."]')).toBeNull();

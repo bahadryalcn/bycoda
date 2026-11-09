@@ -89,7 +89,11 @@ export function DesktopHelperSetup({
     }
     if (!state || pending || attempted.current || state.phase === "ready") return;
     attempted.current = true;
-    if (state.phase !== "preparing") void act("prepare");
+    // Deferred one microtask so the pending state is set from a callback, not the effect body.
+    if (state.phase !== "preparing")
+      void Promise.resolve()
+        .then(() => act("prepare"))
+        .catch(() => undefined);
   }, [autoPrepare, pending, state]);
   useEffect(() => {
     if (!autoPrepare || applied.current || !helper || selectedPath) return;

@@ -28,16 +28,13 @@ export function SceneStrip({
   const groupRef = useRef<HTMLDivElement>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [playing, setPlaying] = useState<LiveBackground | null>(null);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(() => typeof IntersectionObserver === "undefined");
   const selectedIndex = Math.max(0, LIVE_BACKGROUNDS.indexOf(value));
 
   useEffect(() => {
     const element = groupRef.current;
     if (!element) return;
-    if (typeof IntersectionObserver === "undefined") {
-      setVisible(true);
-      return;
-    }
+    if (typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (!entries.some((entry) => entry.isIntersecting)) return;
@@ -54,8 +51,9 @@ export function SceneStrip({
     if (motionEnabled) return;
     if (timer.current !== null) clearTimeout(timer.current);
     timer.current = null;
-    setPlaying(null);
   }, [motionEnabled]);
+  // Motion turned off while a preview plays: drop it so it does not return when motion does.
+  if (!motionEnabled && playing !== null) setPlaying(null);
 
   useEffect(
     () => () => {

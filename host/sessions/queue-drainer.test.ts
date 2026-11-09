@@ -346,6 +346,7 @@ it("gives up on a stale claim of a paused queue", async () => {
   await queues.hold("chat");
   expect((await queues.get("chat")).claim).toBeDefined();
   await vi.advanceTimersByTimeAsync(CLAIM_GRACE_MS + 10);
+  await settle();
   expect((await queues.get("chat")).claim).toBeUndefined();
   expect((await queues.get("chat")).messages[0].deliveryUnknown).toBe(true);
 });

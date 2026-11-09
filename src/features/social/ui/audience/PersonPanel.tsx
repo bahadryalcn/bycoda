@@ -61,15 +61,20 @@ export function PersonPanel({
   onMerged,
 }: PersonPanelProps) {
   const [detail, setDetail] = useState<PersonDetail>();
-  const [loading, setLoading] = useState(true);
+  const [loadedId, setLoadedId] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [now] = useState(() => Date.now());
 
+  const loading = loadedId !== personId;
+  const [errorId, setErrorId] = useState(personId);
+  if (errorId !== personId) {
+    setErrorId(personId);
+    setError(undefined);
+  }
+
   useEffect(() => {
     let active = true;
-    setLoading(true);
-    setError(undefined);
     client.people
       .get(personId)
       .then((result) => {
@@ -79,7 +84,7 @@ export function PersonPanel({
         if (active) setError(errorMessage(err));
       })
       .finally(() => {
-        if (active) setLoading(false);
+        if (active) setLoadedId(personId);
       });
     return () => {
       active = false;

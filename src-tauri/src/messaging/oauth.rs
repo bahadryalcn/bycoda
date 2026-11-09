@@ -496,21 +496,21 @@ fn listen(listener: TcpListener, flow: Flow) {
     match callback {
         Callback::Ignore => {}
         Callback::Denied => {
+            set_state(&flow.handle, State::Denied);
             respond(
                 &mut stream,
                 "200 OK",
                 "Sign-in was cancelled. You can close this tab.",
             );
-            set_state(&flow.handle, State::Denied);
         }
         Callback::Error(code, _) => {
             let message = format!("{} sign-in failed: {code}", flow.purpose.label());
+            set_state(&flow.handle, State::Failed(message));
             respond(
                 &mut stream,
                 "200 OK",
                 "Sign-in failed. Return to bycoda for details.",
             );
-            set_state(&flow.handle, State::Failed(message));
         }
         Callback::Code(code) => {
             let result = exchange(
@@ -523,20 +523,20 @@ fn listen(listener: TcpListener, flow: Flow) {
             .and_then(|tokens| finish(flow.purpose, &flow.client, tokens));
             match result {
                 Ok(record) => {
+                    set_state(&flow.handle, State::Done(record));
                     respond(
                         &mut stream,
                         "200 OK",
                         "Signed in. You can close this tab and return to bycoda.",
                     );
-                    set_state(&flow.handle, State::Done(record));
                 }
                 Err(message) => {
+                    set_state(&flow.handle, State::Failed(message));
                     respond(
                         &mut stream,
                         "200 OK",
                         "Sign-in failed. Return to bycoda for details.",
                     );
-                    set_state(&flow.handle, State::Failed(message));
                 }
             }
         }

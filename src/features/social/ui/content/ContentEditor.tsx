@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { getLocale, t } from "../../../../shared/i18n";
+import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { Button } from "../../../../shared/ui/Button";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
 import { Sheet } from "../../../../shared/ui/Sheet";
@@ -81,7 +82,7 @@ export function ContentEditor(props: ContentEditorProps) {
   const accounts = snapshot?.accounts ?? [];
   const selected = selectedAccounts(draft, accounts);
   const creators = useTikTokCreators(client, selected, !locked);
-  const now = Date.now();
+  const now = wallClockNow();
   const problems = draftProblems({ draft, projectId, accounts, snapshot, creator: creators, now });
   const busy =
     pending.is("content.publish") || pending.is("content.draft") || pending.is("content.ai");

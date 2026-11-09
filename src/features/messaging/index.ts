@@ -1,3 +1,4 @@
+export type * as modelMessagingProvidersApi from "./public/messagingProviders";
 export * from "./model/messagingApi";
 export type * from "./model/messagingTypes";
 export {

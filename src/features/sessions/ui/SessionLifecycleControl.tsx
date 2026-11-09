@@ -11,7 +11,7 @@ import { SessionTaskLinkDialog, type LinkableTask } from "./SessionTaskLinkDialo
 
 type LinkDialog = { tasks: LinkableTask[]; linkedTaskId?: string };
 
-const folderName = (cwd: string) => cwd.split(/[\/]/).filter(Boolean).pop() ?? "";
+const folderName = (cwd: string) => cwd.split(/[/]/).filter(Boolean).pop() ?? "";
 
 /**
  * Header actions of a session on this computer's Host: Settle or Un-settle, and Link to a task.

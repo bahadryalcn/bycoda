@@ -55,6 +55,8 @@ test("preserves appearance controls and supports keyboard navigation", async ({ 
   await page.keyboard.press("ArrowDown");
   await expect(root.getByRole("menuitem", { name: "Move to group", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowDown");
+  await expect(root.getByRole("menuitem", { name: "Pin group", exact: true })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
   await expect(root.getByRole("menuitem", { name: "Reorder group", exact: true })).toBeFocused();
   await page.keyboard.press("ArrowRight");
   const flyout = page.getByRole("menu", { name: "Reorder group", exact: true });

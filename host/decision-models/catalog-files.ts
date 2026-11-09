@@ -65,7 +65,7 @@ export function isSafeFileName(name: string): boolean {
     name !== "." &&
     name !== ".." &&
     basename(name) === name &&
-    !/[\u0000-\u001f<>:"|?*\\/]/.test(name)
+    ![...name].some((char) => char.charCodeAt(0) < 32 || '<>:"|?*\\/'.includes(char))
   );
 }
 

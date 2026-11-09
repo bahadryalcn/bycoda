@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatDate, t } from "../../../../shared/i18n";
 import { truncateGraphemes } from "../../../../shared/lib/text/truncate";
 import { InlineMessage } from "../../../../shared/ui/InlineError";
@@ -67,14 +67,17 @@ function aiStatus(status: AiAction["status"]): StatusTextStatus {
 export function ActivityHistory({ client, accounts, projectId }: ActivityHistoryProps) {
   const [jobs, setJobs] = useState<SocialJob[]>([]);
   const [actions, setActions] = useState<AiAction[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [settled, setSettled] = useState<object>();
   const [loadError, setLoadError] = useState("");
   const [attempt, setAttempt] = useState(0);
   const { error, write } = useAccountWrite(t("The action could not be undone. Try again."));
 
+  // A new request object marks every reload as pending until its read settles.
+  const request = useMemo(() => ({}), [attempt, client, projectId]);
+  const loading = settled !== request;
+
   useEffect(() => {
     let alive = true;
-    setLoading(true);
     Promise.all([
       client.sectionSnapshot({
         section: "history",
@@ -95,12 +98,12 @@ export function ActivityHistory({ client, accounts, projectId }: ActivityHistory
         },
       )
       .finally(() => {
-        if (alive) setLoading(false);
+        if (alive) setSettled(request);
       });
     return () => {
       alive = false;
     };
-  }, [attempt, client, projectId]);
+  }, [request, client, projectId]);
 
   const reload = useCallback(() => setAttempt((value) => value + 1), []);
   const nameOf = (accountId: string) =>

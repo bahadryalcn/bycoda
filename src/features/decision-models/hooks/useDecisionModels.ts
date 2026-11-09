@@ -49,17 +49,21 @@ export function useDecisionModels(client: DecisionModelsClient) {
     }
   }, []);
 
-  const reloadSources = useCallback(async () => {
-    try {
-      const result = await client.sources.list({});
-      if (alive.current) {
-        setSources(result.sources);
-        setSourcesError(null);
-      }
-    } catch (error: unknown) {
-      if (alive.current) setSourcesError(error);
-    }
-  }, [client]);
+  const reloadSources = useCallback(
+    () =>
+      client.sources.list({}).then(
+        (result) => {
+          if (alive.current) {
+            setSources(result.sources);
+            setSourcesError(null);
+          }
+        },
+        (error: unknown) => {
+          if (alive.current) setSourcesError(error);
+        },
+      ),
+    [client],
+  );
 
   const scan = useCallback(async () => {
     setScanning(true);

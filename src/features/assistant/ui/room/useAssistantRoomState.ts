@@ -71,33 +71,42 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
       );
     return ownerRequest(input, expectedEnvironmentId);
   };
-  const [hostProjects, setHostProjects] = useState<readonly Project[] | null>(null);
-  const projectBindingEnvironment = useRef<string | undefined>(undefined);
+  const [hostProjectRead, setHostProjectRead] = useState<{
+    environmentId: string | undefined;
+    projects: readonly Project[];
+  } | null>(null);
+  const hostProjects = hostProjectRead?.projects ?? null;
   const [projectReadError, setProjectReadError] = useState("");
   const projectReadEpoch = useRef(0);
-  async function readProjects() {
+  function fetchProjects() {
     const epoch = ++projectReadEpoch.current;
+    return captureAssistantHostRead(props.environmentId ?? environmentId)
+      .then(async (owner) => ({ owner, result: await owner.projects() }))
+      .then(
+        ({ owner, result }) => {
+          if (epoch === projectReadEpoch.current) {
+            setHostProjectRead({ environmentId: owner.environmentId, projects: result });
+            setProjectReadError("");
+          }
+        },
+        (cause: unknown) => {
+          if (epoch === projectReadEpoch.current)
+            setProjectReadError(cause instanceof Error ? cause.message : String(cause));
+        },
+      );
+  }
+  function readProjects() {
     setProjectReadError("");
-    try {
-      const owner = await captureAssistantHostRead(props.environmentId ?? environmentId);
-      const result = await owner.projects();
-      if (epoch === projectReadEpoch.current) {
-        projectBindingEnvironment.current = owner.environmentId;
-        setHostProjects(result);
-      }
-    } catch (cause) {
-      if (epoch === projectReadEpoch.current)
-        setProjectReadError(cause instanceof Error ? cause.message : String(cause));
-    }
+    return fetchProjects();
   }
   useEffect(() => {
-    readProjects();
+    fetchProjects().catch(() => undefined); // -- failures are reported by its own rejection handler
     return () => {
       projectReadEpoch.current++;
     };
   }, [props.environmentId, environmentId]);
   const boundProjects =
-    environmentId && projectBindingEnvironment.current !== environmentId ? null : hostProjects;
+    environmentId && hostProjectRead?.environmentId !== environmentId ? null : hostProjects;
   const unlockedProjects = useVisibleProjects(
     boundProjects ?? props.projects ?? [],
     (project) => project.path,
@@ -115,7 +124,9 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
   };
   const snapshot = projectAssistantSnapshot(canonicalSnapshot, privacy);
   const visibility = useRef({ projects, privacy, canonicalSnapshot });
-  visibility.current = { projects, privacy, canonicalSnapshot };
+  useEffect(() => {
+    visibility.current = { projects, privacy, canonicalSnapshot };
+  });
   function canSeeProject(id: string) {
     return visibility.current.projects.some(
       (project) => project.id === id && !isProjectLocked(project.path),
@@ -131,11 +142,13 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     );
   }
   const scopeEpoch = useRef({ key: privacy.key, value: 0 });
-  if (scopeEpoch.current.key !== privacy.key)
-    scopeEpoch.current = {
-      key: privacy.key,
-      value: scopeEpoch.current.value + 1,
-    };
+  useEffect(() => {
+    if (scopeEpoch.current.key !== privacy.key)
+      scopeEpoch.current = {
+        key: privacy.key,
+        value: scopeEpoch.current.value + 1,
+      };
+  }, [privacy.key]);
   const identity = assistantIdentity(snapshot?.profile, locale);
   const [view, setView] = useState<View>("Today");
   const [setup, setSetup] = useState<boolean | "voice">(false);
@@ -201,21 +214,19 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     id: string;
     environmentId?: string;
   } | null>(null);
-  useEffect(() => {
-    if (!restoredUndoId) return;
+  if (restoredUndoId) {
     if (
       !undo ||
       undo.id !== restoredUndoId.id ||
       undo.environmentId !== restoredUndoId.environmentId
     ) {
       setRestoredUndoId(null);
-      return;
+    } else if (pending?.key !== "undo") {
+      setUndo(null);
+      setErrorState((current) => (current?.key === "undo" ? null : current));
+      setRestoredUndoId(null);
     }
-    if (pending?.key === "undo") return;
-    setUndo(null);
-    setErrorState((current) => (current?.key === "undo" ? null : current));
-    setRestoredUndoId(null);
-  }, [restoredUndoId, undo, pending?.key]);
+  }
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [detail, setDetail] = useState<string | null>(null);
   const [jobText, setJobText] = useState(() => draftText("bycoda.assistant.job-draft"));
@@ -286,21 +297,22 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     );
   }
 
-  const [memoryResults, setMemoryResults] = useState<AssistantMemory[] | null>(null);
-  const [memorySearching, setMemorySearching] = useState(false);
+  const [memorySearch, setMemorySearch] = useState<{
+    query: string;
+    results: AssistantMemory[];
+    settled: boolean;
+  } | null>(null);
+  const memorySearchActive = view === "Memory" && query.trim() !== "";
+  const memorySearchCurrent = memorySearch?.query === query ? memorySearch : null;
+  const memoryResults = memorySearchActive ? (memorySearchCurrent?.results ?? []) : null;
+  const memorySearching = memorySearchActive && !memorySearchCurrent?.settled;
   useEffect(() => {
-    if (view !== "Memory" || !query.trim()) {
-      setMemoryResults(null);
-      setMemorySearching(false);
-      return;
-    }
+    if (view !== "Memory" || !query.trim()) return;
     let cancelled = false;
-    setMemorySearching(true);
-    setMemoryResults([]);
     const timer = setTimeout(() => {
       void assistantRequest({ op: "memory.search", query, limit: 100 })
         .then((result) => {
-          if (!cancelled) setMemoryResults(result.entries ?? []);
+          if (!cancelled) setMemorySearch({ query, results: result.entries ?? [], settled: false });
         })
         .catch((cause) => {
           if (!cancelled)
@@ -310,7 +322,12 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
             });
         })
         .finally(() => {
-          if (!cancelled) setMemorySearching(false);
+          if (!cancelled)
+            setMemorySearch((current) =>
+              current?.query === query
+                ? { ...current, settled: true }
+                : { query, results: [], settled: true },
+            );
         });
     }, 300);
     return () => {
@@ -337,14 +354,22 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
       /* The in-memory draft remains available. */
     }
   }, [jobText]);
-  useEffect(() => {
+  const [appliedNavigation, setAppliedNavigation] = useState<{
+    tab: string | undefined;
+    token: unknown;
+  }>({ tab: undefined, token: undefined });
+  if (
+    appliedNavigation.tab !== props.initialTab ||
+    appliedNavigation.token !== props.navigationToken
+  ) {
+    setAppliedNavigation({ tab: props.initialTab, token: props.navigationToken });
     const target = props.initialTab;
     if (target === "settings") setSettings(true);
     else if (target) {
       const match = tabs.find((tab) => tab.toLowerCase() === target);
       if (match) setView(match);
     }
-  }, [props.initialTab, props.navigationToken]);
+  }
   useEffect(() => {
     const listener = () => setSetup(true);
     window.addEventListener("bycoda:assistant-setup", listener);
@@ -417,8 +442,6 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     environmentId,
     assistantRequest,
     hostProjects,
-    setHostProjects,
-    projectBindingEnvironment,
     projectReadError,
     setProjectReadError,
     projectReadEpoch,
@@ -503,9 +526,7 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     visibleDraft,
     updateJobDraft,
     memoryResults,
-    setMemoryResults,
     memorySearching,
-    setMemorySearching,
     memoryEntries,
     memoryEdit,
     setMemoryEdit,

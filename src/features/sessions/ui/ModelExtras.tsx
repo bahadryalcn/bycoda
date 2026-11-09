@@ -131,8 +131,10 @@ export function ModelExtrasPanel({
           (setting.id === "crossSubagents" ? "[]" : setting.id === "crossAdvisor" ? "null" : next),
       };
       if (setting.id === "crossSubagents") delete settings.subagentModel;
-      if (setting.id === "crossAdvisor")
-        next ? delete settings.advisor : (settings.advisor = "off");
+      if (setting.id === "crossAdvisor") {
+        if (next) delete settings.advisor;
+        else settings.advisor = "off";
+      }
       for (const [key, entry] of Object.entries(settings))
         if (!entry && isReservedDelegationKey(key)) delete settings[key];
       onSettingsChange(settings);

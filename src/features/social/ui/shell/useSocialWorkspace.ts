@@ -67,9 +67,10 @@ export type SocialWorkspace = {
 export function useSocialWorkspace(cwd: string): SocialWorkspace {
   const [machines, setMachines] = useState<RemoteMachine[]>([]);
   const [authorityId, setAuthorityId] = useState<string | undefined>();
-  const [discovering, setDiscovering] = useState(true);
+  const [settledAttempt, setSettledAttempt] = useState<number>();
   const [discoveryError, setDiscoveryError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  const discovering = settledAttempt !== attempt;
   const [choice, setChoice] = useState<WorkspaceChoice | null>(null);
   const [saved] = useState(readSavedHost);
   const [hosts, setHosts] = useState<Record<string, HostRecord>>({});
@@ -84,7 +85,6 @@ export function useSocialWorkspace(cwd: string): SocialWorkspace {
   // Host discovery: runs on mount and on every explicit retry.
   useEffect(() => {
     let alive = true;
-    setDiscovering(true);
     const load = async () => {
       await invoke("local_host_connect").catch(() => undefined);
       const list = await invoke<RemoteMachine[]>("remote_machines");
@@ -107,7 +107,7 @@ export function useSocialWorkspace(cwd: string): SocialWorkspace {
         if (alive) setDiscoveryError(t("Could not connect to the bycoda Host."));
       })
       .finally(() => {
-        if (alive) setDiscovering(false);
+        if (alive) setSettledAttempt(attempt);
       });
     return () => {
       alive = false;

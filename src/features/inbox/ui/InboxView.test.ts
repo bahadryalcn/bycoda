@@ -15,7 +15,7 @@ import {
   LinkedWorkItemPanel as RawLinkedWorkItemPanel,
 } from "./InboxView";
 
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(), isTauri: () => false }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => null), isTauri: () => false }));
 
 const InboxDetail = withQueryClient(RawInboxDetail);
 const LinkedWorkItemPanel = withQueryClient(RawLinkedWorkItemPanel);

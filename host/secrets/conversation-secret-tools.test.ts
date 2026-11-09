@@ -354,7 +354,7 @@ describe("ConversationSecretTools", () => {
         env: { TOKEN: secretRef },
       });
       expect(result.exitCode).toBe(3);
-      expect(realpathSync(result.stdout)).toBe(realpathSync(cwd));
+      expect(realpathSync.native(result.stdout)).toBe(realpathSync.native(cwd));
     });
 
     it("redacts other live secrets of the project too", async () => {

@@ -63,11 +63,15 @@ async function setup(options: {
   const sequence = sequenceWith(options.steps, options.sequenceOverrides);
   await audience.putRecord("sequence", sequence.id, sequence);
   const accountId = options.personHandleAccount ?? "acc-x";
-  const person = personFor("p1", accountId, "fan-1", "contact-1", {
-    ...(options.emails
+  const person = personFor(
+    "p1",
+    accountId,
+    "fan-1",
+    "contact-1",
+    options.emails
       ? { emails: [{ address: "p1@example.org", source: "import", verified: true }] }
-      : {}),
-  });
+      : {},
+  );
   await audience.putPerson(person);
   const enrollment: SequenceEnrollment = {
     id: enrollmentId(sequence.id, person.id),

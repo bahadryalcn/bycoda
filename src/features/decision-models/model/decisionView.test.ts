@@ -84,13 +84,13 @@ describe("candidateSourceInput", () => {
         id: "c1",
         label: "clef-flash.gguf",
         kind: "model_file",
-        detail: "C:\Models\clef-flash.gguf",
+        detail: "C:\\Models\\clef-flash.gguf",
       }),
     ).toEqual({
       name: "clef-flash.gguf",
       kind: "local",
       adapter: "systemone",
-      local: { modelPath: "C:\Models\clef-flash.gguf" },
+      local: { modelPath: "C:\\Models\\clef-flash.gguf" },
     });
   });
 

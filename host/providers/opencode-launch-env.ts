@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { win32 } from "node:path";
 import {
   opencodeConfigContent,
   parseExternalMcp,
@@ -6,7 +6,7 @@ import {
 
 /** `opencode acp` as the Host launches it; other providers get no inline config. */
 export function isOpencodeAcpLaunch(command: string, args: readonly unknown[]): boolean {
-  return /^opencode(\.exe|\.cmd)?$/i.test(basename(command)) && args[0] === "acp";
+  return /^opencode(\.exe|\.cmd)?$/i.test(win32.basename(command)) && args[0] === "acp";
 }
 
 /**

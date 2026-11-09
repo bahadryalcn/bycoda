@@ -2,7 +2,7 @@ import type { EmailAccount } from "../../../src/features/social/model/outreach";
 import type { SocialPerson } from "../../../src/features/social/model/audience";
 import type { EmailMessage } from "./email-types";
 
-const ADDRESS = /^[^\s@<>,;:"'()\[\]]+@[^\s@<>,;:"'()\[\]]+\.[^\s@<>,;:"'()\[\]]+$/u;
+const ADDRESS = /^[^\s@<>,;:"'()[\]]+@[^\s@<>,;:"'()[\]]+\.[^\s@<>,;:"'()[\]]+$/u;
 const SUBJECT_MAX = 200;
 const BODY_MAX = 20_000;
 

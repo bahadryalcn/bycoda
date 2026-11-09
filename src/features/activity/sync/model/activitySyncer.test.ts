@@ -239,7 +239,7 @@ describe("activity sync end to end", () => {
 
     expect(await run.run()).toBe("stopped");
     expect(onError).toHaveBeenCalledTimes(1);
-    expect((onError.mock.calls[0]?.[0] as { code: string }).code).toMatch(
+    expect((onError.mock.calls[0]![0] as { code: string }).code).toMatch(
       /^(device_revoked|not_found)$/, // the mock answers 404 for a revoked id, the service device_revoked
     );
     const requests = fetchSpy.mock.calls.length;

@@ -8,37 +8,41 @@ import styles from "./Jobs.module.css";
 import type { OwnerRequest } from "./assistantRoomHelpers";
 import { loadJobActivity } from "./jobActivityLoad";
 
-type ActivityState =
-  | { status: "loading" }
+type ActivityResult =
   | { status: "ready"; items: AssistantActivity[]; now: number }
   | { status: "error"; message: string };
+type ActivityState = { status: "loading" } | ActivityResult;
 
 /** The job's activity log: time, summary and any failure text, newest first. */
 export function JobDetailActivity({ jobId, request }: { jobId: string; request: OwnerRequest }) {
-  const [state, setState] = useState<ActivityState>({ status: "loading" });
+  const [result, setResult] = useState<{ key: string; value: ActivityResult } | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const key = `${jobId}:${attempt}`;
+  const state: ActivityState = result?.key === key ? result.value : { status: "loading" };
   // The Room recreates `request` on every render and a read can render the Room again, so the
   // read runs per job and retry only; the event always calls the latest request helper.
   const load = useEffectEvent((id: string) => loadJobActivity(request, id));
   useEffect(() => {
     let live = true;
-    setState({ status: "loading" });
     load(jobId).then(
       (items) => {
-        if (live) setState({ status: "ready", items, now: Date.now() });
+        if (live) setResult({ key, value: { status: "ready", items, now: Date.now() } });
       },
       (cause: unknown) => {
         if (live)
-          setState({
-            status: "error",
-            message: cause instanceof Error ? cause.message : String(cause),
+          setResult({
+            key,
+            value: {
+              status: "error",
+              message: cause instanceof Error ? cause.message : String(cause),
+            },
           });
       },
     );
     return () => {
       live = false;
     };
-  }, [jobId, attempt]);
+  }, [jobId, key]);
 
   if (state.status === "loading") return <p className={styles.muted}>{t("Loading...")}</p>;
   if (state.status === "error")

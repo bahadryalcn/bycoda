@@ -15,7 +15,9 @@ export type EvaluationCase = {
 export const EVALUATION_SET: EvaluationCase[] = [
   {
     id: "C01-business-area",
-    state: { text: "A new merchant account is being opened and the membership agreement is being accepted." },
+    state: {
+      text: "A new merchant account is being opened and the membership agreement is being accepted.",
+    },
     question: {
       type: "choice",
       instructions: "Which business area does the operation belong to?",
@@ -67,7 +69,11 @@ export const EVALUATION_SET: EvaluationCase[] = [
     question: {
       type: "score",
       instructions: "How far has the operation been completed?",
-      criteria: ["The operation has not started", "The operation is in progress", "The operation completed successfully"],
+      criteria: [
+        "The operation has not started",
+        "The operation is in progress",
+        "The operation completed successfully",
+      ],
     },
     expected: "0",
   },
@@ -77,7 +83,11 @@ export const EVALUATION_SET: EvaluationCase[] = [
     question: {
       type: "score",
       instructions: "How far has the operation been completed?",
-      criteria: ["The operation has not started", "The operation is in progress", "The operation completed successfully"],
+      criteria: [
+        "The operation has not started",
+        "The operation is in progress",
+        "The operation completed successfully",
+      ],
     },
     expected: "2",
   },

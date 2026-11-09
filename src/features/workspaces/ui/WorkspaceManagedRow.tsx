@@ -1,3 +1,4 @@
+import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { useId, useState, type MouseEventHandler } from "react";
 import { projectName } from "../../../shared/lib/paths";
 import { t } from "../../../shared/i18n";
@@ -47,7 +48,7 @@ export function WorkspaceManagedRow({
   const cleanup =
     cleanupDueAt === undefined
       ? undefined
-      : cleanupDueAt <= Date.now()
+      : cleanupDueAt <= wallClockNow()
         ? t("Cleanup pending")
         : t("Cleanup {p0}", { p0: formatRelativeTime(cleanupDueAt) });
   const caption = [projectName(workspace.path), title !== branch ? branch : undefined, cleanup]

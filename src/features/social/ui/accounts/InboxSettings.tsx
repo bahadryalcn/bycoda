@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { Group, Row } from "../../../settings/public/settingsControls";
 import { Switch } from "../../../../shared/ui/Switch";
@@ -20,9 +20,11 @@ export function InboxSettings({ client, enabled, onChanged }: InboxSettingsProps
   const { error, is, write } = useAccountWrite(
     t("The inbox setting could not be saved. Try again."),
   );
-  useEffect(() => {
+  const [seen, setSeen] = useState(enabled);
+  if (seen !== enabled) {
+    setSeen(enabled);
     setValue(enabled);
-  }, [enabled]);
+  }
 
   return (
     <Group

@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type MutableRefObject, type ReactNode } from "react";
+import { useCallback, useId, useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { t } from "../../../shared/i18n";
 import type {
   AssistantProfilePatch,
@@ -39,6 +39,30 @@ const pages = [
   ["computer", "Computer use"],
   ["advanced", "Advanced"],
 ] as const satisfies readonly (readonly [SettingsPage, string])[];
+
+function RefreshButton({
+  onClick,
+  loading,
+  disabled,
+}: {
+  onClick: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      iconOnly
+      label={t("Refresh")}
+      startIcon={<RefreshCw className="icon-sm" />}
+      loading={loading}
+      disabled={disabled}
+      onClick={onClick}
+    />
+  );
+}
 
 export function AssistantSettings({
   request,
@@ -84,9 +108,14 @@ export function AssistantSettings({
   const anyDirty = profileDirty || projectState.dirty || computerState.dirty;
   const busy = pending || projectState.pending || computerState.pending;
   const saved = savedNotice && !anyDirty;
-  useEffect(() => {
-    if (projectState.dirty || computerState.dirty) setSavedNotice(false);
-  }, [projectState.dirty, computerState.dirty]);
+  const changeProjectState = useCallback((state: { dirty: boolean; pending: boolean }) => {
+    setProjectState(state);
+    if (state.dirty) setSavedNotice(false);
+  }, []);
+  const changeComputerState = useCallback((state: { dirty: boolean; pending: boolean }) => {
+    setComputerState(state);
+    if (state.dirty) setSavedNotice(false);
+  }, []);
   function requestLeave(target: "close" | "setup") {
     if (busy) return;
     if (anyDirty) setLeave(target);
@@ -158,22 +187,6 @@ export function AssistantSettings({
     >
       {children}
     </div>
-  );
-  const refreshButton = (
-    onClick: () => void,
-    options: { loading?: boolean; disabled?: boolean },
-  ) => (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      iconOnly
-      label={t("Refresh")}
-      startIcon={<RefreshCw className="icon-sm" />}
-      loading={options.loading}
-      disabled={options.disabled}
-      onClick={onClick}
-    />
   );
   return (
     <Modal
@@ -328,10 +341,13 @@ export function AssistantSettings({
               "projects",
               <Group
                 title={t("Manual session supervision")}
-                action={refreshButton(() => void manual.refresh(), {
-                  loading: manual.pending === "list",
-                  disabled: !!manual.pending || manual.stopping,
-                })}
+                action={
+                  <RefreshButton
+                    onClick={() => void manual.refresh()}
+                    loading={manual.pending === "list"}
+                    disabled={!!manual.pending || manual.stopping}
+                  />
+                }
               >
                 <ManualSessionSupervision
                   key={environmentId ?? "unknown"}
@@ -340,7 +356,7 @@ export function AssistantSettings({
                   environmentId={environmentId}
                   settings
                   saveRef={projectSave}
-                  onDraftStateChange={setProjectState}
+                  onDraftStateChange={changeProjectState}
                 />
               </Group>,
             )}
@@ -348,12 +364,12 @@ export function AssistantSettings({
               "computer",
               <Group
                 title={t("Computer use")}
-                action={refreshButton(() => computerRefresh.current?.(), {})}
+                action={<RefreshButton onClick={() => computerRefresh.current?.()} />}
               >
                 <DesktopControlSettings
                   saveRef={computerSave}
                   refreshRef={computerRefresh}
-                  onDraftStateChange={setComputerState}
+                  onDraftStateChange={changeComputerState}
                 />
               </Group>,
             )}

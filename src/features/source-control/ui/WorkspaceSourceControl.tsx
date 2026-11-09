@@ -276,7 +276,7 @@ export function WorkspaceSourceControl({
                     name: name(path),
                     checkout: worktrees[path],
                     current: checkouts && own(path),
-                    expanded: expanded[projectKey(path)] ?? (checkouts && own(path)),
+                    expanded: expanded[projectKey(path)] ?? (checkouts ? own(path) : undefined),
                     onToggle: (value) =>
                       setExpanded((current) => ({ ...current, [projectKey(path)]: value })),
                   }}

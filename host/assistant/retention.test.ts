@@ -211,6 +211,8 @@ it("keeps the latest accepted speech language across restart and old transport r
       "assistant",
     ),
   ).rejects.toThrow("owner");
+  // The greeting depends on the local hour; pin it to the afternoon in any timezone.
+  f.advance((new Date(2026, 10, 2, 14).getTime() - now) / 86400000);
   await f.service.request({ op: "briefing.daily", day: "2026-11-02" }, "owner");
   expect((await f.service.request({ op: "snapshot" }, "owner")).snapshot!.briefing!.text).toContain(
     "Tekrar hoş geldin",

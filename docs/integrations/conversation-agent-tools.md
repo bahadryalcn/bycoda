@@ -322,7 +322,12 @@ Use `inbox.review` for a real review rather than substituting a general PR comme
   "event": "REQUEST_CHANGES",
   "body": "Let us add this check.",
   "comments": [
-    { "path": "src/auth.ts", "line": 18, "side": "RIGHT", "body": "The authorization check is missing here." }
+    {
+      "path": "src/auth.ts",
+      "line": 18,
+      "side": "RIGHT",
+      "body": "The authorization check is missing here."
+    }
   ]
 }
 ```

@@ -16,11 +16,9 @@ const info = {
   channel: "stable",
 } as const;
 const make = () => {
-  const sendFeedback = vi.fn(async (_: { body: unknown }) => ({ id: "fb_1", createdAt: "x" }));
-  const sendAnonymousFeedback = vi.fn(async (_: { body: unknown }) => ({
-    id: "fb_2",
-    createdAt: "x",
-  }));
+  type Send = (input: { body: unknown }) => Promise<{ id: string; createdAt: string }>;
+  const sendFeedback = vi.fn<Send>(async () => ({ id: "fb_1", createdAt: "x" }));
+  const sendAnonymousFeedback = vi.fn<Send>(async () => ({ id: "fb_2", createdAt: "x" }));
   return { sendFeedback, sendAnonymousFeedback };
 };
 const deps = () => ({ deviceInfo: vi.fn(async () => ({ ...info })) });

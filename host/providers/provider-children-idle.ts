@@ -159,7 +159,7 @@ export class ProviderChildIdleReaper<C extends object> {
     const gate = this.options.gate();
     if (!gate) return 0;
     let stopped = 0;
-    for (const [id, child] of [...this.options.children()]) {
+    for (const [id, child] of Array.from(this.options.children())) {
       if (this.stopped) break;
       const since = this.lastActivity.get(child);
       if (since === undefined) {

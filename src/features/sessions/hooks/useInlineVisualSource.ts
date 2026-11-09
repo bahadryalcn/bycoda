@@ -39,7 +39,6 @@ export function useInlineVisualSource(value: InlineVisual): InlineVisualSourceSt
   useEffect(() => {
     if (!id) return;
     let live = true;
-    setLoaded(cache.has(id) ? { id, source: cache.get(id) } : undefined);
     readStored(id).then(
       (source) => live && setLoaded({ id, source }),
       () => live && setLoaded({ id }),
@@ -50,13 +49,16 @@ export function useInlineVisualSource(value: InlineVisual): InlineVisualSourceSt
   }, [id, attempt]);
   if (!visual) return { state: "error", retry };
   if (visual.version === 1) return { state: "ready", source: visual };
-  if (loaded?.id !== visual.id) return { state: "loading" };
+  const current = loaded?.id === visual.id ? loaded : undefined;
+  const cachedSource = cache.get(visual.id);
+  const resolved = current ?? (cachedSource ? { id: visual.id, source: cachedSource } : undefined);
+  if (!resolved) return { state: "loading" };
   // Title and height come from the transcript reference, which the agent set at render time.
-  return loaded.source
+  return resolved.source
     ? {
         state: "ready",
         source: {
-          ...loaded.source,
+          ...resolved.source,
           title: visual.title,
           height: visual.height,
         },

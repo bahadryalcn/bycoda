@@ -93,14 +93,15 @@ function LargeTextFileView({
   // Start offsets of the pages before the current one, for "Previous".
   const [history, setHistory] = useState<number[]>([]);
   const [offset, setOffset] = useState(0);
-  const [page, setPage] = useState<TextFileSlice | null>(null);
+  const [loaded, setLoaded] = useState<{ key: string; slice: TextFileSlice } | null>(null);
+  const key = `${path}:${offset}`;
+  const page = loaded?.key === key ? loaded.slice : null;
 
   useEffect(() => {
     let cancelled = false;
-    setPage(null);
     readTextFileSlice(path, offset).then(
       (slice) => {
-        if (!cancelled) setPage(slice);
+        if (!cancelled) setLoaded({ key: `${path}:${offset}`, slice });
       },
       (error: unknown) => {
         if (!cancelled) onError(error instanceof Error ? error.message : String(error));

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+#[cfg(any(target_os = "windows", target_os = "linux"))]
 use tauri::window::Color;
 use tauri::{AppHandle, Emitter, EventTarget, Manager, WebviewWindow, WebviewWindowBuilder};
 

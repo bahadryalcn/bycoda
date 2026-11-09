@@ -1,5 +1,6 @@
 import { Timestamp } from "../../../../shared/ui/Timestamp";
 import { t, useLocale } from "../../../../shared/i18n";
+import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { dayLabel, groupByDay, type MessageLine } from "./inboxModel";
 import "./inbox.css";
 
@@ -9,7 +10,7 @@ import "./inbox.css";
  */
 export function MessageTimeline({ lines }: { lines: MessageLine[] }) {
   const locale = useLocale();
-  const now = Date.now();
+  const now = wallClockNow();
   return (
     <ol className="inbox-timeline" aria-label={t("Conversation")}>
       {groupByDay(lines).flatMap((group) => [

@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
@@ -19,7 +26,9 @@ function pointInside(element: HTMLElement | null, x: number, y: number): boolean
 function useImageFileDrop(ref: RefObject<HTMLElement | null>, onDrop: (path: string) => void) {
   const [over, setOver] = useState(false);
   const latest = useRef(onDrop);
-  latest.current = onDrop;
+  useLayoutEffect(() => {
+    latest.current = onDrop;
+  });
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | undefined;

@@ -156,7 +156,7 @@ export type FakeServiceOptions = {
  * are recorded, never sent.
  */
 export function fakeService(options: FakeServiceOptions) {
-  const settings: Record<string, string> = { sending: "true", ...(options.settings ?? {}) };
+  const settings: Record<string, string> = { sending: "true", ...options.settings };
   const accounts = new Map(
     (options.accounts ?? [xAccount()]).map((account) => [account.id, account]),
   );

@@ -1,10 +1,6 @@
 import { useStoredPreferenceState } from "../../../shared/hooks/useStoredPreferenceState";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
-import { openExternal } from "../../../platform/tauri/openExternal";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { openFeedbackDialog } from "../../account";
-import { copyText } from "../../../platform/tauri/clipboard";
-import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { Button } from "../../../shared/ui/Button";
 import { InfoPopover } from "../../../shared/ui/InfoPopover";
 import { SettingsFeedback } from "./settingsControls";
@@ -26,18 +22,10 @@ import {
 } from "../../../shared/i18n";
 import { Select } from "../../../shared/ui/Select";
 import { Progress } from "../../../shared/ui/Progress";
-import {
-  ArrowDownCircle,
-  Check,
-  Copy,
-  MessageSquare,
-  RefreshCw,
-  Star,
-} from "../../../shared/ui/icons";
+import { ArrowDownCircle, MessageSquare, RefreshCw } from "../../../shared/ui/icons";
 import { OPEN_ONBOARDING_EVENT } from "../../onboarding/model/onboarding";
 import { openUsageGuide } from "../../onboarding/model/usageGuide";
 import { getTourSnapshot, startTour, subscribeTour } from "../../onboarding/model/tourState";
-import { startContribution, useContributeFlow } from "../../projects/public/contribute";
 import { OPEN_SESSION_IMPORT_EVENT } from "../../sessions/public/importModel";
 import {
   CLOSE_TO_TRAY_DEFAULT,
@@ -65,6 +53,7 @@ import { UpdateChannelRow } from "./UpdateChannelRow";
 import { SessionFolderGroup, restoreSessionFolderDefault } from "./SessionFolderSettings";
 import { DiagnosticsGroup, restorePerformanceTraceDefault } from "./DiagnosticsSettings";
 import { Group, Row, Toggle, useSettingsPageReset } from "./settingsControls";
+import { ProductDetails } from "./GeneralProductDetails";
 import "./GeneralSettings.css";
 
 export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string) => void }) {
@@ -277,223 +266,7 @@ export function GeneralPage({ onOpenWhatsNew }: { onOpenWhatsNew: (version: stri
     </div>
   );
 }
-function ContributeRow() {
-  const flow = useContributeFlow();
-  const repositoryUrl = PRODUCT_IDENTITY.repositoryUrl;
-  if (!repositoryUrl) return null;
-  return (
-    <>
-      <Row
-        id="star-github"
-        label={t("Star on GitHub")}
-        description={t("Open the project repository on GitHub.")}
-      >
-        <Button
-          className="general-action shrink-0"
-          startIcon={<Star strokeWidth={1.75} aria-hidden />}
-          onClick={() => void openExternal(repositoryUrl).catch(() => undefined)}
-        >
-          {t("View on GitHub")}
-        </Button>
-      </Row>
-      <Row
-        id="contribute"
-        label={t("Contribute to bycoda")}
-        description={t("Clone the open-source repository and open it as a project.")}
-      >
-        <Button
-          className="general-action shrink-0"
-          loading={flow.status === "cloning"}
-          onClick={() => startContribution().catch(() => undefined)}
-        >
-          {t("Clone and open…")}
-        </Button>
-      </Row>
-    </>
-  );
-}
 
-function ProductDetails() {
-  return (
-    <>
-      <Row label={t("Developed by")}>
-        <span className="general-about-value">{PRODUCT_IDENTITY.developerName}</span>
-      </Row>
-      <ProductLink
-        label={t("Website")}
-        address={PRODUCT_IDENTITY.websiteUrl}
-        href={PRODUCT_IDENTITY.websiteUrl}
-        displayAddress={PRODUCT_IDENTITY.websiteUrl.replace("https://", "")}
-        openLabel={t("Open website")}
-      />
-      <ProductLink
-        label={t("Contact")}
-        address={PRODUCT_IDENTITY.contactEmail}
-        href={`mailto:${PRODUCT_IDENTITY.contactEmail}`}
-      />
-      <ProductLink
-        label={t("Developer contact")}
-        address={PRODUCT_IDENTITY.developerContactEmail}
-        href={`mailto:${PRODUCT_IDENTITY.developerContactEmail}`}
-      />
-      <ContributeRow />
-    </>
-  );
-}
-
-/** Each target owns its pending/error recovery; opening a link never sends a message. */
-function ProductLink({
-  label,
-  address,
-  href,
-  displayAddress = address,
-  openLabel,
-}: {
-  label: string;
-  address: string;
-  href: string;
-  displayAddress?: string;
-  openLabel?: string;
-}) {
-  const [pending, setPending] = useState<"open" | "retry" | "copy" | null>(null);
-  const [failure, setFailure] = useState<"open" | "copy" | null>(null);
-  const [copied, setCopied] = useState(false);
-  const inFlight = useRef(false);
-  const linkControl = useRef<HTMLButtonElement>(null);
-  const recoveryActions = useRef<HTMLDivElement>(null);
-  const returnFocus = useRef(false);
-
-  useEffect(() => {
-    if (pending !== null || failure !== null || !returnFocus.current) return;
-    returnFocus.current = false;
-    linkControl.current?.focus();
-  }, [pending, failure]);
-
-  useEffect(() => {
-    if (!copied) return;
-    const timer = window.setTimeout(() => setCopied(false), 1600);
-    return () => window.clearTimeout(timer);
-  }, [copied]);
-
-  const run = async (operation: "open" | "retry" | "copy") => {
-    if (inFlight.current) return;
-    inFlight.current = true;
-    const beganInRecovery = Boolean(recoveryActions.current?.contains(document.activeElement));
-    returnFocus.current = false;
-    setPending(operation);
-    setCopied(false);
-    try {
-      if (operation !== "copy") await openUrl(href);
-      else {
-        await copyText(address);
-        setCopied(true);
-      }
-      // Recovery controls disappear on success; retain focus only if it is still there.
-      returnFocus.current =
-        beganInRecovery &&
-        (document.activeElement === document.body ||
-          Boolean(recoveryActions.current?.contains(document.activeElement)));
-      setFailure(null);
-    } catch {
-      setFailure(operation === "copy" ? "copy" : "open");
-    } finally {
-      inFlight.current = false;
-      setPending(null);
-    }
-  };
-
-  return (
-    <Row
-      label={label}
-      feedback={
-        failure ? (
-          <SettingsFeedback
-            state="error"
-            action={
-              <div ref={recoveryActions} className="flex flex-wrap items-center gap-2">
-                {failure === "open" ? (
-                  <Button
-                    disabled={pending !== null}
-                    loading={pending === "retry"}
-                    loadingLabel={t("Opening…")}
-                    onClick={() => void run("retry")}
-                  >
-                    {t("Retry")}
-                  </Button>
-                ) : null}
-                <Button
-                  disabled={pending !== null}
-                  loading={pending === "copy"}
-                  loadingLabel={t("Copying…")}
-                  aria-label={`${t("Copy")}: ${address}`}
-                  onClick={() => void run("copy")}
-                >
-                  {t("Copy")}
-                </Button>
-              </div>
-            }
-          >
-            <p>
-              {failure === "open"
-                ? t("Could not open the link. Copy the address and open it manually.")
-                : t("Could not copy. Select the details and copy them manually.")}
-            </p>
-            <span className="select-text break-all">{address}</span>
-          </SettingsFeedback>
-        ) : undefined
-      }
-    >
-      <Button
-        ref={linkControl}
-        variant="link"
-        className="general-about-link"
-        loading={pending === "open"}
-        loadingLabel={t("Opening…")}
-        disabled={pending !== null}
-        tooltip={
-          address.replace(/^https?:\/\//, "") === displayAddress.replace(/^https?:\/\//, "")
-            ? undefined
-            : address
-        }
-        onClick={() => void run("open")}
-      >
-        {displayAddress}
-      </Button>
-      {failure ? null : (
-        <Button
-          variant="ghost"
-          size="sm"
-          iconOnly
-          label={`${t("Copy")}: ${address}`}
-          tooltip={copied ? t("Copied") : t("Copy")}
-          disabled={pending !== null}
-          loading={pending === "copy"}
-          onClick={() => void run("copy")}
-        >
-          {copied ? (
-            <Check aria-hidden className="icon-xs" strokeWidth={1.75} />
-          ) : (
-            <Copy aria-hidden className="icon-xs" strokeWidth={1.75} />
-          )}
-        </Button>
-      )}
-      {openLabel ? (
-        <Button
-          size="sm"
-          disabled={pending !== null}
-          loading={pending === "open"}
-          loadingLabel={t("Opening…")}
-          onClick={() => void run("open")}
-        >
-          {openLabel}
-        </Button>
-      ) : null}
-      <span role="status" className="sr-only">
-        {copied ? t("Copied") : ""}
-      </span>
-    </Row>
-  );
-}
 export function UpdateRow({ onOpenWhatsNew }: { onOpenWhatsNew: (version: string) => void }) {
   useLocale();
   const [snapshot, setSnapshot] = useState<UpdaterSnapshot>({

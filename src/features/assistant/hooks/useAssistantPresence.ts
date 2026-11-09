@@ -27,7 +27,9 @@ export function useAssistantPresence(port: AssistantPresencePort = nativeAssista
   const active = useRef(true),
     inflight = useRef(false),
     latest = useRef(view);
-  latest.current = view;
+  useEffect(() => {
+    latest.current = view;
+  });
   function accept(next: AssistantPresenceView) {
     if (active.current) {
       if (next.revision > latest.current.revision && !next.pending && !next.writeError)

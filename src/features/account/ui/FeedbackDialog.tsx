@@ -41,13 +41,13 @@ function kindLabel(kind: FeedbackKind): string {
 function kindIcon(kind: FeedbackKind) {
   switch (kind) {
     case "idea":
-      return <AiIdea size={18} />;
+      return <AiIdea className="icon-lg" />;
     case "problem":
-      return <CircleAlert size={18} />;
+      return <CircleAlert className="icon-lg" />;
     case "praise":
-      return <Star size={18} />;
+      return <Star className="icon-lg" />;
     case "other":
-      return <MoreHorizontal size={18} />;
+      return <MoreHorizontal className="icon-lg" />;
   }
 }
 
@@ -210,7 +210,7 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
               value: String(n),
               ariaLabel: t("{p0} of 5", { p0: n }),
               className: draft.rating !== null && n <= draft.rating ? styles.starOn : undefined,
-              content: <Star size={18} />,
+              content: <Star className="icon-lg" />,
             }))}
             onValueChange={(value) =>
               setDraft({
@@ -233,7 +233,7 @@ function FeedbackForm({ signedIn }: { signedIn: boolean }) {
           onChange={(event) => setDraft({ ...draft, includeContext: event.target.checked })}
         />
         <p className={styles.privacy}>
-          <Lock size={12} />
+          <Lock className="icon-xs" />
           {t("Only what you write is sent. Do not paste secrets.")}
         </p>
         {result?.status === "rate-limited" ? (

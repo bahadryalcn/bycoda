@@ -59,11 +59,12 @@ export type SecretRunInput = {
 
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,100}$/;
 const SECRET_REF = /^[A-Za-z0-9_-]{1,100}$/;
-const CONTROL = /[\u0000-\u001f\u007f]/;
+const hasControl = (value: string) =>
+  [...value].some((char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127);
 
 function text(input: Record<string, unknown>, key: string, max: number): string {
   const value = input[key];
-  if (typeof value !== "string" || !value.trim() || value.length > max || CONTROL.test(value))
+  if (typeof value !== "string" || !value.trim() || value.length > max || hasControl(value))
     throw new Error(`Invalid ${key}.`);
   return value;
 }

@@ -262,7 +262,8 @@
             "propertyNames": { "type": "string" },
             "type": "object"
           },
-          "prompt": { "maxLength": 500, "minLength": 1, "type": "string" }
+          "prompt": { "maxLength": 500, "minLength": 1, "type": "string" },
+          "providerAccountId": { "maxLength": 80, "minLength": 1, "type": "string" }
         },
         "required": ["prompt", "harness", "model"],
         "type": "object"
@@ -328,7 +329,8 @@
             "propertyNames": { "type": "string" },
             "type": "object"
           },
-          "prompt": { "maxLength": 500, "minLength": 1, "type": "string" }
+          "prompt": { "maxLength": 500, "minLength": 1, "type": "string" },
+          "providerAccountId": { "maxLength": 80, "minLength": 1, "type": "string" }
         },
         "required": ["prompt", "harness", "model"],
         "type": "object"
@@ -54473,7 +54475,8 @@
                   "propertyNames": { "type": "string" },
                   "type": "object"
                 },
-                "prompt": { "maxLength": 500, "minLength": 1, "type": "string" }
+                "prompt": { "maxLength": 500, "minLength": 1, "type": "string" },
+                "providerAccountId": { "maxLength": 80, "minLength": 1, "type": "string" }
               },
               "required": ["prompt", "harness", "model"],
               "type": "object"
@@ -54516,7 +54519,8 @@
                   "propertyNames": { "type": "string" },
                   "type": "object"
                 },
-                "prompt": { "maxLength": 500, "minLength": 1, "type": "string" }
+                "prompt": { "maxLength": 500, "minLength": 1, "type": "string" },
+                "providerAccountId": { "maxLength": 80, "minLength": 1, "type": "string" }
               },
               "required": ["prompt", "harness", "model"],
               "type": "object"
@@ -66277,5 +66281,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "69dcae6ea96db63d9aa22fec3fd8a6ceced33226fbbbc49833a27892c3ddbf67"
+  "schemaHash": "d5df0f16ada465ee5054299192a85ec19c63ee202cbf0a8bc5eb22cb4455bff5"
 }

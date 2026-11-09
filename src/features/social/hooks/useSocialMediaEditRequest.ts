@@ -10,7 +10,9 @@ export function useSocialMediaEditRequest<T extends { version: number }>(
 ): void {
   const callbacks = useRef({ apply, onError });
   const appliedVersion = useRef<number | undefined>(undefined);
-  callbacks.current = { apply, onError };
+  useEffect(() => {
+    callbacks.current = { apply, onError };
+  });
   useEffect(() => {
     if (!request) return;
     let active = true;

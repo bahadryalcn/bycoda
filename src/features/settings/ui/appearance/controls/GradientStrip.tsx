@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { t } from "../../../../../shared/i18n";
 import { Button } from "../../../../../shared/ui/Button";
 import { ColorPickerPopover } from "../../../../../shared/ui/ColorPickerPopover";
@@ -66,7 +66,9 @@ export function GradientStrip({
   const pending = useRef<Partial<WorkspaceBackground>>({});
   const frame = useRef<number | null>(null);
   const latestChange = useRef(onChange);
-  latestChange.current = onChange;
+  useLayoutEffect(() => {
+    latestChange.current = onChange;
+  });
   const update = (change: Partial<WorkspaceBackground>) => {
     pending.current = { ...pending.current, ...change };
     if (frame.current !== null) return;

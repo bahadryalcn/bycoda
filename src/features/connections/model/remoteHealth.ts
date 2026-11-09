@@ -131,7 +131,7 @@ export function notifyRemoteRecovered(environmentId?: string): void {
 export function announceRemoteRecovery(environmentId?: string): void {
   if (environmentId) unreachable.delete(environmentId);
   else unreachable.clear();
-  for (const [key, failure] of [...failures])
+  for (const [key, failure] of Array.from(failures))
     if (failure.kind === "unreachable" && (!environmentId || key.startsWith(`${environmentId}\n`)))
       failures.delete(key);
   emit();
@@ -143,7 +143,7 @@ export function announceRemoteRecovery(environmentId?: string): void {
 export function resetRemoteConnection(environmentId: string): void {
   invalidateConnection(environmentId);
   unreachable.delete(environmentId);
-  for (const key of [...failures.keys()])
+  for (const key of Array.from(failures.keys()))
     if (
       key.startsWith(`${environmentId}
 `)
@@ -159,7 +159,7 @@ const answered = (failure: RemoteFailure) =>
   failure.kind === "other" || failure.kind === "outdated" || failure.kind === "unsupported";
 
 function recover(environmentId: string): void {
-  for (const [key, failure] of [...failures])
+  for (const [key, failure] of Array.from(failures))
     if (key.startsWith(`${environmentId}\n`) && failure.kind === "unreachable")
       failures.delete(key);
   emit();
@@ -198,7 +198,7 @@ export function forgetRemoteConnection(environmentId: string): void {
   invalidateConnection(environmentId);
   connections.delete(environmentId);
   unreachable.delete(environmentId);
-  for (const key of [...failures.keys()])
+  for (const key of Array.from(failures.keys()))
     if (key.startsWith(`${environmentId}\n`)) failures.delete(key);
   emit();
 }

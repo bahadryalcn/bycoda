@@ -50,7 +50,6 @@ import { MOD } from "../../../platform/tauri/platform";
 import { keybindingPressed } from "../../settings/public/settings";
 import { useKeybindingShortcut } from "../../settings/public/useKeybindingShortcut";
 import "./ModelPicker.css";
-
 import { lazySurface } from "../../../shared/ui/lazySurface";
 import {
   accountChoicesSnapshot,
@@ -523,7 +522,8 @@ export function ModelPicker({
         (setting.id === "crossSubagents" ? "[]" : setting.id === "crossAdvisor" ? "null" : value),
     };
     if (setting.id === "crossSubagents") delete next.subagentModel;
-    if (setting.id === "crossAdvisor") value ? delete next.advisor : (next.advisor = "off");
+    if (setting.id === "crossAdvisor" && value) delete next.advisor;
+    if (setting.id === "crossAdvisor" && !value) next.advisor = "off";
     onSettingsChange(next);
   };
 

@@ -1,6 +1,7 @@
 import type { AssistantMessage } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, t } from "../../../../shared/i18n";
 import { formatRelativeTime } from "../../../../shared/i18n/format";
+import { useMinuteNow } from "../../../../shared/hooks/useMinuteNow";
 import { Button } from "../../../../shared/ui/Button";
 import { Disclosure } from "../../../../shared/ui/Disclosure";
 import { Trash2 } from "../../../../shared/ui/icons";
@@ -15,7 +16,8 @@ const DAY = 24 * HOUR;
 /** "Today" and "Yesterday" for the last two days, a full date before that. */
 export function ConversationDayLabel({ at }: { at: number }) {
   const start = (value: number) => new Date(new Date(value).setHours(0, 0, 0, 0)).getTime();
-  const days = Math.round((start(Date.now()) - start(at)) / DAY);
+  const now = useMinuteNow();
+  const days = Math.round((start(now) - start(at)) / DAY);
   return (
     <div className={styles.dayDivider}>
       {days === 0
@@ -29,7 +31,8 @@ export function ConversationDayLabel({ at }: { at: number }) {
 
 /** Relative inside the hour ("5 min. ago"), clock time after that; full precision in the tooltip. */
 function ConversationMessageTime({ at }: { at: number }) {
-  const recent = Date.now() - at < HOUR;
+  const now = useMinuteNow();
+  const recent = now - at < HOUR;
   return (
     <Tooltip label={date(at)} asChild>
       <span className={styles.metaTime}>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { VoiceChatTurn } from "./voiceCompanionTypes";
 
 /** Enough recent lines for a glance back; older turns stay in the transcript history. */
@@ -35,14 +35,21 @@ export function useVoiceChatTurns(
   visible: boolean,
 ): VoiceChatTurn[] {
   const [turns, setTurns] = useState<VoiceChatTurn[]>([]);
-  useEffect(() => {
-    if (!visible) setTurns([]);
-  }, [visible]);
-  useEffect(() => {
-    if (visible) setTurns((current) => appendVoiceChatTurn(current, "owner", transcript));
-  }, [transcript, visible]);
-  useEffect(() => {
-    if (visible) setTurns((current) => appendVoiceChatTurn(current, "assistant", message));
-  }, [message, visible]);
+  // Adjusted during render: each input change maps to one update of the lines.
+  const [seen, setSeen] = useState<{ transcript?: string; message?: string; visible?: boolean }>(
+    {},
+  );
+  if (seen.transcript !== transcript || seen.message !== message || seen.visible !== visible) {
+    const shown = seen.visible !== visible;
+    let next = turns;
+    if (!visible) next = [];
+    else {
+      if (shown || seen.transcript !== transcript)
+        next = appendVoiceChatTurn(next, "owner", transcript);
+      if (shown || seen.message !== message) next = appendVoiceChatTurn(next, "assistant", message);
+    }
+    setSeen({ transcript, message, visible });
+    setTurns(next);
+  }
   return turns;
 }

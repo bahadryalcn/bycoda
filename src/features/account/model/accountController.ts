@@ -59,7 +59,7 @@ export function createAccountController(deps: AccountControllerDeps) {
     const next = accountReducer(state, event);
     if (next === state) return;
     state = next;
-    for (const listener of [...listeners]) listener();
+    for (const listener of Array.from(listeners)) listener();
   };
 
   const getAccessToken = async (): Promise<string | null> => {

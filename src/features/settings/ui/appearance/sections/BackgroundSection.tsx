@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { t, useLocale } from "../../../../../shared/i18n";
 import { PRODUCT_IDENTITY } from "../../../../../shared/lib/productIdentity";
 import { ImagePlus } from "../../../../../shared/ui/icons";
@@ -59,8 +59,8 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
   const background = useSyncExternalStore(subscribeWorkspaceBackground, loadWorkspaceBackground);
   const effect = useLiveBackground();
   const intensity = useLiveBackgroundIntensity();
-  const lastScene = useRef<LiveBackground>("threads");
-  if (effect !== "none") lastScene.current = effect;
+  const [lastScene, setLastScene] = useState<LiveBackground>("threads");
+  if (effect !== "none" && lastScene !== effect) setLastScene(effect);
   // Live art covers the window, so glass cannot show behind it.
   const covered = effect !== "none";
   const glassOn = IS_LINUX || appearance.windowGlass;
@@ -165,12 +165,12 @@ export function BackgroundSection({ appearance }: { appearance: AppearanceSettin
             name: t("Live"),
             description: t("Animated scene that moves behind the workspace"),
             enabled: effect !== "none",
-            onToggle: () => saveLiveBackground(effect === "none" ? lastScene.current : "none"),
+            onToggle: () => saveLiveBackground(effect === "none" ? lastScene : "none"),
             strength:
               effect === "none" ? t("None") : `${liveBackgroundLabel(effect)} · ${livePercent}%`,
             thumbnail: (
               <LiveBackgroundCanvas
-                effect={effect === "none" ? lastScene.current : effect}
+                effect={effect === "none" ? lastScene : effect}
                 intensity={1}
                 still
                 demoSpeech

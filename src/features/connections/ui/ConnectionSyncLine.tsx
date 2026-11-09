@@ -1,4 +1,5 @@
 import { t, useLocale } from "../../../shared/i18n";
+import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { Disclosure } from "../../../shared/ui/Disclosure";
 import { describeSyncStatus } from "../../sync/model/syncStatusText";
 import { useSyncStatus } from "../../sync/model/useSyncStatus";
@@ -22,16 +23,16 @@ export function ConnectionSyncLine({ machineId }: { machineId: string }) {
             </>
           }
         >
-          <p>{describeSyncStatus(sync, Date.now())}</p>
+          <p>{describeSyncStatus(sync, wallClockNow())}</p>
         </Disclosure>
       ) : (
         <span className="min-w-0 text-(--ui-text-muted)">
           {sync.state === "ok" && sync.lastSyncAt
             ? t("Synced {p0} min ago", {
-                p0: Math.max(0, Math.floor((Date.now() - sync.lastSyncAt) / 60_000)),
+                p0: Math.max(0, Math.floor((wallClockNow() - sync.lastSyncAt) / 60_000)),
               }) +
               (sync.pendingOps ? ` · ${t("{p0} pending changes", { p0: sync.pendingOps })}` : "")
-            : describeSyncStatus(sync, Date.now())}
+            : describeSyncStatus(sync, wallClockNow())}
         </span>
       )}
     </div>

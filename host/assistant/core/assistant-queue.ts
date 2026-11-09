@@ -73,7 +73,7 @@ export class AssistantRequestQueue {
 
   /** Settles once every queued and released task has finished. */
   async idle(): Promise<void> {
-    while (this.active.size) await Promise.all([...this.active]);
+    while (this.active.size) await Promise.all(this.active);
   }
 
   private acquire(): Promise<() => void> {

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement } from "react";
+import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { HostProject, RemoteMachine } from "../../../connections/model/protocol";
@@ -34,7 +34,10 @@ let machines: RemoteMachine[];
 let projectsByHost: Record<string, HostProject[]>;
 
 function Probe({ cwd }: { cwd: string }) {
-  latest = useSocialWorkspace(cwd);
+  const workspace = useSocialWorkspace(cwd);
+  useEffect(() => {
+    latest = workspace;
+  });
   return null;
 }
 

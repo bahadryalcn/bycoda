@@ -1,3 +1,4 @@
+import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { LiveText } from "../../../shared/ui/LiveText";
 import { Badge } from "../../../shared/ui/Badge";
 import { StatusDot } from "../../../shared/ui/StatusDot";
@@ -97,7 +98,7 @@ export function LiveAgentsPreview({
 
   // Minute precision keeps the preview from re-rendering every second. The tick only
   // triggers the render; labels read the exact time.
-  const now = useMinuteNow(ticking) ? Date.now() : 0;
+  const now = useMinuteNow(ticking) ? wallClockNow() : 0;
 
   if (!visibleOnRail) return null;
 

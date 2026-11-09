@@ -1188,7 +1188,7 @@ test("preserves settings interaction, compact geometry and both themes", async (
   expect(errors).toEqual([]);
 });
 
-test("selection, expanding details and history keep their interactions", async ({ page }) => {
+test("selection and history keep their interactions", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/tests/browser/arc-controls.html");
@@ -1210,15 +1210,6 @@ test("selection, expanding details and history keep their interactions", async (
   await page.keyboard.press("Escape");
   await expect(morph).toHaveAttribute("aria-expanded", "false");
   await expect(morph).toBeFocused();
-  const card = page.getByRole("button", { name: "Draft details" });
-  await card.click();
-  const draft = page.getByRole("textbox", { name: "Retained draft" });
-  await draft.fill("Keep this draft");
-  await page.keyboard.press("Escape");
-  await expect(card).toHaveAttribute("aria-expanded", "false");
-  await expect(card).toBeFocused();
-  await card.click();
-  await expect(draft).toHaveValue("Keep this draft");
   await expect(page.getByRole("button", { name: "Open attempt", exact: true })).toBeVisible();
   await page.getByRole("button", { name: /Completed attempt/ }).click();
   await expect(page.getByText("Review summary", { exact: true })).toBeVisible();

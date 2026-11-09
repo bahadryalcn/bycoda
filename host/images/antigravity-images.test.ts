@@ -39,10 +39,10 @@ function input() {
 }
 
 it("quotes the description and names the exact target path", () => {
-  const brief = antigravityImageBrief('Logo "x"', "16:9", "C:\p\logo.png");
+  const brief = antigravityImageBrief('Logo "x"', "16:9", "C:\\p\\logo.png");
   expect(brief).toContain("generate_image");
   expect(brief).toContain(JSON.stringify('Logo "x"'));
-  expect(brief).toContain(JSON.stringify("C:\p\logo.png"));
+  expect(brief).toContain(JSON.stringify("C:\\p\\logo.png"));
 });
 
 it("starts a child Antigravity session and returns the saved file", async () => {

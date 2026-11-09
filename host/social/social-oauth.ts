@@ -181,7 +181,7 @@ export class SocialOAuth {
       response_type: "code",
       scope: scopes.join(definition.scopeSeparator),
       state,
-      ...(definition.authorizeParams?.() ?? {}),
+      ...definition.authorizeParams?.(),
       ...(definition.pkce
         ? {
             code_challenge: createHash("sha256").update(verifier).digest("base64url"),

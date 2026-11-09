@@ -76,7 +76,7 @@ let state: ContributeFlowState = { status: "idle" };
 const listeners = new Set<() => void>();
 function set(next: ContributeFlowState) {
   state = next;
-  for (const listener of [...listeners]) listener();
+  for (const listener of Array.from(listeners)) listener();
 }
 
 export function useContributeFlow(): ContributeFlowState {

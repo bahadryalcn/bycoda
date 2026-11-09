@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { type Session, sessionNeedsInput } from "../../../features/sessions/model/session";
 import { useUnseenFinishedSessions } from "../../../features/sessions/hooks/useUnseenFinishedSessions";
 import {
@@ -23,6 +23,17 @@ import { liveAgentsEqual } from "../../model/sidebarEquality";
 import { useWindowLiveAgents } from "../../model/useWindowLiveAgents";
 import { setsEqual } from "../helpers/appHelpers";
 
+/**
+ * Keeps the previous reference while `equal` says the rebuilt value has the same content.
+ * Held in state (adjusted during render) rather than a ref so render stays pure.
+ */
+function useStableState<T>(next: T, equal: (previous: T, next: T) => boolean): T {
+  const [kept, setKept] = useState(next);
+  if (kept === next || equal(kept, next)) return kept;
+  setKept(next);
+  return next;
+}
+
 /** Session ids that are busy, plus their orchestration leads. */
 export function useBusySessionIds(sessions: Session[]): Set<string> {
   const nextBusySessionIds = useMemo(() => {
@@ -35,11 +46,7 @@ export function useBusySessionIds(sessions: Session[]): Set<string> {
     }
     return ids;
   }, [sessions]);
-  const busySessionIdsRef = useRef(nextBusySessionIds);
-  if (!setsEqual(busySessionIdsRef.current, nextBusySessionIds)) {
-    busySessionIdsRef.current = nextBusySessionIds;
-  }
-  return busySessionIdsRef.current;
+  return useStableState(nextBusySessionIds, setsEqual);
 }
 
 /**
@@ -115,9 +122,7 @@ export function useSessionWaits(
     const timer = setTimeout(() => setNow(Date.now()), Math.max(0, expiry - Date.now()) + 1);
     return () => clearTimeout(timer);
   }, [expiry]);
-  const ref = useRef(next);
-  if (!waitMapsEqual(ref.current, next)) ref.current = next;
-  return ref.current;
+  return useStableState(next, waitMapsEqual);
 }
 
 /** Session ids waiting on the user (approval or question), plus their orchestration leads. */
@@ -132,11 +137,7 @@ export function useApprovalSessionIds(sessions: Session[]): Set<string> {
     }
     return ids;
   }, [sessions]);
-  const approvalSessionIdsRef = useRef(nextApprovalSessionIds);
-  if (!setsEqual(approvalSessionIdsRef.current, nextApprovalSessionIds)) {
-    approvalSessionIdsRef.current = nextApprovalSessionIds;
-  }
-  return approvalSessionIdsRef.current;
+  return useStableState(nextApprovalSessionIds, setsEqual);
 }
 
 /** Finished sessions the user has not looked at yet. Wraps useUnseenFinishedSessions. */
@@ -178,10 +179,7 @@ export function useLiveAgentStatus({
     ],
     [sessions, unseenFinishedIds, sessionWaits, unopenedRemote, remoteUnseenFinishedIds],
   );
-  const liveAgentsRef = useRef(nextLiveAgents);
-  if (!liveAgentsEqual(liveAgentsRef.current, nextLiveAgents)) {
-    liveAgentsRef.current = nextLiveAgents;
-  }
+  const stableLiveAgents = useStableState(nextLiveAgents, liveAgentsEqual);
   const ownedLiveSessionKeys = useMemo(
     () =>
       Object.fromEntries(
@@ -189,7 +187,7 @@ export function useLiveAgentStatus({
       ),
     [sessions],
   );
-  const windowLiveAgents = useWindowLiveAgents(liveAgentsRef.current, ownedLiveSessionKeys);
+  const windowLiveAgents = useWindowLiveAgents(stableLiveAgents, ownedLiveSessionKeys);
   const liveAgents = useMemo(
     () =>
       liveAgentsEnabled

@@ -54,7 +54,6 @@ export function LocalInstallWizard({
 
   useEffect(() => {
     let alive = true;
-    setLoadError(null);
     void Promise.all([client.local.hardware({}), client.local.recommend({})]).then(
       ([hardware, recommendation]) => {
         if (alive) setLoaded({ hardware, recommendation });
@@ -65,6 +64,7 @@ export function LocalInstallWizard({
     );
     return () => {
       alive = false;
+      setLoadError(null);
     };
   }, [client, attempt]);
 
@@ -77,8 +77,6 @@ export function LocalInstallWizard({
   useEffect(() => {
     if (!modelId || offer !== "install") return;
     let alive = true;
-    setPlan(null);
-    setPlanError(null);
     void client.local.plan({ modelId }).then(
       (result) => {
         if (alive) setPlan(result);
@@ -89,6 +87,8 @@ export function LocalInstallWizard({
     );
     return () => {
       alive = false;
+      setPlan(null);
+      setPlanError(null);
     };
   }, [client, modelId, offer]);
 

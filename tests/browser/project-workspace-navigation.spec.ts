@@ -97,7 +97,7 @@ test("working sessions and usage meters stay contained in narrow and short works
       await expect(rail.getByRole("button", { name: "Notes", exact: true })).toBeInViewport();
       await expect(
         rail
-          .getByRole("navigation", { name: "Settings", exact: true })
+          .getByRole("navigation", { name: "Account", exact: true })
           .getByRole("button", { name: "Settings", exact: true }),
       ).toBeInViewport();
       const usage = page.locator("[data-provider-usage]");
@@ -721,7 +721,12 @@ test.beforeEach(async ({ page }) => {
           if (command === "git_operation_status")
             return { operation: mobile ? "rebase" : null, conflicts: [] };
           if (command === "git_head_message") return "PFDEV-666 - fix console log move logger";
-          if (command === "git_remotes" || command === "git_stash_list" || command === "git_tags")
+          if (
+            command === "git_remotes" ||
+            command === "git_stash_list" ||
+            command === "git_tags" ||
+            command === "git_submodules"
+          )
             return [];
           return null;
         },

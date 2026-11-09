@@ -20,8 +20,8 @@
 .brandTitle {
   margin: 0;
   font-size: var(--ui-font-body);
-  font-weight: 600;
-  color: var(--ui-text-primary);
+  font-weight: 500;
+  color: var(--color-content);
 }
 .brandText {
   margin: 2px 0 0;

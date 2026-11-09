@@ -36,9 +36,11 @@ export function useThreadMessages(thread: MessageThread) {
   const load = useCallback(() => {
     const requestKey = threadKey({ accountId, id: threadId });
     const token = ++request.current;
-    setLoading(true);
     Promise.resolve()
-      .then(() => listThreadMessages(accountId, threadId))
+      .then(() => {
+        if (token === request.current) setLoading(true);
+        return listThreadMessages(accountId, threadId);
+      })
       .then((messages) => {
         if (token !== request.current) return;
         const sorted = sortThreadMessages(Array.isArray(messages) ? messages : []);

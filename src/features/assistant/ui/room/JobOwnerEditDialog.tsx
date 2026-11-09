@@ -73,7 +73,9 @@ export function JobOwnerEditDialog({
     };
   }, []);
   const live = useRef(current);
-  live.current = current;
+  useEffect(() => {
+    live.current = current;
+  });
   function retain(next: typeof draft, requirePersistence = false) {
     if (!requirePersistence) setDraft(next);
     try {

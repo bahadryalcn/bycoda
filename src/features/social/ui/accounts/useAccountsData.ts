@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { t } from "../../../../shared/i18n";
 import { remoteRequest } from "../../../connections/public/connections";
 import type { HostProject } from "../../../connections/public/protocol";
@@ -28,16 +28,19 @@ export function useAccountsData(input: {
 }): AccountsData {
   const { client, machineId, projectId, active } = input;
   const [attempt, setAttempt] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [settled, setSettled] = useState<object>();
   const [error, setError] = useState("");
   const [snapshot, setSnapshot] = useState<SocialSnapshot>();
   const [projects, setProjects] = useState<HostProject[]>([]);
   const [needsHumanIds, setNeedsHumanIds] = useState<ReadonlySet<string>>(() => new Set());
 
+  // A new request object marks every reload as pending until its read settles.
+  const request = useMemo(() => ({}), [active, attempt, client, machineId, projectId]);
+  const loading = settled !== request && (active || settled === undefined);
+
   useEffect(() => {
     if (!active) return;
     let alive = true;
-    setLoading(true);
     client
       .sectionSnapshot({ section: "accounts", ...(projectId ? { projectId } : {}) })
       .then(
@@ -51,7 +54,7 @@ export function useAccountsData(input: {
         },
       )
       .finally(() => {
-        if (alive) setLoading(false);
+        if (alive) setSettled(request);
       });
     remoteRequest<HostProject[]>(machineId, "projects.list", {}).then(
       (list) => alive && setProjects(list),
@@ -64,7 +67,7 @@ export function useAccountsData(input: {
     return () => {
       alive = false;
     };
-  }, [active, attempt, client, machineId, projectId]);
+  }, [active, request, client, machineId, projectId]);
 
   const reload = useCallback(() => setAttempt((value) => value + 1), []);
   return { loading, error, snapshot, projects, needsHumanIds, reload };

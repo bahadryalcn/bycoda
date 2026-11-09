@@ -195,7 +195,7 @@ it("reports its run with the session and whether its message box is on screen", 
   expect(runs.at(-1)?.[1]).toMatchObject({ sessionId: "s1", state: "listening", visible: true });
   await act(async () => observed([{ isIntersecting: false }]));
   expect(runs.at(-1)?.[1]).toMatchObject({ visible: false });
-  (runs.at(-1)?.[1] as { stop: () => void }).stop();
+  (runs.at(-1)![1] as { stop: () => void }).stop();
   expect(mock.stop).toHaveBeenCalledOnce();
   await act(async () => mock.callbacks.state("idle"));
   expect(runs.at(-1)?.[1]).toBeUndefined();

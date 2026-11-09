@@ -4,6 +4,7 @@ import type {
   AssistantJob,
 } from "../../../../shared/model/host-contracts/assistant";
 import { formatDate, formatNumber, t } from "../../../../shared/i18n";
+import { useMinuteNow } from "../../../../shared/hooks/useMinuteNow";
 import { BarChart, DonutChart } from "../../../../shared/ui/Charts";
 import { Button } from "../../../../shared/ui/Button";
 import { SectionLabel } from "../../../../shared/ui/SectionLabel";
@@ -73,7 +74,7 @@ export function TodayGlance({
   onOpenJobs?: (status: AssistantJob["status"]) => void;
   onOpenHistory?: () => void;
 }) {
-  const now = Date.now();
+  const now = useMinuteNow();
   const dayStart = new Date(now).setHours(0, 0, 0, 0);
   const counts = assistantJobCounts(jobs, dayStart);
   const days = activityPerDay(activity, now);

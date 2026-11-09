@@ -230,17 +230,8 @@ async function enableManagedFixture(s: Awaited<ReturnType<typeof setup>>) {
   git("init", "-q", "-b", "main");
   writeFileSync(join(s.directory, "source.txt"), "fixture source\n");
   git("add", "source.txt");
-  git(
-    "-c",
-    "user.name=Fixture",
-    "-c",
-    "user.email=fixture@example.test",
-    "-c",
-    "commit.gpgsign=false",
-    "commit",
-    "-qm",
-    "Fixture baseline",
-  );
+  const cfg = ["-c", "user.name=F", "-c", "user.email=f@x.test", "-c", "commit.gpgsign=false"];
+  git(...cfg, "commit", "-qm", "Fixture baseline");
   const configured = await s.call("projects.workspacePolicy.update", {
     projectId: s.project.id,
     environmentId: s.store.environmentId,

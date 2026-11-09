@@ -1,3 +1,4 @@
+import { wallClockNow } from "../../../shared/lib/time/wallClock";
 import { useT } from "../../../shared/i18n";
 import { useMinuteNow } from "../../../shared/hooks/useMinuteNow";
 import { formatLiveMinutes } from "../model/liveAgents";
@@ -30,7 +31,7 @@ export function SessionWorkingStatus({
   // Minute precision: rail rows and cards re-render once a minute, not every second.
   // The minute tick only triggers the render; the label reads the exact time.
   const since = wait ? (wait.since ?? startedAt) : startedAt;
-  const now = useMinuteNow(showElapsed && since != null && visible) ? Date.now() : 0;
+  const now = useMinuteNow(showElapsed && since != null && visible) ? wallClockNow() : 0;
   const elapsed = showElapsed && since != null && now > 0 ? formatLiveMinutes(since, now) : null;
   const word = t(wait ? "Waiting" : "Working");
   const reason = wait ? sessionWaitReason(wait) : word;

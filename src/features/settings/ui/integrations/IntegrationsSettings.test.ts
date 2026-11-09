@@ -154,7 +154,7 @@ it("signs Gmail in through the browser and saves the handle without a password",
       config: { preset: "gmail", auth: "google", address: "owner@gmail.example" },
     },
   });
-  expect((save?.[1] as { input: object }).input).not.toHaveProperty("secret");
+  expect((save![1] as { input: object }).input).not.toHaveProperty("secret");
 });
 
 it("offers the app password when Google sign-in is refused", async () => {

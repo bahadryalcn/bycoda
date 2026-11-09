@@ -6,7 +6,7 @@ const listeners = new Set<() => void>();
 function set(next: boolean) {
   if (open === next) return;
   open = next;
-  for (const listener of [...listeners]) listener();
+  for (const listener of Array.from(listeners)) listener();
 }
 
 /** Opens the one feedback dialog, mounted once at app level. */

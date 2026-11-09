@@ -132,7 +132,9 @@ for (const appearance of ["dark", "light"] as const) {
   });
 }
 
-test("fetch, pull, push, stage, unstage and stash run in the correct repository", async ({ page }) => {
+test("fetch, pull, push, stage, unstage and stash run in the correct repository", async ({
+  page,
+}) => {
   await open(page);
   const dialog = page.getByRole("dialog", {
     name: "Commit Graph",

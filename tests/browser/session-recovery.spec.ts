@@ -49,7 +49,7 @@ for (const theme of ["dark", "light"]) {
       await expect(tools.getByRole("button", { name: "Assistant", exact: true })).toBeVisible();
       await expect(tools.getByRole("button", { name: "Settings", exact: true })).toHaveCount(0);
       const settings = rail
-        .getByRole("navigation", { name: "Settings", exact: true })
+        .getByRole("navigation", { name: "Account", exact: true })
         .getByRole("button", { name: "Settings", exact: true });
       await expect(settings).toBeVisible();
       await expect(settings).toBeInViewport();

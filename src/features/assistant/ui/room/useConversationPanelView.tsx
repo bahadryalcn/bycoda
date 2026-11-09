@@ -45,8 +45,19 @@ export function useConversationPanelView(
     onJob,
   } = input;
 
-  const [searchResults, setSearchResults] = useState<AssistantMessage[] | null>(null);
-  const [searching, setSearching] = useState(false);
+  const [search, setSearch] = useState<{
+    query: string;
+    results: AssistantMessage[];
+    settled: boolean;
+  } | null>(null);
+  const searchActive = query.trim() !== "";
+  const searchCurrent = search?.query === query ? search : null;
+  const searchResults = searchActive ? (searchCurrent?.results ?? []) : null;
+  const searching = searchActive && !searchCurrent?.settled;
+  const dropSearchResults = (keep: (message: AssistantMessage) => boolean) =>
+    setSearch((current) =>
+      current ? { ...current, results: current.results.filter(keep) } : current,
+    );
   function clearConversation() {
     const thread = currentThreadFor(threadId);
     if (!thread || pending || clearingRef.current || summaryPending.current) return;
@@ -76,9 +87,7 @@ export function useConversationPanelView(
           mergeThread(result.thread, target.id, environmentId);
           setMessages((current) => ({ ...current, [target.id]: [] }));
           setHasMore((current) => ({ ...current, [target.id]: false }));
-          setSearchResults((current) =>
-            current ? current.filter((message) => message.threadId !== target.id) : current,
-          );
+          dropSearchResults((message) => message.threadId !== target.id);
         } finally {
           clearingRef.current = false;
           setClearing(false);
@@ -87,26 +96,26 @@ export function useConversationPanelView(
     });
   }
   useEffect(() => {
-    if (!query.trim()) {
-      setSearchResults(null);
-      setSearching(false);
-      return;
-    }
+    if (!query.trim()) return;
     let cancelled = false;
     const epoch = searchEpoch.current;
-    setSearching(true);
-    setSearchResults([]);
     const timer = setTimeout(() => {
       void assistantRequest({ op: "conversations.search", query, limit: 100 })
         .then((result) => {
-          if (!cancelled && epoch === searchEpoch.current) setSearchResults(result.messages ?? []);
+          if (!cancelled && epoch === searchEpoch.current)
+            setSearch({ query, results: result.messages ?? [], settled: false });
         })
         .catch((cause) => {
           if (!cancelled && epoch === searchEpoch.current)
             setError(cause instanceof Error ? cause.message : String(cause));
         })
         .finally(() => {
-          if (!cancelled) setSearching(false);
+          if (!cancelled)
+            setSearch((current) =>
+              current?.query === query
+                ? { ...current, settled: true }
+                : { query, results: [], settled: true },
+            );
         });
     }, 300);
     return () => {
@@ -134,6 +143,9 @@ export function useConversationPanelView(
   const locale = useLocale();
   const history = useRef<HTMLDivElement>(null);
   const followMessages = useRef(true);
+  const onHistoryScroll = (node: HTMLDivElement) => {
+    followMessages.current = node.scrollHeight - node.scrollTop - node.clientHeight < 64;
+  };
   useEffect(() => {
     followMessages.current = true;
   }, [threadId, query]);
@@ -163,7 +175,7 @@ export function useConversationPanelView(
             (item) => item.id !== message.id,
           ),
         }));
-        setSearchResults((current) => current?.filter((item) => item.id !== message.id) ?? null);
+        dropSearchResults((item) => item.id !== message.id);
       },
     });
   const messageElements = useMemo(
@@ -204,9 +216,7 @@ export function useConversationPanelView(
 
   return {
     searchResults,
-    setSearchResults,
     searching,
-    setSearching,
     clearConversation,
     currentMessages,
     visible,
@@ -217,6 +227,7 @@ export function useConversationPanelView(
     locale,
     history,
     followMessages,
+    onHistoryScroll,
     lastMessageId,
     day,
     time,

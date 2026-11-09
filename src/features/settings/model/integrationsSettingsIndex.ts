@@ -1,5 +1,5 @@
 import { t } from "../../../shared/i18n/core";
-import { isPausedMessagingProvider } from "../../messaging/model/messagingProviders";
+import { isPausedMessagingProvider } from "../../messaging/public/messagingProviders";
 import type { SettingsEntry } from "./settings";
 
 /** Searchable Integrations cards; each `id` is a provider tab and its card's setting id. */

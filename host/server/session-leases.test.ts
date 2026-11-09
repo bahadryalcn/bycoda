@@ -54,7 +54,7 @@ it("reads the store once for all the leases a beat grants", async () => {
 });
 
 it("answers held leases from memory without touching the store", async () => {
-  const { runLeases, scopes, hostRunsCalls, renew } = setup();
+  const { scopes, hostRunsCalls, renew } = setup();
   const granted = await renew(["s1"]);
   scopes.count = 0;
   hostRunsCalls.length = 0;

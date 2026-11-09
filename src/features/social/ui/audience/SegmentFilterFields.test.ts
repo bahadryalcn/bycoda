@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, createElement, useState } from "react";
+import { act, createElement, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AudienceFilter } from "../../model/audience";
 import { SegmentFilterFields, withFilterField } from "./SegmentFilterFields";
@@ -48,7 +48,9 @@ afterEach(() => {
 
 function Harness({ initial = {} }: { initial?: AudienceFilter }) {
   const [value, setValue] = useState<AudienceFilter>(initial);
-  latest = value;
+  useEffect(() => {
+    latest = value;
+  });
   return createElement(SegmentFilterFields, {
     value,
     onChange: (next: AudienceFilter) => {

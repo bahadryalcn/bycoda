@@ -226,9 +226,12 @@ for (const width of [1280, 800])
       await expect(apply).toBeEnabled();
       await page.clock.fastForward(61_000);
       await expect(apply).toBeDisabled();
-      await expect(dialog.getByRole("alert")).toHaveText(
-        "This rewind preview is blocked or expired. Refresh the preview.",
-      );
+      // Warning notices announce politely (role="status"); only danger uses role="alert".
+      await expect(
+        dialog
+          .getByRole("status")
+          .filter({ hasText: "This rewind preview is blocked or expired. Refresh the preview." }),
+      ).toHaveText("This rewind preview is blocked or expired. Refresh the preview.");
       if (testInfo.project.name === "chromium") {
         await mkdir("temp/verification/i3", { recursive: true });
         await page.screenshot({

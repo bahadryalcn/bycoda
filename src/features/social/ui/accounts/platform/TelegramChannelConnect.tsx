@@ -32,12 +32,17 @@ export function TelegramChannelConnect({
   const generation = useRef(0);
 
   // Another account (or a changed connection) starts from its own state; late results are dropped.
-  useEffect(() => {
-    generation.current++;
+  const accountKey = `${account.id}|${account.connected}|${account.platformId}`;
+  const [seenKey, setSeenKey] = useState(accountKey);
+  if (seenKey !== accountKey) {
+    setSeenKey(accountKey);
     setReview(undefined);
     setError("");
     setTarget(account.connected ? account.platformId : "");
-  }, [account.id, account.connected, account.platformId]);
+  }
+  useEffect(() => {
+    generation.current++;
+  }, [accountKey]);
 
   // A view that unmounts (for example when the owner switches account) never publishes a late result.
   useEffect(

@@ -33,10 +33,10 @@ const prepareLauncher = (entry: string) => {
 };
 const ownerDescriptor =
   "'O:' + $sid + 'G:' + $sid + 'D:(A;;FA;;;' + $sid + ')(A;;FA;;;BA)(A;;FA;;;SY)'";
-// An elevated install leaves Task Scheduler's default descriptor: owned by
-// Administrators, read-only for the user.
-const elevatedDescriptor =
-  "'O:BAG:' + $sid + 'D:(A;ID;0x1f019f;;;BA)(A;ID;FA;;;BA)(A;;FR;;;' + $sid + ')'";
+// An elevated install leaves a task owned by Administrators and read-only for the
+// user. The Administrators grants are left out so the descriptor refuses delete even
+// when the test itself runs in an elevated token (as on CI runners).
+const elevatedDescriptor = "'O:BAG:' + $sid + 'D:(A;;FR;;;' + $sid + ')'";
 /** Stand in for the Task Scheduler COM API so tests never touch a real task. Requires $sid. */
 const fakeScheduler = (descriptor: string) => `
 $script:sddl = ${descriptor}

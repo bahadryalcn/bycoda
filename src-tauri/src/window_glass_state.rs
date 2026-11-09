@@ -3,6 +3,7 @@
 //! Window glass on. The saved choice lives in `window-glass.json` and decides how
 //! the next launch creates the window; the frontend sends it on every sync.
 
+#[cfg(any(target_os = "windows", test))]
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -21,6 +22,7 @@ struct Stored {
     enabled: bool,
 }
 
+#[cfg(any(target_os = "windows", test))]
 #[derive(Debug, PartialEq, Eq)]
 pub struct GlassPlan {
     /// A backdrop effect and a clear background: only possible on a transparent window.
@@ -31,6 +33,7 @@ pub struct GlassPlan {
     pub restart_required: bool,
 }
 
+#[cfg(any(target_os = "windows", test))]
 /// `enabled` is this sync's effective state (dark mode and the setting);
 /// `preference` is the saved Window glass setting; `transparent` is how the
 /// window was created this launch.
@@ -42,15 +45,18 @@ pub fn glass_plan(enabled: bool, preference: bool, transparent: bool) -> GlassPl
     }
 }
 
+#[cfg(any(target_os = "windows", test))]
 /// First Windows 11 build; the system backdrop (Mica) API needs it.
 const WINDOWS_11_BUILD: u32 = 22000;
 
+#[cfg(any(target_os = "windows", test))]
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum GlassEffect {
     Mica,
     Acrylic,
 }
 
+#[cfg(any(target_os = "windows", test))]
 /// Mica samples the wallpaper once; Acrylic re-blurs the backdrop every frame,
 /// which keeps the GPU and CPU busy while content streams. Windows 10 has no Mica.
 fn glass_effect(build: u32) -> GlassEffect {
@@ -105,6 +111,7 @@ fn read_flag(path: &Path) -> bool {
         .is_some_and(|stored| stored.enabled)
 }
 
+#[cfg(any(target_os = "windows", test))]
 fn write_flag(path: &Path, enabled: bool) -> Result<(), String> {
     let dir = path.parent().ok_or("Window glass folder is unavailable")?;
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;

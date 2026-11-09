@@ -1,4 +1,5 @@
 import { t } from "../../../../shared/i18n";
+import { wallClockNow } from "../../../../shared/lib/time/wallClock";
 import { Checkbox } from "../../../../shared/ui/Checkbox";
 import { DateTimeField } from "../../../../shared/ui/DateTimePicker";
 import { SegmentedControl } from "../../../../shared/ui/SegmentedControl";
@@ -165,7 +166,7 @@ export function ContentEditorFields(props: ContentEditorFieldsProps) {
           <DateTimeField
             label={t("Date and time")}
             mode="datetime"
-            min={dayKey(Date.now())}
+            min={dayKey(wallClockNow())}
             required
             value={draft.scheduledAt}
             onChange={(value) => onDraft({ ...draft, scheduledAt: value })}

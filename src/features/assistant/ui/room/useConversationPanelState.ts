@@ -269,15 +269,13 @@ export function useConversationPanelState({
   }, [flushNativeDraft]);
   useEffect(() => {
     if (!isTauri() || !threadId || !environmentId) {
-      setNativeDraftReady("");
-      return;
+      return () => setNativeDraftReady("");
     }
     let active = true;
     const id = threadId;
     const sourceEnvironment = environmentId;
     const previous = nativeDrafts.current.get(id);
     nativeDrafts.current.delete(id);
-    setNativeDraftReady("");
     void (async () => {
       if (previous?.pending) await previous.pending;
       return readAssistantNativeDraft(id, sourceEnvironment);
@@ -322,6 +320,7 @@ export function useConversationPanelState({
       });
     return () => {
       active = false;
+      setNativeDraftReady("");
       const state = nativeDrafts.current.get(id);
       if (state?.environmentId === sourceEnvironment && state.desired !== state.saved)
         void flushNativeDraft(id).catch(() => {});

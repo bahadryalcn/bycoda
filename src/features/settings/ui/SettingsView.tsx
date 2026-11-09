@@ -168,19 +168,15 @@ export function SettingsView({
     request: notificationSettingsRequest,
     section,
   });
+  const externalChanged =
+    revealInputs.anchor !== anchor || revealInputs.request !== notificationSettingsRequest;
   let currentReveal = reveal;
   // Section changes alone must not reapply an old external anchor.
-  if (revealInputs.anchor !== anchor || revealInputs.request !== notificationSettingsRequest) {
-    currentReveal = { id: anchor, section };
-  }
+  if (externalChanged) currentReveal = { id: anchor, section };
   if (revealInputs.section !== section && currentReveal.section !== section) {
     currentReveal = { id: null, section };
   }
-  if (
-    revealInputs.anchor !== anchor ||
-    revealInputs.request !== notificationSettingsRequest ||
-    revealInputs.section !== section
-  ) {
+  if (externalChanged || revealInputs.section !== section) {
     setRevealInputs({ anchor, request: notificationSettingsRequest, section });
   }
   if (currentReveal !== reveal) setReveal(currentReveal);

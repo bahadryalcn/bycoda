@@ -51,8 +51,12 @@ for (const theme of ["light", "dark"])
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
           true,
         );
+        // The discard confirmation replaces the footer's Save with Keep editing and Discard.
         await expect(
-          dialog.getByRole("button", { name: tr("Save profile settings"), exact: true }),
+          dialog.getByRole("button", {
+            name: tr(name === "unsaved-close" ? "Keep editing" : "Save profile settings"),
+            exact: true,
+          }),
         ).toBeVisible();
         await page.screenshot({
           path: join(output, `${theme}-${width}-${name}.png`),
@@ -121,7 +125,7 @@ for (const theme of ["light", "dark"])
 
       await tab("Computer use").click();
       const helperPath = dialog.getByRole("textbox", {
-        name: tr("Helper executable"),
+        name: tr("Helper file"),
         exact: true,
       });
       await expect(helperPath).toBeHidden();
@@ -131,13 +135,12 @@ for (const theme of ["light", "dark"])
       await expect(
         dialog.getByRole("switch", { name: tr("Allow physical input"), exact: true }),
       ).not.toBeChecked();
+      // Emergency stop is offered only while computer use is on.
       await expect(
         dialog.getByRole("button", { name: tr("Stop computer use"), exact: true }),
-      ).toBeEnabled();
+      ).toHaveCount(0);
       await capture("computer");
-      await dialog
-        .getByRole("button", { name: tr("Advanced helper settings"), exact: true })
-        .click();
+      await dialog.getByRole("button", { name: tr("Custom helper"), exact: true }).click();
       await expect(helperPath).toBeVisible();
       await helperPath.scrollIntoViewIfNeeded();
       await capture("computer-helper-expanded");
@@ -145,11 +148,11 @@ for (const theme of ["light", "dark"])
 
       await tab("Advanced").click();
       await dialog
-        .getByRole("spinbutton", { name: tr("Token reservation per review"), exact: true })
+        .getByRole("spinbutton", { name: tr("Review reservation"), exact: true })
         .fill("9000");
       await dialog
         .getByRole("spinbutton", {
-          name: tr("Conversation summary interval (messages)"),
+          name: tr("Summary every"),
           exact: true,
         })
         .fill("25");
@@ -170,7 +173,7 @@ for (const theme of ["light", "dark"])
       ).toEqual(writesBefore);
       await tab("Advanced").click();
       const reservation = dialog.getByRole("spinbutton", {
-        name: tr("Token reservation per review"),
+        name: tr("Review reservation"),
         exact: true,
       });
       await reservation.fill("1");

@@ -73,7 +73,7 @@ export type VoiceCompanionViewProps = {
  * line, a chat transcript, and a footer of icon controls. Compact: a pill with the live line,
  * mic, end and an overflow menu.
  */
-export function VoiceCompanionView(p: VoiceCompanionViewProps) {
+export function VoiceCompanionView({ audioLevel, toggleRef, ...p }: VoiceCompanionViewProps) {
   const live = p.status === "live";
   const canTalk = p.status === "idle" || p.status === "sleeping" || p.status === "ready";
   const connecting = p.status === "connecting" || p.status === "reconnecting";
@@ -153,7 +153,7 @@ export function VoiceCompanionView(p: VoiceCompanionViewProps) {
           </>
         )}
         <Button
-          ref={p.toggleRef}
+          ref={toggleRef}
           iconOnly
           label={toggleLabel}
           tooltip={toggleLabel}
@@ -183,7 +183,7 @@ export function VoiceCompanionView(p: VoiceCompanionViewProps) {
               visual={p.visual}
               visualState={p.visualState}
               working={p.working}
-              audioLevel={p.audioLevel}
+              audioLevel={audioLevel}
               statusText={p.statusText}
               sessionStatusText={p.sessionStatusText}
               idle={p.status === "idle"}

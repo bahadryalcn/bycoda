@@ -86,7 +86,7 @@ for (const theme of ["light", "dark"]) {
       await expect(
         tunnels.getByRole("button", { name: "Start tunnel", exact: true }),
       ).toBeEnabled();
-      const computer = tunnels.locator("label").first();
+      const computer = tunnels.getByRole("button", { name: /^Computer:/ });
       const controls = tunnels.locator(".external-tunnel-controls");
       const gap = await controls.evaluate(
         (node, bottom) => node.getBoundingClientRect().top - bottom,

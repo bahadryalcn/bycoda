@@ -1,5 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { createStore } from "../../../shared/lib/store";
 import { loadSavedThemes, referencedImageIds } from "./savedThemes";
 
@@ -105,9 +105,8 @@ export function useBackgroundLibrary(): {
     images: [],
     loaded: false,
   });
-  const [currentId, setCurrentId] = useState(loadCurrentLibraryImageId);
+  const currentId = useSyncExternalStore(subscribeBackgroundLibrary, loadCurrentLibraryImageId);
   const refresh = useCallback(() => {
-    setCurrentId(loadCurrentLibraryImageId());
     listBackgroundLibrary().then(
       (images) => setState({ images, loaded: true }),
       () => setState((current) => ({ ...current, loaded: true })),

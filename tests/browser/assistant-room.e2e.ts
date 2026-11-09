@@ -285,7 +285,7 @@ for (const theme of ["light", "dark"])
         path: join(output, `settings-${theme}-${width}-behavior.png`),
       });
       const autonomy = await showGroup("Jobs");
-      const worker = autonomy.getByRole("group", { name: "Workers", exact: true });
+      const worker = dialog.getByRole("group", { name: "Workers", exact: true });
       await worker.getByRole("button").first().click();
       // Reasoning is an inline radio row in the model panel's settings column.
       await page
@@ -309,12 +309,8 @@ for (const theme of ["light", "dark"])
         path: join(output, `settings-${theme}-${width}-presence.png`),
       });
       const cost = await showGroup("Cost and context");
-      await cost
-        .getByRole("spinbutton", { name: "Token reservation per review", exact: true })
-        .fill("9000");
-      await cost
-        .getByRole("spinbutton", { name: "Conversation summary interval (messages)", exact: true })
-        .fill("25");
+      await cost.getByRole("spinbutton", { name: "Review reservation", exact: true }).fill("9000");
+      await cost.getByRole("spinbutton", { name: "Summary every", exact: true }).fill("25");
       await cost.screenshot({
         animations: "disabled",
         path: join(output, `settings-${theme}-${width}-cost.png`),
@@ -338,7 +334,7 @@ for (const theme of ["light", "dark"])
       await expect(
         reopened.getByRole("button", { name: "Daily token budget: 500k tokens/day", exact: true }),
       ).toBeVisible();
-      await reopened
+      await dialog
         .getByRole("group", { name: "Workers", exact: true })
         .getByRole("button")
         .first()

@@ -102,7 +102,6 @@ import {
   resolveClaudeApiModelId,
   runtimeModeToPermission,
   sessionIdFromMessage,
-  compactionPhaseFromSystem,
   statusTextFromSystem,
   streamDeltaFromEvent,
   stringField,
@@ -121,6 +120,7 @@ import {
   type ClaudeCliSettings,
   type ClaudeControlRequest,
 } from "./claudeProtocol";
+import { compactionPhaseFromSystem } from "./claudeCompaction";
 import {
   COMPACTING_TEXT,
   COMPACTION_STATUS_KEY,

@@ -3,10 +3,6 @@ import { mkdtempSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AddressInfo } from "node:net";
-import { HostEngine } from "../engine";
-import { HostStore } from "../store";
-import { createHostServer } from "../server";
 import { DesktopSessions, desktopDatabasePaths } from "./desktopSessions";
 import { normalizeProjectPath } from "./project-path";
 import { DesktopLive } from "./desktopLive";
