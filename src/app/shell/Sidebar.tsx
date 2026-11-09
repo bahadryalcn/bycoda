@@ -5269,7 +5269,13 @@ function SessionSearchText({ text }: { text: string }) {
 const LONG_PRESS_MS = 450;
 
 /** Hover actions overlay a compact row's time; the time keeps one 20px column per action. */
-const YIELD_WIDTH = ["", "pointer-fine:w-5", "pointer-fine:w-10", "pointer-fine:w-15"];
+const YIELD_WIDTH = [
+  "",
+  "pointer-fine:w-5",
+  "pointer-fine:w-10",
+  "pointer-fine:w-15",
+  "pointer-fine:w-20",
+];
 
 const SessionCard = memo(function SessionCard({
   showProjectAppearance = false,

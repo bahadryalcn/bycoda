@@ -2433,9 +2433,11 @@ it("lets compact row actions overlay the idle time instead of reserving a gutter
     expect(slot.querySelector('[aria-label^="Archive "]')).not.toBeNull();
     expect(slot.querySelector('[aria-label^="Delete "]')).not.toBeNull();
     expect(card().querySelectorAll("[aria-pressed='true'][data-action-inline]")).toHaveLength(1);
-    // The idle time is as wide as the three actions so they never cover the status.
+    // The idle time is as wide as the four actions (pin, settle, archive, delete) so they never
+    // cover the status.
     const time = card().querySelector<HTMLElement>("[data-action-yield]")!;
-    expect(time.className).toContain("pointer-fine:w-15");
+    expect(time.className).toContain("pointer-fine:w-20");
+    expect(time.className).not.toContain("undefined");
     act(() => pin.click());
     expect(props.onPinSession).toHaveBeenCalledWith(props.sessions[0].id, false);
   } finally {
