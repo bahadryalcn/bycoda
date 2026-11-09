@@ -84,10 +84,9 @@ test("expired blob previews recover from their owning Host", async ({ page }) =>
       .evaluate((image: HTMLImageElement) => URL.revokeObjectURL(image.src));
     await trigger.click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog.getByRole("alert")).toContainText("Preview unavailable");
-    await page.screenshot({ path: `${evidence}/${theme}-expired.png` });
-    await dialog.getByRole("button", { name: "Retry", exact: true }).click();
+    // The first broken carried URL reloads once from the owning Host's reader, without an error.
     await expect(dialog.locator("img")).toHaveAttribute("src", /^data:image\/svg\+xml;base64,/);
+    await expect(dialog.getByRole("alert")).toHaveCount(0);
     await expect
       .poll(() => dialog.locator("img").evaluate((image: HTMLImageElement) => image.naturalWidth))
       .toBe(400);

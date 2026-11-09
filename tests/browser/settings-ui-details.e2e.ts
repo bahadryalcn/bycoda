@@ -9,10 +9,15 @@ for (const theme of ["light", "dark"]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto(`/tests/browser/settings.html?section=mcp&mcp=1&theme=${theme}&lang=en`);
       const connections = page.locator("#setting-mcp-servers");
-      await connections.getByRole("button", { name: "Actions for server-01", exact: true }).click();
-      await expect(page.getByRole("menuitem", { name: "Enable", exact: true })).toBeVisible();
+      // Enable/disable is the row switch; the actions menu keeps config and removal only.
+      const toggle = connections.getByRole("switch", {
+        name: "server-01 · Codex · Global",
+        exact: true,
+      });
+      await expect(toggle).not.toBeChecked();
+      await expect(toggle).toBeEnabled();
       await page.screenshot({ path: info.outputPath(`mcp-enable-${theme}-${width}.png`) });
-      await page.getByRole("menuitem", { name: "Enable", exact: true }).click();
+      await toggle.click();
       await expect
         .poll(() =>
           page.evaluate(() => JSON.parse(sessionStorage.getItem("fixture-mcp-toggle") ?? "null")),
@@ -24,8 +29,9 @@ for (const theme of ["light", "dark"]) {
           enabled: true,
           expectedEnabled: false,
         });
-      await connections.getByRole("button", { name: "Actions for server-01", exact: true }).click();
-      await page.getByRole("menuitem", { name: "Disable", exact: true }).click();
+      await expect(toggle).toBeChecked();
+      await expect(toggle).toBeEnabled();
+      await toggle.click();
       await expect
         .poll(() =>
           page.evaluate(() => JSON.parse(sessionStorage.getItem("fixture-mcp-toggle") ?? "null")),
@@ -37,8 +43,7 @@ for (const theme of ["light", "dark"]) {
           enabled: false,
           expectedEnabled: true,
         });
-      await connections.getByRole("button", { name: "Actions for server-01", exact: true }).click();
-      await expect(page.getByRole("menuitem", { name: "Enable", exact: true })).toBeVisible();
+      await expect(toggle).not.toBeChecked();
       await page.screenshot({ path: info.outputPath(`mcp-disabled-${theme}-${width}.png`) });
     });
   }

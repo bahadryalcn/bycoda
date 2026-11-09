@@ -19,7 +19,8 @@ for (const [theme, width] of [
       "providers",
       "terminal",
       "groupLock",
-      "inbox",
+      // Inbox credentials retired into Integrations; "inbox" now redirects there.
+      "integrations",
       "mcp",
       "keybindings",
       "worktrees",

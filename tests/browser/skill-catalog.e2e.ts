@@ -18,7 +18,11 @@ for (const theme of ["light", "dark"])
       const catalog = page.getByRole("dialog", { name: "Recommended skills" });
       await expect(catalog).toBeVisible();
       await expect(catalog.getByRole("heading", { name: "impeccable", exact: true })).toBeVisible();
-      const firstRecipe = catalog.locator("details").first();
+      // "Before you install" is now a disclosure above the list, so scope to the skill's own recipe.
+      const firstRecipe = catalog
+        .getByRole("listitem")
+        .filter({ has: page.getByRole("heading", { name: "impeccable", exact: true }) })
+        .locator("details");
       await firstRecipe.locator("summary").click();
       await expect(firstRecipe.locator("code")).toContainText("skills@1.7.6");
       await expect(firstRecipe.locator("code")).toContainText(

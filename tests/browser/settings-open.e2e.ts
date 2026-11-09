@@ -8,18 +8,29 @@ for (const theme of ["light", "dark"]) {
       await page.goto(`/tests/browser/settings.html?section=appearance&theme=${theme}&lang=tr`);
       const appearance = page.locator(".appearance-settings");
       await expect(appearance.locator("details, summary")).toHaveCount(0);
-      await expect(appearance.locator(".appearance-section")).toHaveCount(6);
-      // Custom surface colors (hue, saturation, dark lightness) sit behind a closed toggle row.
-      const surfaceColors = appearance.getByRole("button", {
-        name: "Özel yüzey renkleri",
-        exact: true,
-      });
-      await expect(surfaceColors).toHaveAttribute("aria-expanded", "false");
-      await surfaceColors.click();
-      await expect(surfaceColors).toHaveAttribute("aria-expanded", "true");
-      for (const id of ["dark-lightness", "code-font-size", "sidebar-opacity", "tab-animations"]) {
+      // One topic per inner tab (Theme, Background, Interface, Typography, Motion); panels stay mounted.
+      await expect(appearance.locator(".appearance-section")).toHaveCount(5);
+      const topics = appearance.getByRole("tablist", { name: "Görünüm", exact: true });
+      await expect(topics.getByRole("tab")).toHaveCount(5);
+      const openTopic = (name: string) => topics.getByRole("tab", { name, exact: true }).click();
+      // The dark-mode depth slider is always visible in the Theme tab, next to hue and saturation.
+      for (const id of ["hue", "saturation", "dark-lightness"]) {
         await expect(appearance.locator(`[data-setting-id="${id}"]`)).toBeVisible();
       }
+      await openTopic("Tipografi");
+      await expect(appearance.locator('[data-setting-id="code-font-size"]')).toBeVisible();
+      // Sidebar opacity lives in the Glass background layer, whose editor opens from its row.
+      await openTopic("Arka plan");
+      const glass = appearance.getByRole("button", {
+        name: /Kenar çubuğu ve ana panel saydamlığı/,
+      });
+      await expect(glass).toHaveAttribute("aria-expanded", "false");
+      await glass.click();
+      await expect(glass).toHaveAttribute("aria-expanded", "true");
+      await expect(appearance.locator('[data-setting-id="sidebar-opacity"]')).toBeVisible();
+      await openTopic("Hareket");
+      await expect(appearance.locator('[data-setting-id="tab-animations"]')).toBeVisible();
+      await openTopic("Tema");
       await expect(
         appearance.getByRole("radiogroup", { name: "Renk şeması" }).getByRole("radio"),
       ).toHaveCount(3);
@@ -54,6 +65,7 @@ for (const theme of ["light", "dark"]) {
         node.scrollTop = 0;
       });
       await page.screenshot({ path: testInfo.outputPath(`appearance-${theme}-${width}.png`) });
+      await openTopic("Tipografi");
       await appearance.locator('[data-setting-id="interface-font"]').scrollIntoViewIfNeeded();
       await page.screenshot({ path: testInfo.outputPath(`typography-${theme}-${width}.png`) });
     });

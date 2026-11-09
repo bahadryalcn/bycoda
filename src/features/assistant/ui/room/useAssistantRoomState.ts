@@ -275,8 +275,12 @@ export function useAssistantRoomState(props: AssistantViewProps, lock: Assistant
     ...draft,
     idempotencyKey: draft.key,
   });
+  // Render-time checks use this render's projects: the ref above is refreshed only after the
+  // render, so hiding a project would otherwise leave its draft visible until another render.
+  const projectVisibleNow = (id: string) =>
+    projects.some((project) => project.id === id && !isProjectLocked(project.path));
   const visibleDraft = (draft: JobDraft) =>
-    assistantJobDraftVisible(reviewedDraft(draft), canSeeProject);
+    assistantJobDraftVisible(reviewedDraft(draft), projectVisibleNow);
   function updateJobDraft(id: string, patch: Partial<JobDraft>) {
     if (jobReviewFrozen || pending) return;
     const row = jobReview?.find((candidate) => candidate.id === id);

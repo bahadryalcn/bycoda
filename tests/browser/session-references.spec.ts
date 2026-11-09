@@ -175,7 +175,7 @@ for (const theme of ["light", "dark"])
             () => (window as unknown as { fixtureCopiedText?: string }).fixtureCopiedText,
           ),
         )
-        .toBe("bycoda://session/v1/native/stable-store/profile-1/native-session");
+        .toBe("https://link.bycoda.codes/session/v1/native/stable-store/profile-1/native-session");
       await page.getByRole("menuitem", { name: "Copy Markdown reference", exact: true }).click();
       await expect
         .poll(() =>
@@ -184,7 +184,7 @@ for (const theme of ["light", "dark"])
           ),
         )
         .toBe(
-          "[Reference copy target](bycoda://session/v1/native/stable-store/profile-1/native-session)",
+          "[Reference copy target](https://link.bycoda.codes/session/v1/native/stable-store/profile-1/native-session)",
         );
       await page.screenshot({
         path: `${captures}/${theme}-${width}-copied.png`,
