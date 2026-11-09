@@ -3708,7 +3708,10 @@ describe("shared queued messages", () => {
         await s.call("sessions.queue.lease", { sessionId, clientId: "desktop:win1", ...aware });
         // The turn ends while the desktop holds the queue: the host leaves it alone.
         s.finish();
-        await vi.waitFor(async () => expect(await s.store.sessionStatus(sessionId)).toBe("idle"));
+        // 15 s of real time for a slow runner; the fake clock stays under half the 90 s lease.
+        await vi.waitFor(async () => expect(await s.store.sessionStatus(sessionId)).toBe("idle"), {
+          timeout: 15_000,
+        });
         await vi.advanceTimersByTimeAsync(QUEUE_LEASE_TTL_MS / 2);
         expect(s.send).toHaveBeenCalledOnce();
         // The desktop is gone: at the end of its lease the host sends the head itself.

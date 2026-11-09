@@ -261,9 +261,10 @@ test("a submodule pointer change shows once, on the submodule row", async ({ pag
     await page.locator("#root > div.border-r").evaluate((element, size) => {
       (element as HTMLElement).style.width = `${size}px`;
     }, width);
-    // The name stays readable beside the badge and its action at every width.
+    // The name stays readable beside the badge and its action at every width ("core-pack"
+    // needs about 60px; Linux and Windows font metrics differ by a few pixels).
     const name = module.locator("header button[aria-expanded]").first();
-    expect((await name.boundingBox())!.width).toBeGreaterThan(80);
+    expect((await name.boundingBox())!.width).toBeGreaterThan(64);
     for (const light of [false, true]) {
       await page.evaluate(
         (value) => document.documentElement.classList.toggle("theme-light", value),
