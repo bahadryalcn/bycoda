@@ -27,15 +27,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replace close and reopen with settle and idle auto-settle, owned by the Host.
 - Quote citation tokens in the composer; delegated advisors and subagents stay on the parent activity panel.
 - Keep mixed-provider queues moving when a steer was not sent, and queue busy turns with Shift+Tab.
+- Settled sessions: filter them in place, archive them automatically after a chosen time, and Archive all or Delete all from the Settled section; nothing is deleted on its own.
+- Voice side panel beside the companion, a project run catalog, and a session filter for settled conversations.
 
 ### Integrations
 
 - MCP hub with inventory, HTTP bridge and child process wiring; owner approvals in chat or the in-app confirmation.
 - Messaging over IMAP, Slack, Discord and Teams, browser Gmail and Slack sign-in, decision models and expanded Social workflows.
 - `secrets.run` with stored, redacted secrets and conversation image tools.
+- Git panel: hideable Stashes and Graph sections, Auto Fetch, and submodule pointer changes on the submodule's own row with stage and unstage.
+- Inbox reviews approve once for the exact content and show a structured preview; image merge conflicts compare as pictures.
 
 ### Settings and appearance
 
+- Provider defaults stay pending until Save, which names where they apply: Global, a project, a group or a workspace.
 - Settings rail grouped by area with the account row pinned at the bottom; more theme fields for typography, interface, background and motion.
 
 ### Releases and reliability

@@ -137,7 +137,6 @@ jobs:
     concurrency:
       group: ${{ needs.windows-route.outputs.windows_self_hosted == 'true' && needs.windows-route.outputs.windows_concurrency_group || format('host-launchers-{0}', github.run_id) }}
       cancel-in-progress: false
-      queue: max
     env:
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: core.autocrlf
@@ -262,7 +261,6 @@ jobs:
     concurrency:
       group: ${{ matrix.platform == 'windows-x64' && needs.windows-route.outputs.windows_self_hosted == 'true' && needs.windows-route.outputs.windows_concurrency_group || format('desktop-package-{0}-{1}', github.run_id, matrix.platform) }}
       cancel-in-progress: false
-      queue: max
     env:
       BYCODA_BUILD_MANIFEST: ${{ github.workspace }}/build/build-info.json
       GIT_CONFIG_COUNT: "1"
