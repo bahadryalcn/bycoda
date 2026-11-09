@@ -275,13 +275,16 @@ for (const theme of ["light", "dark"])
       ).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-listening.png`) });
       const controls = ["Pause mic", "Silence", "Disconnect voice"];
-      const actionBoxes = await Promise.all(
-        controls.map((name) => panel.getByRole("button", { name, exact: true }).boundingBox()),
-      );
-      expect(
-        Math.max(...actionBoxes.map((box) => box!.y)) -
-          Math.min(...actionBoxes.map((box) => box!.y)),
-      ).toBeLessThanOrEqual(1);
+      // The controls share one row once the listening layout has settled.
+      await expect
+        .poll(async () => {
+          const boxes = await Promise.all(
+            controls.map((name) => panel.getByRole("button", { name, exact: true }).boundingBox()),
+          );
+          const tops = boxes.map((box) => box!.y);
+          return Math.max(...tops) - Math.min(...tops);
+        })
+        .toBeLessThanOrEqual(1);
       await panel.getByRole("radio", { name: "Project", exact: true }).click();
       await expect(panel.getByRole("button", { name: /^Voice session/ })).toBeVisible();
       await panel.screenshot({ path: join(output, `${theme}-${width}-project.png`) });
