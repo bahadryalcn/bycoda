@@ -241,9 +241,7 @@ export class ConversationPreviewWorkflow {
       requestId: input.requestId,
       observedAt: new Date().toISOString(),
       execution: { state: "blocked", stage: "status" },
-      presentation: {
-        state: input.show === false ? "not-requested" : "blocked",
-      },
+      presentation: { state: input.show === false ? "not-requested" : "blocked" },
       evidence: {},
     };
     const call = async (

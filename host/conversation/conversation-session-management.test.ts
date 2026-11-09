@@ -19,11 +19,22 @@ function setup() {
   } as unknown as HostSession;
   const ports = {
     session: vi.fn(async () => source),
-    preview: vi.fn(async () => ({
-      digest: "a".repeat(64),
-      contextText: "reviewed context",
-    })),
+    preview: vi.fn(async () => ({ digest: "a".repeat(64), contextText: "reviewed context" })),
     dispatch: vi.fn(async () => ({ sessionId: "target", revision: 5 })),
+    modelPool: async () => ({
+      rows: [
+        {
+          id: "row-1",
+          harness: "claude" as const,
+          model: "claude:sonnet",
+          modelSettings: {},
+          runtimeMode: "supervised" as const,
+          maxRunMinutes: 30,
+          roles: ["worker" as const],
+          unknownLimit: "use" as const,
+        },
+      ],
+    }),
   };
   const principal = {
     kind: "assistant-thread" as const,
@@ -65,11 +76,7 @@ it("reads bounded configuration without exposing transcript or starting a comman
     authorized,
     ports,
   );
-  expect(result).toMatchObject({
-    sessionId: "target",
-    revision: 4,
-    harness: "codex",
-  });
+  expect(result).toMatchObject({ sessionId: "target", revision: 4, harness: "codex" });
   expect(JSON.stringify(result)).not.toContain("private");
   expect(ports.dispatch).not.toHaveBeenCalled();
 });
@@ -138,12 +145,7 @@ it("previews then dispatches an unsent handoff with its exact digest", async () 
   await expect(
     dispatchSessionManagement(
       "sessions.contextual.create",
-      {
-        ...contextual,
-        mode: "secondOpinion",
-        requestId: "send-1",
-        previewDigest: "a".repeat(64),
-      },
+      { ...contextual, mode: "secondOpinion", requestId: "send-1", previewDigest: "a".repeat(64) },
       principal,
       authorized,
       ports,
@@ -164,12 +166,7 @@ it("reuses only accepted attachment metadata and never forwards filesystem paths
     data: "private-bytes",
   };
   source.session.blocks = [
-    {
-      id: "accepted",
-      role: "user",
-      text: "read this",
-      attachments: [attachment],
-    },
+    { id: "accepted", role: "user", text: "read this", attachments: [attachment] },
   ] as HostSession["session"]["blocks"];
   await dispatchSessionManagement(
     "sessions.draft",
@@ -192,13 +189,7 @@ it("reuses only accepted attachment metadata and never forwards filesystem paths
     authorityGeneration: 2,
     text: "",
     attachments: [
-      {
-        id: attachment.id,
-        name: "note.txt",
-        mimeType: "text/plain",
-        size: 3,
-        kind: "file",
-      },
+      { id: attachment.id, name: "note.txt", mimeType: "text/plain", size: 3, kind: "file" },
     ],
   });
   expect(JSON.stringify(ports.dispatch.mock.calls)).not.toContain("private");
@@ -247,16 +238,57 @@ it("rejects oversized voice drafts before native review or dispatch", async () =
   await expect(
     dispatchSessionManagement(
       "sessions.draft",
-      {
-        requestId: "large",
-        sessionId: "target",
-        expectedRevision: 4,
-        text: "x".repeat(12_001),
-      },
+      { requestId: "large", sessionId: "target", expectedRevision: 4, text: "x".repeat(12_001) },
       principal,
       authorized,
       ports,
     ),
   ).rejects.toThrow();
   expect(ports.dispatch).not.toHaveBeenCalled();
+});
+
+it("rejects a model outside the pool for the assistant thread but not for a focused session", async () => {
+  const { ports, principal, authorized, configure } = setup();
+  const outside = { ...configure, model: "claude:opus" };
+  await expect(
+    dispatchSessionManagement("sessions.configure", outside, principal, authorized, ports),
+  ).rejects.toThrow("not in the assistant's model pool");
+  await expect(
+    dispatchSessionManagement(
+      "sessions.contextual.preview",
+      {
+        sessionId: "target",
+        sourceBlockId: "reply",
+        expectedRevision: 4,
+        mode: "handoff",
+        harness: "claude",
+        model: "claude:opus",
+        modelSettings: {},
+      },
+      principal,
+      authorized,
+      ports,
+    ),
+  ).rejects.toThrow("model pool");
+  expect(ports.dispatch).not.toHaveBeenCalled();
+  const session = { kind: "session" as const, sessionId: "target", projectId: "project" };
+  await dispatchSessionManagement(
+    "sessions.configure",
+    outside,
+    session as never,
+    authorized,
+    ports,
+  );
+  expect(ports.dispatch).toHaveBeenCalledOnce();
+});
+it("applies pool row settings when the assistant thread configures a pool model", async () => {
+  const { ports, principal, authorized, configure } = setup();
+  const pool = await ports.modelPool();
+  ports.modelPool = async () => ({
+    rows: pool.rows.map((row) => ({ ...row, modelSettings: { effort: "high" } })),
+  });
+  await dispatchSessionManagement("sessions.configure", configure, principal, authorized, ports);
+  expect(ports.dispatch).toHaveBeenCalledWith(
+    expect.objectContaining({ model: "claude:sonnet", modelSettings: { effort: "high" } }),
+  );
 });

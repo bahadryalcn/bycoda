@@ -135,10 +135,7 @@ export function registerRoomManagement(
           return ports.roomRemote.call(
             call.action,
             call.input,
-            {
-              threadId: call.threadId,
-              environmentId: dependencies.engine.store.environmentId,
-            },
+            { threadId: call.threadId, environmentId: dependencies.engine.store.environmentId },
             call.requestId,
             authorized,
           );
@@ -450,11 +447,7 @@ export function registerRoomManagement(
                 }
               : call.input,
             call.requestId,
-          ) as {
-            operationId: string;
-            action: string;
-            originalInput: Record<string, unknown>;
-          };
+          ) as { operationId: string; action: string; originalInput: Record<string, unknown> };
           return dependencies.withRoomProjectScope(call, authorized, async (valid, source) => {
             const current = async () => valid() && (await authorized()) && valid();
             const owner = await dependencies.assistantWorkspaceOwner.lookup(
@@ -598,10 +591,7 @@ export function registerRoomManagement(
           return dependencies.withRoomProjectScope(call, authorized, async () => {
             const { list } = await dependencies.projectSessionList(call.projectId!);
             return conversationSessionPage(
-              list.map((row) => ({
-                ...row,
-                busy: row.status === "running",
-              })),
+              list.map((row) => ({ ...row, busy: row.status === "running" })),
               call.input,
             );
           });

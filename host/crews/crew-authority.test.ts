@@ -171,13 +171,30 @@ async function threadFixture() {
     operationHash: operation.operationHash,
   }));
   const facade = () =>
-    new ConversationThreadCrewTools(f.crews, {
-      approve,
-      receipt: async (key) => receipts.get(key),
-      saveReceipt: async (key, value) => {
-        receipts.set(key, value);
+    new ConversationThreadCrewTools(
+      f.crews,
+      {
+        approve,
+        receipt: async (key) => receipts.get(key),
+        saveReceipt: async (key, value) => {
+          receipts.set(key, value);
+        },
       },
-    });
+      async () => ({
+        rows: [
+          {
+            id: "row-1",
+            harness: "codex" as const,
+            model: "codex:fixture",
+            modelSettings: {},
+            runtimeMode: "supervised" as const,
+            maxRunMinutes: 30,
+            roles: ["worker" as const],
+            unknownLimit: "use" as const,
+          },
+        ],
+      }),
+    );
   const tools = facade();
   const principal = {
     kind: "assistant-thread" as const,
@@ -890,4 +907,24 @@ it("preserves accepted turn identity and a concurrent pause through the paired s
   expect(
     f.engine.command.mock.calls.map(([input]) => (input as { commandId: string }).commandId),
   ).toEqual(["crew-paired-send:create", "crew-paired-send:send"]);
+});
+
+it("rejects crew candidates outside the assistant model pool before review", async () => {
+  const f = await threadFixture();
+  const [agent] = f.saved.agents;
+  const outside = {
+    ...f.saved,
+    agents: [
+      { ...agent, candidates: agent.candidates.map((c) => ({ ...c, model: "codex:outside" })) },
+    ],
+  };
+  await expect(
+    f.change("crews.save", {
+      definitionJson: JSON.stringify(outside),
+      expectedUpdatedAt: f.saved.updatedAt,
+    }),
+  ).rejects.toThrow("not in the assistant's model pool");
+  await expect(
+    f.change("crews.agent.save", { agentJson: JSON.stringify(outside.agents[0]) }),
+  ).rejects.toThrow("model pool");
 });

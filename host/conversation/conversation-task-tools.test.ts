@@ -78,11 +78,7 @@ describe("conversation task configuration", () => {
   });
 
   it("reports completed but undelivered branches as blocking dependencies", () => {
-    const dependency = task("first", {
-      status: "done",
-      branch: "bycoda/t/first",
-      merged: false,
-    });
+    const dependency = task("first", { status: "done", branch: "bycoda/t/first", merged: false });
     expect(
       callConversationTaskRead(
         "tasks.dependencies.list",
@@ -90,10 +86,7 @@ describe("conversation task configuration", () => {
         task("second", { dependsOn: ["first"] }),
         [dependency],
       ),
-    ).toMatchObject({
-      blockingCount: 1,
-      items: [{ taskId: "first", blocking: true }],
-    });
+    ).toMatchObject({ blockingCount: 1, items: [{ taskId: "first", blocking: true }] });
   });
 
   it("rejects missing, foreign, self, malformed and excessive dependencies", () => {
@@ -131,10 +124,7 @@ describe("conversation task configuration", () => {
           await tasks.list(),
         ),
       });
-      expect(second).toMatchObject({
-        dependsOn: ["first"],
-        verifyCommand: "pnpm test",
-      });
+      expect(second).toMatchObject({ dependsOn: ["first"], verifyCommand: "pnpm test" });
       const patch = normalizeConversationTaskConfiguration(
         { dependsOn: [second.id] },
         first.id,
@@ -166,11 +156,7 @@ describe("conversation task projections", () => {
   it("pages artifact metadata without reading paths or including unrelated hashes", () => {
     const current = task("delivery", {
       artifactPaths: ["temp/a.txt", "temp/b.txt"],
-      artifactHashes: {
-        "temp/a.txt": "hash-a",
-        "temp/b.txt": "hash-b",
-        secret: "ignored",
-      },
+      artifactHashes: { "temp/a.txt": "hash-a", "temp/b.txt": "hash-b", secret: "ignored" },
       deliveredCommit: "commit",
       merged: true,
     });
@@ -186,9 +172,7 @@ describe("conversation task projections", () => {
   });
 
   it("reports visible dependency blockers and unavailable references without foreign details", () => {
-    const current = task("last", {
-      dependsOn: ["first", "done", "foreign", "missing"],
-    });
+    const current = task("last", { dependsOn: ["first", "done", "foreign", "missing"] });
     const view = callConversationTaskRead("tasks.dependencies.list", {}, current, [
       task("first", { status: "running" }),
       task("done", { status: "done" }),

@@ -50,10 +50,7 @@ const schemas = {
 };
 export type SessionManagementAction = keyof typeof schemas;
 // JSON Schema cannot express the bounded-map refinement; call() repeats full validation.
-const settingsJson = {
-  type: "object",
-  additionalProperties: { type: "string", maxLength: 128 },
-};
+const settingsJson = { type: "object", additionalProperties: { type: "string", maxLength: 128 } };
 const text = { type: "string", minLength: 1, maxLength: 300 };
 const integer = { type: "integer", minimum: 0 };
 const object = (properties: Record<string, unknown>, required: string[]) => ({
@@ -164,23 +161,27 @@ export async function dispatchSessionManagement(
     throw new Error("The conversation changed. Read it again before continuing.");
   // Only the voice/Room model is pool-bound; a focused coding session keeps the owner's own choice.
   if (principal.kind === "assistant-thread" && "model" in input) {
-    const pool = await ports.modelPool();
+    const requested = input as {
+      harness?: string;
+      model: string;
+      providerAccountId?: string | null;
+    };
     const chosen = assertPoolExecution(
       {
-        harness: input.harness ?? source.session.harness,
-        model: input.model,
+        harness: requested.harness ?? source.session.harness,
+        model: requested.model,
         providerAccountId:
-          "providerAccountId" in input
-            ? (input.providerAccountId ?? undefined)
+          "providerAccountId" in requested
+            ? (requested.providerAccountId ?? undefined)
             : source.session.providerAccountId,
       },
-      pool,
+      await ports.modelPool(),
     );
     input = {
       ...input,
       harness: chosen.harness,
       modelSettings: chosen.modelSettings,
-    };
+    } as typeof input;
     await check();
   }
   if (action === "sessions.contextual.preview") {

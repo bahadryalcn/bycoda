@@ -212,18 +212,9 @@ export class ConversationWorkspaceTools {
                 : action.slice("inbox.".length),
         ...(action === "inbox.providers.list"
           ? {
-              query: {
-                assignedToMe: input.assignedToMe,
-                state: input.state,
-                search: input.search,
-              },
+              query: { assignedToMe: input.assignedToMe, state: input.state, search: input.search },
             }
-          : {
-              item: {
-                ...(input.item as Record<string, unknown>),
-                projectPath: project.cwd,
-              },
-            }),
+          : { item: { ...(input.item as Record<string, unknown>), projectPath: project.cwd } }),
       },
       [project],
     );

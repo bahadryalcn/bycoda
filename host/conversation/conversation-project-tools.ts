@@ -72,10 +72,7 @@ export const PROJECT_CONVERSATION_TOOLS = {
     ["relative"],
   ),
   "providers.list": object({}),
-  "models.list": object({
-    provider: { enum: REMOTE_PROVIDERS },
-    ...pageFields,
-  }),
+  "models.list": object({ provider: { enum: REMOTE_PROVIDERS }, ...pageFields }),
 } as const;
 export type ProjectConversationTool = keyof typeof PROJECT_CONVERSATION_TOOLS;
 export const PROJECT_READ_ACTIONS = Object.keys(
@@ -257,10 +254,7 @@ export class ConversationProjectTools {
     if (action === "checkpoints.status") {
       const status = await checkpoints.status(sessionId, session.session.cwd);
       await check();
-      return {
-        ...page(status.files, input),
-        expectedCheckpoint: status.expectedCheckpoint,
-      };
+      return { ...page(status.files, input), expectedCheckpoint: status.expectedCheckpoint };
     }
     const diff = await checkpoints.fileDiff(sessionId, session.session.cwd, String(input.relative));
     await check();

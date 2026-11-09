@@ -8,31 +8,19 @@ describe("saved Servers MCP boundary", () => {
     ).not.toThrow();
     expect(() => validateConversationTool("terminals.create", { requestId: "bad/id" })).toThrow();
     expect(() =>
-      validateConversationTool("terminals.create", {
-        requestId: "request",
-        cwd: "/other",
-      }),
+      validateConversationTool("terminals.create", { requestId: "request", cwd: "/other" }),
     ).toThrow();
     expect(() =>
-      validateConversationTool("terminals.close", {
-        terminalId: "own",
-        force: true,
-      }),
+      validateConversationTool("terminals.close", { terminalId: "own", force: true }),
     ).toThrow();
     expect(() =>
       validateConversationTool("terminals.interrupt", { terminalId: "own" }),
     ).not.toThrow();
     expect(() =>
-      validateConversationTool("terminals.interrupt", {
-        terminalId: "own",
-        data: "arbitrary",
-      }),
+      validateConversationTool("terminals.interrupt", { terminalId: "own", data: "arbitrary" }),
     ).toThrow();
     expect(() =>
-      validateConversationTool("terminals.interrupt", {
-        terminalId: "own",
-        force: true,
-      }),
+      validateConversationTool("terminals.interrupt", { terminalId: "own", force: true }),
     ).toThrow();
     for (const action of ["terminals.create", "terminals.close", "terminals.interrupt"])
       expect(
@@ -60,11 +48,7 @@ describe("saved Servers MCP boundary", () => {
       ).toBe(false);
   });
   it("binds SSH commands to saved targets and bounded session-owned operation identities", () => {
-    const input = {
-      id: "ssh-build",
-      requestId: "inspect_1",
-      command: "uname -a",
-    };
+    const input = { id: "ssh-build", requestId: "inspect_1", command: "uname -a" };
     expect(() => validateConversationTool("servers.ssh.execute", input)).not.toThrow();
     for (const extra of [
       { approved: true },
@@ -97,21 +81,13 @@ describe("saved Servers MCP boundary", () => {
       { sessionId: "other" },
     ])
       expect(() =>
-        validateConversationTool("servers.ssh.status", {
-          requestId: "inspect_1",
-          ...extra,
-        }),
+        validateConversationTool("servers.ssh.status", { requestId: "inspect_1", ...extra }),
       ).toThrow();
     expect(() =>
-      validateConversationTool("servers.ssh.cancel", {
-        requestId: "inspect_1",
-      }),
+      validateConversationTool("servers.ssh.cancel", { requestId: "inspect_1" }),
     ).not.toThrow();
     expect(() =>
-      validateConversationTool("servers.ssh.cancel", {
-        requestId: "inspect_1",
-        force: true,
-      }),
+      validateConversationTool("servers.ssh.cancel", { requestId: "inspect_1", force: true }),
     ).toThrow();
   });
   it("accepts public SSH metadata but rejects credential material and identity overrides", () => {
@@ -140,10 +116,7 @@ describe("saved Servers MCP boundary", () => {
         }),
       ).toThrow();
     expect(() =>
-      validateConversationTool("servers.ssh.save", {
-        ...input,
-        machineId: "other",
-      }),
+      validateConversationTool("servers.ssh.save", { ...input, machineId: "other" }),
     ).toThrow();
     expect(() => validateConversationTool("servers.list", { limit: 101 })).toThrow();
     expect(() =>
@@ -155,26 +128,15 @@ describe("saved Servers MCP boundary", () => {
   });
   it("allows explicit clearing and restricts organization writes to public metadata", () => {
     expect(() =>
-      validateConversationTool("servers.ssh.identity.set", {
-        id: "ssh",
-        identityFile: null,
-      }),
+      validateConversationTool("servers.ssh.identity.set", { id: "ssh", identityFile: null }),
     ).not.toThrow();
     expect(() =>
-      validateConversationTool("servers.ssh.identity.set", {
-        id: "ssh",
-        identityFile: 42,
-      }),
+      validateConversationTool("servers.ssh.identity.set", { id: "ssh", identityFile: 42 }),
     ).toThrow();
     expect(() =>
       validateConversationTool("servers.metadata.update", {
         id: "ssh",
-        metadata: {
-          colorIndex: null,
-          customColor: null,
-          group: null,
-          favorite: true,
-        },
+        metadata: { colorIndex: null, customColor: null, group: null, favorite: true },
       }),
     ).not.toThrow();
     for (const metadata of [
@@ -186,18 +148,12 @@ describe("saved Servers MCP boundary", () => {
       { token: "secret" },
     ])
       expect(() =>
-        validateConversationTool("servers.metadata.update", {
-          id: "ssh",
-          metadata,
-        }),
+        validateConversationTool("servers.metadata.update", { id: "ssh", metadata }),
       ).toThrow();
   });
   it("requires exact dev-server endpoints and bounded logs without allowing route overrides", () => {
     expect(() =>
-      validateConversationTool("devServers.openExternal", {
-        id: "dev",
-        port: 5173,
-      }),
+      validateConversationTool("devServers.openExternal", { id: "dev", port: 5173 }),
     ).not.toThrow();
     expect(() =>
       validateConversationTool("devServers.openExternal", {
@@ -207,16 +163,10 @@ describe("saved Servers MCP boundary", () => {
       }),
     ).toThrow();
     expect(() =>
-      validateConversationTool("devServers.logs", {
-        id: "dev",
-        maxBytes: 32000,
-      }),
+      validateConversationTool("devServers.logs", { id: "dev", maxBytes: 32000 }),
     ).not.toThrow();
     expect(() =>
-      validateConversationTool("devServers.logs", {
-        id: "dev",
-        maxBytes: 100001,
-      }),
+      validateConversationTool("devServers.logs", { id: "dev", maxBytes: 100001 }),
     ).toThrow();
     expect(() =>
       validateConversationTool("devServers.kill", {

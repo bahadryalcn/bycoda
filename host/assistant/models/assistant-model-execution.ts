@@ -59,9 +59,7 @@ export function createAssistantModelSelector(deps: {
         ? { held: "noRow" }
         : {
             held: "limits",
-            ...(picked.nextResetAt === undefined
-              ? {}
-              : { nextResetAt: picked.nextResetAt }),
+            ...(picked.nextResetAt === undefined ? {} : { nextResetAt: picked.nextResetAt }),
           };
     const { row } = picked;
     return {

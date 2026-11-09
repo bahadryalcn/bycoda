@@ -31,13 +31,7 @@ export function callConversationAppRead(
     socket.setTimeout(40000, () => finish(new Error("Desktop session read timed out.")));
     socket.on("connect", () =>
       socket.write(
-        JSON.stringify({
-          token,
-          namespace: "app",
-          action,
-          input,
-          requestId: randomUUID(),
-        }) + "\n",
+        JSON.stringify({ token, namespace: "app", action, input, requestId: randomUUID() }) + "\n",
       ),
     );
     socket.on("data", (chunk: string) => {

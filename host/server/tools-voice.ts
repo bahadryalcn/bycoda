@@ -451,10 +451,7 @@ export async function handleVoiceTools(
       request.result = await dependencies.conversationDesktop.callAssistantThread(
         call.action,
         call.input,
-        {
-          threadId: call.threadId!,
-          environmentId: dependencies.engine.store.environmentId,
-        },
+        { threadId: call.threadId!, environmentId: dependencies.engine.store.environmentId },
         authorizeGlobal,
       );
     else if (call.action === "servers.ssh.save" || call.action === "servers.ssh.remove") {

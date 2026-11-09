@@ -2,12 +2,7 @@ import { expect, it, vi } from "vitest";
 import { NATIVE_SERVICES_RPC_SCHEMAS } from "../../src/shared/model/host-contracts/native-services";
 import { ConversationDesktopRelay, DESKTOP_RELAY_STALE_MS } from "./conversation-desktop-relay";
 
-const principal = {
-  kind: "session" as const,
-  projectId: "p",
-  sessionId: "s",
-  provider: "codex",
-};
+const principal = { kind: "session" as const, projectId: "p", sessionId: "s", provider: "codex" };
 const action = "servers.ssh.execute";
 const permission = "servers.ssh.execute.permission";
 
@@ -28,9 +23,7 @@ it.each(["supervised", "auto-accept-edits", "auto", "full-access"])(
     );
     const [request] = await relay.take("native");
     const id = String(request.id);
-    expect(await relay.authorize(id, action, "native")).toEqual({
-      authorized: true,
-    });
+    expect(await relay.authorize(id, action, "native")).toEqual({ authorized: true });
     expect(await relay.authorize(id, permission, "native")).toEqual({
       authorized: true,
       fullAccess: initialMode === "full-access",
@@ -49,13 +42,9 @@ it.each(["supervised", "auto-accept-edits", "auto", "full-access"])(
       [action, "other"],
       ["servers.ssh.cancel", "native"],
     ])
-      expect(await relay.authorize(id, requestedAction, owner)).toEqual({
-        authorized: false,
-      });
+      expect(await relay.authorize(id, requestedAction, owner)).toEqual({ authorized: false });
     authorized = false;
-    expect(await relay.authorize(id, permission, "native")).toEqual({
-      authorized: false,
-    });
+    expect(await relay.authorize(id, permission, "native")).toEqual({ authorized: false });
     await relay.finish(id, {}, undefined, "native");
     await expect(pending).rejects.toThrow("revoked");
     relay.close();
@@ -190,12 +179,7 @@ it("hands the desktop session and assistant Room requests that match the take co
     relay.callAssistantThread(
       "privacy.scope.capture",
       { action: "room.disclosure", requestId: "r", operationHash: "h" },
-      {
-        threadId: "thread",
-        environmentId: "host",
-        projectId: "p",
-        targetProjectCwd: "/project",
-      },
+      { threadId: "thread", environmentId: "host", projectId: "p", targetProjectCwd: "/project" },
       () => true,
     ),
     relay.callAssistantThread(

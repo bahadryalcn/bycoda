@@ -7,10 +7,7 @@ import {
   AssistantRequestSchema,
   type AssistantProfile,
 } from "../../../src/shared/model/host-contracts/assistant";
-import {
-  parseChiefReadRequests,
-  type ChiefReadRequest,
-} from "../chief/assistant-chief-reads";
+import { parseChiefReadRequests, type ChiefReadRequest } from "../chief/assistant-chief-reads";
 import {
   chooseAssistantExecution,
   type AssistantModelSelector,
@@ -51,16 +48,11 @@ export function assistantText(
     context?: AssistantTextContext,
     limits?: AssistantTextLimits,
   ) => {
-    const chosen = role
-      ? await chooseAssistantExecution(models, role, profile)
-      : null;
+    const chosen = role ? await chooseAssistantExecution(models, role, profile) : null;
     const execution = chosen?.execution ?? profile.execution;
-    if (!execution)
-      throw new Error("Choose an execution provider and model first.");
+    if (!execution) throw new Error("Choose an execution provider and model first.");
     if (context?.compactBefore && (!context.threadId || !context.onCompacted))
-      throw new Error(
-        "Chief compaction needs its original thread and durable receipt.",
-      );
+      throw new Error("Chief compaction needs its original thread and durable receipt.");
     const cwd = join(directory, "assistant-text-workspace");
     await mkdir(cwd, { recursive: true, mode: 0o700 });
     registerBuiltinHarnesses();
@@ -88,8 +80,7 @@ export function assistantText(
             ...(context.compactBefore
               ? {
                   onCompacted: async (receipt: { threadId: string }) => {
-                    if (compacted)
-                      throw new Error("Chief compaction receipt was repeated.");
+                    if (compacted) throw new Error("Chief compaction receipt was repeated.");
                     signal?.throwIfAborted();
                     await context.onCompacted?.(receipt);
                     signal?.throwIfAborted();
@@ -104,11 +95,7 @@ export function assistantText(
       timeoutMs: 90_000,
       signal,
       onEvent: (event) => {
-        if (
-          event.type === "context" &&
-          Number.isSafeInteger(event.window) &&
-          event.window! > 0
-        )
+        if (event.type === "context" && Number.isSafeInteger(event.window) && event.window! > 0)
           contextWindow = event.window;
         if (
           event.type === "turn.metrics" &&
@@ -117,19 +104,12 @@ export function assistantText(
           event.inputTokens! >= 0 &&
           event.outputTokens! >= 0
         )
-          tokens = Math.max(
-            tokens ?? 0,
-            event.inputTokens! + event.outputTokens!,
-          );
+          tokens = Math.max(tokens ?? 0, event.inputTokens! + event.outputTokens!);
       },
     });
     signal?.throwIfAborted();
-    if (!compacted)
-      throw new Error("The provider did not confirm Chief compaction.");
-    if (
-      !text.trim() ||
-      text.length > Math.min(64000, limits?.maxOutputChars ?? 64000)
-    )
+    if (!compacted) throw new Error("The provider did not confirm Chief compaction.");
+    if (!text.trim() || text.length > Math.min(64000, limits?.maxOutputChars ?? 64000))
       throw new Error("The assistant response was empty or too large.");
     const total = context?.compactBefore
       ? tokens === undefined || compactTokens === undefined
@@ -157,9 +137,7 @@ export function chiefActions(raw: string) {
     throw new Error("Invalid Chief actions.");
   const reads = chiefReadRequests(raw);
   if (reads.length && value.actions.length)
-    throw new Error(
-      "Chief read intents and write actions require separate wakes.",
-    );
+    throw new Error("Chief read intents and write actions require separate wakes.");
   return value.actions.map((action) => {
     const request = AssistantRequestSchema.parse(action);
     if (
@@ -168,11 +146,7 @@ export function chiefActions(raw: string) {
       request.op !== "sessions.answer" &&
       request.op !== "questions.ask" &&
       request.op !== "manual.nudge" &&
-      !(
-        request.op === "memory.save" &&
-        request.kind === "fact" &&
-        request.source === "learned"
-      )
+      !(request.op === "memory.save" && request.kind === "fact" && request.source === "learned")
     )
       throw new Error("The Chief cannot perform this action.");
     return request;

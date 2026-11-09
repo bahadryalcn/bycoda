@@ -29,10 +29,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
   required,
   additionalProperties: false,
 });
-const page = {
-  offset: integer,
-  limit: { type: "integer", minimum: 1, maximum: 100 },
-};
+const page = { offset: integer, limit: { type: "integer", minimum: 1, maximum: 100 } };
 const write = { requestId: text };
 const version = { ...write, expectedRevision: integer };
 const workspace = { workspaceId: text };
@@ -169,13 +166,7 @@ export const MANAGEMENT_CONVERSATION_TOOLS = {
   ),
   "ownerQuestions.list": object(page),
   "ownerQuestions.answer": object(
-    {
-      ...write,
-      ...session,
-      runId: text,
-      questionRequestId: integer,
-      answers: { type: "object" },
-    },
+    { ...write, ...session, runId: text, questionRequestId: integer, answers: { type: "object" } },
     ["requestId", "sessionId", "runId", "questionRequestId", "answers"],
   ),
   "events.read": object({ ...page, after: integer }),
@@ -280,11 +271,7 @@ export type ManagementPorts<
     authorized: () => Promise<boolean>,
   ): Promise<unknown>;
   approve(
-    operation: {
-      action: string;
-      input: Record<string, unknown>;
-      operationHash: string;
-    },
+    operation: { action: string; input: Record<string, unknown>; operationHash: string },
     principal: P,
     authorized: () => Promise<boolean>,
   ): Promise<{ approved?: boolean; operationHash?: string }>;
@@ -362,11 +349,7 @@ export class ConversationManagementTools<
           this.ports.execute(action, input, principal, authorized),
         );
         await check();
-        const receipt: ManagementReceipt = {
-          signature,
-          state: "completed",
-          result,
-        };
+        const receipt: ManagementReceipt = { signature, state: "completed", result };
         await this.ports.saveReceipt(key, receipt);
         return { requestId: input.requestId, ...receipt };
       } catch (error) {
@@ -441,10 +424,7 @@ export function pageDesktopManagementSnapshot(
     });
   if (Array.isArray(result.folders))
     result.folders = result.folders.map((entry) =>
-      pageDesktopManagementSnapshot(entry, {
-        ...input,
-        offset: input.memberOffset ?? 0,
-      }),
+      pageDesktopManagementSnapshot(entry, { ...input, offset: input.memberOffset ?? 0 }),
     );
   if (result.order) result.order = pageDesktopManagementSnapshot(result.order, input);
   if (result.snapshot) result.snapshot = pageDesktopManagementSnapshot(result.snapshot, input);

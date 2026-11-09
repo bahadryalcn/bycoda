@@ -15,12 +15,7 @@ import {
   validateConversationTool,
 } from "./conversation-tools";
 
-const principal = {
-  kind: "session" as const,
-  projectId: "p",
-  sessionId: "s",
-  provider: "codex",
-};
+const principal = { kind: "session" as const, projectId: "p", sessionId: "s", provider: "codex" };
 
 it("allows observation without a lease while keeping browser mutations lease-bound", () => {
   expect(() => validateConversationTool("browser.frame", {})).not.toThrow();
@@ -69,11 +64,7 @@ it("records the real claimed device with a private project scope capture", async
   await relay.take(owner);
   const pending = relay.callAssistantThread(
     "privacy.scope.capture",
-    {
-      action: "tasks.list",
-      requestId: "request",
-      operationHash: "a".repeat(64),
-    },
+    { action: "tasks.list", requestId: "request", operationHash: "a".repeat(64) },
     {
       threadId: "room",
       environmentId: "host-one",
@@ -97,11 +88,7 @@ it("pins a private voice retirement relay to the exact native owner and action",
   const relay = new ConversationDesktopRelay("host-one");
   const device = "d".repeat(64);
   await relay.take(device);
-  const input = {
-    generationKey: "generation",
-    requestId: "retire",
-    operationHash: "a".repeat(64),
-  };
+  const input = { generationKey: "generation", requestId: "retire", operationHash: "a".repeat(64) };
   const pending = relay.callAssistantThread(
     "voice.generation.retire",
     input,
@@ -110,11 +97,7 @@ it("pins a private voice retirement relay to the exact native owner and action",
   );
   expect(await relay.take("other")).toEqual([]);
   const [request] = await relay.take(device);
-  expect(request).toMatchObject({
-    threadId: "room",
-    action: "voice.generation.retire",
-    input,
-  });
+  expect(request).toMatchObject({ threadId: "room", action: "voice.generation.retire", input });
   expect(request).not.toHaveProperty("sessionId");
   expect(await relay.authorize(String(request.id), "voice.generation.retire", "other")).toEqual({
     authorized: false,
@@ -126,10 +109,7 @@ it("pins a private voice retirement relay to the exact native owner and action",
     authorized: true,
   });
   await relay.finish(String(request.id), { signed: "fixture" }, undefined, device);
-  expect(await pending).toEqual({
-    relayId: request.id,
-    envelope: { signed: "fixture" },
-  });
+  expect(await pending).toEqual({ relayId: request.id, envelope: { signed: "fixture" } });
   relay.close();
 });
 
@@ -137,11 +117,7 @@ it("pins workspace ownership transfer to its original project and device", async
   const relay = new ConversationDesktopRelay("host-one");
   const device = "d".repeat(64);
   await relay.take(device);
-  const input = {
-    operationJson: "[]",
-    operationHash: "a".repeat(64),
-    requestId: "request",
-  };
+  const input = { operationJson: "[]", operationHash: "a".repeat(64), requestId: "request" };
   expect(() =>
     relay.callAssistantThread(
       "workspace.operation.execute",
@@ -182,10 +158,7 @@ it("pins workspace ownership transfer to its original project and device", async
     authorized: true,
   });
   await relay.finish(String(request.id), { signed: "fixture" }, undefined, device);
-  expect(await pending).toEqual({
-    relayId: request.id,
-    envelope: { signed: "fixture" },
-  });
+  expect(await pending).toEqual({ relayId: request.id, envelope: { signed: "fixture" } });
   relay.close();
 });
 it("routes a Room browser panel only to the exact qualified project device", async () => {
@@ -266,10 +239,7 @@ describe("Conversation Tools boundary", () => {
     const invalid = "private-input";
     let message = "";
     try {
-      validateConversationTool("tools.search", {
-        query: "model settings",
-        group: invalid,
-      });
+      validateConversationTool("tools.search", { query: "model settings", group: invalid });
     } catch (error) {
       message = (error as Error).message;
     }
@@ -290,17 +260,9 @@ describe("Conversation Tools boundary", () => {
   it("scopes lifecycle writes without accepting owner approval or source identity overrides", () => {
     for (const [action, input] of Object.entries({
       "files.rename": { path: "a", name: "b", expectedHash: "a".repeat(64) },
-      "files.copy": {
-        path: "a",
-        destinationParent: "folder",
-        expectedHash: "a".repeat(64),
-      },
+      "files.copy": { path: "a", destinationParent: "folder", expectedHash: "a".repeat(64) },
       "files.delete": { path: "a", expectedHash: "a".repeat(64) },
-      "tasks.transfer": {
-        taskId: "task",
-        targetProjectId: "destination",
-        expectedUpdatedAt: 1,
-      },
+      "tasks.transfer": { taskId: "task", targetProjectId: "destination", expectedUpdatedAt: 1 },
       "tasks.delete": { taskId: "task", expectedUpdatedAt: 1 },
       "tasks.notes.resolve": {
         taskId: "task",
@@ -379,39 +341,24 @@ describe("Conversation Tools boundary", () => {
   });
   it("accepts a bounded log stream generation so cursors can recover across host restarts", () => {
     expect(() =>
-      validateConversationTool("logs.read", {
-        after: 10,
-        streamId: "previous-host",
-      }),
+      validateConversationTool("logs.read", { after: 10, streamId: "previous-host" }),
     ).not.toThrow();
     expect(() => validateConversationTool("logs.read", { streamId: "x".repeat(301) })).toThrow();
     expect(() => validateConversationTool("logs.read", { streamId: 42 })).toThrow();
   });
   it("registers logs.wait as a read with the bounded wait schema", () => {
     expect(() =>
-      validateConversationTool("logs.wait", {
-        terminalId: "t1",
-        contains: "ready",
-      }),
+      validateConversationTool("logs.wait", { terminalId: "t1", contains: "ready" }),
     ).not.toThrow();
     expect(() =>
-      validateConversationTool("logs.wait", {
-        terminalId: "t1",
-        timeoutSeconds: 50,
-      }),
+      validateConversationTool("logs.wait", { terminalId: "t1", timeoutSeconds: 50 }),
     ).not.toThrow();
     expect(() =>
-      validateConversationTool("logs.wait", {
-        terminalId: "t1",
-        timeoutSeconds: 240,
-      }),
+      validateConversationTool("logs.wait", { terminalId: "t1", timeoutSeconds: 240 }),
     ).not.toThrow();
     // The schema bound is the Claude/Codex maximum; other providers are capped in runtime-log-wait.
     expect(() =>
-      validateConversationTool("logs.wait", {
-        terminalId: "t1",
-        timeoutSeconds: 241,
-      }),
+      validateConversationTool("logs.wait", { terminalId: "t1", timeoutSeconds: 241 }),
     ).toThrow();
     expect(() => validateConversationTool("logs.wait", { terminalId: "t1", regex: "x" })).toThrow();
     expect(conversationAuthorizationScope("logs.wait")).toBe("read");
@@ -427,10 +374,7 @@ describe("Conversation Tools boundary", () => {
       expect(() => validateConversationTool(action, { ...input, path: "/secret" })).toThrow();
     }
     expect(() =>
-      validateConversationTool("skills.read", {
-        name: "review",
-        maxChars: 16001,
-      }),
+      validateConversationTool("skills.read", { name: "review", maxChars: 16001 }),
     ).toThrow();
     expect(() => validateConversationTool("skills.search", { query: "x".repeat(201) })).toThrow();
   });
@@ -441,14 +385,7 @@ describe("Conversation Tools boundary", () => {
       commitId: "a".repeat(40),
       event: "COMMENT",
       body: "Bir sorun var.",
-      comments: [
-        {
-          path: "src/a.ts",
-          line: 2,
-          side: "LEFT",
-          body: "Bu kontrol gerekli.",
-        },
-      ],
+      comments: [{ path: "src/a.ts", line: 2, side: "LEFT", body: "Bu kontrol gerekli." }],
     };
     expect(() => validateConversationTool("inbox.review", input)).not.toThrow();
     for (const extra of [{ approved: true }, { confirm: "SEND" }, { cwd: "/foreign" }])
@@ -538,11 +475,7 @@ describe("Conversation Tools boundary", () => {
       ).toMatchObject({ readOnlyHint: true, destructiveHint: false });
     }
     expect(() =>
-      validateConversationTool("sessions.read", {
-        sessionId: "other",
-        limit: 3,
-        maxChars: 6000,
-      }),
+      validateConversationTool("sessions.read", { sessionId: "other", limit: 3, maxChars: 6000 }),
     ).not.toThrow();
     for (const input of [
       { sessionId: "other", projectId: "foreign" },
@@ -551,10 +484,7 @@ describe("Conversation Tools boundary", () => {
     ])
       expect(() => validateConversationTool("sessions.read", input)).toThrow();
     expect(() =>
-      validateConversationTool("sessions.send", {
-        sessionId: "other",
-        prompt: "send",
-      }),
+      validateConversationTool("sessions.send", { sessionId: "other", prompt: "send" }),
     ).toThrow();
   });
 
@@ -568,10 +498,8 @@ describe("Conversation Tools boundary", () => {
         if (!raw.includes("\n")) return;
         requests.push(JSON.parse(raw));
         socket.end(
-          JSON.stringify({
-            ok: true,
-            result: { sessionId: "other", busy: true, turns: [] },
-          }) + "\n",
+          JSON.stringify({ ok: true, result: { sessionId: "other", busy: true, turns: [] } }) +
+            "\n",
         );
       });
     });
@@ -629,10 +557,7 @@ describe("Conversation Tools boundary", () => {
               content: [
                 {
                   type: "text",
-                  text: JSON.stringify({
-                    action: "devices.list",
-                    input: value.params.arguments,
-                  }),
+                  text: JSON.stringify({ action: "devices.list", input: value.params.arguments }),
                 },
               ],
             },
@@ -650,9 +575,7 @@ describe("Conversation Tools boundary", () => {
         return;
       }
       response.end(
-        JSON.stringify({
-          result: { action: value.params.action, input: value.params.input },
-        }),
+        JSON.stringify({ result: { action: value.params.action, input: value.params.input } }),
       );
     });
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
@@ -700,10 +623,7 @@ describe("Conversation Tools boundary", () => {
         JSON.stringify({
           id: 1,
           method: "tools/call",
-          params: {
-            name: "conversation_devices_list",
-            arguments: { machineId: "mac" },
-          },
+          params: { name: "conversation_devices_list", arguments: { machineId: "mac" } },
         }) + "\n",
       );
       expect(mcp.code).toBe(0);
@@ -905,11 +825,7 @@ describe("Conversation Tools boundary", () => {
       projectId: "project-one",
     };
     await relay.take("native-owner");
-    const operation = {
-      kind: "launch",
-      requestId: "launch-one",
-      app: "Chrome",
-    };
+    const operation = { kind: "launch", requestId: "launch-one", app: "Chrome" };
     const pending = relay.call(
       "desktop.act.authorize",
       { operation, operationHash: "a".repeat(64) },
@@ -952,11 +868,7 @@ describe("Conversation Tools boundary", () => {
         operationHash: "b".repeat(64),
       },
       "/p",
-      {
-        kind: "assistant-thread",
-        threadId: "thread-original",
-        projectId: "project-one",
-      },
+      { kind: "assistant-thread", threadId: "thread-original", projectId: "project-one" },
       () => authorized,
     );
     const rejection = expect(pending).rejects.toThrow("revoked");
@@ -1088,20 +1000,10 @@ describe("Conversation Tools boundary", () => {
     expect(result.content[0]).toEqual({
       type: "text",
       text: JSON.stringify({
-        screenshot: {
-          app: "Editor",
-          windowId: "one",
-          mimeType: "image/png",
-          width: 1,
-          height: 1,
-        },
+        screenshot: { app: "Editor", windowId: "one", mimeType: "image/png", width: 1, height: 1 },
       }),
     });
-    expect(result.content[1]).toEqual({
-      type: "image",
-      data: "aGVsbG8=",
-      mimeType: "image/png",
-    });
+    expect(result.content[1]).toEqual({ type: "image", data: "aGVsbG8=", mimeType: "image/png" });
   });
   it("returns screenshots as MCP image content and reports unsupported tools", async () => {
     const input = new PassThrough();

@@ -47,20 +47,14 @@ function setup() {
     ),
     delete: vi.fn(async (_id: string, _withTasks = false) => {}),
   };
-  const helper = new ConversationGoalTools(store, goals, {
-    list: () => taskRows,
-  });
+  const helper = new ConversationGoalTools(store, goals, { list: () => taskRows });
   const call = async (
     action: GoalWriteTool,
     input: Record<string, unknown>,
     authorized = () => true,
   ) => await helper.call(action, input, principal, authorized);
   const create = async () =>
-    await call("goals.create", {
-      goalId: "goal",
-      title: "Deliver",
-      prompt: "Implement safely",
-    });
+    await call("goals.create", { goalId: "goal", title: "Deliver", prompt: "Implement safely" });
   return { session, store, rows, taskRows, goals, helper, call, create };
 }
 
@@ -74,12 +68,7 @@ describe("conversation goal writes", () => {
       { createPr: true },
     ])
       await expect(
-        f.call("goals.create", {
-          goalId: "goal",
-          title: "Deliver",
-          prompt: "Implement",
-          ...patch,
-        }),
+        f.call("goals.create", { goalId: "goal", title: "Deliver", prompt: "Implement", ...patch }),
       ).rejects.toThrow("owner UI");
     expect(f.goals.create).not.toHaveBeenCalled();
   });
@@ -102,11 +91,7 @@ describe("conversation goal writes", () => {
     );
     f.rows[0].providerAccountId = "another-profile";
     await expect(
-      f.call("goals.update", {
-        goalId: "goal",
-        expectedUpdatedAt: 1,
-        maxRunMinutes: 10,
-      }),
+      f.call("goals.update", { goalId: "goal", expectedUpdatedAt: 1, maxRunMinutes: 10 }),
     ).rejects.toThrow("owner UI");
   });
   it("inherits desktop-only caller settings through the verified session resolver", async () => {
@@ -177,12 +162,7 @@ describe("conversation goal writes", () => {
     });
     expect(f.goals.update).toHaveBeenCalledWith(
       "goal",
-      {
-        maxRunningTasks: 3,
-        maxRunMinutes: 0,
-        autoMerge: false,
-        continueUntilDone: false,
-      },
+      { maxRunningTasks: 3, maxRunMinutes: 0, autoMerge: false, continueUntilDone: false },
       1,
     );
     f.goals.update.mockClear();
@@ -194,19 +174,11 @@ describe("conversation goal writes", () => {
       { maxRunMinutes: 0.5 },
     ])
       await expect(
-        f.call("goals.update", {
-          goalId: "goal",
-          expectedUpdatedAt: 1,
-          ...patch,
-        }),
+        f.call("goals.update", { goalId: "goal", expectedUpdatedAt: 1, ...patch }),
       ).rejects.toThrow();
     f.rows[0].runtimeMode = "auto" as HostGoal["runtimeMode"];
     await expect(
-      f.call("goals.update", {
-        goalId: "goal",
-        expectedUpdatedAt: 1,
-        maxRunMinutes: 10,
-      }),
+      f.call("goals.update", { goalId: "goal", expectedUpdatedAt: 1, maxRunMinutes: 10 }),
     ).rejects.toThrow("owner UI");
     expect(f.goals.update).not.toHaveBeenCalled();
   });
@@ -217,11 +189,7 @@ describe("conversation goal writes", () => {
     for (const status of ["done", "cancelled", "awaiting-approval", "blocked"] as const) {
       f.rows[0].status = status;
       expect(
-        await f.call("goals.delete", {
-          goalId: "goal",
-          expectedUpdatedAt: 1,
-          withTasks: true,
-        }),
+        await f.call("goals.delete", { goalId: "goal", expectedUpdatedAt: 1, withTasks: true }),
       ).toMatchObject({ deleted: true, tasksPreserved: true });
       expect(f.goals.delete).toHaveBeenLastCalledWith("goal", false);
     }
@@ -248,9 +216,9 @@ describe("conversation goal writes", () => {
       plannerRecoveryPending: false,
       plannerSessionId: "planner",
     };
-    f.store.sessionStateMetadata.mockReturnValue({
-      status: "running",
-    } as ReturnType<HostStore["sessionStateMetadata"]>);
+    f.store.sessionStateMetadata.mockReturnValue({ status: "running" } as ReturnType<
+      HostStore["sessionStateMetadata"]
+    >);
     await expect(f.call("goals.delete", { goalId: "goal", expectedUpdatedAt: 1 })).rejects.toThrow(
       "inactive",
     );
@@ -292,10 +260,9 @@ describe("conversation goal writes", () => {
   it("refuses revoked or foreign session authority before mutation", async () => {
     const f = setup();
     await expect(f.call("goals.create", {}, () => false)).rejects.toThrow("revoked");
-    f.store.session.mockReturnValue({
-      projectId: "foreign",
-      session: f.session,
-    } as ReturnType<HostStore["session"]>);
+    f.store.session.mockReturnValue({ projectId: "foreign", session: f.session } as ReturnType<
+      HostStore["session"]
+    >);
     await expect(f.create()).rejects.toThrow("another project");
     expect(f.goals.create).not.toHaveBeenCalled();
   });

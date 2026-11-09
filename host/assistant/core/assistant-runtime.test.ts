@@ -10,10 +10,7 @@ vi.mock("./assistant-text", () => ({
 vi.mock("../chief/assistant-chief-context", () => ({
   createAssistantChiefContext: () => ({ wake: utility.wake }),
 }));
-import {
-  assistantExecutionPorts,
-  readManualSessionUsage,
-} from "./assistant-runtime";
+import { assistantExecutionPorts, readManualSessionUsage } from "./assistant-runtime";
 import type { HostStore } from "../../store";
 import type { HostGoals } from "../../goals/goals";
 import type { HostTasks } from "../../tasks/tasks";
@@ -128,9 +125,7 @@ it("passes planning identity separately to a canonical Goal while workers retain
       modelSettings: { effort: "low" },
     },
   });
-  expect(f.create.mock.calls[0][0].plannerExecution).not.toHaveProperty(
-    "runtimeMode",
-  );
+  expect(f.create.mock.calls[0][0].plannerExecution).not.toHaveProperty("runtimeMode");
 });
 it("uses durable job identity and never enables automatic delivery", async () => {
   const f = fixture();
@@ -165,9 +160,7 @@ it("uses durable job identity and never enables automatic delivery", async () =>
       model: "chosen-model",
     }),
   );
-  f.list.mockResolvedValue([
-    { id: "assistant-j1", projectIds: ["p1"], leadProjectId: "p1" },
-  ]);
+  f.list.mockResolvedValue([{ id: "assistant-j1", projectIds: ["p1"], leadProjectId: "p1" }]);
   expect(await ports.findGoal!("j1", job)).toEqual({ goalId: "assistant-j1" });
   await ports.createGoal!({ job, profile });
   expect(f.create).toHaveBeenCalledOnce();
@@ -176,9 +169,7 @@ it("reports a missing linked goal with its typed code so the job can be resubmit
   const f = fixture();
   const ports = assistantExecutionPorts(f.store, f.goals, f.tasks);
   f.list.mockResolvedValue([]);
-  await expect(
-    ports.goalStatus!("assistant-j2", undefined, []),
-  ).rejects.toMatchObject({
+  await expect(ports.goalStatus!("assistant-j2", undefined, [])).rejects.toMatchObject({
     code: "ASSISTANT_GOAL_MISSING",
     message: "The linked goal is unavailable.",
   });
@@ -243,9 +234,7 @@ it("refuses to overwrite an owner or project note through an assistant id", asyn
       expectedUpdatedAt: 0,
     }),
   ).rejects.toThrow("not a global assistant note");
-  await expect(ports.deleteNote!("owner", 0)).rejects.toThrow(
-    "not a global assistant note",
-  );
+  await expect(ports.deleteNote!("owner", 0)).rejects.toThrow("not a global assistant note");
   expect(notes.save).not.toHaveBeenCalled();
   expect(notes.delete).not.toHaveBeenCalled();
 });
@@ -279,13 +268,9 @@ it("uses actual current-run output for job stalls and treats missing activity as
   };
   Object.assign(f.store, { session: vi.fn(async () => record) });
   const ports = assistantExecutionPorts(f.store, f.goals, f.tasks);
-  expect((await ports.goalStatus!(goal.id)).lastActivityAt).toBe(
-    now - 20 * 60000,
-  );
+  expect((await ports.goalStatus!(goal.id)).lastActivityAt).toBe(now - 20 * 60000);
   record.updatedAt = now + 1;
-  expect((await ports.goalStatus!(goal.id)).lastActivityAt).toBe(
-    now - 20 * 60000,
-  );
+  expect((await ports.goalStatus!(goal.id)).lastActivityAt).toBe(now - 20 * 60000);
   record.runActivity.runId = "previous";
   expect((await ports.goalStatus!(goal.id)).lastActivityAt).toBeUndefined();
   record.runActivity = { runId: "current", lastActivityAt: now + 60000 };
@@ -299,9 +284,7 @@ it("explains why a goal is waiting: error, plan approval or owner input", async 
     hasRunningGoalWork: vi.fn(async () => false),
   });
   const status = async (goal: Record<string, unknown>) => {
-    f.list.mockResolvedValue([
-      { id: "g", taskIds: [], projectIds: ["p1"], ...goal },
-    ] as never);
+    f.list.mockResolvedValue([{ id: "g", taskIds: [], projectIds: ["p1"], ...goal }] as never);
     return ports.goalStatus!("g");
   };
   expect(await status({ status: "blocked", error: "boom" })).toMatchObject({
@@ -313,9 +296,7 @@ it("explains why a goal is waiting: error, plan approval or owner input", async 
     status: "waiting",
     waitingReason: "planApproval",
   });
-  expect(await status({ status: "running" })).not.toHaveProperty(
-    "waitingReason",
-  );
+  expect(await status({ status: "running" })).not.toHaveProperty("waitingReason");
 });
 it("keeps mid-turn question answers/steers on the original usage key without prematurely settling or double charging", async () => {
   const f = fixture(),
@@ -468,18 +449,9 @@ const poolChoice = (model: string, providerAccountId?: string) => ({
 it("creates the goal from the selected pool row with its provider account and planner row", async () => {
   const f = fixture();
   const models = vi.fn(async (role: string) =>
-    role === "worker"
-      ? poolChoice("claude:worker", "work")
-      : poolChoice("claude:plan", "plan"),
+    role === "worker" ? poolChoice("claude:worker", "work") : poolChoice("claude:plan", "plan"),
   );
-  const ports = assistantExecutionPorts(
-    f.store,
-    f.goals,
-    f.tasks,
-    undefined,
-    undefined,
-    models,
-  );
+  const ports = assistantExecutionPorts(f.store, f.goals, f.tasks, undefined, undefined, models);
   const result = await ports.createGoal!({
     job: poolJob,
     profile: poolProfile,
@@ -508,18 +480,9 @@ it("creates the goal from the selected pool row with its provider account and pl
 it("creates no separate planner when the pool has no planning row", async () => {
   const f = fixture();
   const models = vi.fn(async (role: string) =>
-    role === "worker"
-      ? poolChoice("claude:worker")
-      : { held: "noRow" as const },
+    role === "worker" ? poolChoice("claude:worker") : { held: "noRow" as const },
   );
-  const ports = assistantExecutionPorts(
-    f.store,
-    f.goals,
-    f.tasks,
-    undefined,
-    undefined,
-    models,
-  );
+  const ports = assistantExecutionPorts(f.store, f.goals, f.tasks, undefined, undefined, models);
   await ports.createGoal!({ job: poolJob, profile: poolProfile });
   expect(f.create.mock.calls[0][0]).not.toHaveProperty("plannerExecution");
   expect(f.create.mock.calls[0][0]).not.toHaveProperty("providerAccountId");
@@ -530,17 +493,8 @@ it("throws the typed held error and creates nothing when every pool row is limit
     held: "limits" as const,
     nextResetAt: 9000,
   }));
-  const ports = assistantExecutionPorts(
-    f.store,
-    f.goals,
-    f.tasks,
-    undefined,
-    undefined,
-    models,
-  );
-  await expect(
-    ports.createGoal!({ job: poolJob, profile: poolProfile }),
-  ).rejects.toMatchObject({
+  const ports = assistantExecutionPorts(f.store, f.goals, f.tasks, undefined, undefined, models);
+  await expect(ports.createGoal!({ job: poolJob, profile: poolProfile })).rejects.toMatchObject({
     name: "AssistantModelsHeldError",
     held: "limits",
     nextResetAt: 9000,
@@ -549,8 +503,7 @@ it("throws the typed held error and creates nothing when every pool row is limit
 });
 it("reproduces the profile goal input exactly when the pool is derived", async () => {
   const plain = fixture();
-  await assistantExecutionPorts(plain.store, plain.goals, plain.tasks)
-    .createGoal!({
+  await assistantExecutionPorts(plain.store, plain.goals, plain.tasks).createGoal!({
     job: poolJob,
     profile: poolProfile,
   });
@@ -563,8 +516,6 @@ it("reproduces the profile goal input exactly when the pool is derived", async (
     undefined,
     async () => null,
   ).createGoal!({ job: poolJob, profile: poolProfile });
-  expect(derived.create.mock.calls[0][0]).toEqual(
-    plain.create.mock.calls[0][0],
-  );
+  expect(derived.create.mock.calls[0][0]).toEqual(plain.create.mock.calls[0][0]);
   expect(result).toEqual({ goalId: "assistant-pool" });
 });

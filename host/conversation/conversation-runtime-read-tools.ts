@@ -20,6 +20,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
 export const RUNTIME_READ_CONVERSATION_TOOLS = {
   "host.limits.status": object({}),
   "shell.profiles": object({}),
+  "models.pool.list": object({}),
   "attachments.list": object({
     offset: { type: "integer", minimum: 0 },
     limit: { type: "integer", minimum: 1, maximum: 100 },
@@ -43,6 +44,8 @@ export const isRuntimeReadConversationTool = (
 export function describeRuntimeReadConversationTool(action: string): string | undefined {
   if (action === "host.limits.status")
     return "Read allowlisted host scheduler concurrency and today's aggregate agent-minute limits/usage. Machine-wide aggregate, not provider billing, quota or another project's task/session details. Does not change limits.";
+  if (action === "models.pool.list")
+    return "List the owner's assistant model pool: rows with id, harness, model, effort setting, account and roles. Pass a row id as execution.poolRowId when creating tasks, goals or automations; models outside the pool are rejected. Voice and Room only; read-only.";
   if (action === "shell.profiles")
     return "Discover the host's installed command-shell profiles and default/chosen IDs. Returns shell metadata, not environment variables or profile contents; does not select a shell or execute a command.";
   if (action.startsWith("attachments."))
@@ -76,6 +79,8 @@ export class ConversationRuntimeReadTools {
       )
     )
       throw new Error("Unknown or protected runtime read field.");
+    if (action === "models.pool.list")
+      throw new Error("The model pool is read through the voice assistant or Room.");
     await this.store.project(principal.projectId);
     if (action === "host.limits.status") {
       const state = await this.limits.state();

@@ -19,12 +19,7 @@ import { inspectConversationPath, mutateConversationPath } from "./conversation-
 import type { WorkspaceCommands } from "../workspaces/workspace-commands";
 
 const path = { type: "string", minLength: 1, maxLength: 4096 };
-const expectedHash = {
-  type: "string",
-  minLength: 64,
-  maxLength: 64,
-  pattern: "^[a-f0-9]{64}$",
-};
+const expectedHash = { type: "string", minLength: 64, maxLength: 64, pattern: "^[a-f0-9]{64}$" };
 const pagination = {
   offset: { type: "integer", minimum: 0 },
   limit: { type: "integer", minimum: 1, maximum: 100 },
@@ -61,12 +56,7 @@ export const CONVERSATION_FILE_TOOLS = {
   "files.write": object(
     {
       path,
-      expectedHash: {
-        type: "string",
-        minLength: 64,
-        maxLength: 64,
-        pattern: "^[a-f0-9]{64}$",
-      },
+      expectedHash: { type: "string", minLength: 64, maxLength: 64, pattern: "^[a-f0-9]{64}$" },
       content: { type: "string", maxLength: 1000000 },
     },
     ["path", "expectedHash", "content"],
@@ -204,11 +194,7 @@ export async function callFileConversationTool(
   }
   if (action === "git.index") {
     const { files, conflicts, ...state } = await hostGitIndex(root);
-    return {
-      ...state,
-      ...page(files, input),
-      conflicts: page(conflicts ?? [], input),
-    };
+    return { ...state, ...page(files, input), conflicts: page(conflicts ?? [], input) };
   }
   if (action === "git.fileDiff") {
     const { original, current, ...state } = await hostFileDiff(
@@ -216,11 +202,7 @@ export async function callFileConversationTool(
       input.path,
       input.staged === true,
     );
-    return {
-      ...state,
-      original: text(original, input),
-      current: text(current, input),
-    };
+    return { ...state, original: text(original, input), current: text(current, input) };
   }
   if (action === "git.branches") return await hostBranches(root);
   if (action === "git.worktrees") return await hostWorktrees(root);

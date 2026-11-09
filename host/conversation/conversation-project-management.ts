@@ -11,10 +11,7 @@ const object = (properties: Record<string, unknown>, required: string[] = []) =>
   required,
   additionalProperties: false,
 });
-const write = {
-  requestId: text,
-  expectedStatus: { type: "string", pattern: "^[a-f0-9]{64}$" },
-};
+const write = { requestId: text, expectedStatus: { type: "string", pattern: "^[a-f0-9]{64}$" } };
 const page = {
   offset: { type: "integer", minimum: 0 },
   limit: { type: "integer", minimum: 1, maximum: 100 },
@@ -60,11 +57,7 @@ export const PROJECT_MANAGEMENT_TOOLS = {
     limit: { type: "integer", minimum: 1, maximum: 100 },
   }),
   "projects.createDirectory": object(
-    {
-      requestId: text,
-      path: text,
-      name: { type: "string", minLength: 1, maxLength: 200 },
-    },
+    { requestId: text, path: text, name: { type: "string", minLength: 1, maxLength: 200 } },
     ["requestId", "path", "name"],
   ),
   "projects.open": object({ requestId: text, path: text }, ["requestId", "path"]),

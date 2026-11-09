@@ -5,6 +5,25 @@ import type { HostTasks } from "../tasks/tasks";
 import type { HostGoals } from "../goals/goals";
 import type { HostAutomations } from "../automations/automations";
 import type { RuntimeLogSubjectPrincipal } from "../execution/runtime-log-tools";
+import type { AssistantModelPoolRow } from "../../src/shared/model/assistantModelPool";
+
+const poolRow = (over: Partial<AssistantModelPoolRow>): AssistantModelPoolRow => ({
+  id: "row-1",
+  harness: "codex",
+  model: "gpt",
+  modelSettings: { effort: "high" },
+  runtimeMode: "supervised",
+  maxRunMinutes: 30,
+  roles: ["worker"],
+  unknownLimit: "use",
+  ...over,
+});
+const pool = {
+  rows: [
+    poolRow({}),
+    poolRow({ id: "row-2", harness: "claude", model: "sonnet", modelSettings: {} }),
+  ],
+};
 
 function fixture() {
   const receipts = new Map<string, string>();
@@ -61,6 +80,7 @@ function fixture() {
       goals as unknown as HostGoals,
       automations as unknown as HostAutomations,
       approve,
+      async () => pool,
     );
   const principal = {
     kind: "assistant-thread",
@@ -87,12 +107,7 @@ const input = {
   taskId: "task",
   title: "Task",
   prompt: "Do work",
-  execution: {
-    harness: "codex",
-    model: "gpt",
-    runtimeMode: "auto",
-    modelSettings: {},
-  },
+  execution: { harness: "codex", model: "gpt", runtimeMode: "auto", modelSettings: {} },
 };
 it("creates global work with explicit reviewed execution and deduplicates across service recreation", async () => {
   const f = fixture();
@@ -168,13 +183,7 @@ it("requires explicit execution and current thread authority; hides foreign work
 });
 it("retains reviewed configuration through task and automation canonical saves", async () => {
   const f = fixture();
-  const task = {
-    id: "task",
-    projectId: "p",
-    title: "Old",
-    status: "todo",
-    updatedAt: 1,
-  };
+  const task = { id: "task", projectId: "p", title: "Old", status: "todo", updatedAt: 1 };
   f.records = [task];
   await f
     .service()
@@ -188,24 +197,18 @@ it("retains reviewed configuration through task and automation canonical saves",
     .service()
     .call("automations.pause", { automationId: "auto" }, f.principal, f.authorized, "auto-edit");
   expect(f.automations.save).toHaveBeenCalledWith(
-    expect.objectContaining({
-      enabled: false,
-      expectedConfiguration: automation,
-    }),
+    expect.objectContaining({ enabled: false, expectedConfiguration: automation }),
   );
   f.automations.list.mockResolvedValue([]);
-  await f.service().call(
-    "automations.create",
-    {
-      automationId: "new-auto",
-      execution: input.execution,
-      name: "New",
-      prompt: "Work",
-    },
-    f.principal,
-    f.authorized,
-    "auto-create",
-  );
+  await f
+    .service()
+    .call(
+      "automations.create",
+      { automationId: "new-auto", execution: input.execution, name: "New", prompt: "Work" },
+      f.principal,
+      f.authorized,
+      "auto-create",
+    );
   expect(f.automations.save).toHaveBeenLastCalledWith(
     expect.objectContaining({ id: "new-auto", expectedAbsent: true }),
   );
@@ -294,4 +297,106 @@ it("qualifies project state before review and checks scope again before the effe
   expect(f.approve).toHaveBeenCalledOnce();
   expect(f.tasks.save).not.toHaveBeenCalled();
   expect(captures).toBe(2);
+});
+
+it("rejects a model outside the pool for task, goal and automation creation", async () => {
+  const f = fixture();
+  const outside = { ...input, execution: { harness: "codex", model: "other" } };
+  await expect(
+    f.service().call("tasks.create", outside, f.principal, f.authorized, "t"),
+  ).rejects.toThrow("not in the assistant's model pool. Choose one of: gpt, sonnet.");
+  await expect(
+    f
+      .service()
+      .call(
+        "goals.create",
+        { goalId: "g", title: "G", prompt: "P", execution: outside.execution },
+        f.principal,
+        f.authorized,
+        "g",
+      ),
+  ).rejects.toThrow("model pool");
+  await expect(
+    f.service().call(
+      "automations.create",
+      {
+        automationId: "a",
+        name: "A",
+        prompt: "P",
+        scheduleKind: "daily",
+        execution: outside.execution,
+      },
+      f.principal,
+      f.authorized,
+      "a",
+    ),
+  ).rejects.toThrow("model pool");
+  expect(f.approve).not.toHaveBeenCalled();
+  expect(f.tasks.save).not.toHaveBeenCalled();
+  expect(f.goals.create).not.toHaveBeenCalled();
+  expect(f.automations.save).not.toHaveBeenCalled();
+});
+it("applies the pool row settings to an accepted explicit model", async () => {
+  const f = fixture();
+  await f.service().call(
+    "tasks.create",
+    {
+      ...input,
+      execution: {
+        harness: "codex",
+        model: "gpt",
+        runtimeMode: "auto",
+        modelSettings: { effort: "low" },
+      },
+    },
+    f.principal,
+    f.authorized,
+    "explicit",
+  );
+  expect(f.tasks.save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      harness: "codex",
+      model: "gpt",
+      modelSettings: { effort: "high" },
+      runtimeMode: "supervised",
+    }),
+  );
+});
+it("resolves poolRowId and defaults to the first worker row when omitted", async () => {
+  const f = fixture();
+  await f
+    .service()
+    .call(
+      "tasks.create",
+      { ...input, taskId: "by-id", execution: { poolRowId: "row-2" } },
+      f.principal,
+      f.authorized,
+      "by-id",
+    );
+  expect(f.tasks.save).toHaveBeenLastCalledWith(
+    expect.objectContaining({ harness: "claude", model: "sonnet" }),
+  );
+  await f
+    .service()
+    .call(
+      "tasks.create",
+      { ...input, taskId: "default", execution: {} },
+      f.principal,
+      f.authorized,
+      "default",
+    );
+  expect(f.tasks.save).toHaveBeenLastCalledWith(
+    expect.objectContaining({ harness: "codex", model: "gpt" }),
+  );
+  await expect(
+    f
+      .service()
+      .call(
+        "tasks.create",
+        { ...input, taskId: "bad", execution: { poolRowId: "nope" } },
+        f.principal,
+        f.authorized,
+        "bad",
+      ),
+  ).rejects.toThrow("model pool");
 });

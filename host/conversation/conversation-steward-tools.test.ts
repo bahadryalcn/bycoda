@@ -41,10 +41,7 @@ function setup() {
     })),
     stopRun: vi.fn((id: string, runId: string) => ({
       requested: true as const,
-      run: records.find((item) => item.id === id)?.run ?? {
-        runId,
-        startedAt: 1,
-      },
+      run: records.find((item) => item.id === id)?.run ?? { runId, startedAt: 1 },
     })),
     delete: vi.fn(async (id: string) => {
       const at = records.findIndex((entry) => entry.id === id);
@@ -100,13 +97,9 @@ describe("steward conversation lifecycle", () => {
     await expect(
       call("stewards.decline", { ...decline, expectedTaskUpdatedAt: 0 }),
     ).rejects.toThrow("changed");
-    expect(await call("stewards.decline", decline)).toMatchObject({
-      declined: true,
-    });
+    expect(await call("stewards.decline", decline)).toMatchObject({ declined: true });
     expect(service.decline).toHaveBeenCalledWith("proposal");
-    expect(await call("stewards.delete", input)).toMatchObject({
-      deleted: true,
-    });
+    expect(await call("stewards.delete", input)).toMatchObject({ deleted: true });
     expect(records).toHaveLength(0);
   });
   it("inherits execution identity and never auto-starts or auto-merges proposals", async () => {
@@ -131,18 +124,10 @@ describe("steward conversation lifecycle", () => {
     const { create, call, records } = setup();
     await create();
     await expect(
-      call("stewards.update", {
-        stewardId: "steward",
-        expectedUpdatedAt: 0,
-        focus: "new",
-      }),
+      call("stewards.update", { stewardId: "steward", expectedUpdatedAt: 0, focus: "new" }),
     ).rejects.toThrow("changed");
     await expect(
-      call("stewards.update", {
-        stewardId: "steward",
-        expectedUpdatedAt: 1,
-        autoMerge: true,
-      }),
+      call("stewards.update", { stewardId: "steward", expectedUpdatedAt: 1, autoMerge: true }),
     ).rejects.toThrow("protected");
     records[0].projectId = "other";
     await expect(
@@ -158,11 +143,7 @@ describe("steward conversation lifecycle", () => {
   it("updates scheduling and pauses/resumes without changing execution flags", async () => {
     const { create, call, records } = setup();
     await create();
-    await call("stewards.update", {
-      stewardId: "steward",
-      expectedUpdatedAt: 1,
-      focus: "new",
-    });
+    await call("stewards.update", { stewardId: "steward", expectedUpdatedAt: 1, focus: "new" });
     expect(records[0]).toMatchObject({
       focus: "new",
       autoStart: false,
@@ -170,15 +151,9 @@ describe("steward conversation lifecycle", () => {
       runtimeMode: "supervised",
       updatedAt: 2,
     });
-    await call("stewards.pause", {
-      stewardId: "steward",
-      expectedUpdatedAt: 2,
-    });
+    await call("stewards.pause", { stewardId: "steward", expectedUpdatedAt: 2 });
     expect(records[0].enabled).toBe(false);
-    await call("stewards.resume", {
-      stewardId: "steward",
-      expectedUpdatedAt: 3,
-    });
+    await call("stewards.resume", { stewardId: "steward", expectedUpdatedAt: 3 });
     expect(records[0].enabled).toBe(true);
   });
 
@@ -197,10 +172,7 @@ describe("steward conversation lifecycle", () => {
     await expect(
       call("stewards.runNow", { stewardId: "steward", expectedUpdatedAt: 1 }),
     ).rejects.toThrow("owner management");
-    await call("stewards.pause", {
-      stewardId: "steward",
-      expectedUpdatedAt: 1,
-    });
+    await call("stewards.pause", { stewardId: "steward", expectedUpdatedAt: 1 });
     expect(service.runNow).not.toHaveBeenCalled();
   });
 
@@ -208,25 +180,15 @@ describe("steward conversation lifecycle", () => {
     const { create, call, records, service } = setup();
     await create();
     expect(
-      await call("stewards.runNow", {
-        stewardId: "steward",
-        expectedUpdatedAt: 1,
-      }),
+      await call("stewards.runNow", { stewardId: "steward", expectedUpdatedAt: 1 }),
     ).toMatchObject({ requested: true, run: { runId: "turn" } });
     records[0].run = { runId: "turn", sessionId: "worker", startedAt: 1 };
     expect(
-      await call("stewards.runNow", {
-        stewardId: "steward",
-        expectedUpdatedAt: 1,
-      }),
+      await call("stewards.runNow", { stewardId: "steward", expectedUpdatedAt: 1 }),
     ).toMatchObject({ requested: false, reason: "already-running" });
     expect(service.runNow).toHaveBeenCalledTimes(1);
     expect(
-      await call("stewards.stopRun", {
-        stewardId: "steward",
-        expectedUpdatedAt: 1,
-        runId: "turn",
-      }),
+      await call("stewards.stopRun", { stewardId: "steward", expectedUpdatedAt: 1, runId: "turn" }),
     ).toMatchObject({ requested: true });
     expect(service.stopRun).toHaveBeenCalledWith("steward", "turn");
   });

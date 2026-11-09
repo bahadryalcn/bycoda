@@ -152,36 +152,20 @@ describe("desktop conversation tool authority", () => {
   });
   it("permits headless allowlisted launch on certified-away policy without pretending a focused owner approval", async () => {
     const f = fixture();
-    f.presence.mockResolvedValue({
-      supported: true,
-      locked: false,
-      ownerPresent: false,
-    });
+    f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
     await f.call("desktop.launch", { requestId: "away", app: "Editor" }, thread);
     expect(f.approved).not.toHaveBeenCalled();
     expect(await f.request.mock.calls[0][2]!()).toBe(true);
-    f.presence.mockResolvedValue({
-      supported: true,
-      locked: false,
-      ownerPresent: undefined,
-    });
+    f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: undefined });
     expect(await f.request.mock.calls[0][2]!()).toBe(false);
   });
   it.each(["get", "set", "clear"])(
     "requires present owner and exact native review for thread clipboard %s",
     async (action) => {
-      const input = {
-        requestId: action,
-        action,
-        ...(action === "set" ? { text: "exact" } : {}),
-      };
+      const input = { requestId: action, action, ...(action === "set" ? { text: "exact" } : {}) };
       for (const ownerPresent of [false, undefined]) {
         const f = fixture();
-        f.presence.mockResolvedValue({
-          supported: true,
-          locked: false,
-          ownerPresent,
-        });
+        f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent });
         await expect(f.call("desktop.clipboard", input)).rejects.toThrow("owner to be present");
         expect(f.approved).not.toHaveBeenCalled();
         expect(f.request).not.toHaveBeenCalled();
@@ -217,11 +201,7 @@ describe("desktop conversation tool authority", () => {
     );
     expect(await f.request.mock.calls[0][3]!()).toBe(false);
     expect(await f.request.mock.calls[0][4]!()).toBe(true);
-    f.presence.mockResolvedValue({
-      supported: true,
-      locked: false,
-      ownerPresent: false,
-    });
+    f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
     expect(await f.request.mock.calls[0][4]!()).toBe(false);
     await expect(
       f.call("desktop.clipboard", { requestId: "next", action: "get" }),
@@ -330,10 +310,7 @@ describe("desktop conversation tool authority", () => {
     validateConversationTool("desktop.act", act);
     expect(() => validateConversationTool("desktop.act", { ...act, approved: true })).toThrow();
     expect(() =>
-      validateConversationTool("desktop.act", {
-        ...act,
-        text: "x".repeat(10001),
-      }),
+      validateConversationTool("desktop.act", { ...act, text: "x".repeat(10001) }),
     ).toThrow();
     expect(voiceThreadToolAllowed("conversation", "desktop.snapshot")).toBe(true);
     expect(voiceThreadToolAllowed("conversation", "desktop.act")).toBe(true);
@@ -370,34 +347,22 @@ describe("desktop conversation tool authority", () => {
       desktopConversationPrincipal("host", thread),
     );
     expect(
-      desktopConversationPrincipal("host", {
-        ...session,
-        sessionId: "different-focus",
-      }),
+      desktopConversationPrincipal("host", { ...session, sessionId: "different-focus" }),
     ).toEqual(desktopConversationPrincipal("host", thread));
     expect(desktopConversationPrincipal("other-host", thread)).not.toEqual(
       desktopConversationPrincipal("host", thread),
     );
     expect(
-      desktopConversationPrincipal("host", {
-        ...thread,
-        projectId: "different-project",
-      }),
+      desktopConversationPrincipal("host", { ...thread, projectId: "different-project" }),
     ).not.toEqual(desktopConversationPrincipal("host", thread));
     expect(
-      desktopConversationPrincipal("host", {
-        ...session,
-        assistantThreadId: undefined,
-      }),
+      desktopConversationPrincipal("host", { ...session, assistantThreadId: undefined }),
     ).not.toEqual(desktopConversationPrincipal("host", thread));
   });
   it("returns readiness and allowlist without leaking owner configuration", async () => {
     const f = fixture();
     const result = await f.call("desktop.status", {}, thread);
-    expect(result).toMatchObject({
-      allowedApps: ["Editor"],
-      status: { verified: true },
-    });
+    expect(result).toMatchObject({ allowedApps: ["Editor"], status: { verified: true } });
     expect(result).not.toHaveProperty("configuration");
     expect(JSON.stringify(result)).not.toContain("private/path");
     expect(f.presence).not.toHaveBeenCalled();
@@ -436,12 +401,7 @@ describe("desktop conversation tool authority", () => {
     expect(input).toMatchObject({
       principal: session,
       cwd: "G:/project",
-      operation: {
-        ...act,
-        app: "Editor",
-        windowId: "window-one",
-        headed: false,
-      },
+      operation: { ...act, app: "Editor", windowId: "window-one", headed: false },
     });
     expect(input.operationHash).toMatch(/^[a-f0-9]{64}$/);
     expect(Object.keys(input.operation)).toEqual([
@@ -479,11 +439,7 @@ describe("desktop conversation tool authority", () => {
   it("allows away headless thread input under adapter allowlist/ref/presence checks", async () => {
     const f = fixture();
     await f.observe(thread);
-    f.presence.mockResolvedValue({
-      supported: true,
-      locked: false,
-      ownerPresent: false,
-    });
+    f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
     await f.call("desktop.act", act, thread);
     expect(f.approved).not.toHaveBeenCalled();
     expect(f.request).toHaveBeenCalledTimes(2);
@@ -492,11 +448,7 @@ describe("desktop conversation tool authority", () => {
   it("does not treat unknown presence as unattended authorization", async () => {
     const f = fixture();
     await f.observe(thread);
-    f.presence.mockResolvedValue({
-      supported: true,
-      locked: false,
-      ownerPresent: undefined,
-    });
+    f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: undefined });
     await f.call("desktop.act", act, thread);
     expect(f.approved).toHaveBeenCalledOnce();
     expect(f.approved.mock.calls[0][0].principal).toEqual(thread);
@@ -515,11 +467,7 @@ describe("desktop conversation tool authority", () => {
   it("keeps physical input separately gated even when away", async () => {
     const f = fixture();
     await f.observe(thread);
-    f.presence.mockResolvedValue({
-      supported: true,
-      locked: false,
-      ownerPresent: false,
-    });
+    f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
     await expect(f.call("desktop.act", { ...act, headed: true }, thread)).rejects.toThrow(
       "owner to be present",
     );
@@ -531,11 +479,7 @@ describe("desktop conversation tool authority", () => {
     await f.call("desktop.act", { ...act, headed: true });
     const physicalAuthorized = f.request.mock.calls[1][3]!;
     expect(await physicalAuthorized()).toBe(true);
-    f.presence.mockResolvedValue({
-      supported: true,
-      locked: false,
-      ownerPresent: false,
-    });
+    f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
     expect(await physicalAuthorized()).toBe(false);
     expect(f.approved.mock.calls[0][0].operation.headed).toBe(true);
   });
@@ -571,11 +515,7 @@ describe("desktop conversation tool authority", () => {
   it("passes a live authority check into queued native dispatch", async () => {
     const f = fixture();
     await f.observe(thread);
-    f.presence.mockResolvedValue({
-      supported: true,
-      locked: false,
-      ownerPresent: false,
-    });
+    f.presence.mockResolvedValue({ supported: true, locked: false, ownerPresent: false });
     let active = true;
     f.request.mockImplementationOnce(async (_input, _principal, authorized) => {
       active = false;
@@ -589,11 +529,7 @@ describe("desktop conversation tool authority", () => {
   it("refuses unattended input if the owner returns before dispatch", async () => {
     const f = fixture();
     await f.observe(thread);
-    f.presence.mockResolvedValueOnce({
-      supported: true,
-      locked: false,
-      ownerPresent: false,
-    });
+    f.presence.mockResolvedValueOnce({ supported: true, locked: false, ownerPresent: false });
     await expect(f.call("desktop.act", act, thread)).rejects.toThrow("Owner presence changed");
     expect(f.request).toHaveBeenCalledTimes(1);
   });

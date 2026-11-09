@@ -1,11 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { ConversationPreviewWorkflow, type PreviewBrowserState } from "./conversation-preview";
 
-const scope = {
-  projectId: "project",
-  sessionId: "session",
-  principalId: "principal",
-};
+const scope = { projectId: "project", sessionId: "session", principalId: "principal" };
 function fixture(now?: () => number) {
   let state: PreviewBrowserState = {
     open: false,
@@ -16,20 +12,9 @@ function fixture(now?: () => number) {
   const browser = vi.fn(async (method: string, input: Record<string, unknown>) => {
     if (method === "browser.claim") state = { ...state, controlling: true, leaseId: "lease" };
     if (method === "browser.open")
-      state = {
-        ...state,
-        open: true,
-        url: String(input.url),
-        navigationId: "navigation",
-      };
+      state = { ...state, open: true, url: String(input.url), navigationId: "navigation" };
     if (method === "browser.resize")
-      state = {
-        ...state,
-        viewport: {
-          width: Number(input.width),
-          height: Number(input.height),
-        },
-      };
+      state = { ...state, viewport: { width: Number(input.width), height: Number(input.height) } };
     return method === "browser.frame"
       ? {
           ...state,
@@ -56,12 +41,7 @@ function fixture(now?: () => number) {
 it("verifies a mobile frame and the actual originating Host panel separately", async () => {
   const { workflow, ports } = fixture();
   const result = await workflow.run(
-    {
-      requestId: "mobile",
-      url: "http://localhost:3000",
-      width: 390,
-      height: 844,
-    },
+    { requestId: "mobile", url: "http://localhost:3000", width: 390, height: 844 },
     scope,
     ports,
   );
@@ -92,10 +72,7 @@ it("keeps verified browser work when the desktop is headless or its panel fails"
   );
   expect(result.execution.state).toBe("succeeded");
   expect(result.evidence.frame?.data).toBe("frame");
-  expect(result.presentation).toEqual({
-    state: "unavailable",
-    error: "Desktop relay is offline",
-  });
+  expect(result.presentation).toEqual({ state: "unavailable", error: "Desktop relay is offline" });
 });
 
 it("does not treat an unmounted or remote-targeted panel as successful presentation", async () => {
@@ -181,12 +158,7 @@ it("keeps current same-page drafts and allows explicit background-only verificat
   const execute = ports.browser.getMockImplementation()!;
   ports.browser.mockImplementation(async (method, input) =>
     method === "browser.status"
-      ? {
-          open: true,
-          controlling: true,
-          leaseId: "lease",
-          url: "http://localhost:3000/",
-        }
+      ? { open: true, controlling: true, leaseId: "lease", url: "http://localhost:3000/" }
       : execute(method, input),
   );
   const result = await workflow.run(
@@ -263,11 +235,7 @@ it("expires over 4096 confirmed receipts without replaying retired IDs", async (
   const { workflow, ports } = fixture(() => now);
   for (let i = 0; i < 4100; i++) {
     const result = await workflow.run(
-      {
-        requestId: `completed-${i}`,
-        url: "http://localhost:3000",
-        show: false,
-      },
+      { requestId: `completed-${i}`, url: "http://localhost:3000", show: false },
       scope,
       ports,
     );
@@ -371,11 +339,7 @@ it("keeps pending work past TTL and joins the original in-flight request", async
     }
     return execute(method, args);
   });
-  const input = {
-    requestId: "pending-ttl",
-    url: "http://localhost:3000",
-    show: false,
-  };
+  const input = { requestId: "pending-ttl", url: "http://localhost:3000", show: false };
   const first = workflow.run(input, scope, ports);
   await started;
   now += 20 * 60 * 1000;
@@ -447,11 +411,7 @@ it("rejects disclosure when a receipt expires during original authorization", as
       }
     },
   };
-  const input = {
-    requestId: "auth-cross-expiry",
-    url: "http://localhost:3000",
-    show: false,
-  };
+  const input = { requestId: "auth-cross-expiry", url: "http://localhost:3000", show: false };
   await workflow.run(input, scope, original);
   block = true;
   const replay = workflow.run(input, scope, ports);

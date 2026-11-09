@@ -105,15 +105,9 @@ it("lists image models with access, formats and limits plus the remaining budget
     available: true,
     outputs: ["png"],
   });
-  expect(byId.antigravity).toMatchObject({
-    access: "antigravity-member",
-    available: true,
-  });
+  expect(byId.antigravity).toMatchObject({ access: "antigravity-member", available: true });
   expect(byId.antigravity!.limits.join(" ")).toContain("no SVG, GIF");
-  expect(byId.gemini).toMatchObject({
-    available: false,
-    reason: "Not configured on this Host.",
-  });
+  expect(byId.gemini).toMatchObject({ available: false, reason: "Not configured on this Host." });
 });
 
 it("saves a generated image as a new workspace file", async () => {
@@ -131,19 +125,13 @@ it("saves a generated image as a new workspace file", async () => {
   });
   expect(readFileSync(join(root, "games/snake/assets/snake.png"))).toEqual(png());
   expect(generate).toHaveBeenCalledWith(
-    expect.objectContaining({
-      prompt: "A green snake sprite",
-      aspectRatio: "1:1",
-    }),
+    expect.objectContaining({ prompt: "A green snake sprite", aspectRatio: "1:1" }),
   );
 });
 
 it("keeps JPEG output by correcting the saved extension", async () => {
   const { root, call } = setup(jpeg());
-  const result = await call("images.generate", {
-    prompt: "Menu",
-    path: "art/menu.png",
-  });
+  const result = await call("images.generate", { prompt: "Menu", path: "art/menu.png" });
   expect(result).toMatchObject({ path: "art/menu.jpg", width: 20, height: 10 });
   expect(existsSync(join(root, "art/menu.png"))).toBe(false);
 });
@@ -187,12 +175,7 @@ it("does not write after authority is revoked", async () => {
   let allowed = true;
   const adapters: SocialImageAdapters = {
     codex: {
-      capability: async () => ({
-        provider: "codex",
-        available: true,
-        reason: "",
-        models: [],
-      }),
+      capability: async () => ({ provider: "codex", available: true, reason: "", models: [] }),
       generate: async () => {
         allowed = false;
         return { bytes: png(), model: "native-default" };
@@ -205,15 +188,9 @@ it("does not write after authority is revoked", async () => {
       "images.generate",
       { prompt: "x", path: "late.png" },
       {
-        session: {
-          id: randomUUID(),
-          modelSettings: {},
-          runtimeMode: "supervised",
-        },
+        session: { id: randomUUID(), modelSettings: {}, runtimeMode: "supervised" },
         projectId: "project",
-        engine: {
-          store: { attachmentDir: join(root, "attachments") },
-        } as never,
+        engine: { store: { attachmentDir: join(root, "attachments") } } as never,
         adapters,
         antigravity: async () => undefined,
         authorized: async () => allowed,
@@ -244,10 +221,7 @@ it("runs Nano Banana in Antigravity when it is the selected model", async () => 
     selected: ["antigravity"],
     antigravity: "agy-model",
   });
-  const result = await call("images.generate", {
-    prompt: "Snake logo",
-    path: "art/logo.png",
-  });
+  const result = await call("images.generate", { prompt: "Snake logo", path: "art/logo.png" });
   expect(result).toMatchObject({
     path: "art/logo.png",
     provider: "antigravity",
@@ -256,17 +230,12 @@ it("runs Nano Banana in Antigravity when it is the selected model", async () => 
   });
   expect(generate).not.toHaveBeenCalled();
   expect(runAntigravity).toHaveBeenCalledWith(
-    expect.objectContaining({
-      prompt: "Snake logo",
-      target: join(root, "art/logo.png"),
-    }),
+    expect.objectContaining({ prompt: "Snake logo", target: join(root, "art/logo.png") }),
   );
 });
 
 it("falls back to Nano Banana only when automatic finds no Host provider", async () => {
-  const { call, runAntigravity } = setup(png(), false, {
-    antigravity: "agy-model",
-  });
+  const { call, runAntigravity } = setup(png(), false, { antigravity: "agy-model" });
   await expect(call("images.generate", { prompt: "x", path: "b.png" })).resolves.toMatchObject({
     provider: "antigravity",
   });

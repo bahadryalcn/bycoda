@@ -15,8 +15,7 @@ import type { AssistantProfile } from "../../../src/shared/model/host-contracts/
 const paths: string[] = [];
 afterEach(() => {
   vi.resetAllMocks();
-  for (const path of paths.splice(0))
-    rmSync(path, { recursive: true, force: true });
+  for (const path of paths.splice(0)) rmSync(path, { recursive: true, force: true });
 });
 const profile = {
   execution: {
@@ -115,9 +114,7 @@ it("refuses late output after reasoning cancellation", async () => {
     controller.abort();
     return "Late answer";
   });
-  await expect(
-    runner()(profile, "Prompt", controller.signal),
-  ).rejects.toMatchObject({
+  await expect(runner()(profile, "Prompt", controller.signal)).rejects.toMatchObject({
     name: "AbortError",
   });
 });
@@ -219,11 +216,7 @@ it("runs reply and Chief under their own pool rows and accounts, and keeps the p
   await expect(
     assistantText(path, "chief", select as never)(profile, "Prompt"),
   ).rejects.toMatchObject({ name: "AssistantModelsHeldError", nextResetAt: 7 });
-  await assistantText(
-    path,
-    "reply",
-    (async () => null) as never,
-  )(profile, "Prompt");
+  await assistantText(path, "reply", (async () => null) as never)(profile, "Prompt");
   const last = vi.mocked(runHarnessTextPrompt).mock.calls.at(-1)![0];
   expect(last).toMatchObject({ harness: "codex", model: "test" });
   expect(last).not.toHaveProperty("providerAccountId");

@@ -31,10 +31,7 @@ const schemas = {
     featureKey: z.string().min(1).max(512),
     scope: z.string().min(1).max(512).optional(),
   }),
-  "workspaces.featureClaims.release": z.strictObject({
-    ...mutation,
-    claimId: text,
-  }),
+  "workspaces.featureClaims.release": z.strictObject({ ...mutation, claimId: text }),
   "workspaces.cleanup.plan": z.strictObject(reviewed),
   "workspaces.cleanup.status": z.strictObject({
     ...target,
@@ -42,10 +39,7 @@ const schemas = {
     offset: revision.optional(),
     limit: z.number().int().min(1).max(100).optional(),
   }),
-  "workspaces.delivery.review": z.strictObject({
-    ...reviewed,
-    action: z.literal("merge"),
-  }),
+  "workspaces.delivery.review": z.strictObject({ ...reviewed, action: z.literal("merge") }),
 };
 export type WorkspaceManagementAction = keyof typeof schemas;
 export const WORKSPACE_MANAGEMENT_TOOLS = {
@@ -99,11 +93,7 @@ function boundPlan(value: unknown) {
       truncatedFields[key] = field.length;
     }
   }
-  return {
-    ...result,
-    truncated: Object.keys(truncatedFields).length > 0,
-    truncatedFields,
-  };
+  return { ...result, truncated: Object.keys(truncatedFields).length > 0, truncatedFields };
 }
 
 /** The management wrapper owns exact in-app approvals and durable request receipts. */
@@ -176,16 +166,10 @@ export async function dispatchWorkspaceManagement(
   await check();
   if (action === "workspaces.featureClaims.acquire") {
     const { requestId, ...fields } = schemas[action].parse(input);
-    result = await ports.featureClaims.acquire({
-      ...fields,
-      idempotencyKey: requestId,
-    });
+    result = await ports.featureClaims.acquire({ ...fields, idempotencyKey: requestId });
   } else if (action === "workspaces.featureClaims.release") {
     const { requestId, ...fields } = schemas[action].parse(input);
-    result = await ports.featureClaims.release({
-      ...fields,
-      idempotencyKey: requestId,
-    });
+    result = await ports.featureClaims.release({ ...fields, idempotencyKey: requestId });
   } else if (action === "workspaces.cleanup.plan")
     result = boundPlan(await ports.removal.plan(schemas[action].parse(input)));
   else {

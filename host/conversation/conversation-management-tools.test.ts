@@ -33,13 +33,7 @@ function fixture() {
       receipts.set(key, value);
     },
   };
-  return {
-    receipts,
-    execute,
-    approve,
-    ports,
-    tools: new ConversationManagementTools(ports),
-  };
+  return { receipts, execute, approve, ports, tools: new ConversationManagementTools(ports) };
 }
 describe("management authority and uncertain delivery", () => {
   it("qualifies the canonical effect only after native review and holds it until settled", async () => {
@@ -150,11 +144,7 @@ describe("management authority and uncertain delivery", () => {
     const tools = new ConversationManagementTools<ManagementAction, GlobalManagementPrincipal>(
       f.ports,
     );
-    const input = {
-      requestId: "uncertain",
-      expectedRevision: "rev",
-      change: {},
-    };
+    const input = { requestId: "uncertain", expectedRevision: "rev", change: {} };
     expect(await tools.call("preferences.patch", input, global, async () => valid)).toMatchObject({
       state: "uncertain",
     });
@@ -171,12 +161,7 @@ describe("management authority and uncertain delivery", () => {
     for (const command of [
       { type: "configure", sessionId: "session" },
       { type: "draft", sessionId: "session", attachments: [{ id: "foreign" }] },
-      {
-        type: "cancel",
-        sessionId: "session",
-        runId: "run",
-        authorityGeneration: 1,
-      },
+      { type: "cancel", sessionId: "session", runId: "run", authorityGeneration: 1 },
       { type: "compact", sessionId: "session", queued: { id: "foreign" } },
       {
         type: "answer",
@@ -194,11 +179,7 @@ describe("management authority and uncertain delivery", () => {
       pageDesktopManagementSnapshot({ providers: [{ id: "codex", models }] }, { offset: 30 }),
     ).toMatchObject({
       providers: [
-        {
-          id: "codex",
-          models: models.slice(30),
-          modelPagination: { total: 45, nextOffset: null },
-        },
+        { id: "codex", models: models.slice(30), modelPagination: { total: 45, nextOffset: null } },
       ],
     });
     const sessionIds = Array.from({ length: 45 }, (_, id) => `session-${id}`);
@@ -341,10 +322,7 @@ describe("management authority and uncertain delivery", () => {
       }),
     ).toThrow("protected");
     expect(() =>
-      validateConversationTool("git.commit", {
-        requestId: "x",
-        message: "commit",
-      }),
+      validateConversationTool("git.commit", { requestId: "x", message: "commit" }),
     ).toThrow("expectedStatus");
   });
 });

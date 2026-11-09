@@ -89,7 +89,7 @@ export class ConversationThreadWorkTools {
       "list" | "save" | "delete" | "runs" | "runNow" | "stopRun"
     >,
     private readonly approve: Approve,
-    private readonly pool: ModelPoolSource,
+    readonly pool: ModelPoolSource,
   ) {}
 
   /** Every execution the thread principal creates must come from the owner's model pool. */

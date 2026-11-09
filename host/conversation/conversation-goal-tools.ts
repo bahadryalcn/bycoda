@@ -9,12 +9,7 @@ import {
 } from "./conversation-task-tools";
 import { MAX_RUNNING_TASKS_LIMIT } from "../../src/features/tasks/model/hostSettings";
 
-const id = {
-  type: "string",
-  minLength: 1,
-  maxLength: 64,
-  pattern: "^[A-Za-z0-9_-]+$",
-};
+const id = { type: "string", minLength: 1, maxLength: 64, pattern: "^[A-Za-z0-9_-]+$" };
 const expected = { type: "integer", minimum: 0 };
 const object = (properties: Record<string, unknown>, required: string[]) => ({
   type: "object",
@@ -50,11 +45,7 @@ export const GOAL_WRITE_TOOLS = {
     {
       goalId: id,
       expectedUpdatedAt: expected,
-      maxRunningTasks: {
-        type: "integer",
-        minimum: 0,
-        maximum: MAX_RUNNING_TASKS_LIMIT,
-      },
+      maxRunningTasks: { type: "integer", minimum: 0, maximum: MAX_RUNNING_TASKS_LIMIT },
       maxRunMinutes: { type: "integer", minimum: 0, maximum: 10080 },
     },
     ["goalId", "expectedUpdatedAt"],
@@ -180,12 +171,7 @@ export class ConversationGoalTools {
           throw new Error("Provide bounded goal limits.");
         return await this.goals.update(
           goal.id,
-          {
-            maxRunningTasks,
-            maxRunMinutes,
-            autoMerge: false,
-            continueUntilDone: false,
-          },
+          { maxRunningTasks, maxRunMinutes, autoMerge: false, continueUntilDone: false },
           goal.updatedAt,
         );
       }

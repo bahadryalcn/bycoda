@@ -28,12 +28,7 @@ function setup() {
   } as unknown as Pick<HostStore, "project" | "session" | "usageMetadataPage" | "environmentId">;
   const goals = {
     list: vi.fn(() => [
-      {
-        id: "current",
-        projectIds: ["project"],
-        taskIds: ["task"],
-        plan: { tasks: [] },
-      },
+      { id: "current", projectIds: ["project"], taskIds: ["task"], plan: { tasks: [] } },
       { id: "foreign", projectIds: ["other"], prompt: "private" },
       { id: "shared", projectIds: ["project", "other"], prompt: "private" },
     ]),
@@ -75,11 +70,7 @@ function setup() {
             enabled: true,
             run: { sessionId: "run" },
           },
-          {
-            id: "foreign-steward",
-            projectId: "other",
-            focus: "foreign private focus",
-          },
+          { id: "foreign-steward", projectId: "other", focus: "foreign private focus" },
         ],
       } as never,
       automations: {
@@ -115,10 +106,7 @@ describe("project conversation reads", () => {
       items: [{ id: "steward", enabled: true, running: true }],
     });
     expect(JSON.stringify(list)).not.toContain("focus");
-    const detail = (await call("stewards.get", {
-      stewardId: "steward",
-      maxChars: 200,
-    })) as {
+    const detail = (await call("stewards.get", { stewardId: "steward", maxChars: 200 })) as {
       content: string;
       totalChars: number;
     };
@@ -153,9 +141,7 @@ describe("project conversation reads", () => {
       projectId: "project",
       scope: "host-observed-sessions",
       totals: { cost: null },
-      coverage: {
-        unavailableFields: expect.arrayContaining(["accountQuota", "budget", "cost"]),
-      },
+      coverage: { unavailableFields: expect.arrayContaining(["accountQuota", "budget", "cost"]) },
     });
     await expect(
       call("usage.sessions.read", { sinceMs: 0, untilMs: 32 * 86400000 }),
@@ -163,13 +149,8 @@ describe("project conversation reads", () => {
   });
   it("excludes other-project and multi-project goals rather than leaking their plan/prompt", async () => {
     const { call } = setup();
-    expect(await call("goals.list")).toMatchObject({
-      total: 1,
-      items: [{ id: "current" }],
-    });
-    const detail = (await call("goals.get", { goalId: "current" })) as {
-      content: string;
-    };
+    expect(await call("goals.list")).toMatchObject({ total: 1, items: [{ id: "current" }] });
+    const detail = (await call("goals.get", { goalId: "current" })) as { content: string };
     expect(JSON.parse(detail.content)).toMatchObject({ taskIds: ["task"] });
     await expect(call("goals.get", { goalId: "foreign" })).rejects.toThrow("project scope");
     await expect(call("goals.get", { goalId: "shared" })).rejects.toThrow("project scope");
@@ -192,11 +173,7 @@ describe("project conversation reads", () => {
 
   it("bounds both diff sides independently and retains checkpoint identity", async () => {
     const { call, checkpoints } = setup();
-    const result = await call("checkpoints.diff", {
-      relative: "a",
-      offset: 50,
-      maxChars: 200,
-    });
+    const result = await call("checkpoints.diff", { relative: "a", offset: 50, maxChars: 200 });
     expect(result).toMatchObject({
       original: "a".repeat(200),
       current: "b".repeat(50),
@@ -222,23 +199,14 @@ describe("project conversation reads", () => {
       status: "modified",
       expectedCheckpoint: "token",
     });
-    const result = await call("checkpoints.diff", {
-      relative: "a",
-      offset: 10,
-      maxChars: 200,
-    });
+    const result = await call("checkpoints.diff", { relative: "a", offset: 10, maxChars: 200 });
     expect(JSON.stringify(result)).not.toContain("credential");
-    expect(result).toMatchObject({
-      originalNextOffset: null,
-      currentNextOffset: null,
-    });
+    expect(result).toMatchObject({ originalNextOffset: null, currentNextOffset: null });
   });
 
   it("reuses progressive catalog discovery and preserves partial/error state", async () => {
     const { call, models } = setup();
-    expect(await call("providers.list")).toEqual({
-      providers: ["codex", "claude"],
-    });
+    expect(await call("providers.list")).toEqual({ providers: ["codex", "claude"] });
     expect(models).not.toHaveBeenCalled();
     expect(await call("models.list")).toMatchObject({
       total: 1,

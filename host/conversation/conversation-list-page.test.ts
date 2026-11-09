@@ -3,11 +3,7 @@ import { conversationListArguments, pageConversationListResult } from "./convers
 it("preserves legacy owner arguments while bounding array and multi-collection output", () => {
   const rows = Array.from({ length: 201 }, (_, id) => ({ id }));
   expect(
-    conversationListArguments("devices.list", {
-      machineId: "m",
-      offset: 20,
-      limit: 5,
-    }),
+    conversationListArguments("devices.list", { machineId: "m", offset: 20, limit: 5 }),
   ).toEqual({ machineId: "m" });
   expect(pageConversationListResult("tasks.list", { offset: 20, limit: 5 }, rows)).toEqual({
     items: rows.slice(20, 25),

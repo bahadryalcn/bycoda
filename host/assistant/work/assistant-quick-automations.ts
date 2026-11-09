@@ -7,6 +7,33 @@ import {
 } from "../../../src/features/automations/model/hostAutomations";
 import type { AssistantQuickAutomationJob } from "../../../src/shared/model/host-contracts/assistant";
 import { normalizeAssistantQuickAutomationAction } from "../../../src/shared/model/assistantQuickAutomation";
+import {
+  assertPoolExecution,
+  type ModelPoolSource,
+} from "../../conversation/conversation-model-pool-guard";
+
+let modelPool: ModelPoolSource | undefined;
+/** Host wiring hook (shortcut: module-level like the model pool ports; set once at server start). */
+export function setQuickAutomationModelPool(next: ModelPoolSource | undefined) {
+  modelPool = next;
+}
+/** The voice client never names a model (it sends ""), so the automation takes the pool's first worker row. */
+export async function assistantQuickAutomationPoolJob(
+  job: AssistantQuickAutomationJob,
+): Promise<AssistantQuickAutomationJob> {
+  if (!modelPool || job.quickAction.model !== "") return job;
+  const row = assertPoolExecution(undefined, await modelPool());
+  return {
+    ...job,
+    quickAction: {
+      ...job.quickAction,
+      harness: row.harness,
+      model: row.model,
+      modelSettings: row.modelSettings,
+      runtimeMode: row.runtimeMode,
+    },
+  };
+}
 
 export type AssistantQuickAutomationReceipt = {
   jobId: string;
@@ -103,8 +130,16 @@ export class HostAssistantQuickAutomations {
   private async execute(job: AssistantQuickAutomationJob): Promise<AssistantQuickAutomationResult> {
     await this.ready;
     const automationId = assistantQuickAutomationId(job.id),
-      fingerprint = assistantQuickAutomationFingerprint(job),
-      expected = assistantQuickAutomationConfiguration(job);
+      fingerprint = assistantQuickAutomationFingerprint(job);
+    let expected: ReturnType<typeof assistantQuickAutomationConfiguration>;
+    try {
+      expected = assistantQuickAutomationConfiguration(await assistantQuickAutomationPoolJob(job));
+    } catch (error) {
+      return {
+        state: "waiting",
+        message: `The assistant's model pool has no model for this automation. No creation was issued: ${String(error).slice(0, 500)}`,
+      };
+    }
     let receipt = await this.receipt(job.id);
     if (receipt && (receipt.automationId !== automationId || receipt.fingerprint !== fingerprint))
       return {

@@ -3,11 +3,7 @@ import type { HostGoals } from "../../goals/goals";
 import type { HostTasks } from "../../tasks/tasks";
 import type { HostAutomations } from "../../automations/automations";
 import { HostAssistantJobDeletion } from "../work/assistant-job-deletion";
-import type {
-  AssistantGoalStatus,
-  AssistantPorts,
-  AssistantUsageTurn,
-} from "../service";
+import type { AssistantGoalStatus, AssistantPorts, AssistantUsageTurn } from "../service";
 import type { AsyncHostNotes } from "../../host-notes-async";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
@@ -34,10 +30,7 @@ import {
   assistantRoleExecution,
   assistantRoleProfile,
 } from "../../../src/shared/model/assistantRoles";
-import {
-  readAssistantQuestionStatus,
-  type AssistantQuestionStatus,
-} from "./assistant-questions";
+import { readAssistantQuestionStatus, type AssistantQuestionStatus } from "./assistant-questions";
 import { AssistantChiefReads } from "../chief/assistant-chief-reads";
 import { assistantWorkerModelSettings } from "../work/assistant-worker-settings";
 import { assistantCacheMeasurement } from "../work/assistant-cache-usage";
@@ -61,11 +54,7 @@ export async function readManualSessionUsage(
   const record = await store.session(grant.sessionId),
     session = record.session,
     turns: AssistantUsageTurn[] = [];
-  let incomplete = !!(
-    session.historyPartial ||
-    session.historyLoading ||
-    session.historyLoadError
-  );
+  let incomplete = !!(session.historyPartial || session.historyLoading || session.historyLoadError);
   for (const [index, block] of session.blocks.entries()) {
     if (
       block.role !== "user" ||
@@ -78,10 +67,7 @@ export async function readManualSessionUsage(
       if (block.followUpDelivery) incomplete = true;
       continue;
     }
-    if (
-      !Number.isSafeInteger(block.startedAt) ||
-      block.startedAt! < grant.enrolledAt
-    ) {
+    if (!Number.isSafeInteger(block.startedAt) || block.startedAt! < grant.enrolledAt) {
       incomplete = true;
       continue;
     }
@@ -110,10 +96,7 @@ export async function readManualSessionUsage(
         record.status !== "running" ||
         session.blocks
           .slice(index + 1)
-          .some(
-            (later) =>
-              later.role === "user" && !later.draft && !later.continuationOf,
-          ),
+          .some((later) => later.role === "user" && !later.draft && !later.continuationOf),
     });
   }
   return { turns, incomplete };
@@ -128,25 +111,15 @@ export function assistantExecutionPorts(
   automations?: () => HostAutomations,
   models?: AssistantModelSelector,
 ): AssistantPorts {
-  const replyText = assistantText(
-    dirname(store.attachmentDir),
-    "reply",
-    models,
-  );
-  const chiefText = assistantText(
-    dirname(store.attachmentDir),
-    "chief",
-    models,
-  );
+  const replyText = assistantText(dirname(store.attachmentDir), "reply", models);
+  const chiefText = assistantText(dirname(store.attachmentDir), "chief", models);
   const chief = createAssistantChiefContext(store, chiefText);
   const chiefReads = new AssistantChiefReads(store, notes);
   const knownJobProjects = async (
     job: NonNullable<Parameters<NonNullable<AssistantPorts["findGoal"]>>[1]>,
   ) => {
     if (job.kind === "quick")
-      throw new AssistantJobScopeError(
-        "Global quick jobs cannot launch or recover a goal.",
-      );
+      throw new AssistantJobScopeError("Global quick jobs cannot launch or recover a goal.");
     const ids = assistantJobProjectIds(job),
       known = new Set((await store.projects()).map((project) => project.id));
     if (ids.length > 20 || ids.some((id) => !known.has(id)))
@@ -211,8 +184,7 @@ export function assistantExecutionPorts(
         ...input,
         profile: assistantRoleProfile(input.profile, "chief"),
       }),
-    chiefReadSnapshot: (profile, authorized) =>
-      chiefReads.snapshot(profile, authorized),
+    chiefReadSnapshot: (profile, authorized) => chiefReads.snapshot(profile, authorized),
     chiefRead: (input, authorized) => chiefReads.execute(input, authorized),
     replanGoal: async (id, feedback, job) => {
       await savedGoal(id, job);
@@ -225,11 +197,7 @@ export function assistantExecutionPorts(
           getNote: async (id: string) => {
             const note = await notes().get(id);
             if (!note) return null;
-            if (
-              note.sourceCwd ||
-              note.sourceSessionId ||
-              !note.tags.includes("assistant")
-            )
+            if (note.sourceCwd || note.sourceSessionId || !note.tags.includes("assistant"))
               throw new Error("This is not a global assistant note.");
             return assistantNoteDto(note);
           },
@@ -238,14 +206,10 @@ export function assistantExecutionPorts(
             const found = list.notes
               .filter(
                 (note) =>
-                  !note.sourceCwd &&
-                  !note.sourceSessionId &&
-                  note.tags.includes("assistant"),
+                  !note.sourceCwd && !note.sourceSessionId && note.tags.includes("assistant"),
               )
               .slice(0, 100);
-            return (
-              await Promise.all(found.map((note) => notes().get(note.id)))
-            )
+            return (await Promise.all(found.map((note) => notes().get(note.id))))
               .filter((note) => note !== null)
               .map(assistantNoteDto);
           },
@@ -262,10 +226,7 @@ export function assistantExecutionPorts(
             if (
               input.id &&
               ((!old && input.expectedUpdatedAt !== 0) ||
-                (old &&
-                  (old.sourceCwd ||
-                    old.sourceSessionId ||
-                    !old.tags.includes("assistant"))))
+                (old && (old.sourceCwd || old.sourceSessionId || !old.tags.includes("assistant"))))
             )
               throw new Error("This is not a global assistant note.");
             return assistantNoteDto(
@@ -282,18 +243,9 @@ export function assistantExecutionPorts(
               ),
             );
           },
-          deleteNote: async (
-            id: string,
-            expected: number,
-            authorized?: () => Promise<boolean>,
-          ) => {
+          deleteNote: async (id: string, expected: number, authorized?: () => Promise<boolean>) => {
             const old = await notes().get(id);
-            if (
-              !old ||
-              old.sourceCwd ||
-              old.sourceSessionId ||
-              !old.tags.includes("assistant")
-            )
+            if (!old || old.sourceCwd || old.sourceSessionId || !old.tags.includes("assistant"))
               throw new Error("This is not a global assistant note.");
             await notes().delete(id, expected, undefined, authorized);
           },
@@ -307,9 +259,7 @@ export function assistantExecutionPorts(
       })),
     createGoal: async ({ job, profile }) => {
       if (!profile.execution)
-        throw new Error(
-          "Choose an execution provider and model before starting jobs.",
-        );
+        throw new Error("Choose an execution provider and model before starting jobs.");
       const projectIds = await knownJobProjects(job);
       const id = `assistant-${job.id}`;
       const existing = (await goals.list()).find((goal) => goal.id === id);
@@ -325,10 +275,7 @@ export function assistantExecutionPorts(
         planner = await chooseAssistantExecution(models, "planning", profile);
       } catch (error) {
         // No planning row means no separate planner; limits still hold the job.
-        if (!(
-          error instanceof AssistantModelsHeldError && error.held === "noRow"
-        ))
-          throw error;
+        if (!(error instanceof AssistantModelsHeldError && error.held === "noRow")) throw error;
       }
       const execution = worker?.execution ?? profile.execution;
       const planning = planner
@@ -343,8 +290,7 @@ export function assistantExecutionPorts(
           ? {
               plannerExecution: {
                 harness: planning.harness,
-                ...("providerAccountId" in planning &&
-                planning.providerAccountId
+                ...("providerAccountId" in planning && planning.providerAccountId
                   ? { providerAccountId: planning.providerAccountId }
                   : {}),
                 model: planning.model,
@@ -383,30 +329,22 @@ export function assistantExecutionPorts(
       };
     },
     findGoal: async (jobId, job) => {
-      const found = (await goals.list()).find(
-        (goal) => goal.id === `assistant-${jobId}`,
-      );
+      const found = (await goals.list()).find((goal) => goal.id === `assistant-${jobId}`);
       if (found) {
         if (!job || job.id !== jobId)
-          throw new Error(
-            "Recovering a goal requires its exact saved assistant job.",
-          );
+          throw new Error("Recovering a goal requires its exact saved assistant job.");
         await knownJobProjects(job);
         assertAssistantGoalProjects(job, found);
       }
       return found ? { goalId: found.id } : undefined;
     },
-    setGoalBudgetHeld: (id, held) =>
-      tasks.setGoalPauseReason(id, "assistant-budget", held),
-    setGoalHoursHeld: (id, held) =>
-      tasks.setGoalPauseReason(id, "assistant-hours", held),
+    setGoalBudgetHeld: (id, held) => tasks.setGoalPauseReason(id, "assistant-budget", held),
+    setGoalHoursHeld: (id, held) => tasks.setGoalPauseReason(id, "assistant-hours", held),
     hasRunningChildren: async (ids) => {
       if (await tasks.hasRunningGoalWork(ids)) return true;
       const selected = new Set(ids),
         allTasks = await tasks.list(undefined, false);
-      for (const goal of (await goals.list()).filter((goal) =>
-        selected.has(goal.id),
-      )) {
+      for (const goal of (await goals.list()).filter((goal) => selected.has(goal.id))) {
         for (const id of goalSessionIds(
           goal,
           allTasks.filter((task) => goal.taskIds.includes(task.id)),
@@ -422,18 +360,13 @@ export function assistantExecutionPorts(
       if (job) {
         await knownJobProjects(job);
         assertAssistantGoalProjects(job, goal);
-      } else if (profile)
-        throw new Error(
-          "Goal admission requires its exact saved assistant job.",
-        );
+      } else if (profile) throw new Error("Goal admission requires its exact saved assistant job.");
       const children = (await tasks.list(undefined, false)).filter((task) =>
         goal!.taskIds.includes(task.id),
       );
       if (
         children.some(
-          (task) =>
-            task.goalId !== goal!.id ||
-            !goal!.projectIds.includes(task.projectId),
+          (task) => task.goalId !== goal!.id || !goal!.projectIds.includes(task.projectId),
         )
       )
         throw new AssistantJobScopeError(
@@ -476,8 +409,7 @@ export function assistantExecutionPorts(
             Number.isSafeInteger(activity.lastActivityAt) &&
             activity.lastActivityAt >= 0 &&
             activity.lastActivityAt <= Date.now();
-          if (knownActivity)
-            lastActivityAt = Math.max(lastActivityAt, activity!.lastActivityAt);
+          if (knownActivity) lastActivityAt = Math.max(lastActivityAt, activity!.lastActivityAt);
           if (record.status === "running") {
             runningChildren = true;
             if (!knownActivity) activityIncomplete = true;
@@ -491,8 +423,7 @@ export function assistantExecutionPorts(
           );
           if (question) sessionQuestions.push(question);
           const turns = record.session.blocks.filter(
-            (block) =>
-              block.role === "user" && !block.draft && !block.continuationOf,
+            (block) => block.role === "user" && !block.draft && !block.continuationOf,
           );
           if (
             record.session.historyPartial ||
@@ -521,9 +452,7 @@ export function assistantExecutionPorts(
               key: `${sessionId}:${block.id}`,
               tokens: count,
               ...(at === undefined ? {} : { at }),
-              ...(block.author?.operationId
-                ? { operationId: block.author.operationId }
-                : {}),
+              ...(block.author?.operationId ? { operationId: block.author.operationId } : {}),
               ...(cacheMetrics ? { cacheMetrics } : {}),
               settled:
                 block.durationMs !== undefined ||
@@ -531,16 +460,14 @@ export function assistantExecutionPorts(
                 index < turns.length - 1,
             });
           }
-          if (record.status === "running" && !turns.length)
-            usageIncomplete = true;
+          if (record.status === "running" && !turns.length) usageIncomplete = true;
         } catch (error) {
           if (error instanceof AssistantJobScopeError) throw error;
           usageIncomplete = true;
           activityIncomplete = true;
         }
       }
-      if (!sessionIds.length && ["planning", "running"].includes(status))
-        usageIncomplete = true;
+      if (!sessionIds.length && ["planning", "running"].includes(status)) usageIncomplete = true;
       runningChildren ||= await tasks.hasRunningGoalWork([goal.id]);
       let recoveryAttention: string | undefined;
       if (!["done", "cancelled"].includes(goal.status))
@@ -550,10 +477,8 @@ export function assistantExecutionPorts(
             recovery &&
             ["unknown", "escalated"].includes(recovery.state) &&
             child.status !== "done" &&
-            ((child.sessionId ===
-              (recovery.launchedSessionId ?? recovery.source.sessionId) &&
-              child.runId ===
-                (recovery.launchedRunId ?? recovery.source.runId)) ||
+            ((child.sessionId === (recovery.launchedSessionId ?? recovery.source.sessionId) &&
+              child.runId === (recovery.launchedRunId ?? recovery.source.runId)) ||
               (!child.sessionId && child.status === "queued"))
           )
             recoveryAttention = recovery.message;
@@ -567,10 +492,7 @@ export function assistantExecutionPorts(
               ? "owner"
               : undefined;
       return {
-        status:
-          recoveryAttention || (status === "running" && needsOwner)
-            ? "waiting"
-            : status,
+        status: recoveryAttention || (status === "running" && needsOwner) ? "waiting" : status,
         ...(waitingReason ? { waitingReason } : {}),
         taskIds: goal.taskIds,
         sessionIds,
@@ -582,16 +504,10 @@ export function assistantExecutionPorts(
         ...(lastActivityAt && !activityIncomplete ? { lastActivityAt } : {}),
         ...(goal.status === "blocked"
           ? {
-              summary: (
-                goal.error ??
-                goal.planError ??
-                "The goal needs attention."
-              ).slice(0, 4000),
+              summary: (goal.error ?? goal.planError ?? "The goal needs attention.").slice(0, 4000),
             }
           : {}),
-        ...(recoveryAttention
-          ? { summary: recoveryAttention.slice(0, 4000) }
-          : {}),
+        ...(recoveryAttention ? { summary: recoveryAttention.slice(0, 4000) } : {}),
         progress: {
           done: children.filter((task) => task.status === "done").length,
           total: goal.taskIds.length,

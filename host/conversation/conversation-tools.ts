@@ -23,10 +23,6 @@ import {
   MANAGEMENT_CONVERSATION_TOOLS,
   describeManagementTool,
 } from "./conversation-management-tools";
-import {
-  MODEL_POOL_CONVERSATION_TOOLS,
-  describeModelPoolConversationTool,
-} from "./conversation-model-pool-source";
 import { THREAD_WORK_EXECUTION_SCHEMA } from "./conversation-thread-work-tools";
 import { PAGED_CONVERSATION_LISTS } from "./conversation-list-page";
 import {
@@ -102,12 +98,7 @@ const pagination = {
 const noteFields = {
   title: { type: "string", maxLength: 200 },
   body: { type: "string", maxLength: 100000 },
-  tags: {
-    type: "array",
-    minItems: 0,
-    maxItems: 20,
-    items: { type: "string", maxLength: 48 },
-  },
+  tags: { type: "array", minItems: 0, maxItems: 20, items: { type: "string", maxLength: 48 } },
 };
 const automationFields = {
   name: { type: "string", minLength: 1, maxLength: 200 },
@@ -138,12 +129,7 @@ const inboxItem = {
 const server = {
   id: string,
   tree: { type: "boolean" },
-  expectedImpact: {
-    type: "string",
-    minLength: 64,
-    maxLength: 64,
-    pattern: "^[a-f0-9]{64}$",
-  },
+  expectedImpact: { type: "string", minLength: 64, maxLength: 64, pattern: "^[a-f0-9]{64}$" },
   identity: {
     type: "object",
     properties: { pid: { type: "integer", minimum: 1 }, startedAt: string },
@@ -184,7 +170,6 @@ export const CONVERSATION_TOOLS = {
   ...BROWSER_ANNOTATION_TOOLS,
   ...STEWARD_CONVERSATION_TOOLS,
   ...RUNTIME_READ_CONVERSATION_TOOLS,
-  ...MODEL_POOL_CONVERSATION_TOOLS,
   "crews.list": object(pagination),
   "crews.schema": object({}),
   "crews.inspect": object({ definitionId: string, memberId: string }),
@@ -196,10 +181,7 @@ export const CONVERSATION_TOOLS = {
     ["definitionJson"],
   ),
   "crews.agent.save": object(
-    {
-      agentJson: { type: "string", minLength: 1, maxLength: 30000 },
-      expectedUpdatedAt: version,
-    },
+    { agentJson: { type: "string", minLength: 1, maxLength: 30000 }, expectedUpdatedAt: version },
     ["agentJson"],
   ),
   "crews.start": object(
@@ -245,11 +227,7 @@ export const CONVERSATION_TOOLS = {
     ["runId", "requestId", "memberId", "title", "prompt"],
   ),
   "crews.request": object(
-    {
-      runId: string,
-      requestId: string,
-      text: { type: "string", minLength: 1, maxLength: 12000 },
-    },
+    { runId: string, requestId: string, text: { type: "string", minLength: 1, maxLength: 12000 } },
     ["runId", "requestId", "text"],
   ),
   "crews.resolve": object({ runId: string, requestId: string }, ["runId", "requestId"]),
@@ -260,10 +238,7 @@ export const CONVERSATION_TOOLS = {
       targetRunId: string,
       requestId: string,
       approvalId: { type: "integer", minimum: 0 },
-      approvalOccurrenceId: {
-        type: "string",
-        pattern: APPROVAL_OCCURRENCE_PATTERN.source,
-      },
+      approvalOccurrenceId: { type: "string", pattern: APPROVAL_OCCURRENCE_PATTERN.source },
       decision: { enum: ["allow", "deny"] },
     },
     [
@@ -378,10 +353,7 @@ export const CONVERSATION_TOOLS = {
   "ui.workspace.list": object({}),
   "ui.workspace.status": object({}),
   "ui.workspace.open": object(
-    {
-      view: { enum: APP_UI_NAVIGATION_VIEWS },
-      section: { enum: APP_UI_SETTINGS },
-    },
+    { view: { enum: APP_UI_NAVIGATION_VIEWS }, section: { enum: APP_UI_SETTINGS } },
     ["view"],
   ),
   "ui.workspace.close": object({ view: { enum: APP_UI_NAVIGATION_VIEWS } }, ["view"]),
@@ -407,11 +379,7 @@ export const CONVERSATION_TOOLS = {
   "automations.list": object(pagination),
   "automations.get": object({ automationId: string }, ["automationId"]),
   "automations.create": object(
-    {
-      automationId: string,
-      ...automationFields,
-      execution: THREAD_WORK_EXECUTION_SCHEMA,
-    },
+    { automationId: string, ...automationFields, execution: THREAD_WORK_EXECUTION_SCHEMA },
     ["automationId", "name", "prompt", "scheduleKind"],
   ),
   "automations.update": object(
@@ -443,11 +411,7 @@ export const CONVERSATION_TOOLS = {
         description:
           "Required for Room provider discovery; Native credentials and saved visibility determine the account and records.",
       },
-      githubKinds: {
-        type: "array",
-        maxItems: 2,
-        items: { enum: ["issue", "pr"] },
-      },
+      githubKinds: { type: "array", maxItems: 2, items: { enum: ["issue", "pr"] } },
       assignedToMe: { type: "boolean" },
       state: { enum: ["open", "all"] },
       search: { type: "string", maxLength: 500 },
@@ -513,9 +477,7 @@ export const CONVERSATION_TOOLS = {
         description:
           "Reviewed PR head SHA. Required for merge, squash and rebase; stale heads are rejected.",
       },
-      prAction: {
-        enum: ["merge", "squash", "rebase", "draft", "ready", "close", "reopen"],
-      },
+      prAction: { enum: ["merge", "squash", "rebase", "draft", "ready", "close", "reopen"] },
     },
     ["requestId", "item", "prAction"],
   ),
@@ -554,33 +516,24 @@ export const CONVERSATION_TOOLS = {
         description:
           "Use integer coordinates in 0..20000; type text must contain 1..4096 characters, no NUL or leading hyphen. App targets: 1..256 trimmed characters, no leading hyphen or line breaks. Labels and text expectations: 1..300 nonblank characters without NUL or line breaks; expectations cannot start with a hyphen.",
         oneOf: [
-          object(
-            {
-              type: { const: "pressNode" },
-              inspectionId: string,
-              nodeId: string,
-            },
-            ["type", "inspectionId", "nodeId"],
-          ),
+          object({ type: { const: "pressNode" }, inspectionId: string, nodeId: string }, [
+            "type",
+            "inspectionId",
+            "nodeId",
+          ]),
           object({ type: { const: "home" } }, ["type"]),
           object({ type: { const: "snapshot" } }, ["type"]),
           object(
             {
               type: { const: "pressElement" },
-              label: {
-                ...string,
-                pattern: "^(?=[\\s\\S]*\\S)[^\\r\\n\\u0000]+(?![\\s\\S])",
-              },
+              label: { ...string, pattern: "^(?=[\\s\\S]*\\S)[^\\r\\n\\u0000]+(?![\\s\\S])" },
             },
             ["type", "label"],
           ),
           object(
             {
               type: { const: "waitForText" },
-              text: {
-                ...string,
-                pattern: "^(?!-)(?=[\\s\\S]*\\S)[^\\r\\n\\u0000]+(?![\\s\\S])",
-              },
+              text: { ...string, pattern: "^(?!-)(?=[\\s\\S]*\\S)[^\\r\\n\\u0000]+(?![\\s\\S])" },
               timeoutMs: { type: "integer", minimum: 1, maximum: 120000 },
             },
             ["type", "text"],
@@ -642,10 +595,7 @@ export const CONVERSATION_TOOLS = {
     ["terminalId"],
   ),
   "terminals.write": object(
-    {
-      terminalId: string,
-      data: { type: "string", minLength: 1, maxLength: 65536 },
-    },
+    { terminalId: string, data: { type: "string", minLength: 1, maxLength: 65536 } },
     ["terminalId", "data"],
   ),
   "logs.sources": object({}),
@@ -687,12 +637,7 @@ export const CONVERSATION_TOOLS = {
   ),
   "browser.preview": object(
     {
-      requestId: {
-        type: "string",
-        minLength: 1,
-        maxLength: 100,
-        pattern: "^[A-Za-z0-9_-]+$",
-      },
+      requestId: { type: "string", minLength: 1, maxLength: 100, pattern: "^[A-Za-z0-9_-]+$" },
       url: { type: "string", minLength: 1, maxLength: 4096 },
       width: { type: "integer", minimum: 240, maximum: 2560 },
       height: { type: "integer", minimum: 240, maximum: 2160 },
@@ -732,12 +677,7 @@ export const CONVERSATION_TOOLS = {
     "expectedUpdatedAt",
   ]),
   "tasks.notes.resolve": object(
-    {
-      ...task,
-      noteId: string,
-      resolved: { type: "boolean" },
-      expectedUpdatedAt: version,
-    },
+    { ...task, noteId: string, resolved: { type: "boolean" }, expectedUpdatedAt: version },
     ["taskId", "noteId", "resolved", "expectedUpdatedAt"],
   ),
   "tasks.get": object(task, ["taskId"]),
@@ -764,10 +704,7 @@ export const CONVERSATION_TOOLS = {
   ),
   "tasks.review.recheck": object(task, ["taskId"]),
   "tasks.notes.read": object(
-    {
-      ...task,
-      noteIds: { type: "array", minItems: 1, maxItems: 100, items: string },
-    },
+    { ...task, noteIds: { type: "array", minItems: 1, maxItems: 100, items: string } },
     ["taskId", "noteIds"],
   ),
   "devServers.list": object({ refresh: { type: "boolean" }, ...pagination }),
@@ -835,7 +772,6 @@ function conversationToolDescription(action: string) {
     describeVisualConversationTool(action) ??
     describeImageConversationTool(action) ??
     describeRuntimeReadConversationTool(action) ??
-    describeModelPoolConversationTool(action) ??
     describeStewardConversationTool(action) ??
     describeBrowserAnnotationTool(action) ??
     describeTaskQueueTool(action) ??
@@ -1129,10 +1065,7 @@ export async function callConversationTool(
   try {
     const response = await fetcher(`${endpoint.origin}/rpc`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify({
         version: HOST_PROTOCOL_VERSION,
         environmentId,
@@ -1224,15 +1157,9 @@ export async function runConversationMcp(
         const mime = frame?.mime ?? frame?.mimeType;
         const { base64: _base64, data: _data, ...imageMetadata } = frame ?? {};
         const metadata = annotationImage
-          ? {
-              ...result,
-              selection: { ...result.selection, screenshot: imageMetadata },
-            }
+          ? { ...result, selection: { ...result.selection, screenshot: imageMetadata } }
           : previewFrame
-            ? {
-                ...result,
-                evidence: { ...result.evidence, frame: imageMetadata },
-              }
+            ? { ...result, evidence: { ...result.evidence, frame: imageMetadata } }
             : desktopImage
               ? { ...result, screenshot: imageMetadata }
               : result?.frame

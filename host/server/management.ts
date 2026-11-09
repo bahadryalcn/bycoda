@@ -28,6 +28,7 @@ import {
   isWorkspaceManagementAction,
 } from "../conversation/conversation-workspace-management";
 import { assistantModelPoolSource } from "../conversation/conversation-model-pool-source";
+import { setQuickAutomationModelPool } from "../assistant/work/assistant-quick-automations";
 import { type HostDomainContext } from "../domains/context";
 import type { ServerBindings } from "./bindings";
 export function createManagementRuntime(
@@ -61,11 +62,7 @@ export function createManagementRuntime(
   >,
 ) {
   const approveManagementOperation = async (
-    operation: {
-      action: string;
-      input: Record<string, unknown>;
-      operationHash: string;
-    },
+    operation: { action: string; input: Record<string, unknown>; operationHash: string },
     principal: import("../execution/runtime-log-tools").RuntimeLogSubjectPrincipal,
     authorized: () => Promise<boolean>,
   ) => {
@@ -89,6 +86,7 @@ export function createManagementRuntime(
     return decision;
   };
   const modelPool = assistantModelPoolSource(dependencies.assistant);
+  setQuickAutomationModelPool(modelPool);
   const conversationThreadWork = new ConversationThreadWorkTools(
     dependencies.engine.store,
     dependencies.tasks,
@@ -132,21 +130,11 @@ export function createManagementRuntime(
       const taskRows = (await dependencies.tasks.list())
         .filter((row) => row.projectId === projectId)
         .slice(0, 100)
-        .map((row) => ({
-          kind: "task",
-          id: row.id,
-          status: row.status,
-          updatedAt: row.updatedAt,
-        }));
+        .map((row) => ({ kind: "task", id: row.id, status: row.status, updatedAt: row.updatedAt }));
       const goalRows = (await dependencies.goals.list())
         .filter((row) => row.projectIds.length === 1 && row.projectIds[0] === projectId)
         .slice(0, 100)
-        .map((row) => ({
-          kind: "goal",
-          id: row.id,
-          status: row.status,
-          updatedAt: row.updatedAt,
-        }));
+        .map((row) => ({ kind: "goal", id: row.id, status: row.status, updatedAt: row.updatedAt }));
       return [...sessions, ...taskRows, ...goalRows].sort(
         (a, b) => a.kind.localeCompare(b.kind) || a.id.localeCompare(b.id),
       );
@@ -253,12 +241,7 @@ export function createManagementRuntime(
           reviewTaskDelivery: (id) => dependencies.tasks.reviewDelivery(id),
         });
       if (action === "projects.get")
-        return {
-          id: project.id,
-          name: project.name,
-          cwd: project.cwd,
-          environmentId,
-        };
+        return { id: project.id, name: project.name, cwd: project.cwd, environmentId };
       if (["projects.browse", "projects.createDirectory", "projects.open"].includes(action)) {
         const path = await projectManagementPath(project.cwd, args.path);
         if (action === "projects.open")
@@ -273,12 +256,9 @@ export function createManagementRuntime(
         return dependencies.workspacePolicy.get({ projectId, environmentId });
       if (action === "workspaces.list")
         return managementPage(
-          (
-            await dependencies.managedWorkspaces.list({
-              projectId,
-              environmentId,
-            })
-          ).filter((row) => row.projectId === projectId),
+          (await dependencies.managedWorkspaces.list({ projectId, environmentId })).filter(
+            (row) => row.projectId === projectId,
+          ),
           args,
         );
       if (action === "workspaces.featureClaims.list")
@@ -327,14 +307,7 @@ export function createManagementRuntime(
               input: {
                 ...input,
                 id: sprintId,
-                projects: [
-                  {
-                    environmentId,
-                    projectId,
-                    cwd: project.cwd,
-                    name: project.name,
-                  },
-                ],
+                projects: [{ environmentId, projectId, cwd: project.cwd, name: project.name }],
                 capacityPoints: args.capacityPoints ?? null,
                 projectCapacities: {},
               },

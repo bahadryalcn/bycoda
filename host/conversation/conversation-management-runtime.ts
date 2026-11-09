@@ -82,9 +82,7 @@ export function runtimeStatusProjection(action: string, value: unknown, input: I
     return {
       ...pick(value, ["state"]),
       ...(raw?.progress
-        ? {
-            progress: pick(raw.progress, ["total", "done", "imported", "skipped", "failed"]),
-          }
+        ? { progress: pick(raw.progress, ["total", "done", "imported", "skipped", "failed"]) }
         : {}),
       ...(raw?.result
         ? {
@@ -101,11 +99,7 @@ export function runtimeStatusProjection(action: string, value: unknown, input: I
     };
   }
   if (action === "tunnels.status") {
-    const raw = value as {
-      environmentId?: string;
-      tunnels?: unknown[];
-      providers?: unknown[];
-    };
+    const raw = value as { environmentId?: string; tunnels?: unknown[]; providers?: unknown[] };
     const rows = Array.isArray(raw?.tunnels) ? raw.tunnels : [];
     const offset = Number(input.offset ?? 0),
       limit = Number(input.limit ?? 30);
