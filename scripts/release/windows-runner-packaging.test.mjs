@@ -146,8 +146,12 @@ test("Windows package and warm jobs require isolation, clean checkouts and nonca
     );
     assert.match(
       heavy,
-      /concurrency:[\s\S]*windows_self_hosted == 'true'[\s\S]*windows_concurrency_group[\s\S]*cancel-in-progress: false\r?\n\s+queue: max/,
+      /concurrency:[\s\S]*windows_self_hosted == 'true'[\s\S]*windows_concurrency_group[\s\S]*cancel-in-progress: false/,
     );
+    // GitHub refuses a called workflow whose jobs set concurrency.queue, so only the
+    // standalone warm job queues; the called package job waits in its group instead.
+    if (name === "package") assert(!/^\s+queue:/m.test(heavy));
+    else assert.match(heavy, /cancel-in-progress: false\r?\n\s+queue: max/);
     assert.match(heavy, /-Mode Verify -Purpose package -ExportEnvironment/);
     assert(heavy.indexOf("-Purpose package") < heavy.indexOf("uses: dtolnay/rust-toolchain@"));
     assert.match(
