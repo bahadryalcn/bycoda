@@ -139,7 +139,11 @@ for (const lang of ["en", "tr", "de", "fr", "es", "pt", "zh-CN", "ja"]) {
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
           true,
         );
-        await page.getByRole("button", { name: skillLabels.cancel, exact: true }).click();
+        // "New skill" opens a small dialog over the library; Cancel closes it and returns focus.
+        await page
+          .getByRole("dialog", { name: skillLabels.skill, exact: true })
+          .getByRole("button", { name: skillLabels.cancel, exact: true })
+          .click();
         await expect(name).toHaveCount(0);
         await expect(addSkill).toBeFocused();
 
@@ -203,8 +207,23 @@ for (const theme of ["light", "dark"])
       const scroller = page.locator("[data-settings-scroller]");
       await connections.getByRole("searchbox", { name: "Search MCP servers" }).fill("server-24");
       await expect(details).toHaveCount(1);
-      await details.locator("summary").click();
-      await expect(details.getByText(/config-24.json/)).toBeVisible();
+      // Rows no longer expand inline: the config path stays searchable and is reached from the
+      // row's actions menu (Show config / Copy config path).
+      await connections
+        .getByRole("searchbox", { name: "Search MCP servers" })
+        .fill("config-24.json");
+      await expect(details).toHaveCount(1);
+      await expect(details).toContainText("server-24");
+      await details.getByRole("button", { name: "Actions for server-24", exact: true }).click();
+      const actions = page.getByRole("menu", { name: "Actions for server-24", exact: true });
+      await expect(
+        actions.getByRole("menuitem", { name: "Show config", exact: true }),
+      ).toBeEnabled();
+      await expect(
+        actions.getByRole("menuitem", { name: "Copy config path", exact: true }),
+      ).toBeEnabled();
+      await page.keyboard.press("Escape");
+      await expect(actions).toHaveCount(0);
       expect(await scroller.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(
         true,
       );

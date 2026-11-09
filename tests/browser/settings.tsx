@@ -499,12 +499,11 @@ function Fixture() {
         worktrees: gitText("Create worktree"),
         password: t("Set lock password…"),
         account: t("Add account"),
-        skill: t("Add skill"),
+        skill: t("New skill"),
         skillName: t("Skill name"),
         cancel: t("Cancel"),
         delete: t("Delete"),
         theme: t(theme === "light" ? "Light" : "Dark"),
-        surfaceColors: t("Custom surface colors"),
       })}
     >
       {open ? (
