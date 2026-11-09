@@ -37,7 +37,8 @@ const MAX_MODELS = 30;
 
 export function costParams(value: unknown): CostParams {
   const source = value === undefined || value === null ? {} : value;
-  if (typeof source !== "object" || Array.isArray(source)) throw new Error("Invalid usage cost request");
+  if (typeof source !== "object" || Array.isArray(source))
+    throw new Error("Invalid usage cost request");
   const { days = 30, utcOffsetMinutes = 0 } = source as Record<string, unknown>;
   if (
     typeof days !== "number" ||
@@ -52,13 +53,22 @@ export function costParams(value: unknown): CostParams {
   return { days, utcOffsetMinutes };
 }
 
-const dayIndex = (ms: number, offsetMinutes: number) => Math.floor((ms + offsetMinutes * 60_000) / DAY_MS);
+const dayIndex = (ms: number, offsetMinutes: number) =>
+  Math.floor((ms + offsetMinutes * 60_000) / DAY_MS);
+// ast-grep-ignore: ts-date-toisostring-unguarded -- index is a finite day number from dayIndex, so the date is always valid
 const dayKey = (index: number) => new Date(index * DAY_MS).toISOString().slice(0, 10);
-const projectLabel = (path: string) => path.split(/[\\/]+/).filter(Boolean).pop() ?? "";
+const projectLabel = (path: string) =>
+  path
+    .split(/[\\/]+/)
+    .filter(Boolean)
+    .pop() ?? "";
 
 /** The first local day in range, as UTC ms. */
 export function windowStart(now: number, params: CostParams): number {
-  return (dayIndex(now, params.utcOffsetMinutes) - params.days + 1) * DAY_MS - params.utcOffsetMinutes * 60_000;
+  return (
+    (dayIndex(now, params.utcOffsetMinutes) - params.days + 1) * DAY_MS -
+    params.utcOffsetMinutes * 60_000
+  );
 }
 
 const add = (line: CostLine, cost: number | null, tokens: number) => {
@@ -73,7 +83,9 @@ export function aggregateCost(
   now: number,
   params: CostParams,
   pricing: UsagePricing,
-  meta: Pick<CostReport["coverage"], "pricing" | "filesScanned" | "truncated"> & { environmentId: string },
+  meta: Pick<CostReport["coverage"], "pricing" | "filesScanned" | "truncated"> & {
+    environmentId: string;
+  },
 ): CostReport {
   const startMs = windowStart(now, params);
   const today = dayIndex(now, params.utcOffsetMinutes);
@@ -83,7 +95,10 @@ export function aggregateCost(
     tokens: 0,
   }));
   const providers = new Map<Provider, CostLine & { provider: Provider }>();
-  const models = new Map<string, CostLine & { provider: Provider; model: string; priced: boolean }>();
+  const models = new Map<
+    string,
+    CostLine & { provider: Provider; model: string; priced: boolean }
+  >();
   const projects = new Map<string, CostLine & { label: string }>();
   const unpriced = new Set<string>();
   for (const { provider, request } of requests) {
@@ -95,15 +110,32 @@ export function aggregateCost(
     const tokens = rowTokens(row);
     if (cost === null) unpriced.add(request.model);
     add(bucket, cost, tokens);
-    add(providers.get(provider) ?? providers.set(provider, { provider, costUsd: 0, tokens: 0 }).get(provider)!, cost, tokens);
+    add(
+      providers.get(provider) ??
+        providers.set(provider, { provider, costUsd: 0, tokens: 0 }).get(provider)!,
+      cost,
+      tokens,
+    );
     const modelKey = `${provider}:${request.model}`;
     const model =
       models.get(modelKey) ??
-      models.set(modelKey, { provider, model: request.model, priced: cost !== null, costUsd: 0, tokens: 0 }).get(modelKey)!;
+      models
+        .set(modelKey, {
+          provider,
+          model: request.model,
+          priced: cost !== null,
+          costUsd: 0,
+          tokens: 0,
+        })
+        .get(modelKey)!;
     add(model, cost, tokens);
     // Paths stay on the Host; only the folder name leaves it.
     const label = projectLabel(request.project);
-    add(projects.get(label) ?? projects.set(label, { label, costUsd: 0, tokens: 0 }).get(label)!, cost, tokens);
+    add(
+      projects.get(label) ?? projects.set(label, { label, costUsd: 0, tokens: 0 }).get(label)!,
+      cost,
+      tokens,
+    );
   }
   const round = <T extends CostLine>(line: T): T => ({ ...line, costUsd: money(line.costUsd) });
   return {
@@ -141,7 +173,8 @@ async function listPrices(now: number): Promise<ModelPrice[] | null> {
     if (!response.ok) throw new Error("price list unavailable");
     const body = (await response.json()) as { data?: unknown };
     const price = (value: unknown): number | null => {
-      const parsed = typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
+      const parsed =
+        typeof value === "string" ? Number(value) : typeof value === "number" ? value : NaN;
       return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
     };
     const models: ModelPrice[] = [];
@@ -173,5 +206,8 @@ async function listPrices(now: number): Promise<ModelPrice[] | null> {
 
 export async function loadPricing(now: number) {
   const models = await listPrices(now);
-  return { pricing: createUsagePricing(models ?? []), source: models ? ("list-prices" as const) : ("built-in" as const) };
+  return {
+    pricing: createUsagePricing(models ?? []),
+    source: models ? ("list-prices" as const) : ("built-in" as const),
+  };
 }

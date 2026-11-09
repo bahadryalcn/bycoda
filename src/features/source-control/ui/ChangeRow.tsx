@@ -126,6 +126,7 @@ export const ChangeRow = memo(function ChangeRow({
     >
       <ActionHost
         selected={selected}
+        hoverReveal
         style={tree ? { paddingLeft: 8 + depth * 12 } : undefined}
         className={`flex h-(--ui-control-height-compact) w-full items-center gap-1 pr-2 leading-none ${
           tree ? "" : "pl-2"
@@ -171,9 +172,18 @@ export const ChangeRow = memo(function ChangeRow({
             ) : null}
           </span>
         </Button>
-        {
+        {busy ? <WorkingIndicator label={t("Working")} /> : null}
+        {/* Counts and status sit at the row end and yield to the actions on hover, keyboard
+            focus or an open menu; they are as wide as the action slot so the actions never
+            cover the file name. Discard shares the menu's selection scope and confirmation path. */}
+        <span
+          data-action-yield=""
+          className={`flex shrink-0 items-center justify-end gap-1.5 text-ui-micro font-medium tabular-nums ${
+            kind === "unstaged" ? "pointer-fine:w-17" : "pointer-fine:w-11"
+          }`}
+        >
           <span
-            className="flex shrink-0 items-center gap-1.5 text-ui-micro font-medium tabular-nums"
+            className="flex items-center gap-1.5"
             title={t("{p0} lines added, {p1} lines removed", {
               p0: file.additions,
               p1: file.deletions,
@@ -186,53 +196,40 @@ export const ChangeRow = memo(function ChangeRow({
               <span className="text-diff-del-fg">-{file.deletions}</span>
             ) : null}
           </span>
-        }
-        <span
-          title={statusLabel(file.status)}
-          className={`w-3.5 shrink-0 text-center font-mono text-ui-micro font-medium ${statusColor(file.status)}`}
-        >
-          {statusLetter(file.status)}
+          <span
+            title={statusLabel(file.status)}
+            className={`w-3.5 text-center font-mono ${statusColor(file.status)}`}
+          >
+            {statusLetter(file.status)}
+          </span>
         </span>
-        {/* Reserve action slots so hover/focus never shifts the file name or counts.
-            Discard shares the menu's selection scope and confirmation path. */}
-        {kind === "unstaged" ? (
-          <div className="flex size-5 shrink-0 items-center justify-center">
-            {!busy ? (
-              <InlineAction label={t("Discard Changes")} onClick={() => perform("discard")}>
-                <Undo2 className="icon-sm" strokeWidth={1.75} />
-              </InlineAction>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="flex size-5 shrink-0 items-center justify-center">
-          {busy ? (
-            <WorkingIndicator label={t("Working")} />
-          ) : kind === "staged" ? (
-            <InlineAction
-              label={t("Unstage Changes")}
-              disabled={busy}
-              onClick={() => perform("unstage")}
-            >
+        <div
+          data-action-slot="collapse"
+          className="flex shrink-0 items-center gap-1 pointer-fine:pr-2"
+        >
+          {kind === "unstaged" && !busy ? (
+            <InlineAction label={t("Discard Changes")} onClick={() => perform("discard")}>
+              <Undo2 className="icon-sm" strokeWidth={1.75} />
+            </InlineAction>
+          ) : null}
+          {busy ? null : kind === "staged" ? (
+            <InlineAction label={t("Unstage Changes")} onClick={() => perform("unstage")}>
               <Minus className="icon-sm" strokeWidth={1.75} />
             </InlineAction>
           ) : (
-            <InlineAction
-              label={t("Stage Changes")}
-              disabled={busy}
-              onClick={() => perform("stage")}
-            >
+            <InlineAction label={t("Stage Changes")} onClick={() => perform("stage")}>
               <Plus className="icon-sm" strokeWidth={1.75} />
             </InlineAction>
           )}
+          <InlineMoreAction
+            label={t("Actions for {p0}", { p0: file.relative })}
+            expanded={menuOpen}
+            onOpen={(anchor) => {
+              selection?.select(file.path, {}, true);
+              openFrom(anchor);
+            }}
+          />
         </div>
-        <InlineMoreAction
-          label={t("Actions for {p0}", { p0: file.relative })}
-          expanded={menuOpen}
-          onOpen={(anchor) => {
-            selection?.select(file.path, {}, true);
-            openFrom(anchor);
-          }}
-        />
       </ActionHost>
       {menu}
     </li>

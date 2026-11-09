@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type MutableRefObject } from "react";
-import { startProviderAccountHostSync } from "../../../features/providers/public/providerAccounts";
+import { startProviderAccountHostSync } from "../../../features/providers/public/providerAccountHostSync";
 import {
   sessionsRef,
   setSessions,

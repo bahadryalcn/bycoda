@@ -1,11 +1,4 @@
-import {
-  readFile,
-  readdir,
-  realpath,
-  stat,
-  symlink,
-  lstat,
-} from "node:fs/promises";
+import { readFile, readdir, realpath, stat, symlink, lstat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { desktopDatabasePaths } from "../desktop/desktopSessions";
@@ -24,11 +17,7 @@ const PROFILES = {
     // Claude scopes its config and its macOS Keychain credential to these
     // exact strings; the desktop sets both to the same profile directory.
     set: ["CLAUDE_CONFIG_DIR", "CLAUDE_SECURESTORAGE_CONFIG_DIR"],
-    remove: [
-      "ANTHROPIC_API_KEY",
-      "ANTHROPIC_AUTH_TOKEN",
-      "CLAUDE_CODE_OAUTH_TOKEN",
-    ],
+    remove: ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"],
   },
   codex: {
     label: "Codex",
@@ -65,17 +54,13 @@ export async function hostProviderAccounts(
       const entries = await readdir(join(root, "provider-accounts", provider), {
         withFileTypes: true,
       }).catch(() => []);
-      for (const entry of entries.sort((a, b) =>
-        a.name.localeCompare(b.name),
-      )) {
+      for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
         if (ids.size >= MAX_CATALOG_ACCOUNTS) break;
         if (
           entry.name !== DEFAULT_ACCOUNT_ID &&
           !entry.name.startsWith(TERMINAL_PREFIX) &&
           ACCOUNT_ID.test(entry.name) &&
-          (await isDirectory(
-            join(root, "provider-accounts", provider, entry.name),
-          ))
+          (await isDirectory(join(root, "provider-accounts", provider, entry.name)))
         )
           ids.add(entry.name);
       }
@@ -88,9 +73,7 @@ export async function hostProviderAccounts(
           if (value && typeof value === "object" && !Array.isArray(value)) {
             for (const key of Object.keys(value).sort()) {
               if (ids.size >= MAX_CATALOG_ACCOUNTS) break;
-              const id = key.startsWith(`${provider}:`)
-                ? key.slice(provider.length + 1)
-                : "";
+              const id = key.startsWith(`${provider}:`) ? key.slice(provider.length + 1) : "";
               const path = (value as Record<string, unknown>)[key];
               if (
                 id.startsWith(TERMINAL_PREFIX) &&
@@ -144,15 +127,10 @@ async function isDirectory(path: string): Promise<boolean> {
 }
 
 async function terminalProfile(root: string, provider: string, id: string) {
-  const raw = await readFile(
-    join(root, "terminal-profiles.json"),
-    "utf8",
-  ).catch(() => null);
+  const raw = await readFile(join(root, "terminal-profiles.json"), "utf8").catch(() => null);
   if (!raw) return null;
   try {
-    const path = (JSON.parse(raw) as Record<string, unknown>)[
-      `${provider}:${id}`
-    ];
+    const path = (JSON.parse(raw) as Record<string, unknown>)[`${provider}:${id}`];
     return typeof path === "string" && (await isDirectory(path)) ? path : null;
   } catch {
     return null;
@@ -178,18 +156,13 @@ export async function providerAccountDir(
 async function linkSharedAgents(shared: string, dir: string): Promise<void> {
   const source = join(shared, "agents");
   const link = join(dir, "agents");
-  if (!(await isDirectory(source)) || (await lstat(link).catch(() => null)))
-    return;
+  if (!(await isDirectory(source)) || (await lstat(link).catch(() => null))) return;
   const [a, b] = await Promise.all([
     realpath(shared).catch(() => shared),
     realpath(dir).catch(() => dir),
   ]);
   if (a === b) return;
-  await symlink(
-    source,
-    link,
-    process.platform === "win32" ? "junction" : "dir",
-  ).catch((error) =>
+  await symlink(source, link, process.platform === "win32" ? "junction" : "dir").catch((error) =>
     console.warn(`[host] could not share ${source} with ${link}:`, error),
   );
 }
@@ -208,11 +181,8 @@ export async function providerAccountEnvironment(
   if (!id || id === DEFAULT_ACCOUNT_ID) return null;
   const provider = account?.provider;
   if (provider !== "claude" && provider !== "codex")
-    throw new Error(
-      "Provider account profiles are not supported for this provider",
-    );
-  if (!/^[A-Za-z0-9_-]{1,80}$/.test(id))
-    throw new Error("Invalid provider account id");
+    throw new Error("Provider account profiles are not supported for this provider");
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(id)) throw new Error("Invalid provider account id");
   const profile = PROFILES[provider];
   const dir = await providerAccountDir(provider, id, roots);
   if (!dir)

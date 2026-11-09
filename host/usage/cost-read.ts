@@ -1,4 +1,10 @@
-import { aggregateCost, loadPricing, windowStart, type CostParams, type CostReport } from "./cost-report";
+import {
+  aggregateCost,
+  loadPricing,
+  windowStart,
+  type CostParams,
+  type CostReport,
+} from "./cost-report";
 import { scanLogs, type LogRequest, type Provider } from "./cost-scan";
 
 export type CostDeps = {

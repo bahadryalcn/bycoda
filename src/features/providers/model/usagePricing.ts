@@ -14,7 +14,6 @@ export type UsageRow = {
   output: number;
 };
 
-
 /** US dollars per million tokens. */
 type Rate = {
   input: number;

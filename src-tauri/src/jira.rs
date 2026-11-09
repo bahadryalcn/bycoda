@@ -290,6 +290,7 @@ fn jira_authorization(config: &JiraConfig) -> String {
     crate::integrations::http::basic_authorization(config.email.trim(), config.token.trim())
 }
 
+#[allow(clippy::result_large_err)] // ureq::Error is the library's own result type; boxing it here gains nothing.
 fn jira_get(config: &JiraConfig, path: &str) -> Result<Value, String> {
     let agent = crate::integrations::http::agent(HTTP_TIMEOUT, None);
     let result = retry_transport(true, || {
@@ -302,6 +303,7 @@ fn jira_get(config: &JiraConfig, path: &str) -> Result<Value, String> {
     read_jira_response(result)
 }
 
+#[allow(clippy::result_large_err)] // ureq::Error is the library's own result type; boxing it here gains nothing.
 fn jira_post(config: &JiraConfig, path: &str, body: &Value) -> Result<Value, String> {
     let agent = crate::integrations::http::agent(HTTP_TIMEOUT, None);
     let payload = serde_json::to_string(body).map_err(|error| error.to_string())?;
@@ -329,6 +331,7 @@ fn transport_retryable(kind: ureq::ErrorKind, idempotent: bool) -> bool {
 
 /// A cold connection (DNS, TLS, a sleeping network) often fails once and works at once after:
 /// retry transport failures quietly so the first load does not surface "Could not reach Jira".
+#[allow(clippy::result_large_err)] // ureq::Error is the library's own result type; boxing it here gains nothing.
 fn retry_transport(
     idempotent: bool,
     attempt: impl Fn() -> Result<ureq::Response, ureq::Error>,
@@ -986,7 +989,10 @@ mod tests {
     fn transport_retry_never_repeats_a_possibly_applied_write() {
         assert!(transport_retryable(ureq::ErrorKind::Io, true));
         assert!(!transport_retryable(ureq::ErrorKind::Io, false));
-        assert!(transport_retryable(ureq::ErrorKind::ConnectionFailed, false));
+        assert!(transport_retryable(
+            ureq::ErrorKind::ConnectionFailed,
+            false
+        ));
         assert!(transport_retryable(ureq::ErrorKind::Dns, false));
     }
 

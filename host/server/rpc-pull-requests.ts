@@ -31,7 +31,10 @@ export async function handlePullRequestsRpc(
       break;
     case "pullRequests.unlink":
       request.result = {
-        removed: await dependencies.pullRequestWatch.unwatch(sessionId, id(params.watchId, "watchId")),
+        removed: await dependencies.pullRequestWatch.unwatch(
+          sessionId,
+          id(params.watchId, "watchId"),
+        ),
       };
       break;
     case "pullRequests.linked":

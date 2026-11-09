@@ -7,10 +7,7 @@ import type {
   AgentModel,
   LinkedWorkItem,
 } from "../../sessions";
-import type {
-  BuildIdentity,
-  WorkspaceCapability,
-} from "../../workspaces/model/contracts";
+import type { BuildIdentity, WorkspaceCapability } from "../../workspaces/model/contracts";
 export type {
   ManagedWorkspace,
   WorkspacePolicy,
@@ -31,10 +28,7 @@ export const HOST_PROTOCOL_VERSION = 1;
  * Tells the reader which side to update. `host` is the protocol the Host serves,
  * `client` the one this app speaks. Returns null when they match.
  */
-export function protocolMismatchMessage(
-  host: unknown,
-  client: number,
-): string | null {
+export function protocolMismatchMessage(host: unknown, client: number): string | null {
   if (host === client) return null;
   if (typeof host === "number" && Number.isInteger(host) && host > client)
     return "This Host speaks a newer protocol. Update this app to connect.";
@@ -100,9 +94,7 @@ export function requireWorkspaceCapability(
   capability: WorkspaceCapability = "workspaces.managed.v1",
 ): void {
   if (!host?.capabilities.includes(capability))
-    throw new Error(
-      "Update the execution Host to use managed workspaces. No work was started.",
-    );
+    throw new Error("Update the execution Host to use managed workspaces. No work was started.");
 }
 export type HostProject = {
   id: string;
@@ -170,9 +162,7 @@ export type HostDirectory = {
   entries: { name: string; path: string }[];
 };
 export type HostModelCatalog = {
-  accounts?: Partial<
-    Record<"codex" | "claude", { id: string; label: string; color?: string }[]>
-  >;
+  accounts?: Partial<Record<"codex" | "claude", { id: string; label: string; color?: string }[]>>;
   models: Partial<Record<RemoteProvider, AgentModel[]>>;
   errors: Partial<Record<RemoteProvider, string>>;
   /** Providers still being discovered; available models remain usable. */
@@ -228,10 +218,7 @@ export type HostSession = {
     base?: import("../../sync/model/conversationHead").ConversationHead;
   };
 };
-export type HostSessionSummary = Omit<
-  HostSession,
-  "session" | "blockRevisions" | "desktop"
-> & {
+export type HostSessionSummary = Omit<HostSession, "session" | "blockRevisions" | "desktop"> & {
   providerHistory?: import("../../sessions").SessionProviderHistory;
   /** Validated parent link; null marks an ordinary conversation. */
   delegationParent?:
@@ -304,28 +291,18 @@ export type SessionSyncChunk = { data: string };
 export type SessionSyncResponse = SessionSync | SessionSyncTransfer;
 
 /** Throws when the delta does not apply to `known`; request a snapshot then. */
-export function applySessionSync(
-  known: HostSession | undefined,
-  sync: SessionSync,
-): HostSession {
+export function applySessionSync(known: HostSession | undefined, sync: SessionSync): HostSession {
   if (sync.kind === "snapshot") return sync.value;
-  const sourceEpoch =
-    sync.kind === "delta" ? sync.value.sourceEpoch : sync.sourceEpoch;
-  if (known?.sourceEpoch !== sourceEpoch)
-    throw new Error("Session sync source changed");
-  if (
-    !known ||
-    known.revision !== (sync.kind === "delta" ? sync.base : sync.revision)
-  )
+  const sourceEpoch = sync.kind === "delta" ? sync.value.sourceEpoch : sync.sourceEpoch;
+  if (known?.sourceEpoch !== sourceEpoch) throw new Error("Session sync source changed");
+  if (!known || known.revision !== (sync.kind === "delta" ? sync.base : sync.revision))
     throw new Error("Session sync base does not match");
   if (sync.kind === "unchanged") return known;
   if (sync.partial && !known.history)
     throw new Error("Partial session sync requires a history window");
   if (known.history && !sync.partial)
     throw new Error("Full delta cannot replace a partial history window");
-  const blocks = new Map(
-    known.session.blocks.map((block) => [block.id, block]),
-  );
+  const blocks = new Map(known.session.blocks.map((block) => [block.id, block]));
   for (const block of sync.blocks) blocks.set(block.id, block);
   return {
     ...sync.value,
@@ -336,8 +313,7 @@ export function applySessionSync(
         if (!block) throw new Error("Session sync is missing a block");
         // The full-content endpoint pins the whole session revision, including
         // status-only changes that did not replace this block's preview.
-        return block.remoteContent &&
-          block.remoteContent.revision !== sync.value.revision
+        return block.remoteContent && block.remoteContent.revision !== sync.value.revision
           ? {
               ...block,
               remoteContent: {
@@ -593,10 +569,7 @@ export type SshSetup = {
 };
 
 export function isRemoteProvider(value: unknown): value is RemoteProvider {
-  return (
-    typeof value === "string" &&
-    REMOTE_PROVIDERS.some((provider) => provider === value)
-  );
+  return typeof value === "string" && REMOTE_PROVIDERS.some((provider) => provider === value);
 }
 
 /**
@@ -604,28 +577,17 @@ export function isRemoteProvider(value: unknown): value is RemoteProvider {
  * provider this app has never heard of is still reachable; the unknown provider
  * is simply not offered. Returns undefined when the value is not a list.
  */
-export function knownRemoteProviders(
-  value: unknown,
-): RemoteProvider[] | undefined {
+export function knownRemoteProviders(value: unknown): RemoteProvider[] | undefined {
   if (!Array.isArray(value)) return undefined;
   return value.filter(isRemoteProvider);
 }
 
 export function requireHostDescriptor(value: HostDescriptor): HostDescriptor {
-  const mismatch = protocolMismatchMessage(
-    value?.protocolVersion,
-    HOST_PROTOCOL_VERSION,
-  );
+  const mismatch = protocolMismatchMessage(value?.protocolVersion, HOST_PROTOCOL_VERSION);
   if (mismatch) throw new Error(mismatch);
   const providers = knownRemoteProviders(value.providers);
-  if (
-    typeof value.environmentId !== "string" ||
-    !value.environmentId ||
-    !providers
-  ) {
+  if (typeof value.environmentId !== "string" || !value.environmentId || !providers) {
     throw new Error("This machine is running an incompatible bycoda Host");
   }
-  return providers.length === value.providers.length
-    ? value
-    : { ...value, providers };
+  return providers.length === value.providers.length ? value : { ...value, providers };
 }

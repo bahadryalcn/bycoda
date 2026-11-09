@@ -10,18 +10,38 @@ const DAY = 86_400_000;
 
 it("marks a window ahead, on or behind pace against the clock", () => {
   // 4.5 of 7 days remain (64% of the time) while 37% is left: spending too fast.
-  const ahead = windowReading({ usedPercent: 63, windowMinutes: week, resetsAt: at(4.5 * DAY) }, NOW);
-  expect(ahead).toMatchObject({ leftPercent: 37, regainPercent: 63, pace: "ahead", timeLeftPercent: 64.3 });
-  expect(windowReading({ usedPercent: 36, windowMinutes: week, resetsAt: at(4.5 * DAY) }, NOW).pace).toBe("on");
-  expect(windowReading({ usedPercent: 10, windowMinutes: week, resetsAt: at(4.5 * DAY) }, NOW).pace).toBe("behind");
+  const ahead = windowReading(
+    { usedPercent: 63, windowMinutes: week, resetsAt: at(4.5 * DAY) },
+    NOW,
+  );
+  expect(ahead).toMatchObject({
+    leftPercent: 37,
+    regainPercent: 63,
+    pace: "ahead",
+    timeLeftPercent: 64.3,
+  });
+  expect(
+    windowReading({ usedPercent: 36, windowMinutes: week, resetsAt: at(4.5 * DAY) }, NOW).pace,
+  ).toBe("on");
+  expect(
+    windowReading({ usedPercent: 10, windowMinutes: week, resetsAt: at(4.5 * DAY) }, NOW).pace,
+  ).toBe("behind");
   // The tolerance edge counts as on pace.
-  expect(windowReading({ usedPercent: 40.7, windowMinutes: week, resetsAt: at(4.5 * DAY) }, NOW).pace).toBe("on");
+  expect(
+    windowReading({ usedPercent: 40.7, windowMinutes: week, resetsAt: at(4.5 * DAY) }, NOW).pace,
+  ).toBe("on");
 });
 
 it("gives no pace without a live reset time and clamps percentages", () => {
-  expect(windowReading({ usedPercent: 50, windowMinutes: week, resetsAt: null }, NOW).pace).toBeNull();
-  expect(windowReading({ usedPercent: 50, windowMinutes: week, resetsAt: NOW - 1 }, NOW).pace).toBeNull();
-  expect(windowReading({ usedPercent: 140, windowMinutes: 300, resetsAt: at(1000) }, NOW)).toMatchObject({
+  expect(
+    windowReading({ usedPercent: 50, windowMinutes: week, resetsAt: null }, NOW).pace,
+  ).toBeNull();
+  expect(
+    windowReading({ usedPercent: 50, windowMinutes: week, resetsAt: NOW - 1 }, NOW).pace,
+  ).toBeNull();
+  expect(
+    windowReading({ usedPercent: 140, windowMinutes: 300, resetsAt: at(1000) }, NOW),
+  ).toMatchObject({
     usedPercent: 100,
     leftPercent: 0,
   });
@@ -87,9 +107,21 @@ it("groups accounts into one card per window, best headroom first, and survives 
         limits: {
           resetCredits: null,
           windows: [
-            { key: "weekly", kind: "weekly", model: null, window: { usedPercent: used, windowMinutes: week, resetsAt: at(4.5 * DAY) } },
+            {
+              key: "weekly",
+              kind: "weekly",
+              model: null,
+              window: { usedPercent: used, windowMinutes: week, resetsAt: at(4.5 * DAY) },
+            },
             ...(id === "a2"
-              ? [{ key: "weekly:fable", kind: "weekly" as const, model: "Fable", window: { usedPercent: 37, windowMinutes: week, resetsAt: at(4.5 * DAY) } }]
+              ? [
+                  {
+                    key: "weekly:fable",
+                    kind: "weekly" as const,
+                    model: "Fable",
+                    window: { usedPercent: 37, windowMinutes: week, resetsAt: at(4.5 * DAY) },
+                  },
+                ]
               : []),
           ],
         },

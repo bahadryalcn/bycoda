@@ -2,18 +2,9 @@ import { ModelsListParamsSchema } from "../../../src/shared/model/host-contracts
 import { assertDomainAuthority, type HostDomainContext } from "../context";
 
 export interface ModelsPorts {
-  read(
-    projectId: unknown,
-    progressive: boolean,
-    refresh: boolean,
-  ): Promise<object>;
+  read(projectId: unknown, progressive: boolean, refresh: boolean): Promise<object>;
   accounts(): Promise<
-    Partial<
-      Record<
-        "codex" | "claude",
-        Array<{ id: string; label: string; color?: string }>
-      >
-    >
+    Partial<Record<"codex" | "claude", Array<{ id: string; label: string; color?: string }>>>
   >;
   providers: readonly string[];
 }
@@ -40,9 +31,7 @@ export function createModelsService(ports: ModelsPorts) {
       return {
         ...catalog,
         accounts: Object.fromEntries(
-          Object.entries(accounts).filter(([provider]) =>
-            ports.providers.includes(provider),
-          ),
+          Object.entries(accounts).filter(([provider]) => ports.providers.includes(provider)),
         ),
       };
     },
