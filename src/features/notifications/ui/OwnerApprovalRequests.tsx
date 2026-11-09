@@ -1,13 +1,16 @@
-import { useEffect, useSyncExternalStore, type ReactNode } from "react";
+import { useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
 import { Button } from "../../../shared/ui/Button";
 import { ConfirmDialog } from "../../../shared/ui/ConfirmDialog";
+import { Modal, ModalActions } from "../../../shared/ui/Modal";
+import { InboxApprovalPreview } from "./InboxApprovalPreview";
 import {
   hasOwnerApprovalChat,
   ownerApprovalsSnapshot,
   registerOwnerApprovalChat,
   settleOwnerApproval,
   subscribeOwnerApprovals,
+  type OwnerApproval,
 } from "../model/ownerApprovals";
 import { ownerSecretInputsSnapshot, subscribeOwnerSecretInputs } from "../model/ownerSecretInputs";
 import { OwnerSecretDialog, OwnerSecretForm } from "./OwnerSecretInput";
@@ -37,6 +40,7 @@ export function OwnerApprovalChat({
     () => (visible && sessionId ? registerOwnerApprovalChat(sessionId) : undefined),
     [sessionId, visible],
   );
+  const [reviewing, setReviewing] = useState<string | null>(null);
   return (
     <>
       {children}
@@ -51,17 +55,31 @@ export function OwnerApprovalChat({
               className="shrink-0 border-t border-(--ui-pane-border) px-4 py-3"
             >
               <strong className="text-ui-body">{request.title}</strong>
-              <pre className="my-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
-                {request.message}
-              </pre>
+              {request.inbox ? (
+                <div className="my-2 max-h-64 overflow-auto">
+                  <InboxApprovalPreview details={request.inbox} message={request.message} />
+                </div>
+              ) : (
+                <pre className="my-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-ui-caption text-(--ui-text-secondary)">
+                  {request.message}
+                </pre>
+              )}
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={() => settleOwnerApproval(request.id, false)}>
                   {t(request.cancelLabel)}
                 </Button>
+                {request.inbox ? (
+                  <Button variant="secondary" onClick={() => setReviewing(request.id)}>
+                    {t("Review")}
+                  </Button>
+                ) : null}
                 <Button onClick={() => settleOwnerApproval(request.id, true)}>
                   {t(request.confirmLabel)}
                 </Button>
               </div>
+              {reviewing === request.id ? (
+                <InboxApprovalDialog request={request} onClose={() => setReviewing(null)} />
+              ) : null}
             </section>
           ))}
       {visible &&
@@ -93,6 +111,14 @@ export function OwnerApprovalInbox() {
   const secret = secrets.find((request) => !hasOwnerApprovalChat(request.sessionId));
   if (secret) return <OwnerSecretDialog key={secret.id} request={secret} />;
   const request = requests.find((request) => !hasOwnerApprovalChat(request.sessionId));
+  if (request?.inbox)
+    return (
+      <InboxApprovalDialog
+        key={request.id}
+        request={request}
+        onClose={() => settleOwnerApproval(request.id, false)}
+      />
+    );
   return request ? (
     <ConfirmDialog
       key={request.id}
@@ -106,4 +132,37 @@ export function OwnerApprovalInbox() {
       onSettle={(approved) => settleOwnerApproval(request.id, approved)}
     />
   ) : null;
+}
+
+/** Full-size Inbox approval; closing it from the chat only returns to the inline request. */
+function InboxApprovalDialog({
+  request,
+  onClose,
+}: {
+  request: OwnerApproval;
+  onClose: () => void;
+}) {
+  const t = useT();
+  return (
+    <Modal
+      size="lg"
+      fitViewport
+      title={request.title}
+      onClose={onClose}
+      footer={
+        <ModalActions>
+          <Button variant="ghost" onClick={() => settleOwnerApproval(request.id, false)}>
+            {t(request.cancelLabel)}
+          </Button>
+          <Button variant="primary" onClick={() => settleOwnerApproval(request.id, true)}>
+            {t(request.confirmLabel)}
+          </Button>
+        </ModalActions>
+      }
+    >
+      {request.inbox ? (
+        <InboxApprovalPreview details={request.inbox} message={request.message} />
+      ) : null}
+    </Modal>
+  );
 }

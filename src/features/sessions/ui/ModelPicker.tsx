@@ -179,8 +179,7 @@ export function ModelPicker({
   );
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<ModelPickerTab>(harness);
-  // The highlighted model row is kept by identity (reset on open, query and submenu entry), so a
-  // catalog refresh that reorders or regrows the list cannot move it onto another model.
+  // The highlighted row is kept by identity, so a catalog refresh cannot move it to another model.
   const [activeModelKey, setActiveModelKey] = useState<string | null>(null);
   const [seenOpenRequest, setSeenOpenRequest] = useState(0);
   const [recentMenu, setRecentMenu] = useState<RecentMenu | null>(null);
@@ -732,6 +731,7 @@ export function ModelPicker({
         <ModelPanel
           anchor={button}
           side={field ? "bottom" : "top"}
+          project={project}
           onDismiss={(reason) => dismiss(reason === "escape")}
           browser={{
             harnesses: pickerHarnesses,

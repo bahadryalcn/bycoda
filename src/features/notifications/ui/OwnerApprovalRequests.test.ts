@@ -83,3 +83,100 @@ it("keeps global consent out of a transcript without an original session identit
     await act(async () => root.unmount());
   }
 });
+
+it("shows an Inbox review as its line comments in a dialog the owner can approve", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const root = createRoot(element);
+  let answer!: Promise<boolean>;
+  try {
+    await act(async () => root.render(createElement(OwnerApprovalInbox)));
+    await act(async () => {
+      answer = requestOwnerApproval({
+        id: "inbox-review",
+        sessionId: "hidden",
+        input: {
+          title: "Inbox operation approval",
+          message: "Exact native text",
+          confirmLabel: "Approve this operation",
+          cancelLabel: "Cancel",
+          deadline: Date.now() + 60_000,
+          details: {
+            kind: "inbox",
+            action: "review",
+            project: "/repo",
+            provider: "github",
+            target: "acme/app #12",
+            review: {
+              event: "COMMENT",
+              commitId: "a".repeat(40),
+              body: "Summary",
+              comments: [
+                { path: "src/chart.tsx", line: 57, side: "RIGHT", body: "Tolerance mismatch" },
+              ],
+            },
+          },
+        },
+      });
+    });
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(dialog.querySelector('[aria-label="Line comments"]')?.textContent).toContain(
+      "Tolerance mismatch",
+    );
+    expect(dialog.textContent).toContain("L57");
+    await act(async () => {
+      [...dialog.querySelectorAll("button")]
+        .find((button) => button.textContent === "Approve this operation")!
+        .click();
+    });
+    expect(await answer).toBe(true);
+  } finally {
+    for (const request of ownerApprovalsSnapshot()) settleOwnerApproval(request.id, false);
+    await act(async () => root.unmount());
+    element.remove();
+  }
+});
+
+it("approves an Inbox request from the chat directly, with Review opening the full view", async () => {
+  const element = document.createElement("div");
+  document.body.append(element);
+  const root = createRoot(element);
+  let answer!: Promise<boolean>;
+  try {
+    await act(async () =>
+      root.render(createElement(OwnerApprovalChat, { sessionId: "chat", children: "Chat" })),
+    );
+    await act(async () => {
+      answer = requestOwnerApproval({
+        id: "inline-inbox",
+        sessionId: "chat",
+        input: {
+          title: "Inbox operation approval",
+          message: "Exact native text",
+          confirmLabel: "Approve this operation",
+          cancelLabel: "Cancel",
+          deadline: Date.now() + 60_000,
+          details: {
+            kind: "inbox",
+            action: "comment",
+            project: "/repo",
+            provider: "github",
+            target: "acme/app #12",
+            body: "Thanks",
+          },
+        },
+      });
+    });
+    const button = (label: string) =>
+      [...document.querySelectorAll("button")].filter((item) => item.textContent === label);
+    await act(async () => button("Review")[0]!.click());
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull();
+    await act(async () => button("Approve this operation")[0]!.click());
+    expect(await answer).toBe(true);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+  } finally {
+    for (const request of ownerApprovalsSnapshot()) settleOwnerApproval(request.id, false);
+    await act(async () => root.unmount());
+    element.remove();
+  }
+});

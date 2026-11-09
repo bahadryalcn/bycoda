@@ -1,4 +1,8 @@
 import { pathKey } from "../../../shared/lib/paths";
+import {
+  providerAccounts,
+  supportsProviderAccounts,
+} from "../../providers/public/providerAccounts";
 import type { HarnessId, RuntimeMode } from "./session";
 
 /**
@@ -16,6 +20,8 @@ export const PROJECT_PROVIDERS_CHANGE_EVENT = "bycoda:project-providers-change";
 export type ProjectProviderSettings = {
   defaultHarness?: HarnessId;
   defaultModel?: string;
+  /** Account the default provider starts on; unset follows the provider's default account. */
+  defaultAccount?: string;
   models?: Partial<Record<HarnessId, string>>;
   defaults?: Partial<Record<HarnessId, ProviderSessionDefaults>>;
   /** Providers this project keeps out of the picker and out of new sessions. */
@@ -79,16 +85,66 @@ export function isProviderHidden(project: string | undefined, harness: HarnessId
   return (loadProjectProviderSettings(project).hidden ?? []).includes(harness);
 }
 
+/** A same-provider call without an account keeps the project's pinned account. */
 export function setProjectDefaultProvider(
   project: string,
   harness: HarnessId,
   model: string,
+  accountId?: string,
 ): void {
   update(project, (current) => ({
     ...current,
     defaultHarness: harness,
     defaultModel: model,
+    defaultAccount:
+      accountId ?? (current.defaultHarness === harness ? current.defaultAccount : undefined),
   }));
+}
+
+/** Pin provider, account and model as what new conversations in the project start with. */
+export function pinProjectDefault(
+  project: string,
+  harness: HarnessId,
+  model: string,
+  accountId?: string,
+): void {
+  update(project, (current) => ({
+    ...current,
+    defaultHarness: harness,
+    defaultModel: model,
+    defaultAccount: accountId,
+    // A per-provider model would otherwise win over the pinned default.
+    models: { ...current.models, [harness]: model },
+  }));
+}
+
+/** Drop the pinned default so new conversations follow the global choice again. */
+export function clearProjectDefault(project: string): void {
+  update(project, (current) => {
+    const models = { ...current.models };
+    if (current.defaultHarness) delete models[current.defaultHarness];
+    return {
+      ...current,
+      models,
+      defaultHarness: undefined,
+      defaultModel: undefined,
+      defaultAccount: undefined,
+    };
+  });
+}
+
+/**
+ * The account a new `harness` conversation in `project` starts on, when the project pins one
+ * that still exists; otherwise undefined, so the provider's default account applies.
+ */
+export function projectDefaultAccountId(
+  project: string | undefined,
+  harness: HarnessId,
+): string | undefined {
+  const settings = loadProjectProviderSettings(project);
+  const id = settings.defaultHarness === harness ? settings.defaultAccount : undefined;
+  if (!id || !supportsProviderAccounts(harness)) return undefined;
+  return providerAccounts(harness).some((account) => account.id === id) ? id : undefined;
 }
 
 export function setProjectDefaultModel(project: string, harness: HarnessId, model: string): void {
@@ -198,6 +254,7 @@ function empty(value: ProjectProviderSettings): boolean {
   return (
     value.defaultHarness == null &&
     value.defaultModel == null &&
+    value.defaultAccount == null &&
     Object.keys(value.models ?? {}).length === 0 &&
     Object.keys(value.defaults ?? {}).length === 0 &&
     (value.hidden ?? []).length === 0
@@ -250,6 +307,9 @@ function normalize(value: ProjectProviderSettings): ProjectProviderSettings {
   }
   if (typeof value.defaultModel === "string" && value.defaultModel) {
     next.defaultModel = value.defaultModel;
+  }
+  if (typeof value.defaultAccount === "string" && value.defaultAccount && next.defaultHarness) {
+    next.defaultAccount = value.defaultAccount;
   }
   if (value.models && typeof value.models === "object") {
     const models: Partial<Record<HarnessId, string>> = {};

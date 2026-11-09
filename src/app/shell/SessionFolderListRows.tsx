@@ -1,8 +1,10 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import type { SessionSummary } from "../../features/sessions/data/sessionStore";
 import type { SessionListEntry } from "../../features/sessions/model/sessionFolders";
 import styles from "./Sidebar.module.css";
 import { t } from "../../shared/i18n";
+import { confirmInApp } from "../../shared/model/appConfirm";
+import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { CheckCheck, Clock, Pin } from "../../shared/ui/icons";
 import { FolderRow, FolderRenameRow } from "./SessionFolderRows";
 import type { FolderEntry, SessionListVirtualProps } from "./sessionListWindow";
@@ -89,7 +91,22 @@ export function SessionFolderListHeader({
   );
 }
 
-/** The header of a built-in group: Reminders, Pinned or the Settled shelf. */
+/** Asks before archiving every session on the Settled shelf; archiving can be undone. */
+function confirmArchiveAll(count: number): Promise<boolean> {
+  return confirmInApp({
+    title: t("Archive {p0} settled sessions?", { p0: count }),
+    message: t(
+      "They move to Archive and leave the list. You can restore them from Archive at any time.",
+    ),
+    confirmLabel: t("Archive {p0} sessions", { p0: count }),
+    tone: "normal",
+  });
+}
+
+/**
+ * The header of a built-in group: Reminders, Pinned or the Settled shelf. The Settled shelf gets a
+ * menu that archives or deletes the sessions it lists; deletion confirms in its own owner.
+ */
 export function SessionGroupListRow({
   entry,
   virtual,
@@ -100,6 +117,8 @@ export function SessionGroupListRow({
   reminderColor,
   renderName,
   onToggle,
+  onArchiveAll,
+  onDeleteAll,
 }: {
   entry: Extract<SessionListEntry, { kind: "pinned" | "reminders" | "settled" }>;
   virtual: SessionListVirtualProps;
@@ -111,7 +130,12 @@ export function SessionGroupListRow({
   /** Draws the group name, e.g. with the list's search highlight. */
   renderName: (name: string) => ReactNode;
   onToggle: () => void;
+  /** Settled shelf only: archives the listed sessions. */
+  onArchiveAll?: (sessionIds: readonly string[]) => void;
+  /** Settled shelf only: deletes the listed sessions after its own confirmation. */
+  onDeleteAll?: (sessionIds: readonly string[]) => void;
 }) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | HTMLElement | null>(null);
   const reminders = entry.kind === "reminders";
   const name = reminders ? "Reminders" : entry.kind === "settled" ? t("Settled") : t("Pinned");
   const sessions: SessionSummary[] =
@@ -119,6 +143,26 @@ export function SessionGroupListRow({
       ? [...entry.folders.flatMap((folder) => folder.allSessions), ...entry.sessions]
       : entry.sessions;
   const folder = reminders ? { name, customColor: reminderColor } : { name };
+  const ids = sessions.map((session) => session.id);
+  const menuItems: ContextMenuItem[] =
+    entry.kind === "settled" && ids.length
+      ? [
+          ...(onArchiveAll
+            ? [{ kind: "item" as const, id: "archive-all", label: t("Archive all") }]
+            : []),
+          ...(onDeleteAll
+            ? [{ kind: "item" as const, id: "delete-all", label: t("Delete all"), danger: true }]
+            : []),
+        ]
+      : [];
+  const onPick = (id: string) => {
+    setMenu(null);
+    if (id === "delete-all") onDeleteAll?.(ids);
+    else if (id === "archive-all")
+      void confirmArchiveAll(ids.length)
+        .then((confirmed) => confirmed && onArchiveAll?.(ids))
+        .catch(() => undefined); // -- an unavailable dialog denies; nothing was archived.
+  };
   return (
     <li
       {...virtual}
@@ -150,8 +194,27 @@ export function SessionGroupListRow({
             )
           }
           onToggle={onToggle}
+          onContextMenu={
+            menuItems.length
+              ? (event) => {
+                  event.preventDefault();
+                  setMenu({ x: event.clientX, y: event.clientY });
+                }
+              : undefined
+          }
+          onOpenMenu={menuItems.length ? setMenu : undefined}
+          menuOpen={menu !== null}
         />
       </div>
+      {menu ? (
+        <ContextMenu
+          {...(menu instanceof HTMLElement ? { anchor: menu } : menu)}
+          items={menuItems}
+          ariaLabel={t("Settled sessions actions")}
+          onPick={onPick}
+          onClose={() => setMenu(null)}
+        />
+      ) : null}
     </li>
   );
 }

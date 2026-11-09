@@ -73,7 +73,11 @@ export function useSessionLifecycleList(enabled = true) {
   return { machineId, ...useSessionLifecycleSnapshot() };
 }
 
-/** The Host's automatic settling window; undefined while unknown or on an older Host. */
+/**
+ * The Host's automatic settling and archiving windows; undefined while unknown or on an older Host.
+ * `archiveAfterDays` is undefined on a Host without automatic archiving; `change` without it keeps
+ * the saved archive window.
+ */
 export function useAutoSettleSetting() {
   const { machineId, autoSettle } = useSessionLifecycleList();
   const change = useCallback(
@@ -83,5 +87,7 @@ export function useAutoSettleSetting() {
     },
     [machineId],
   );
-  return machineId && autoSettle ? { afterDays: autoSettle.afterDays, change } : undefined;
+  return machineId && autoSettle
+    ? { afterDays: autoSettle.afterDays, archiveAfterDays: autoSettle.archiveAfterDays, change }
+    : undefined;
 }

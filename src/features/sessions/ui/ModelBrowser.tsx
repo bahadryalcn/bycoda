@@ -5,7 +5,8 @@ import { OverflowTooltip } from "../../../shared/ui/Tooltip";
 import { PopoverSearchHeader } from "../../../shared/ui/PopoverSearchHeader";
 import { SectionLabel } from "../../../shared/ui/SectionLabel";
 import { useLocale, useT } from "../../../shared/i18n";
-import { Check, Star } from "../../../shared/ui/icons";
+import { Check, Home, Star } from "../../../shared/ui/icons";
+import { StatusDot } from "../../../shared/ui/StatusDot";
 import {
   useEffect,
   useId,
@@ -26,6 +27,18 @@ import {
   type AccountModelChoice,
 } from "../model/accountModelChoices";
 
+/** Where new conversations start, marked on the rail and the rows. */
+export type ModelDefaultMark = {
+  harness: HarnessId;
+  isDefault: (item: AgentModel) => boolean;
+  /** The project pins it, rather than following the global choice. */
+  pinned: boolean;
+  /** Provider › account › model, for the rail tooltip. */
+  path: string;
+  /** Pins a row as the project's default, or unpins the pinned one. */
+  onPin: (item: AgentModel) => void;
+};
+
 export type ModelBrowserProps = {
   harnesses: HarnessId[];
   tab: ModelPickerTab;
@@ -41,6 +54,7 @@ export type ModelBrowserProps = {
   onActive: (index: number) => void;
   onPick: (model: AgentModel) => void;
   onToggleFavorite: (id: string) => void;
+  defaultMark?: ModelDefaultMark;
   /** Between the search field and the list, e.g. the provider title and account control. */
   header?: ReactNode;
   /** First row of the list, e.g. an inherit choice. */
@@ -66,6 +80,7 @@ export function ModelBrowser({
   onActive,
   onPick,
   onToggleFavorite,
+  defaultMark,
   header,
   leading,
   body,
@@ -171,11 +186,20 @@ export function ModelBrowser({
             <ProviderTabButton
               key={harness}
               value={harness}
-              title={HARNESS_TITLE[harness]}
+              title={
+                defaultMark?.harness === harness
+                  ? `${HARNESS_TITLE[harness]} · ${t("Default: {p0}", { p0: defaultMark.path })}`
+                  : HARNESS_TITLE[harness]
+              }
               selected={tab === harness}
               onSelect={() => onSelectTab(harness)}
             >
-              <HarnessIcon harness={harness} className="size-4" />
+              <span className="relative block">
+                <HarnessIcon harness={harness} className="size-4" />
+                {defaultMark?.harness === harness ? (
+                  <StatusDot data-model-default-provider className="absolute -top-0.5 -right-1" />
+                ) : null}
+              </span>
             </ProviderTabButton>
           ))}
         </TabList>
@@ -231,6 +255,7 @@ export function ModelBrowser({
                       selected={modelChoiceKey(item) === currentId}
                       highlighted={index === active}
                       favorited={favorites.includes(item.id)}
+                      defaultMark={defaultMark}
                       activeRef={index === active ? activeRef : undefined}
                       onActive={() => onActive(index)}
                       onPick={() => onPick(item)}
@@ -255,6 +280,7 @@ function ModelRow({
   selected,
   highlighted,
   favorited,
+  defaultMark,
   activeRef,
   onActive,
   onPick,
@@ -266,6 +292,7 @@ function ModelRow({
   selected: boolean;
   highlighted: boolean;
   favorited: boolean;
+  defaultMark?: ModelDefaultMark;
   activeRef?: React.RefObject<HTMLButtonElement | null>;
   onActive: () => void;
   onPick: () => void;
@@ -278,6 +305,8 @@ function ModelRow({
   // Favorites mix harnesses, so every row names its source.
   // Provider first (OpenCode Go vs OpenCode), else harness.
   const provenance = item.provider?.name ?? HARNESS_TITLE[item.harness];
+  const isDefault = defaultMark?.isDefault(item) === true;
+  const pinned = isDefault && defaultMark?.pinned === true;
   return (
     <ActionHost
       selected={highlighted && !disabled}
@@ -293,7 +322,7 @@ function ModelRow({
         type="button"
         role="option"
         aria-selected={selected}
-        aria-label={`${item.name}, ${provenance}`}
+        aria-label={`${item.name}, ${provenance}${isDefault ? `, ${t("Default")}` : ""}`}
         disabled={disabled}
         // The row truncates long names; the full name (and why a row is unavailable) stays in
         // the tooltip, and the accessible name above always carries it.
@@ -323,6 +352,28 @@ function ModelRow({
         <OverflowTooltip label={provenance}>
           <span className="max-w-24 shrink-0 truncate ui-caption-text">{provenance}</span>
         </OverflowTooltip>
+      ) : null}
+      {isDefault ? (
+        <span data-model-default className="shrink-0 ui-caption-text" aria-hidden>
+          {t("Default")}
+        </span>
+      ) : null}
+      {defaultMark ? (
+        <InlineAction
+          className="shrink-0"
+          data-model-pin-default
+          reveal={isDefault ? "always" : "interaction"}
+          label={pinned ? t("Remove project default") : t("Make default for this project")}
+          aria-pressed={pinned}
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => defaultMark.onPin(item)}
+        >
+          <Home
+            className={`icon-sm ${pinned ? "text-(--ui-tone-accent-fg)" : ""}`}
+            strokeWidth={pinned ? 2.25 : 1.75}
+          />
+        </InlineAction>
       ) : null}
       <InlineAction
         className="shrink-0"

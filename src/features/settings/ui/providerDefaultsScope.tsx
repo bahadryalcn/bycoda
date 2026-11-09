@@ -12,14 +12,9 @@ import type {
   ProviderSessionDefaults,
 } from "../../sessions/public/projectProviders";
 import {
-  accountSessionDefaults,
-  globalProviderSessionDefaults,
   loadGlobalSessionDefaults,
-  normalizeAccountDefaults,
   productSessionDefaults,
   providerSessionDefaults,
-  saveAccountSessionDefaults,
-  type AccountSessionDefaults,
 } from "../../sessions/public/providerSessionDefaults";
 import { Row, Select } from "./settingsControls";
 
@@ -34,17 +29,6 @@ export function hasProjectOverrides(settings: ProjectProviderSettings): boolean 
     settings.defaultModel ||
     Object.keys(settings.models ?? {}).length > 0 ||
     Object.keys(settings.defaults ?? {}).length > 0,
-  );
-}
-
-/** The model a project stores for a provider; undefined when it follows global. */
-export function projectModelOverride(
-  settings: ProjectProviderSettings,
-  harness: HarnessId,
-): string | undefined {
-  return (
-    settings.models?.[harness] ??
-    (settings.defaultHarness === harness ? settings.defaultModel : undefined)
   );
 }
 
@@ -94,38 +78,4 @@ export function AccountDefaultsScope({
 /** Provider-level defaults only, without any account's overrides. */
 export function globalProviderDefaults(harness: HarnessId): ProviderSessionDefaults {
   return loadGlobalSessionDefaults()[harness] ?? {};
-}
-
-/**
- * ProviderRow props that edit one account's overrides. Unset fields inherit the
- * provider's global defaults and model, exactly as new conversations resolve them.
- */
-export function accountScopeRowProps(input: {
-  harness: HarnessId;
-  accountId: string;
-  globalModel: string;
-  persist: (write: () => void, verify: () => boolean) => void;
-}) {
-  const { harness, accountId, globalModel, persist } = input;
-  const own = accountSessionDefaults(harness, accountId);
-  const { model, ...defaults } = own;
-  const save = (next: AccountSessionDefaults) =>
-    persist(
-      () => saveAccountSessionDefaults(harness, accountId, next),
-      () =>
-        JSON.stringify(accountSessionDefaults(harness, accountId)) ===
-        JSON.stringify(normalizeAccountDefaults(next)),
-    );
-  return {
-    selectedModel: model ?? globalModel,
-    inheritedDefaults: globalProviderSessionDefaults(harness, accountId),
-    scopeDefaults: defaults,
-    onSessionDefaultsChange: (next: ProviderSessionDefaults) => save({ ...next, model }),
-    modelOverride: model,
-    globalModel,
-    onModelReset: () => save(defaults),
-    onModelChange: (_harness: HarnessId, next: string) => save({ ...defaults, model: next }),
-    projectScope: true,
-    accountId,
-  };
 }

@@ -6,7 +6,8 @@ import { RadioGroup } from "../../../shared/ui/RadioGroup";
 import { Meter } from "../../../shared/ui/Meter";
 import { SearchInput } from "../../../shared/ui/SearchInput";
 import { SegmentedControl } from "../../../shared/ui/SegmentedControl";
-import { Check, ChevronDown } from "../../../shared/ui/icons";
+import { StatusDot } from "../../../shared/ui/StatusDot";
+import { Check, ChevronDown, Home } from "../../../shared/ui/icons";
 import { formatResetDuration } from "../../../shared/i18n/format";
 import { accountUsageKey, useProviderAccountUsage } from "../../providers/public/accountUsage";
 import {
@@ -99,16 +100,24 @@ function Percent({ value }: { value: number | null }) {
   );
 }
 
+/** Marks the account new conversations start on. */
+function DefaultMark() {
+  return <Home className="icon-xs shrink-0 text-(--ui-text-secondary)" strokeWidth={1.75} />;
+}
+
 /** The control beside the provider title: label, two-way switch or a button for the list. */
 export function ModelAccountControl({
   accounts,
   accountId,
+  defaultAccountId,
   listOpen,
   onSelect,
   onToggleList,
 }: {
   accounts: PanelAccount[];
   accountId: string;
+  /** Account the default model lives on, when it is on this provider. */
+  defaultAccountId?: string;
   listOpen: boolean;
   onSelect: (accountId: string) => void;
   onToggleList: () => void;
@@ -138,12 +147,25 @@ export function ModelAccountControl({
           value: account.id,
           label: account.label,
           icon: <AccountDot account={account} />,
-          accessory: <Percent value={account.usedPercent} />,
+          accessory: (
+            <>
+              <Percent value={account.usedPercent} />
+              {account.id === defaultAccountId ? <DefaultMark /> : null}
+            </>
+          ),
         }))}
       />
     );
   }
   const label = current?.label ?? t("Unavailable Host account");
+  // The default lives on another account: hint at it so the path to it stays visible.
+  const elsewhere =
+    defaultAccountId && defaultAccountId !== accountId
+      ? accounts.find((account) => account.id === defaultAccountId)
+      : undefined;
+  const name = elsewhere
+    ? `${t("Account: {p0}", { p0: label })} · ${t("Default: {p0}", { p0: elsewhere.label })}`
+    : t("Account: {p0}", { p0: label });
   return (
     <Button
       variant="ghost"
@@ -153,16 +175,18 @@ export function ModelAccountControl({
       data-model-account-menu
       aria-haspopup="listbox"
       aria-expanded={listOpen}
-      aria-label={t("Account: {p0}", { p0: label })}
-      tooltip={t("Account: {p0}", { p0: label })}
+      aria-label={name}
+      tooltip={name}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onToggleList}
     >
       {current ? <AccountDot account={current} /> : null}
       <span className="min-w-0 truncate">{label}</span>
       <Percent value={current?.usedPercent ?? null} />
-      <span className="shrink-0 border-l border-(--ui-tone-neutral-border) pl-1.5 ui-caption-text">
+      {current && current.id === defaultAccountId ? <DefaultMark /> : null}
+      <span className="flex shrink-0 items-center gap-1 border-l border-(--ui-tone-neutral-border) pl-1.5 ui-caption-text">
         {formatNumber(accounts.length)}
+        {elsewhere ? <StatusDot data-model-default-elsewhere /> : null}
       </span>
       <ChevronDown
         className={`icon-xs shrink-0 text-(--ui-text-secondary) ${listOpen ? "rotate-180" : ""}`}
@@ -176,11 +200,13 @@ export function ModelAccountControl({
 export function ModelAccountList({
   accounts,
   accountId,
+  defaultAccountId,
   now,
   onSelect,
 }: {
   accounts: PanelAccount[];
   accountId: string;
+  defaultAccountId?: string;
   now: number;
   onSelect: (accountId: string) => void;
 }) {
@@ -230,7 +256,18 @@ export function ModelAccountList({
                 <>
                   <AccountDot account={account} />
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate leading-4">{account.label}</span>
+                    <span className="flex min-w-0 items-center gap-1 leading-4">
+                      <span className="min-w-0 truncate">{account.label}</span>
+                      {account.id === defaultAccountId ? (
+                        <span
+                          data-model-default-account
+                          className="flex shrink-0 items-center gap-0.5 text-ui-micro text-(--ui-text-secondary)"
+                        >
+                          <DefaultMark />
+                          {t("Default")}
+                        </span>
+                      ) : null}
+                    </span>
                     {detail ? (
                       <span
                         className={`block truncate text-ui-micro leading-4 ${

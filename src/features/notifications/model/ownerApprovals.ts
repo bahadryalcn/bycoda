@@ -1,4 +1,5 @@
 import { boundedSet, createStore } from "../../../shared/lib/store";
+import { parseInboxApprovalDetails, type InboxApprovalDetails } from "./inboxApprovalDetails";
 
 export type OwnerApproval = {
   id: string;
@@ -8,6 +9,8 @@ export type OwnerApproval = {
   confirmLabel: string;
   cancelLabel: string;
   deadline: number;
+  /** Structured preview of the same operation `message` states; absent for other approvals. */
+  inbox?: InboxApprovalDetails;
 };
 const store = createStore();
 let requests: readonly OwnerApproval[] = [];
@@ -116,6 +119,7 @@ export function requestOwnerApproval(
     confirmLabel: input.confirmLabel,
     cancelLabel: input.cancelLabel,
     deadline: input.deadline,
+    inbox: parseInboxApprovalDetails(input.details),
   } as OwnerApproval;
   let resolve!: (answer: boolean) => void;
   let reject!: (error: Error) => void;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GitConflictStages } from "../../../platform/tauri/fs";
-import { comparisonsFor, missingSideNotes } from "./conflictCompare";
+import { comparisonsFor, conflictImage, missingSideNotes } from "./conflictCompare";
 
 const stages = (overrides: Partial<GitConflictStages> = {}): GitConflictStages => ({
   path: "/repo/a.txt",
@@ -46,5 +46,42 @@ describe("missingSideNotes", () => {
       "The current branch has no version of this file.",
     ]);
     expect(missingSideNotes(stages({ theirs: null })).join(" ")).toMatch(/incoming branch has no/);
+  });
+});
+
+describe("conflictImage", () => {
+  const png = btoa(String.fromCharCode(0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0));
+  const image = stages({
+    relative: "a.png",
+    binary: true,
+    base: "",
+    ours: "",
+    theirs: null,
+    images: { base: btoa("<html>"), ours: png, theirs: null },
+  });
+
+  it("shows a version whose bytes are an image", () => {
+    expect(conflictImage(image, "ours")).toEqual({
+      status: "image",
+      src: `data:image/png;base64,${png}`,
+      bytes: 9,
+    });
+  });
+
+  it("refuses bytes that are not an image, whatever the name", () => {
+    expect(conflictImage(image, "base")).toEqual({ status: "unreadable" });
+  });
+
+  it("tells a missing version apart from one it cannot show", () => {
+    expect(conflictImage(image, "theirs")).toEqual({ status: "missing" });
+    expect(conflictImage(stages({ images: null }), "ours")).toEqual({ status: "unreadable" });
+  });
+
+  it("names the stages each pair shows", () => {
+    expect(comparisonsFor(stages()).map((pair) => pair.sides)).toEqual([
+      ["ours", "theirs"],
+      ["base", "ours"],
+      ["base", "theirs"],
+    ]);
   });
 });

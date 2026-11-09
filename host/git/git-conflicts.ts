@@ -57,6 +57,8 @@ export function conflictsFrom(
 }
 
 const LIST_MS = 30_000;
+// The raster formats the UI image viewer shows (`isImagePath`); SVG is text.
+const IMAGE_PATH = /\.(png|jpe?g|gif|webp|avif|bmp|ico)$/i;
 // Matches MAX_FILE in workspace.ts: remote responses are bounded.
 const MAX_BLOB = 1024 * 1024;
 
@@ -150,25 +152,32 @@ export async function hostConflictStages(
   if (!entries.length) throw new Error("This file has no merge conflict");
   let binary = false;
   let tooLarge = false;
-  const read = async (stage: number): Promise<string | null> => {
+  const read = async (stage: number): Promise<Buffer | null> => {
     const entry = entries.find((candidate) => candidate.stage === stage);
     if (!entry) return null;
     try {
       const blob = await run<Buffer>(root, ["cat-file", "blob", entry.sha], "buffer", MAX_BLOB + 1);
       binary ||= blob.includes(0) || !Buffer.from(blob.toString("utf8"), "utf8").equals(blob);
-      return blob.toString("utf8");
+      return blob;
     } catch (reason) {
       if (!String(reason).includes("maxBuffer"))
         throw new Error("Could not read this version of the file");
       tooLarge = true;
-      return "";
+      return Buffer.alloc(0);
     }
   };
-  let [base, ours, theirs] = [await read(1), await read(2), await read(3)];
-  if (binary || tooLarge) {
-    const hidden = (text: string | null) => (text === null ? null : "");
-    [base, ours, theirs] = [hidden(base), hidden(ours), hidden(theirs)];
-  }
+  const blobs = [await read(1), await read(2), await read(3)] as const;
+  const images =
+    IMAGE_PATH.test(relative) && !tooLarge
+      ? {
+          base: blobs[0]?.toString("base64") ?? null,
+          ours: blobs[1]?.toString("base64") ?? null,
+          theirs: blobs[2]?.toString("base64") ?? null,
+        }
+      : null;
+  const text = (blob: Buffer | null) =>
+    blob === null ? null : binary || tooLarge ? "" : blob.toString("utf8");
+  const [base, ours, theirs] = blobs.map(text);
   return {
     path: relative,
     relative,
@@ -178,6 +187,7 @@ export async function hostConflictStages(
     theirs,
     binary,
     tooLarge,
+    images,
     workingExists: await lstat(resolve(root, relative)).then(
       () => true,
       (error: NodeJS.ErrnoException) => {

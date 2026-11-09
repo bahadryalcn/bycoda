@@ -181,6 +181,27 @@ pub struct GitConflictStages {
     pub theirs: Option<String>,
     pub binary: bool,
     pub too_large: bool,
+    /// Base64 bytes of each version of an image file, so Compare can show the
+    /// pictures; `None` for other files. The UI sniffs the bytes before use.
+    pub images: Option<ConflictImages>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+pub struct ConflictImages {
+    pub base: Option<String>,
+    pub ours: Option<String>,
+    pub theirs: Option<String>,
+}
+
+/// Raster formats the image viewer shows (`isImagePath` in the UI); SVG is
+/// text and keeps its text diff.
+const IMAGE_EXTENSIONS: [&str; 8] = ["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico"];
+
+fn is_image_path(relative: &str) -> bool {
+    Path::new(relative)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| IMAGE_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()))
 }
 
 /// The base, current (ours) and incoming (theirs) versions of a conflicted file.
@@ -200,19 +221,33 @@ pub(crate) fn git_conflict_stages_for(
     let stages = entries.iter().fold(0, |bits, entry| bits | entry.stage);
     let mut binary = false;
     let mut too_large = false;
-    let mut read = |stage: u8| -> Result<Option<String>, String> {
+    let read = |stage: u8| -> Result<Option<Vec<u8>>, String> {
         let Some(entry) = entries.iter().find(|entry| entry.stage == stage) else {
             return Ok(None);
         };
-        let bytes = git_output(root, &["cat-file", "blob", &entry.sha])
-            .ok_or_else(|| "Could not read this version of the file".to_string())?;
+        git_output(root, &["cat-file", "blob", &entry.sha])
+            .map(Some)
+            .ok_or_else(|| "Could not read this version of the file".to_string())
+    };
+    let blobs = [read(BASE)?, read(OURS)?, read(THEIRS)?];
+    for bytes in blobs.iter().flatten() {
         binary |= bytes.contains(&0);
         too_large |= bytes.len() as u64 > MAX_TEXT_FILE_BYTES;
-        Ok(Some(String::from_utf8_lossy(&bytes).into_owned()))
+    }
+    let images = (is_image_path(&relative) && !too_large).then(|| {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let encode = |blob: &Option<Vec<u8>>| blob.as_ref().map(|bytes| STANDARD.encode(bytes));
+        ConflictImages {
+            base: encode(&blobs[0]),
+            ours: encode(&blobs[1]),
+            theirs: encode(&blobs[2]),
+        }
+    });
+    let text = |blob: &Option<Vec<u8>>| {
+        blob.as_ref()
+            .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
     };
-    let mut base = read(BASE)?;
-    let mut ours = read(OURS)?;
-    let mut theirs = read(THEIRS)?;
+    let [mut base, mut ours, mut theirs] = [text(&blobs[0]), text(&blobs[1]), text(&blobs[2])];
     if binary || too_large {
         for side in [&mut base, &mut ours, &mut theirs] {
             if side.is_some() {
@@ -229,6 +264,7 @@ pub(crate) fn git_conflict_stages_for(
         theirs,
         binary,
         too_large,
+        images,
     })
 }
 
@@ -646,6 +682,33 @@ mod tests {
                 stages.theirs.as_deref()
             ),
             (Some(""), Some(""), Some(""))
+        );
+        assert_eq!(stages.images, None, "not an image path");
+    }
+
+    #[test]
+    fn image_conflicts_carry_each_version() {
+        let d = tmp("conflict-image");
+        let r = &d.0;
+        assert!(git(r, &["init", "-q", "-b", "main"]));
+        std::fs::write(r.join("a.PNG"), [0u8, 1]).unwrap();
+        commit(r, "init");
+        assert!(git(r, &["checkout", "-q", "-b", "side"]));
+        std::fs::write(r.join("a.PNG"), [0u8, 3]).unwrap();
+        commit(r, "side");
+        assert!(git(r, &["checkout", "-q", "main"]));
+        std::fs::write(r.join("a.PNG"), [0u8, 2]).unwrap();
+        commit(r, "main");
+        assert!(!git(r, &["merge", "side"]));
+        let stages = git_conflict_stages_for(r, "a.PNG").unwrap();
+        assert!(stages.binary);
+        assert_eq!(
+            stages.images,
+            Some(ConflictImages {
+                base: Some("AAE=".into()),
+                ours: Some("AAI=".into()),
+                theirs: Some("AAM=".into()),
+            })
         );
     }
 

@@ -26,18 +26,32 @@ export interface SessionLifecycleRecord {
 export interface AutoSettleSettings {
   /** Settle sessions idle for this many days; null turns automatic settling off. */
   afterDays: number | null;
+  /** Archive sessions settled for this many days; null (the default) keeps them on the shelf. */
+  archiveAfterDays: number | null;
 }
 
-export const DEFAULT_AUTO_SETTLE_SETTINGS: AutoSettleSettings = { afterDays: 3 };
+export const DEFAULT_AUTO_SETTLE_SETTINGS: AutoSettleSettings = {
+  afterDays: 3,
+  archiveAfterDays: null,
+};
 export const MAX_AUTO_SETTLE_DAYS = 365;
 
+/** A whole number of days in range, null for off, or the fallback for anything else. */
+function days(value: unknown, fallback: number | null): number | null {
+  if (value === null) return null;
+  const count = Number(value);
+  return Number.isInteger(count) && count >= 1 && count <= MAX_AUTO_SETTLE_DAYS ? count : fallback;
+}
+
 export function normalizeAutoSettleSettings(raw: unknown): AutoSettleSettings {
-  const value = (raw && typeof raw === "object" ? raw : {}) as { afterDays?: unknown };
-  if (value.afterDays === null) return { afterDays: null };
-  const days = Number(value.afterDays);
-  return Number.isInteger(days) && days >= 1 && days <= MAX_AUTO_SETTLE_DAYS
-    ? { afterDays: days }
-    : DEFAULT_AUTO_SETTLE_SETTINGS;
+  const value = (raw && typeof raw === "object" ? raw : {}) as {
+    afterDays?: unknown;
+    archiveAfterDays?: unknown;
+  };
+  return {
+    afterDays: days(value.afterDays, DEFAULT_AUTO_SETTLE_SETTINGS.afterDays),
+    archiveAfterDays: days(value.archiveAfterDays, DEFAULT_AUTO_SETTLE_SETTINGS.archiveAfterDays),
+  };
 }
 
 function normalizeParticipants(value: unknown, owner: string | null): SessionParticipant[] {

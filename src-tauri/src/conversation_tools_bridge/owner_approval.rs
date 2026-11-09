@@ -15,6 +15,42 @@ fn secret_input_fields(input: &Value) -> Result<(String, String), String> {
     Ok((text("name", 80)?, text("purpose", 300)?))
 }
 
+/// Structured preview of an operation `inbox_approval_message` already validated; the text stays the record.
+fn inbox_approval_details(operation: &Value, cwd: &str, thread: &str) -> Result<Value, String> {
+    let item = &operation["item"];
+    let key = item["identifier"]
+        .as_str()
+        .or_else(|| item["id"].as_str())
+        .unwrap_or("");
+    let target = format!(
+        "{} #{} {key}",
+        item["repo"].as_str().unwrap_or(""),
+        item["number"]
+            .as_u64()
+            .ok_or("Inbox item number required")?
+    );
+    let mut details = json!({
+        "kind": "inbox",
+        "action": operation["action"],
+        "project": cwd,
+        "provider": item["provider"],
+        "target": target.trim(),
+        "replyTo": operation["inReplyTo"].as_str().filter(|id| !id.is_empty()),
+        "thread": (!thread.is_empty()).then_some(thread),
+    });
+    match operation["action"].as_str() {
+        Some("review") => {
+            details["review"] = crate::github_review::ReviewInput::approval_details(operation)?
+        }
+        Some("comment") => details["body"] = operation["body"].clone(),
+        _ => {
+            details["prAction"] = operation["prAction"].clone();
+            details["headSha"] = operation["expectedHeadOid"].clone();
+        }
+    }
+    Ok(details)
+}
+
 pub(super) fn call(
     app: &AppHandle,
     request: &Value,
@@ -209,6 +245,11 @@ pub(super) fn call(
                 .ok_or("Project directory required")?,
         )?;
         let thread_context = inbox_reply_approval_context(&input["operation"])?;
+        let details = inbox_approval_details(
+            &input["operation"],
+            request["cwd"].as_str().unwrap_or_default(),
+            thread_context.trim(),
+        )?;
         static APPROVAL_GATE: Mutex<()> = Mutex::new(());
         let _guard = APPROVAL_GATE
             .lock()
@@ -223,7 +264,7 @@ pub(super) fn call(
         {
             return Err("Inbox approval expired; no operation was submitted".into());
         }
-        let approved = crate::control::owner_approval::ask_conversation(
+        let approved = crate::control::owner_approval::ask_conversation_detailed(
             app,
             request,
             crate::control::owner_approval::Prompt {
@@ -232,6 +273,7 @@ pub(super) fn call(
                 confirm: "Approve this operation",
                 cancel: "Cancel",
             },
+            details,
             || taken.check(),
         )?;
         let at = std::time::SystemTime::now()
@@ -243,6 +285,10 @@ pub(super) fn call(
             .is_none_or(|deadline| deadline <= at)
         {
             return Err("Inbox approval expired; no operation was submitted".into());
+        }
+        if approved && input["operation"]["action"] == "review" {
+            // The desktop submit step consumes this instead of asking the owner a second time.
+            crate::desktop_inbox_review::grant_approved_review(&input["operation"], at)?;
         }
         return Ok(json!({"approved": approved}));
     }
@@ -261,5 +307,28 @@ mod secret_tests {
         assert!(secret_input_fields(&json!({"name":"x".repeat(81),"purpose":"publish"})).is_err());
         assert!(secret_input_fields(&json!({"name":"A","purpose":"p".repeat(301)})).is_err());
         assert!(secret_input_fields(&json!({"purpose":"publish"})).is_err());
+    }
+}
+
+#[cfg(test)]
+mod inbox_preview_tests {
+    use super::*;
+
+    #[test]
+    fn review_preview_carries_the_validated_review_and_comments() {
+        let operation = json!({
+            "action": "review", "cwd": "/repo",
+            "item": {"provider": "github", "kind": "pr", "repo": "acme/app", "number": 12},
+            "commitId": "a".repeat(40), "event": "COMMENT", "body": "Summary",
+            "comments": [{"path": "src/a.ts", "line": 9, "side": "RIGHT", "body": "Nit"}],
+        });
+        let details = inbox_approval_details(&operation, "/repo", "").unwrap();
+        assert_eq!(details["target"], "acme/app #12");
+        assert_eq!(details["thread"], Value::Null);
+        assert_eq!(details["review"]["comments"][0]["path"], "src/a.ts");
+        assert_eq!(details["review"]["comments"][0]["startLine"], Value::Null);
+        let mut invalid = operation.clone();
+        invalid["comments"][0]["line"] = json!(0);
+        assert!(inbox_approval_details(&invalid, "/repo", "").is_err());
     }
 }

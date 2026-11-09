@@ -4,6 +4,7 @@ import {
   type SessionLifecycleMethod,
 } from "../../src/shared/model/host-contracts/session-lifecycle";
 import { handleActivityRpc } from "../activity/activity-rpc";
+import type { AutoSettleChange } from "../domains/sessions/lifecycle-service";
 import type { ServerBindings } from "./bindings";
 import type { OwnerRpcRequest } from "./owner-rpc-context";
 
@@ -29,7 +30,7 @@ export async function handleSessionLifecycleRpc(
   const schema = SESSION_LIFECYCLE_RPC[method];
   if (!schema) throw new Error("Unsupported session lifecycle method");
   const params = schema.params.parse(request.params) as Record<string, string | undefined>;
-  const settings = params as unknown as { afterDays: number | null };
+  const settings = params as unknown as AutoSettleChange;
   const context = request.domainContext;
   switch (method) {
     case "sessions.lifecycle.get":

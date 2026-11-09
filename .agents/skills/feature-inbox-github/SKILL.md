@@ -28,6 +28,7 @@ directory. Follow current imports and callers; this map is not a completeness cl
 - Keep bounded fetching, cache/in-flight deduplication, late-response rejection, good data on error and operation-specific recovery.
 - Media authentication coalesces only concurrent token lookups; bound request admission, token output and deadlines, retain original process and pipe ownership through retirement, and never cache credentials after the flight.
 - Public comments, reviews, merge and repair actions retain their native owner approval and provider gates; reads and drafts grant no write authority.
+- An agent review is approved once: the conversation approval leaves a native one-shot grant bound to the exact review content, and `desktop_inbox_review` consumes it instead of prompting again; changed, reused or late content asks again.
 
 ## Workflow
 

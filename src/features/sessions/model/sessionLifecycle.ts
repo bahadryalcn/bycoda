@@ -21,9 +21,12 @@ export interface SessionLifecycleView {
 export interface AutoSettleSettings {
   /** Days of inactivity before the Host settles a session; null is off. */
   afterDays: number | null;
+  /** Days on the Settled shelf before the Host archives a session; null is off, absent on an older Host. */
+  archiveAfterDays?: number | null;
 }
 
 export const AUTO_SETTLE_DAY_OPTIONS = [1, 3, 7, 14, 30] as const;
+export const AUTO_ARCHIVE_DAY_OPTIONS = [7, 14, 30, 90] as const;
 
 /** Saves that land just after a turn ends must not undo the settle that turn applied. */
 export const SETTLE_ACTIVITY_GRACE_MS = 5000;

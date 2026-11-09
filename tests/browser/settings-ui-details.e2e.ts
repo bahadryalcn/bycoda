@@ -72,7 +72,7 @@ for (const theme of ["light", "dark"]) {
       await option.click();
       await expect(picker).toContainText("Codex");
       await expect(picker).toBeFocused();
-      await expect(page.locator(".provider-cli-detail > .provider-detail-header")).toContainText(
+      await expect(page.locator(".provider-cli-detail .provider-detail-header")).toContainText(
         "Codex",
       );
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(

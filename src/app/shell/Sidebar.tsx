@@ -2924,6 +2924,8 @@ function SidebarComponent({
         approvalIds={listedApprovalSessionIds}
         reminderColor={REMINDERS_COLOR}
         renderName={(name) => <SessionSearchText text={name} />}
+        onArchiveAll={onArchiveSessions && ((ids) => onArchiveSessions(ids, true))}
+        onDeleteAll={onDeleteSessions}
         onToggle={() => {
           if (searchNarrowed) return;
           const collapsed = !row.entry.collapsed;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseStandaloneHttpUrl, parseUserMessageLink } from "./linkPreview";
+import { parseStandaloneHttpUrl, parseUserMessageLink, userLinkRanges } from "./linkPreview";
 
 describe("parseStandaloneHttpUrl", () => {
   it("normalizes a standalone web URL for display", () => {
@@ -70,5 +70,25 @@ describe("parseUserMessageLink", () => {
 
   it("returns null when there is no valid web URL", () => {
     expect(parseUserMessageLink("Nothing to preview here")).toBeNull();
+  });
+});
+
+describe("userLinkRanges", () => {
+  it("finds every web URL with its source range, without trailing punctuation", () => {
+    const text = "https://github.com/acme/app/pull/1267 bunu incele, sonra https://example.com.";
+    const ranges = userLinkRanges(text);
+    expect(ranges.map((range) => text.slice(range.start, range.end))).toEqual([
+      "https://github.com/acme/app/pull/1267",
+      "https://example.com",
+    ]);
+    expect(ranges[0].link.githubWorkItem).toEqual({
+      kind: "pr",
+      repo: "acme/app",
+      number: 1267,
+    });
+  });
+
+  it("ignores text without a web URL", () => {
+    expect(userLinkRanges("file:///tmp/a.txt and plain words")).toEqual([]);
   });
 });

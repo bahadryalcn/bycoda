@@ -3,7 +3,7 @@ import { t } from "../../../shared/i18n";
 import { useRemoteMachines } from "../../connections/public/connections";
 import { isLocalSyncMachine } from "../../connections/public/localSync";
 import { decisionModelsClient, DecisionModelsSettings } from "../../decision-models";
-import { settingDomId } from "./settingsControls";
+import { SettingsFeedback, settingDomId } from "./settingsControls";
 
 /**
  * Providers > Decision models. Runs on this computer's Host, or the first Host listed. The page
@@ -15,7 +15,6 @@ export function ProviderDecisionModels() {
   const hostId = host?.id;
   const client = useMemo(() => (hostId ? decisionModelsClient(hostId) : null), [hostId]);
   const headingId = useId();
-  if (!client) return null;
   return (
     <section
       id={settingDomId("decision-models")}
@@ -27,7 +26,13 @@ export function ProviderDecisionModels() {
       <h2 id={headingId} className="settings-section-title">
         {t("Decision models")}
       </h2>
-      <DecisionModelsSettings client={client} />
+      {client ? (
+        <DecisionModelsSettings client={client} />
+      ) : (
+        <SettingsFeedback state="empty" presentation="inset">
+          {t("Decision models run on a Host. Connect this computer's Host to set them up.")}
+        </SettingsFeedback>
+      )}
     </section>
   );
 }

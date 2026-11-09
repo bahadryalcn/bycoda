@@ -1,0 +1,48 @@
+/* A web link in the draft: boxed in the info tone, apart from attachment tokens. */
+.link {
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-tone-info-subtle);
+  box-shadow: inset 0 0 0 1px var(--ui-tone-info-border);
+  color: var(--ui-tone-info-fg);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Characters kept only for their width; the textarea underneath still holds them. */
+.hidden {
+  color: transparent;
+}
+
+/* The scheme's remaining characters reserve the room the open badge sits in. */
+.badge {
+  position: relative;
+  color: transparent;
+}
+
+/* Above the textarea so it can be clicked; the rest of the overlay lets clicks through. */
+.open {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  transform: translate(-50%, -50%);
+  border-radius: var(--ui-radius-control);
+  color: var(--ui-tone-info-fg);
+  text-indent: 0;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.open:hover {
+  background: var(--ui-tone-info-hover);
+}
+
+.openIcon {
+  width: 12px;
+  height: 12px;
+}

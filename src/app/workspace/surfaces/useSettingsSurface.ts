@@ -18,6 +18,7 @@ import {
 } from "../../../features/settings/model/settings";
 import { OPEN_CONNECTIONS_EVENT } from "../../../features/connections/model/connections";
 import { OPEN_DECISION_MODELS_SETTINGS_EVENT } from "../../../features/decision-models/model/decisionModelsSettings";
+import { OPEN_PROVIDER_SETTINGS_EVENT } from "../../../features/providers/public/providerSettingsLink";
 import type { ConnectableInboxSource } from "../../../features/inbox/model/inboxFilters";
 import { OPEN_MESSAGING_SETTINGS_EVENT } from "../../../features/messaging/model/messagingSettings";
 
@@ -136,10 +137,13 @@ export function useSettingsSurfaceActions({
   }, [openSettings]);
 
   useEffect(() => {
-    const openDecisionModels = () => openSettings("providers");
-    window.addEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openDecisionModels);
-    return () =>
-      window.removeEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openDecisionModels);
+    const openProviders = () => openSettings("providers");
+    window.addEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openProviders);
+    window.addEventListener(OPEN_PROVIDER_SETTINGS_EVENT, openProviders);
+    return () => {
+      window.removeEventListener(OPEN_DECISION_MODELS_SETTINGS_EVENT, openProviders);
+      window.removeEventListener(OPEN_PROVIDER_SETTINGS_EVENT, openProviders);
+    };
   }, [openSettings]);
 
   useEffect(() => {

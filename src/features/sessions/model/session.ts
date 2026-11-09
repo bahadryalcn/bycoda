@@ -19,7 +19,7 @@ import {
   preferredModelSettings,
   resolveModel,
 } from "./models";
-import { loadProjectProviderSettings } from "./projectProviders";
+import { loadProjectProviderSettings, projectDefaultAccountId } from "./projectProviders";
 import { applySessionDefaults, providerSessionDefaults } from "./providerSessionDefaults";
 import { HARNESS_LABEL, HARNESS_TITLE } from "../../../shared/model/harnessIdentity";
 import type { HarnessId } from "../../../shared/model/harnessIdentity";
@@ -738,11 +738,11 @@ export function newSession(
     harness,
     model: resolved.id,
     modelSettings: settings,
-    // An explicit mode is kept as given (a restored or forked session); only a
-    // session started with no mode picks its harness's default.
+    // An explicit mode is kept (restored or forked session); a modeless one takes the default.
     runtimeMode: runtimeMode ?? runtimeModeForNewSession(harness, defaults.runtimeMode),
     title: HARNESS_LABEL[harness],
     cwd,
+    providerAccountId: projectDefaultAccountId(cwd, harness),
     blocks: [],
   };
 }
@@ -832,10 +832,10 @@ export function retargetSessionToProject(session: Session, cwd: string): Session
         ? runtimeModeForNewSession(harness, defaults.runtimeMode)
         : session.runtimeMode,
     title: HARNESS_LABEL[harness],
-    ...(harness === session.harness
+    ...(harness === session.harness ? {} : { providerSessionId: undefined }),
+    ...(harness === session.harness && !(blank && cwd !== session.cwd)
       ? {}
-      : { providerSessionId: undefined, providerAccountId: undefined }),
-    ...(blank && cwd !== session.cwd ? { providerAccountId: undefined } : {}),
+      : { providerAccountId: blank ? projectDefaultAccountId(cwd, harness) : undefined }),
     ...(resolved.id === session.model ? {} : { context: dropContextWindow(session.context) }),
   };
 }

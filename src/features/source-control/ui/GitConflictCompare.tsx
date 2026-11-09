@@ -7,6 +7,7 @@ import { SurfaceLoading } from "../../../shared/ui/SurfaceLoading";
 import { comparisonsFor, missingSideNotes, type CompareId } from "../model/conflictCompare";
 import { conflictKindInfo } from "../model/conflictSection";
 import { buildUnifiedFile } from "../model/unifiedDiff";
+import { GitConflictImages } from "./GitConflictImages";
 import { GitGraphDialog } from "./GitGraphDialog";
 import { UnifiedDiffView, type UnifiedDiffFileModel } from "./UnifiedDiffView";
 
@@ -135,7 +136,11 @@ export function GitConflictCompare({ cwd, relative, onClose }: Props) {
             </p>
           ) : null}
           <div className="flex min-h-0 flex-1 flex-col">
-            <UnifiedDiffView files={model} initialExpansion="all" />
+            {load.stages.images && selected && !selected.unavailable ? (
+              <GitConflictImages stages={load.stages} sides={selected.sides} />
+            ) : (
+              <UnifiedDiffView files={model} initialExpansion="all" />
+            )}
           </div>
         </>
       )}

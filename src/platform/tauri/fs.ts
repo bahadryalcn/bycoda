@@ -410,6 +410,9 @@ export type GitConflictStages = {
   theirs: string | null;
   binary: boolean;
   tooLarge: boolean;
+  /** Base64 bytes of each version of a raster image, so Compare can show the
+   * pictures; null for other files and on hosts that predate it. */
+  images?: { base: string | null; ours: string | null; theirs: string | null } | null;
 };
 
 export function gitConflictStages(cwd: string, relative: string): Promise<GitConflictStages> {

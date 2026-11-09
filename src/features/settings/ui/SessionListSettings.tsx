@@ -8,6 +8,7 @@ import {
   type SessionListDensity,
 } from "../../sessions/public/sessionListDisplay";
 import {
+  AUTO_ARCHIVE_DAY_OPTIONS,
   AUTO_SETTLE_DAY_OPTIONS,
   useAutoSettleSetting,
 } from "../../sessions/public/sessionLifecycle";
@@ -84,27 +85,27 @@ export function SessionListSettings() {
             "Idle sessions move to the Settled group. Pinned, archived and running sessions stay. A new message makes a session active again.",
           )}
         >
-          <Select
-            hideLabel
+          <DaysSelect
             label={t("Auto-settle after")}
-            value={autoSettle.afterDays === null ? "off" : String(autoSettle.afterDays)}
-            options={[
-              { value: "off", label: t("Off") },
-              ...AUTO_SETTLE_DAY_OPTIONS.map((days) => ({
-                value: String(days),
-                label: days === 1 ? t("1 day") : t("{p0} days", { p0: days }),
-              })),
-            ]}
-            onChange={(value) =>
-              autoSettle
-                .change({ afterDays: value === "off" ? null : Number(value) })
-                .catch((cause: unknown) =>
-                  toast.show({
-                    tone: "danger",
-                    message:
-                      cause instanceof Error ? cause.message : t("Could not update the session."),
-                  }),
-                )
+            value={autoSettle.afterDays}
+            options={AUTO_SETTLE_DAY_OPTIONS}
+            onChange={(afterDays) => autoSettle.change({ afterDays })}
+          />
+        </Row>
+      ) : null}
+      {autoSettle && autoSettle.archiveAfterDays !== undefined ? (
+        <Row
+          label={t("Archive settled after")}
+          description={t(
+            "Sessions that stay in the Settled group this long are archived. Pinned and running sessions stay. Archived sessions can be restored from Archive.",
+          )}
+        >
+          <DaysSelect
+            label={t("Archive settled after")}
+            value={autoSettle.archiveAfterDays}
+            options={AUTO_ARCHIVE_DAY_OPTIONS}
+            onChange={(archiveAfterDays) =>
+              autoSettle.change({ afterDays: autoSettle.afterDays, archiveAfterDays })
             }
           />
         </Row>
@@ -124,5 +125,41 @@ export function SessionListSettings() {
         />
       </Row>
     </Group>
+  );
+}
+
+/** Off or a number of days; a failed save is reported and the Host's value stays shown. */
+function DaysSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: number | null;
+  options: readonly number[];
+  onChange: (days: number | null) => Promise<void>;
+}) {
+  return (
+    <Select
+      hideLabel
+      label={label}
+      value={value === null ? "off" : String(value)}
+      options={[
+        { value: "off", label: t("Off") },
+        ...options.map((days) => ({
+          value: String(days),
+          label: days === 1 ? t("1 day") : t("{p0} days", { p0: days }),
+        })),
+      ]}
+      onChange={(next) =>
+        onChange(next === "off" ? null : Number(next)).catch((cause: unknown) =>
+          toast.show({
+            tone: "danger",
+            message: cause instanceof Error ? cause.message : t("Could not update the session."),
+          }),
+        )
+      }
+    />
   );
 }

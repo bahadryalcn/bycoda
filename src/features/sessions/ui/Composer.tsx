@@ -3361,6 +3361,7 @@ export const Composer = memo(function Composer({
                   mcpTags={selectedMcp}
                   attachments={attachments}
                   citations={citations.length}
+                  field={ref}
                 />
               </div>
             ) : null}

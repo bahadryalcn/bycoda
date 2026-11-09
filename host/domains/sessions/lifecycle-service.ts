@@ -7,6 +7,8 @@ import {
 } from "./lifecycle-model";
 
 const DAY_MS = 86_400_000;
+/** Saves that land just after a settle are not new activity (the sidebar uses the same grace). */
+const SETTLE_ACTIVITY_GRACE_MS = 5000;
 
 export interface SessionRunState {
   exists: boolean;
@@ -30,8 +32,14 @@ export interface SessionLifecyclePorts {
   runState(sessionId: string): Promise<SessionRunState>;
   /** Every session on this Host with what automatic settling needs. */
   activity(): Promise<SessionActivity[]>;
+  /** Sets the session's archive flag, as the owner's Archive action does. */
+  archive(sessionId: string): Promise<void>;
   now(): number;
 }
+
+/** A settings change; an omitted archive window keeps the saved one (older clients send none). */
+export type AutoSettleChange = Pick<AutoSettleSettings, "afterDays"> &
+  Partial<Pick<AutoSettleSettings, "archiveAfterDays">>;
 
 export interface TurnOutcome {
   cancelled?: boolean;
@@ -44,7 +52,8 @@ export interface TurnOutcome {
  * list and never locks it. A new message wakes it. Settling a running session applies when the
  * turn ends; a failed turn or a queued follow-up leaves it active. Automatic settling picks idle
  * sessions that are not pinned, archived, running, queued or waiting for input, and never one
- * the owner un-settled since its last message. Archive, pin and tasks are never changed here.
+ * the owner un-settled since its last message. Pin and tasks are never changed here; archive
+ * only by the opt-in automatic archiving of sessions that stayed settled, which is reversible.
  */
 export function createSessionLifecycleService(
   store: SessionLifecycleStore,
@@ -142,11 +151,20 @@ export function createSessionLifecycleService(
     autoSettleSettings: () => store.autoSettleSettings(),
 
     async configure(
-      settings: AutoSettleSettings,
+      settings: AutoSettleChange,
       context: HostDomainContext,
     ): Promise<AutoSettleSettings> {
       await assertDomainAuthority(context);
-      return store.saveAutoSettleSettings(normalizeAutoSettleSettings(settings));
+      const current = await store.autoSettleSettings();
+      return store.saveAutoSettleSettings(
+        normalizeAutoSettleSettings({
+          afterDays: settings.afterDays,
+          archiveAfterDays:
+            settings.archiveAfterDays === undefined
+              ? current.archiveAfterDays
+              : settings.archiveAfterDays,
+        }),
+      );
     },
 
     /** Settles every idle candidate; returns how many sessions it settled. */
@@ -168,6 +186,32 @@ export function createSessionLifecycleService(
           current.state === "active" && !current.keepActive ? settled(current, "auto") : current,
         );
         if (next.state === "settled" && next.settledBy === "auto") count += 1;
+      }
+      return count;
+    },
+
+    /**
+     * Archives sessions settled for the archive window; returns how many it archived. Pinned,
+     * running, queued and waiting sessions stay, as does one that woke since it settled.
+     */
+    async autoArchive(): Promise<number> {
+      const { archiveAfterDays } = await store.autoSettleSettings();
+      if (archiveAfterDays === null) return 0;
+      const cutoff = ports.now() - archiveAfterDays * DAY_MS;
+      const records = new Map((await store.list()).map((record) => [record.sessionId, record]));
+      let count = 0;
+      for (const row of await ports.activity()) {
+        if (row.pinned || row.archived || row.running || row.needsInput) continue;
+        const record = records.get(row.sessionId);
+        if (record?.state !== "settled" || record.settledAt === undefined) continue;
+        if (record.settledAt >= cutoff) continue;
+        if (row.lastActivityAt > record.settledAt + SETTLE_ACTIVITY_GRACE_MS) continue;
+        const state = await ports.runState(row.sessionId);
+        if (!state.exists || state.running || state.queued > 0) continue;
+        // A wake between the list read and now keeps the session out of the archive.
+        if ((await store.get(row.sessionId)).state !== "settled") continue;
+        await ports.archive(row.sessionId);
+        count += 1;
       }
       return count;
     },

@@ -1,11 +1,22 @@
 import { useState, type ReactNode } from "react";
 import { useT } from "../../../shared/i18n";
+import { Button } from "../../../shared/ui/Button";
+import { Settings } from "../../../shared/ui/icons";
 import { Popover } from "../../../shared/ui/Popover";
+import {
+  providerAccountLabel,
+  providerAccounts,
+  supportsProviderAccounts,
+} from "../../providers/public/providerAccounts";
+import { openProviderSettings } from "../../providers/public/providerSettingsLink";
+import { hasProjectDefaults, isModelDefault, modelDefault } from "../model/modelDefaultMark";
 import type { AgentModel, ModelSetting } from "../model/models";
+import { clearProjectDefault, pinProjectDefault } from "../model/projectProviders";
 import { HARNESS_TITLE, type HarnessId } from "../model/session";
 import { ModelAccountControl, ModelAccountList, usePanelAccounts } from "./ModelAccountSwitcher";
-import { ModelBrowser, type ModelBrowserProps } from "./ModelBrowser";
+import { ModelBrowser, type ModelBrowserProps, type ModelDefaultMark } from "./ModelBrowser";
 import { ModelSettingHelp, ModelSettingsColumn } from "./ModelSettingsColumn";
+import { useModelSource } from "./modelSource";
 
 const PANEL_WIDTH = 600;
 const PANEL_HEIGHT = 460;
@@ -25,6 +36,7 @@ export type ModelPanelSettings = {
 export function ModelPanel({
   anchor,
   side,
+  project,
   browser,
   leading,
   accountHarness,
@@ -37,6 +49,8 @@ export function ModelPanel({
 }: {
   anchor: { current: HTMLButtonElement | null };
   side: "top" | "bottom";
+  /** Project whose default the panel marks and lets the owner pin; none without a project. */
+  project?: string;
   browser: Omit<ModelBrowserProps, "header" | "leading" | "body" | "footer">;
   /** First list row, e.g. an inherit choice. */
   leading?: ReactNode;
@@ -64,6 +78,16 @@ export function ModelPanel({
       ? t("Favorites")
       : HARNESS_TITLE[browser.tab];
 
+  const defaultMark = useDefaultMark(
+    project,
+    browser.tab,
+    accountHarness && shownAccounts.length > 1 ? accountId : undefined,
+  );
+  const defaultAccountId =
+    defaultMark && defaultMark.value.harness === accountHarness
+      ? defaultMark.value.accountId
+      : undefined;
+
   const pickAccount = (id: string) => {
     onAccountListOpen(false);
     onSelectAccount(id);
@@ -90,6 +114,7 @@ export function ModelPanel({
         <div className="flex min-h-0 min-w-0 flex-1 @max-[32rem]/model-panel:flex-col">
           <ModelBrowser
             {...browser}
+            defaultMark={defaultMark?.mark}
             header={
               <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1 px-3 pt-1.5 pb-1">
                 <span className="shrink-0 text-ui-micro font-medium tracking-wide text-(--ui-text-secondary) uppercase">
@@ -99,6 +124,7 @@ export function ModelPanel({
                   <ModelAccountControl
                     accounts={shownAccounts}
                     accountId={accountId}
+                    defaultAccountId={defaultAccountId}
                     listOpen={listOpen}
                     onSelect={pickAccount}
                     onToggleList={() => onAccountListOpen(!listOpen)}
@@ -112,6 +138,7 @@ export function ModelPanel({
                 <ModelAccountList
                   accounts={shownAccounts}
                   accountId={accountId}
+                  defaultAccountId={defaultAccountId}
                   now={now}
                   onSelect={pickAccount}
                 />
@@ -121,7 +148,76 @@ export function ModelPanel({
           {settings ? <ModelSettingsColumn {...settings} onExplain={setExplained} /> : null}
         </div>
       </div>
-      {settings ? <ModelSettingHelp setting={explained} /> : null}
+      {settings ? (
+        <ModelSettingHelp
+          setting={explained}
+          trailing={
+            <Button
+              iconOnly
+              variant="ghost"
+              size="sm"
+              type="button"
+              label={t("Provider settings")}
+              tooltip={t("Provider settings")}
+              data-model-provider-settings
+              className="-my-1 -mr-1.5 shrink-0 self-end"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onDismiss("outside");
+                openProviderSettings();
+              }}
+            >
+              <Settings className="icon-sm" strokeWidth={1.75} />
+            </Button>
+          }
+        />
+      ) : null}
     </Popover>
   );
+}
+
+/**
+ * The project's default as rail, account and row marks. `accountId` is the account the browsed
+ * provider's rows run on, when the panel offers a choice of accounts.
+ */
+function useDefaultMark(
+  project: string | undefined,
+  tab: ModelBrowserProps["tab"],
+  accountId: string | undefined,
+): { value: ReturnType<typeof modelDefault>; mark: ModelDefaultMark } | undefined {
+  const source = useModelSource();
+  if (!hasProjectDefaults(project)) return undefined;
+  const local = source.accounts === undefined;
+  const value = modelDefault(project, !local);
+  const { harness, accountId: defaultAccount } = value;
+  // The account joins the path only when the provider has more than one to choose from.
+  const accountName =
+    local &&
+    defaultAccount &&
+    supportsProviderAccounts(harness) &&
+    providerAccounts(harness).length > 1
+      ? providerAccountLabel(harness, defaultAccount)
+      : undefined;
+  const path = [HARNESS_TITLE[harness], accountName, source.resolve(harness, value.model).name]
+    .filter(Boolean)
+    .join(" › ");
+  const onPin = (item: AgentModel) => {
+    const viewed = tab === item.harness ? accountId : undefined;
+    if (value.pinned && isModelDefault(value, item.harness, item.id, viewed)) {
+      clearProjectDefault(project);
+      return;
+    }
+    pinProjectDefault(project, item.harness, item.id, local ? viewed : undefined);
+  };
+  return {
+    value,
+    mark: {
+      harness,
+      pinned: value.pinned,
+      path,
+      isDefault: (item) =>
+        isModelDefault(value, item.harness, item.id, tab === item.harness ? accountId : undefined),
+      onPin,
+    },
+  };
 }

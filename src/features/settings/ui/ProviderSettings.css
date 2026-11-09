@@ -12,6 +12,81 @@
   gap: 24px;
 }
 
+/* Tabs lead the page; each tab shows one concern. */
+.provider-tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-inline-size: 0;
+  padding-block-start: 12px;
+}
+.provider-cli-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-inline-size: 0;
+}
+.provider-cli-section[hidden],
+.provider-cli-container[hidden] {
+  display: none;
+}
+#setting-harness-updates > .settings-group-content:empty {
+  display: none;
+}
+
+/* Defaults save bar: pinned to the bottom of the view while the form scrolls. It always says
+   whether the defaults on screen are saved, and where Save writes them. */
+.provider-save-bar {
+  position: sticky;
+  inset-block-end: 12px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 8px 8px 8px 16px;
+  /* Opaque: the form scrolls underneath it. */
+  background: var(--color-background-base);
+  border: 1px solid var(--ui-settings-group-border);
+  border-radius: var(--ui-radius-card);
+}
+.provider-save-bar[data-dirty] {
+  border-color: var(--ui-tone-warning-fg);
+}
+.provider-save-bar-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-inline-size: 0;
+}
+.provider-save-bar-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--ui-font-secondary);
+  color: var(--color-content);
+}
+.provider-save-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.provider-save-bar-label {
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+  white-space: nowrap;
+}
+.provider-save-bar-note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--ui-font-caption);
+  color: var(--ui-text-secondary);
+}
+
 /* Provider list: open rows on the page ground, selection is the shared fill. It stays in view
    while the detail column scrolls, and scrolls on its own only when taller than the window. */
 .provider-cli-selector {

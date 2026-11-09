@@ -15,8 +15,12 @@ export const SessionLifecycleRecordSchema = z.strictObject({
   keepActive: z.boolean().optional(),
 });
 
+const AutoDays = z.number().int().min(1).max(365).nullable();
+
+/** An older Host answers without `archiveAfterDays`; an omitted one in a change keeps the saved. */
 export const AutoSettleSettingsSchema = z.strictObject({
-  afterDays: z.number().int().min(1).max(365).nullable(),
+  afterDays: AutoDays,
+  archiveAfterDays: AutoDays.optional(),
 });
 
 const SessionTaskLinkSchema = z.strictObject({

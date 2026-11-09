@@ -44,6 +44,24 @@ export function parseUserMessageLink(text: string): UserMessageLink | null {
   };
 }
 
+export type UserLinkRange = { start: number; end: number; link: UserLink };
+
+/** Every web URL in the text with its source range, trimmed like `parseUserMessageLink`. */
+export function userLinkRanges(text: string): UserLinkRange[] {
+  const ranges: UserLinkRange[] = [];
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"']+/gi)) {
+    const value = trimUrlPunctuation(match[0]);
+    const link = parseHttpUrl(value);
+    if (link)
+      ranges.push({
+        start: match.index,
+        end: match.index + value.length,
+        link,
+      });
+  }
+  return ranges;
+}
+
 /** Kept as a small utility for callers that need the stricter exact-URL rule. */
 export function parseStandaloneHttpUrl(text: string): UserLink | null {
   const value = text.trim();

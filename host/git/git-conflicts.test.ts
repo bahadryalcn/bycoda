@@ -344,6 +344,25 @@ describe("the three versions of a conflicted file", () => {
       base: "",
       ours: "",
       theirs: "",
+      images: null,
+    });
+  });
+
+  it("returns each version of an image", async () => {
+    const r = repo();
+    r.write("a.PNG", Buffer.from([0, 1]));
+    r.commit("init");
+    r.git("checkout", "-q", "-b", "side");
+    r.write("a.PNG", Buffer.from([0, 3]));
+    r.commit("side");
+    r.git("checkout", "-q", "main");
+    r.write("a.PNG", Buffer.from([0, 2]));
+    r.commit("main");
+    expect(r.tryGit("merge", "side")).toBe(false);
+    expect(await hostConflictStages(r.cwd, "a.PNG")).toMatchObject({
+      binary: true,
+      ours: "",
+      images: { base: "AAE=", ours: "AAI=", theirs: "AAM=" },
     });
   });
 

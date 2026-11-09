@@ -282,13 +282,36 @@ impl ReviewInput {
         Ok(())
     }
 
-    pub(crate) fn approval_content(operation: &Value) -> Result<String, String> {
+    fn from_approval(operation: &Value) -> Result<Self, String> {
         let review: Self = serde_json::from_value(json!({
             "commitId": operation["commitId"], "event": operation["event"],
             "body": operation["body"], "comments": operation["comments"]
         }))
         .map_err(|_| "Invalid GitHub review approval")?;
         review.validate()?;
+        Ok(review)
+    }
+
+    /// Structured twin of `approval_content` for the owner's preview, from the same validated review.
+    pub(crate) fn approval_details(operation: &Value) -> Result<Value, String> {
+        let review = Self::from_approval(operation)?;
+        let comments: Vec<Value> = review
+            .comments
+            .iter()
+            .map(|comment| {
+                json!({
+                    "path": comment.path, "line": comment.line, "startLine": comment.start_line,
+                    "side": comment.side, "body": comment.body,
+                })
+            })
+            .collect();
+        Ok(
+            json!({"event": review.event, "commitId": review.commit_id, "body": review.body, "comments": comments}),
+        )
+    }
+
+    pub(crate) fn approval_content(operation: &Value) -> Result<String, String> {
+        let review = Self::from_approval(operation)?;
         let mut content = format!(
             "Review: {}\nCommit: {}\n\n{}",
             review.event, review.commit_id, review.body

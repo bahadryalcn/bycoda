@@ -113,6 +113,10 @@ behavior. In the composer and queue editor, caret movement and selections treat 
 resolved reference as a whole. A missing or unavailable preview never removes the
 attachment.
 
+Web links you type or paste in the composer are boxed in their own color without the
+`https://` prefix, with an open icon at the end that opens the link in your browser.
+Move the caret into a link to see and edit it in full; the message keeps the full link.
+
 Click a chat attachment or a generated file link to open it. PDF, Word, Excel, CSV, and TSV use document/table viewers. Video and audio use native playback controls. Codec support depends on the operating system; the default-app action is available when a file path can be opened on this computer.
 
 CSV and TSV file tabs offer **Preview** and **Source**. Switching views retains source edits. The preview displays the saved file; unsaved changes remain in Source. Delimited values are displayed as text, without evaluating formulas.

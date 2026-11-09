@@ -7,11 +7,9 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import * as clipboard from "../../../platform/tauri/clipboard";
 import { PRODUCT_IDENTITY } from "../../../shared/lib/productIdentity";
 import { SettingsView } from "./SettingsView";
+import { resetRetainedProvidersPage } from "./ProviderSettings";
 import { navigationGroups } from "./SettingsAccountRow";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { setHarnessModels, resetHarnessModelOverlays } from "../../sessions/model/models";
-import { providerSessionDefaults } from "../../sessions/model/providerSessionDefaults";
-import { expectedProductExtras as productExtras } from "./settingsDefaultsFixture";
 import { rememberNotificationProjects } from "../../notifications/model/notificationProjects";
 import {
   SETTINGS_INDEX,
@@ -193,6 +191,7 @@ beforeEach(() => {
   platform.isWindows = false;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   mockLocalStorage();
+  resetRetainedProvidersPage();
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -1956,126 +1955,5 @@ describe("settings search", () => {
     expect(onSelectSection).not.toHaveBeenCalled();
     const row = container.querySelector('[data-setting-id="sounds"]')!;
     expect(row.getAttribute("data-revealed")).toBe("true");
-  });
-});
-
-describe("providers scope inheritance", () => {
-  it("keeps ACP management inside its provider panel without duplicate sections", async () => {
-    vi.mocked(invoke).mockImplementation(async (command) =>
-      command === "generic_acp_list" ? [] : undefined,
-    );
-    await render("providers");
-    expect(container.querySelectorAll("#setting-acp-agents")).toHaveLength(1);
-    const management = container.querySelector<HTMLElement>("#setting-acp-agents")!;
-    const panel = management.closest<HTMLElement>(".provider-cli-panel")!;
-    expect(panel).not.toBeNull();
-    expect(management.closest(".provider-cli-workspace")).not.toBeNull();
-    const providerButton = (name: string) =>
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>(".provider-cli-selector button"),
-      ).find((button) => button.textContent?.trim().startsWith(name))!;
-    await act(async () => providerButton("Claude Code").click());
-    expect(panel.hidden).toBe(true);
-    await act(async () => providerButton("ACP Agent").click());
-    expect(panel.hidden).toBe(false);
-    await act(async () => providerButton("Codex").click());
-    expect(panel.hidden).toBe(true);
-    expect(container.querySelector("#setting-acp-agents")).toBe(management);
-  });
-
-  it("saves default effort and permissions through the provider controls", async () => {
-    setHarnessModels("codex", [
-      {
-        id: "codex:test",
-        harness: "codex",
-        name: "Test",
-        settings: [
-          {
-            id: "effort",
-            label: "Effort",
-            kind: "select",
-            value: "medium",
-            options: [
-              { value: "medium", label: "Medium" },
-              { value: "high", label: "High" },
-            ],
-          },
-        ],
-      },
-    ]);
-    try {
-      await render("providers");
-      const pick = async (label: string, optionLabel: string) => {
-        const trigger = container.querySelector<HTMLButtonElement>(`[aria-label^="${label}"]`)!;
-        expect(trigger).toBeTruthy();
-        await act(async () => trigger.click());
-        const option = Array.from(
-          document.querySelectorAll<HTMLButtonElement>('[role="option"]'),
-        ).find((node) => node.textContent?.trim() === optionLabel)!;
-        expect(option).toBeTruthy();
-        await act(async () => option.click());
-      };
-      await pick("Codex default effort", "High");
-      await pick("Codex default permissions", "Full access");
-      expect(providerSessionDefaults("codex")).toEqual({
-        effort: "high",
-        runtimeMode: "full-access",
-        extras: productExtras,
-      });
-      await selectScope("repo");
-      await pick("Codex default permissions", "Supervised");
-      expect(providerSessionDefaults("codex", "/repo")).toEqual({
-        effort: "high",
-        runtimeMode: "supervised",
-        extras: productExtras,
-      });
-      await pick("Codex default permissions", "Global (Full access)");
-      expect(providerSessionDefaults("codex", "/repo").runtimeMode).toBe("full-access");
-    } finally {
-      await act(async () => resetHarnessModelOverlays());
-    }
-  });
-  async function selectScope(label: string) {
-    const trigger = container.querySelector<HTMLButtonElement>(
-      '[aria-label^="Provider defaults scope"]',
-    )!;
-    await act(async () => trigger.click());
-    const option = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="option"]')).find(
-      (node) => node.querySelector(".truncate")?.textContent?.trim() === label,
-    );
-    expect(option).toBeTruthy();
-    await act(async () => option!.click());
-  }
-
-  it("inherits the global default provider and picker visibility in project scope", async () => {
-    localStorage.setItem(
-      "bycoda.lastModel",
-      JSON.stringify({ harness: "claude", model: "claude:opus-5" }),
-    );
-    localStorage.setItem("bycoda.hiddenPickerProviders", JSON.stringify(["cursor"]));
-    await render("providers");
-
-    await selectScope("repo");
-
-    // A project with no overrides shows the inherited global default provider.
-    const claudeRow = container
-      .querySelector('[aria-label^="Claude Code model"]')!
-      .closest(".provider-cli-card")!;
-    expect(claudeRow.querySelector('[aria-label="Use Claude Code by default"]')).toBeNull();
-
-    // Picker visibility also inherits the global setting.
-    expect(
-      container
-        .querySelector<HTMLButtonElement>('[aria-label="Show Claude Code in the model picker"]')!
-        .getAttribute("aria-checked"),
-    ).toBe("true");
-    const cursorToggle = container.querySelector<HTMLButtonElement>(
-      '[aria-label="Show Cursor in the model picker"]',
-    )!;
-    expect(cursorToggle.getAttribute("aria-checked")).toBe("false");
-    // Global precedence: the project toggle cannot turn a globally hidden
-    // provider back on, so it is locked and explained.
-    expect(cursorToggle.hasAttribute("disabled")).toBe(true);
-    expect(cursorToggle.closest(".provider-cli-item")?.textContent).toContain("Hidden globally");
   });
 });

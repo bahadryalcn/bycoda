@@ -52,3 +52,17 @@ hand-made order. Inside every group, status leads: input or approval, then faile
 interrupted, then unseen finished, then working, then drafts. Failed, interrupted and
 draft rows lift only within three days of their last activity. The open row keeps its
 Done place until the user leaves it, and a row being typed in does not move.
+
+## Settled shelf cleanup
+
+Owner decision, 2026-11-09, asking for automatic cleanup and bulk actions on the
+Settled shelf:
+
+> let's do these missing operations too, I think they are all very important features (translated)
+
+The Host may archive a session that stayed settled past the owner's opt-in
+**Archive settled after** window (off by default). Pinned, running, queued, waiting
+and since-woken sessions stay; archiving is reversible from Archive. The Settled
+group's menu offers Archive all (confirmed) and Delete all for the sessions it
+lists; Delete all keeps the existing delete owner and its confirmation. Permanent
+deletion never runs automatically.

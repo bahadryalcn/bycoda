@@ -1,2 +1,11 @@
 /** Public workspace contract; exports stay explicit to preserve load isolation. */
-export { loadTabGroupLabels, resolveTabGroupLabel } from "../model/tabGroups";
+export {
+  loadTabGroupColors,
+  loadTabGroupCustomColors,
+  loadTabGroupLabels,
+  loadTabGroupMascots,
+  resolveTabGroupColor,
+  resolveTabGroupLabel,
+  resolveTabGroupLogo,
+  resolveTabGroupMascot,
+} from "../model/tabGroups";

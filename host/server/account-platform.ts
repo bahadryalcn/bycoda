@@ -11,7 +11,7 @@ import type { ServerBindings } from "./bindings";
 /** Command types that carry new work into a conversation; they wake a settled session. */
 const WAKING_COMMANDS = new Set(["send", "steer", "shell", "contextual", "plan"]);
 
-/** How often idle sessions are checked for automatic settling. */
+/** How often idle sessions are checked for automatic settling and archiving. */
 const AUTO_SETTLE_INTERVAL_MS = 60 * 60 * 1000;
 
 type Dependencies = Pick<
@@ -33,7 +33,8 @@ function warn(error: unknown): void {
 /**
  * Local account-platform services: active time, session settling and session-task links.
  * Composition only: the services own the rules, this wires them to the engine's settle and
- * delete signals, the command path that wakes a settled session, and an hourly auto-settle.
+ * delete signals, the command path that wakes a settled session, and an hourly auto-settle
+ * followed by the opt-in auto-archive.
  */
 export async function createAccountPlatformRuntime(dependencies: Dependencies) {
   const directory = join(dependencies.featureDirectory, "session-lifecycle");
@@ -72,6 +73,9 @@ export async function createAccountPlatformRuntime(dependencies: Dependencies) {
         running: row.status === "running",
         needsInput: row.needsInput === true,
       }));
+    },
+    async archive(sessionId) {
+      await dependencies.engine.updateSession(sessionId, { archived: true });
     },
     now: Date.now,
   };
@@ -122,7 +126,12 @@ export async function createAccountPlatformRuntime(dependencies: Dependencies) {
 
   // Settles that were waiting when the Host stopped apply now; idle sessions settle hourly.
   await lifecycle.recover().catch(warn);
-  const autoSettle = () => void lifecycle.autoSettle().catch(warn);
+  // Settling runs first, so archiving reads the shelf as it is now.
+  const autoSettle = () =>
+    void lifecycle
+      .autoSettle()
+      .then(() => lifecycle.autoArchive())
+      .catch(warn);
   autoSettle();
   const timer = setInterval(autoSettle, AUTO_SETTLE_INTERVAL_MS);
   timer.unref?.();

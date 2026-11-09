@@ -1590,12 +1590,11 @@
       "cross-feature-deep-import": 1
     },
     "src/features/settings/ui/ProviderSettings.tsx": {
-      "cross-feature-deep-import": 13,
-      "feature-imports-app": 1,
-      "file-lines": 1219
+      "cross-feature-deep-import": 6,
+      "feature-imports-app": 1
     },
     "src/features/settings/ui/SettingsView.test.ts": {
-      "file-lines": 2082
+      "file-lines": 1960
     },
     "src/features/settings/ui/SettingsView.tsx": {
       "cross-feature-deep-import": 6,

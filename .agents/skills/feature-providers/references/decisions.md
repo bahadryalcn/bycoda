@@ -27,3 +27,11 @@ Owner: "right now when it calls agents it seems it can call agents other than th
 A saved subagent selection bounds every subagent path. Claude's native Agent tool is forced onto the one same-account Claude selection or removed; Codex's native multi-agent features are off while a selection is set. Host agents tools already reject unselected models.
 
 Update 2026-11-08, owner: "please fix these too" (translated). Grok starts with `--no-subagents`; OpenCode sessions deny the `task` (v1) and `subagent` (v2, verified on 2.2.5) permissions. Antigravity, Cursor, Fx, Hermes, Pi, OMP and generic ACP have no verified switch yet and remain unenforced.
+
+## Defaults save explicitly to a chosen target
+
+Date: 2026-11-09
+
+Owner: "we can't tell whether it saved ... Apply defaults to should be on a save bar that appears after a change, where I pick X, even a group or a workspace" (translated)
+
+Providers splits into Providers, Defaults, Models and Decision models tabs. Defaults edits are a pending change set; nothing is written until Save, and the save bar names the target (Global, a project, a group or a workspace) and reports saved or not saved. A group or workspace target copies the changed fields into each member project, including projects of nested workspaces; projects added later follow Global. Account overrides stay machine-wide. Provider list switches, model switches, CLI and account actions still save at once.

@@ -73,6 +73,58 @@ fn review_operation(
     Ok((cwd, repo, number, review))
 }
 
+/// One-shot grants left by an owner-approved conversation review, keyed by its exact content.
+fn review_grants() -> &'static Mutex<Vec<(String, u64)>> {
+    static GRANTS: Mutex<Vec<(String, u64)>> = Mutex::new(Vec::new());
+    &GRANTS
+}
+const REVIEW_GRANT_MS: u64 = 120_000;
+
+fn review_grant_key(operation: &Value) -> Result<String, String> {
+    let item = &operation["item"];
+    Ok(format!(
+        "{}\n{}\n{}\n{}",
+        operation["cwd"]
+            .as_str()
+            .ok_or("Review project directory required")?,
+        item["repo"].as_str().ok_or("Review repository required")?,
+        item["number"].as_i64().ok_or("Review number required")?,
+        crate::github_review::ReviewInput::approval_content(operation)?
+    ))
+}
+
+/// Records that the owner approved this exact review in the conversation approval.
+pub(crate) fn grant_approved_review(operation: &Value, now: u64) -> Result<(), String> {
+    let key = review_grant_key(operation)?;
+    let mut grants = review_grants()
+        .lock()
+        .map_err(|_| "Review approval unavailable")?;
+    grants.retain(|(_, expires)| *expires > now);
+    if grants.len() >= 16 {
+        grants.remove(0);
+    }
+    grants.push((key, now + REVIEW_GRANT_MS));
+    Ok(())
+}
+
+/// Consumes a matching unexpired grant; a different, reused or late review asks again.
+fn take_review_grant(operation: &Value, now: u64) -> bool {
+    let Ok(key) = review_grant_key(operation) else {
+        return false;
+    };
+    let Ok(mut grants) = review_grants().lock() else {
+        return false;
+    };
+    grants.retain(|(_, expires)| *expires > now);
+    match grants.iter().position(|(granted, _)| *granted == key) {
+        Some(index) => {
+            grants.remove(index);
+            true
+        }
+        None => false,
+    }
+}
+
 fn approved_review_with<T>(
     operation: &Value,
     deadline: u64,
@@ -114,7 +166,7 @@ pub async fn desktop_inbox_review(
         if !root.is_dir() { return Err("Invalid review project directory".into()); }
         let alive = || app.get_webview_window(window.label()).is_some() && window.is_visible().is_ok();
         approved_review_with(&operation, deadline, now_ms, alive,
-            |message| crate::control::owner_approval::ask_window_checked(&app, &window, crate::control::owner_approval::Prompt { title: "bycoda — Inbox operation approval", message, confirm: "Approve this operation", cancel: "Cancel" }, || { valid_deadline(deadline, now_ms()?)?; if !alive() { return Err("Review window closed".into()); } Ok(()) }),
+            |message| now_ms().is_ok_and(|now| take_review_grant(&operation, now)) || crate::control::owner_approval::ask_window_checked(&app, &window, crate::control::owner_approval::Prompt { title: "bycoda — Inbox operation approval", message, confirm: "Approve this operation", cancel: "Cancel" }, || { valid_deadline(deadline, now_ms()?)?; if !alive() { return Err("Review window closed".into()); } Ok(()) }),
             || crate::github_review::execute_review_guarded(&cwd, &repo, number, &review, || {
                 valid_deadline(deadline, now_ms()?)?;
                 if !alive() || crate::fs::expand_home(&cwd).canonicalize().ok().as_ref() != Some(&root) {
@@ -226,5 +278,22 @@ mod tests {
         )
         .is_err());
         assert_eq!(writes.get(), 0);
+    }
+}
+
+#[cfg(test)]
+mod grant_tests {
+    use super::*;
+    #[test]
+    fn a_conversation_approval_skips_the_second_prompt_once_for_the_same_review() {
+        let review = json!({"action":"review","cwd":"/grant","item":{"provider":"github","kind":"pr","repo":"owner/repo","number":9,"projectPath":"/grant"},"commitId":"b".repeat(40),"event":"COMMENT","body":"Granted text","comments":[]});
+        let mut other = review.clone();
+        other["body"] = json!("Changed text");
+        grant_approved_review(&review, 1000).unwrap();
+        assert!(!take_review_grant(&other, 1001));
+        assert!(!take_review_grant(&review, 1000 + REVIEW_GRANT_MS));
+        grant_approved_review(&review, 1000).unwrap();
+        assert!(take_review_grant(&review, 1001));
+        assert!(!take_review_grant(&review, 1002));
     }
 }

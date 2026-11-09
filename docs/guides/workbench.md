@@ -218,6 +218,14 @@ waiting conversations never settle automatically, and pinned, foldered or
 reminder conversations stay where you placed them. Settling applies to
 conversations on this computer's Host; archive and tasks are unchanged by it.
 
+To keep the shelf short, Settings → Session list → **Archive settled after**
+archives conversations that stayed settled for 7, 14, 30 or 90 days. It is off
+by default; pinned, running and waiting conversations stay, and archived ones
+can be restored from Archive. The **Settled** group's menu (right-click its
+header or use its more button) offers **Archive all** and **Delete all** for the
+conversations listed in it. Delete all asks for confirmation and cannot be
+undone; nothing is deleted automatically.
+
 The Workspace picker fits its label and arrows. Conversation search opens in the
 remaining header space. While search is open, selection and filter buttons yield
 their space to the query; they return when search closes, retaining their state.

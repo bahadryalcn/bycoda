@@ -394,3 +394,35 @@ it("keeps the passive suggestion popover mounted while the next snapshot is pend
     host.remove();
   }
 });
+
+it("steps the floating tools aside while typing and brings them back on pointer movement", async () => {
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const terminal = {
+    focus: vi.fn(),
+    buffer: { active: { type: "normal" }, onBufferChange: () => ({ dispose() {} }) },
+  } as unknown as Terminal;
+  try {
+    await act(async () =>
+      root.render(
+        createElement(TerminalTools, { terminal, ready: true, mode: null, onModeChange: vi.fn() }),
+      ),
+    );
+    const overlay = host.firstElementChild as HTMLElement;
+    const prompt = document.createElement("textarea");
+    host.append(prompt);
+    expect(overlay.hasAttribute("data-typing")).toBe(false);
+    await act(async () => prompt.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true })));
+    expect(overlay.hasAttribute("data-typing")).toBe(true);
+    await act(async () => host.dispatchEvent(new Event("pointermove", { bubbles: true })));
+    expect(overlay.hasAttribute("data-typing")).toBe(false);
+    // Keys typed inside the tools themselves (e.g. the search field) never hide them.
+    const button = overlay.querySelector("button")!;
+    await act(async () => button.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true })));
+    expect(overlay.hasAttribute("data-typing")).toBe(false);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

@@ -26,10 +26,16 @@ async function fixture() {
       queued: state.queued,
     })),
     activity: vi.fn(async () => state.rows),
+    archive: vi.fn(async (_sessionId: string) => undefined),
     now: () => NOW,
   };
+  let now = NOW;
+  ports.now = () => now;
   const make = () => createSessionLifecycleService(new SessionLifecycleStore(dir), ports);
-  return { state, ports, make, service: make() };
+  const at = (time: number) => {
+    now = time;
+  };
+  return { state, ports, make, at, service: make() };
 }
 
 const idle = (sessionId: string, daysAgo: number, extra: Partial<SessionActivity> = {}) => ({
@@ -113,7 +119,10 @@ it("auto-settle skips queued sessions and can be turned off", async () => {
   state.queued = 2;
   expect(await service.autoSettle()).toBe(0);
   state.queued = 0;
-  expect(await service.configure({ afterDays: null }, context)).toEqual({ afterDays: null });
+  expect(await service.configure({ afterDays: null }, context)).toEqual({
+    afterDays: null,
+    archiveAfterDays: null,
+  });
   expect(await service.autoSettle()).toBe(0);
   await service.configure({ afterDays: 7 }, context);
   expect(await service.autoSettle()).toBe(1);
@@ -129,9 +138,66 @@ it("rejects an unknown session and an unauthorized caller", async () => {
   await expect(service.settle("s", context)).rejects.toThrow(/not found/);
 });
 
-it("never touches archive, pin or tasks", async () => {
-  const { ports } = await fixture();
-  expect(Object.keys(ports).some((key) => /archive|pin|task/i.test(key))).toBe(false);
+it("never touches pin or tasks, and archives only through opt-in automatic archiving", async () => {
+  const { ports, service, state } = await fixture();
+  expect(Object.keys(ports).some((key) => /pin|task/i.test(key))).toBe(false);
+  state.rows = [idle("s", 400)];
+  await service.settle("s", context);
+  await service.autoSettle();
+  expect(await service.autoArchive()).toBe(0);
+  expect(ports.archive).not.toHaveBeenCalled();
+});
+
+it("a settings change without an archive window keeps the saved one", async () => {
+  const { service } = await fixture();
+  await service.configure({ afterDays: 3, archiveAfterDays: 14 }, context);
+  expect(await service.configure({ afterDays: 7 }, context)).toEqual({
+    afterDays: 7,
+    archiveAfterDays: 14,
+  });
+  expect(await service.configure({ afterDays: 7, archiveAfterDays: null }, context)).toEqual({
+    afterDays: 7,
+    archiveAfterDays: null,
+  });
+  await expect(
+    service.configure({ afterDays: 1, archiveAfterDays: 7 }, { authorized: async () => false }),
+  ).rejects.toThrow(/revoked/);
+});
+
+it("auto-archives only sessions settled past the archive window", async () => {
+  const { service, state, ports, at } = await fixture();
+  state.rows = [
+    idle("old", 40),
+    idle("fresh", 40),
+    idle("active", 40),
+    idle("pinned", 40, { pinned: true }),
+    idle("running", 40, { running: true }),
+    idle("woken", 1),
+  ];
+  at(NOW - 20 * DAY);
+  for (const id of ["old", "pinned", "running", "woken"]) await service.settle(id, context);
+  at(NOW - 2 * DAY);
+  await service.settle("fresh", context);
+  at(NOW);
+  await service.configure({ afterDays: null, archiveAfterDays: 14 }, context);
+  expect(await service.autoArchive()).toBe(1);
+  expect(ports.archive.mock.calls).toEqual([["old"]]);
+});
+
+it("auto-archive skips queued and already archived sessions and can be turned off", async () => {
+  const { service, state, ports, at } = await fixture();
+  state.rows = [idle("s", 40), idle("done", 40, { archived: true })];
+  at(NOW - 30 * DAY);
+  await service.settle("s", context);
+  await service.settle("done", context);
+  at(NOW);
+  await service.configure({ afterDays: null, archiveAfterDays: 7 }, context);
+  state.queued = 1;
+  expect(await service.autoArchive()).toBe(0);
+  state.queued = 0;
+  await service.configure({ afterDays: null, archiveAfterDays: null }, context);
+  expect(await service.autoArchive()).toBe(0);
+  expect(ports.archive).not.toHaveBeenCalled();
 });
 
 it("migrates rows from the close model and defaults participants", () => {

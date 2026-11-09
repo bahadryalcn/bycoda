@@ -954,6 +954,14 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
       "update upgrade version outdated latest release claude codex cursor grok opencode pi omp fx",
   },
   {
+    id: "decision-models",
+    section: "providers",
+    get label() {
+      return t("Decision models");
+    },
+    keywords: "local model ollama classifier routing threshold scan privacy decision source",
+  },
+  {
     id: "antigravity-account",
     section: "providers",
     get label() {
@@ -1309,7 +1317,6 @@ const SETTINGS_CONTROL_LABELS: Record<string, readonly string[]> = {
     "Default extras",
     "Show in picker",
     "Apply defaults to",
-    "Provider defaults scope",
     "Global",
   ],
   "provider-accounts": [

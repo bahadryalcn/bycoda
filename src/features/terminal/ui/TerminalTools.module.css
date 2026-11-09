@@ -67,7 +67,9 @@
   overflow: clip;
 }
 
-/* Overlay consumes no terminal grid height; focus reveals it before activation. */
+/* Overlay consumes no terminal grid height. Pointer hover reveals it; terminal
+   focus alone does not, so it never covers the prompt while the user types.
+   Keyboard focus inside the overlay and open search/menus always keep it shown. */
 .overlay {
   position: absolute;
   inset-block-start: 4px;
@@ -91,12 +93,16 @@
     pointer-events: none;
   }
   :global(.bycoda-terminal):hover > .overlay,
-  :global(.bycoda-terminal):focus-within > .overlay,
   .overlay:focus-within,
   .overlay[data-open] {
     opacity: 1;
     pointer-events: auto;
   }
+}
+/* Typing hides it until the pointer moves again (also on touch devices). */
+.overlay[data-typing]:not([data-open]):not(:focus-within) {
+  opacity: 0;
+  pointer-events: none;
 }
 .menuBody {
   padding: 4px;

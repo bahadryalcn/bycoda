@@ -53,11 +53,23 @@ pub(crate) fn ask_conversation(
     prompt: Prompt<'_>,
     check: impl Fn() -> Result<(), String>,
 ) -> Result<bool, String> {
+    ask_conversation_detailed(app, request, prompt, Value::Null, check)
+}
+
+/// Like `ask_conversation`, plus a structured preview of the same content the message states.
+pub(crate) fn ask_conversation_detailed(
+    app: &AppHandle,
+    request: &Value,
+    prompt: Prompt<'_>,
+    details: Value,
+    check: impl Fn() -> Result<(), String>,
+) -> Result<bool, String> {
     ask_conversation_as(
         app,
         request,
         ApprovalChannel::Approval,
         prompt,
+        details,
         check,
         decision,
     )
@@ -76,6 +88,7 @@ pub(crate) fn ask_conversation_secret(
         request,
         ApprovalChannel::Secret { field },
         prompt,
+        Value::Null,
         check,
         secret_decision,
     )
@@ -86,6 +99,7 @@ fn ask_conversation_as<T>(
     request: &Value,
     channel: ApprovalChannel<'_>,
     prompt: Prompt<'_>,
+    details: Value,
     check: impl Fn() -> Result<(), String>,
     decode: impl Fn(&Value) -> Result<T, String>,
 ) -> Result<T, String> {
@@ -120,6 +134,7 @@ fn ask_conversation_as<T>(
         session,
         channel,
         prompt,
+        details,
         || {
             check()?;
             let now = SystemTime::now()
@@ -152,6 +167,7 @@ fn ask(
         session,
         ApprovalChannel::Approval,
         prompt,
+        Value::Null,
         check,
         decision,
     )
@@ -163,6 +179,7 @@ fn ask_as<T>(
     session: Option<&str>,
     channel: ApprovalChannel<'_>,
     prompt: Prompt<'_>,
+    details: Value,
     check: impl Fn() -> Result<(), String>,
     decode: impl Fn(&Value) -> Result<T, String>,
 ) -> Result<T, String> {
@@ -203,6 +220,9 @@ fn ask_as<T>(
             .as_millis() as u64
             + 240_000;
         let mut input = json!({"title":prompt.title,"message":prompt.message,"confirmLabel":prompt.confirm,"cancelLabel":prompt.cancel,"deadline":deadline});
+        if !details.is_null() {
+            input["details"] = details;
+        }
         if let ApprovalChannel::Secret { field } = channel {
             input["fieldLabel"] = json!(field);
         }

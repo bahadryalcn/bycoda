@@ -31,6 +31,7 @@ import styles from "./TerminalTools.module.css";
 import type { SshShellController } from "../model/sshShellIntegration";
 import { RemoteShellSuggestions } from "./RemoteShellSuggestions";
 import { localTerminalPrefix } from "../model/localTerminalCompletion";
+import { useHideWhileTyping } from "./useHideWhileTyping";
 
 export type TerminalTool = "search" | "command" | "remote" | null;
 const SEARCH_RESULT_LIMIT = 1000;
@@ -86,6 +87,7 @@ export function TerminalTools({
   // undefined: not measured yet; null: the prompt line cannot be read.
   const [promptPrefix, setPromptPrefix] = useState<string | null>();
   const retaining = !!remoteShell?.preview && mode === null;
+  const [overlayRef, typing] = useHideWhileTyping<HTMLDivElement>();
 
   // Presentation only: narrows the retained passive list to the echoed prompt
   // text while the next native snapshot is pending. Never used for insertion.
@@ -402,8 +404,10 @@ export function TerminalTools({
   return (
     <>
       <div
+        ref={overlayRef}
         className={styles.overlay}
         data-open={mode === "search" || menuOpen || helpOpen || undefined}
+        data-typing={typing || undefined}
         onMouseDown={(event) => event.stopPropagation()}
       >
         {mode === "search" ? (

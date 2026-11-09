@@ -33339,6 +33339,9 @@
         "properties": {
           "afterDays": {
             "anyOf": [{ "maximum": 365, "minimum": 1, "type": "integer" }, { "type": "null" }]
+          },
+          "archiveAfterDays": {
+            "anyOf": [{ "maximum": 365, "minimum": 1, "type": "integer" }, { "type": "null" }]
           }
         },
         "required": ["afterDays"],
@@ -33351,6 +33354,9 @@
         "additionalProperties": false,
         "properties": {
           "afterDays": {
+            "anyOf": [{ "maximum": 365, "minimum": 1, "type": "integer" }, { "type": "null" }]
+          },
+          "archiveAfterDays": {
             "anyOf": [{ "maximum": 365, "minimum": 1, "type": "integer" }, { "type": "null" }]
           }
         },
@@ -33431,6 +33437,9 @@
             "additionalProperties": false,
             "properties": {
               "afterDays": {
+                "anyOf": [{ "maximum": 365, "minimum": 1, "type": "integer" }, { "type": "null" }]
+              },
+              "archiveAfterDays": {
                 "anyOf": [{ "maximum": 365, "minimum": 1, "type": "integer" }, { "type": "null" }]
               }
             },
@@ -52700,6 +52709,9 @@
               "properties": {
                 "afterDays": {
                   "anyOf": [{ "maximum": 365, "minimum": 1, "type": "integer" }, { "type": "null" }]
+                },
+                "archiveAfterDays": {
+                  "anyOf": [{ "maximum": 365, "minimum": 1, "type": "integer" }, { "type": "null" }]
                 }
               },
               "required": ["afterDays"],
@@ -66792,5 +66804,5 @@
   },
   "subprotocol": "bycoda.rpc.v2",
   "wireVersion": 2,
-  "schemaHash": "581f5c8b1846b7e1c3574bc3636a6b7bfc1ede91db491097ebfb4bd05567266f"
+  "schemaHash": "6843e8c7da3a4d9b7752ecc722ae760241c085be251ad003268909b386628583"
 }

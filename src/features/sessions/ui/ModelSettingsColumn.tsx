@@ -42,7 +42,14 @@ function helpText(setting: ModelSetting): string | undefined {
 }
 
 /** The panel-wide strip under both columns that explains the pointed-at setting. */
-export function ModelSettingHelp({ setting }: { setting: ModelSetting | null }) {
+export function ModelSettingHelp({
+  setting,
+  trailing,
+}: {
+  setting: ModelSetting | null;
+  /** Bottom-right action, e.g. a link to the provider settings. */
+  trailing?: ReactNode;
+}) {
   const t = useT();
   const help = setting ? helpText(setting) : undefined;
   return (
@@ -63,6 +70,7 @@ export function ModelSettingHelp({ setting }: { setting: ModelSetting | null }) 
           t("Point at a setting to read what it does.")
         )}
       </p>
+      {trailing ? <span className="ml-auto flex shrink-0 self-stretch">{trailing}</span> : null}
     </div>
   );
 }
